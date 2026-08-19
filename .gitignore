@@ -1,0 +1,16 @@
+# Todo lo que produce el pipeline. Se regenera con:
+#   python -m pipeline.construir
+web/datos/
+web/panoramas/
+control-calce/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Sistema
+.DS_Store
+Thumbs.db

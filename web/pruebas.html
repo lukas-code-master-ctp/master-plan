@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pruebas de humo — Masterplan 360</title>
+<style>
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #0d1117; color: #e6edf3; }
+  h1 { font-size: 1.1rem; padding: 0.75rem 1rem; margin: 0; border-bottom: 1px solid #2a323f; }
+  #resumen { padding: 0.75rem 1rem; font-weight: 600; }
+  ol { margin: 0; padding: 0 1rem 1rem 2.5rem; }
+  li { padding: 0.15rem 0; }
+  .ok { color: #2fbf71; }
+  .falla { color: #d1495b; }
+  iframe { width: 1200px; height: 760px; border: 1px solid #2a323f; margin: 0 1rem 1rem; background: #000; }
+</style>
+</head>
+<body>
+<h1>Pruebas de humo — Masterplan 360</h1>
+<div id="resumen">Ejecutando…</div>
+<ol id="resultados"></ol>
+<iframe id="marco" title="Aplicación bajo prueba"></iframe>
+
+<script type="module">
+/*
+ * Carga index.html dentro de un iframe y comprueba que la aplicación real
+ * funciona: que el panorama se dibuja, que los polígonos caen sobre la imagen,
+ * y que los flujos de selección, búsqueda y filtros responden.
+ *
+ * El iframe recibe una versión de index.html con dos sustituciones: se hace que
+ * requestAnimationFrame y ResizeObserver disparen por temporizador. Sin eso las
+ * pruebas no pueden correr en una pestaña de fondo, donde el navegador congela
+ * ambos.
+ */
+
+const PARCHE = `<script>
+  window.requestAnimationFrame = (fn) => setTimeout(() => fn(performance.now()), 0);
+  window.ResizeObserver = class {
+    constructor(fn) { this.fn = fn; }
+    observe(elemento) { setTimeout(() => this.fn([{ target: elemento }]), 0); }
+    unobserve() {} disconnect() {}
+  };
+<\/script>`;
+
+const resultados = [];
+const revisar = (nombre, condicion, detalle = '') => {
+  resultados.push({ nombre, ok: Boolean(condicion), detalle });
+};
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function esperarA(condicion, limite = 8000, paso = 100) {
+  const fin = Date.now() + limite;
+  while (Date.now() < fin) {
+    try { if (await condicion()) return true; } catch { /* aún no está listo */ }
+    await esperar(paso);
+  }
+  return false;
+}
+
+/*
+ * El iframe carga los mismos módulos que la página real, y el navegador los
+ * sirve de su caché. Pedirlos con cache:'reload' actualiza la entrada de caché
+ * antes de montar el iframe, de modo que las pruebas midan el código de ahora y
+ * no el de la última visita.
+ */
+const FUENTES = [
+  'index.html', 'css/estilos.css',
+  'js/app.js', 'js/camara.js', 'js/datos.js', 'js/ficha.js', 'js/mapa.js', 'js/visor.js',
+  'datos/parcelas.json', 'datos/vistas.json',
+];
+
+async function correr() {
+  await Promise.all(FUENTES.map((ruta) => fetch(ruta, { cache: 'reload' })));
+  const html = await (await fetch('index.html')).text();
+  const marco = document.getElementById('marco');
+  marco.srcdoc = html.replace('<head>', `<head>${PARCHE}`);
+  await new Promise((listo) => { marco.onload = listo; });
+
+  const ventana = marco.contentWindow;
+  const doc = marco.contentDocument;
+  const $ = (s) => doc.querySelector(s);
+
+  const arranco = await esperarA(() => $('#overlay').children.length > 0);
+  revisar('la aplicación arranca y dibuja el overlay', arranco);
+
+  revisar('no se muestra el error de carga', $('#error-carga').hidden,
+          $('#error-carga').textContent.slice(0, 120));
+
+  // --- Panorama --------------------------------------------------------------
+  const lienzo = $('#lienzo-360');
+  revisar('el lienzo toma el tamaño del contenedor',
+          lienzo.width > 400 && lienzo.height > 200, `${lienzo.width}×${lienzo.height}`);
+
+  // El visor arranca con una textura lisa de 1×1 mientras baja la panorámica.
+  // Se espera a que aparezca variedad de tonos: eso prueba que la subió de verdad.
+  const gl = lienzo.getContext('webgl');
+  await esperarA(() => muestrear(gl, lienzo).variedad > 3, 15000);
+  const muestra = muestrear(gl, lienzo);
+  revisar('el panorama se dibuja (hay imagen, no un lienzo vacío)',
+          muestra.brillo > 20 && muestra.variedad > 6,
+          `brillo ${muestra.brillo.toFixed(0)}, variedad ${muestra.variedad}`);
+
+  // --- Overlay ---------------------------------------------------------------
+  const visibles = [...$('#overlay').children].filter((g) => g.style.display !== 'none');
+  revisar('hay parcelas proyectadas sobre la vista', visibles.length >= 5,
+          `${visibles.length} visibles de ${$('#overlay').children.length}`);
+
+  const rutas = visibles.map((g) => g.querySelector('path').getAttribute('d'));
+  revisar('los polígonos tienen geometría válida',
+          rutas.every((d) => d && d.startsWith('M') && d.endsWith('Z') && !d.includes('NaN')));
+
+  const dentroDePantalla = visibles.filter((g) => {
+    const caja = g.getBoundingClientRect();
+    return caja.width > 1 && caja.left < ventana.innerWidth && caja.right > 0;
+  });
+  revisar('las parcelas caen dentro del encuadre', dentroDePantalla.length >= 3,
+          `${dentroDePantalla.length} dentro`);
+
+  // --- Selección por clic ----------------------------------------------------
+  // La parcela a clickear tiene que cumplir dos cosas: estar entera dentro del
+  // visor, y que su centro sea alcanzable de verdad. Los paneles flotantes tapan
+  // parte del terreno, así que el punto puede caer sobre el cromado.
+  const marcoVisor = $('#visor').getBoundingClientRect();
+  const alcanzable = ({ caja }) => {
+    const x = Math.round(caja.left + caja.width / 2);
+    const y = Math.round(caja.top + caja.height / 2);
+    return doc.elementFromPoint(x, y)?.closest('.parcela');
+  };
+  const completas = dentroDePantalla
+    .map((g) => ({ g, caja: g.getBoundingClientRect() }))
+    .filter(({ caja }) =>
+      caja.left >= marcoVisor.left && caja.right <= marcoVisor.right
+      && caja.top >= marcoVisor.top && caja.bottom <= marcoVisor.bottom)
+    .sort((a, b) => b.caja.width * b.caja.height - a.caja.width * a.caja.height)
+    .filter(alcanzable);
+  const elegida = completas[0]?.g;
+
+  if (!elegida) {
+    revisar('hay una parcela clickeable en pantalla', false);
+  } else {
+    // El clic real cae sobre esta parcela, no sobre otra que esté encima.
+    const idElegida = completas[0].g.querySelector('text').textContent;
+    const caja = completas[0].caja;
+    const x = Math.round(caja.left + caja.width / 2);
+    const y = Math.round(caja.top + caja.height / 2);
+    revisar('el punto de clic cae dentro del visor',
+            x > marcoVisor.left && x < marcoVisor.right
+            && y > marcoVisor.top && y < marcoVisor.bottom, `(${x}, ${y})`);
+    for (const tipo of ['pointerdown', 'pointerup']) {
+      $('#visor').dispatchEvent(new ventana.PointerEvent(tipo,
+        { pointerId: 1, clientX: x, clientY: y, bubbles: true }));
+    }
+
+    const abrio = await esperarA(() => !$('#ficha').hidden);
+    revisar('hacer clic en una parcela abre su ficha', abrio);
+    revisar('la ficha corresponde a la parcela clickeada',
+            $('.ficha__titulo')?.textContent.includes(idElegida),
+            `esperaba A${idElegida}, salió "${$('.ficha__titulo')?.textContent ?? '—'}"`);
+    revisar('la ficha trae superficie y acciones',
+            $('.datos')?.textContent.includes('m²') && $('.acciones')?.children.length >= 1);
+    // El resaltado se aplica en el siguiente repintado, no en el mismo clic.
+    revisar('la parcela queda marcada como seleccionada',
+            await esperarA(() => elegida.classList.contains('parcela--seleccionada'), 2000));
+  }
+
+  // --- Controles de vuelo ----------------------------------------------------
+  const alturaPresionada = () => [...$('#controles-altura').children]
+    .find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent;
+  const alturaPrevia = alturaPresionada();
+  const altura = [...$('#controles-altura').children].find(
+    (b) => !b.disabled && b.getAttribute('aria-pressed') !== 'true');
+  revisar('hay otra altura disponible en esta posición', Boolean(altura),
+          `presionada ${alturaPrevia}`);
+  altura?.click();
+  const cambio = await esperarA(() => alturaPresionada() === altura?.textContent);
+  revisar('cambiar de altura cambia la vista', cambio,
+          `${alturaPrevia} m → ${alturaPresionada()} m`);
+  await esperar(600);
+  revisar('la nueva vista vuelve a proyectar parcelas',
+          [...$('#overlay').children].filter((g) => g.style.display !== 'none').length >= 5,
+          `${[...$('#overlay').children].filter((g) => g.style.display !== 'none').length} visibles`);
+
+  const posicion = [...$('#controles-posicion').children].find(
+    (b) => b.getAttribute('aria-pressed') !== 'true');
+  posicion?.click();
+  await esperar(900);
+  revisar('cambiar de posición reencuadra hacia las parcelas',
+          [...$('#overlay').children].filter((g) => {
+            const caja = g.getBoundingClientRect();
+            return g.style.display !== 'none' && caja.width > 1
+              && caja.left < ventana.innerWidth && caja.right > 0;
+          }).length >= 3,
+          `posición ${posicion?.textContent}`);
+
+  // --- Buscador --------------------------------------------------------------
+  const buscador = $('#buscador');
+  buscador.value = '191';
+  buscador.dispatchEvent(new ventana.Event('input'));
+  await esperar(120);
+  const sugerencias = [...$('#sugerencias').children].map((li) => li.textContent);
+  revisar('el buscador encuentra por número de lote',
+          sugerencias.some((t) => t.includes('A191')), sugerencias.slice(0, 3).join(' | '));
+
+  // --- Filtros ---------------------------------------------------------------
+  $('#solo-con-vista').checked = true;
+  $('#solo-con-vista').dispatchEvent(new ventana.Event('change'));
+  await esperar(200);
+  revisar('el filtro reduce el conteo',
+          /\d+ de \d+/.test($('#conteo-filtros').textContent),
+          $('#conteo-filtros').textContent);
+
+  const chip = $('#filtro-estados').children[0];
+  chip?.click();
+  await esperar(200);
+  const atenuadas = [...$('#overlay').children].filter(
+    (g) => g.classList.contains('parcela--atenuada'));
+  revisar('filtrar por estado atenúa las parcelas excluidas', atenuadas.length > 0,
+          `${atenuadas.length} atenuadas`);
+
+  // --- Tipografías -----------------------------------------------------------
+  await doc.fonts.ready;
+  for (const familia of ['Fraunces', 'Instrument Sans', 'IBM Plex Mono']) {
+    revisar(`la tipografía ${familia} está cargada`, doc.fonts.check(`1rem "${familia}"`));
+  }
+  revisar('el nombre del proyecto usa la tipografía de display',
+          ventana.getComputedStyle($('.marca__nombre')).fontFamily.includes('Fraunces'));
+
+  // --- Mapa ------------------------------------------------------------------
+  revisar('el mapa dibuja los polígonos del loteo',
+          doc.querySelectorAll('#mapa path.parcela-mapa').length > 50,
+          `${doc.querySelectorAll('#mapa path.parcela-mapa').length} polígonos`);
+  revisar('el mapa marca las posiciones de vuelo',
+          doc.querySelectorAll('#mapa .punto-vuelo').length >= 3);
+
+  informar();
+}
+
+function muestrear(gl, lienzo) {
+  const ancho = 60;
+  const alto = 40;
+  const px = new Uint8Array(ancho * alto * 4);
+  gl.readPixels((lienzo.width - ancho) >> 1, (lienzo.height - alto) >> 1,
+                ancho, alto, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let suma = 0;
+  const tonos = new Set();
+  for (let i = 0; i < px.length; i += 4) {
+    suma += (px[i] + px[i + 1] + px[i + 2]) / 3;
+    tonos.add(px[i] >> 4);
+  }
+  return { brillo: suma / (ancho * alto), variedad: tonos.size };
+}
+
+function informar() {
+  const fallas = resultados.filter((r) => !r.ok);
+  document.getElementById('resumen').textContent =
+    fallas.length === 0
+      ? `✔ ${resultados.length} pruebas pasaron`
+      : `✕ ${fallas.length} de ${resultados.length} fallaron`;
+  document.getElementById('resumen').className = fallas.length ? 'falla' : 'ok';
+  document.getElementById('resultados').replaceChildren(...resultados.map((r) => {
+    const li = document.createElement('li');
+    li.className = r.ok ? 'ok' : 'falla';
+    li.textContent = `${r.ok ? '✔' : '✕'} ${r.nombre}${r.detalle ? ` — ${r.detalle}` : ''}`;
+    return li;
+  }));
+  // Nombre propio: window.resultados ya existe, lo crea el <ol id="resultados">.
+  window.informePruebas = resultados;
+}
+
+correr().catch((error) => {
+  resultados.push({ nombre: 'las pruebas terminaron sin excepciones', ok: false,
+                    detalle: `${error.message}\n${error.stack?.split('\n')[1] ?? ''}` });
+  informar();
+});
+</script>
+</body>
+</html>
