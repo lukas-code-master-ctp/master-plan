@@ -1,13 +1,18 @@
 /*
- * Tu Masterplan — sistema visual de Cierra.
+ * Tu Masterplan — sistema visual.
  *
- * Los mismos tokens que la app de Cierra: Plus Jakarta Sans, superficies blancas
- * sobre grises zinc, verde de marca #007c10, radios de 6/8/12 px, sombras apenas
- * insinuadas y pills de estado con sus tonos (verde disponible, ámbar en proceso,
- * azul inscrita, oscuro no disponible). Una barra superior fija y, debajo, la
- * fotografía manda: el cromado son tarjetas blancas con borde que se apoyan
- * encima sin taparla. La parcela se marca con un contorno blanco fino y un disco
- * numerado del color de su estado, que además es el objetivo de clic.
+ * Plus Jakarta Sans, superficies blancas sobre grises zinc, radios de 6/8/12 px
+ * y sombras apenas insinuadas. Una barra superior fija y, debajo, la fotografía
+ * manda: el cromado son tarjetas blancas con borde que se apoyan encima sin
+ * taparla. La parcela se marca con un contorno blanco fino y un disco numerado
+ * del color de su estado, que además es el objetivo de clic.
+ *
+ * **El cromado es tinta, no color.** Antes el botón, el foco y la selección eran
+ * del verde de Cierra, el mismo verde que significa "disponible". Dos cosas
+ * distintas con el mismo color: un botón verde se leía como un estado. Ahora el
+ * único color saturado de la pantalla es el de la parcela que se puede comprar,
+ * y de paso el visor dejó de parecer de otra empresa: se le vende a loteadoras
+ * que no son clientes de Cierra.
  */
 
 :root {
@@ -23,14 +28,22 @@
   --zinc-900: #18181b;
   --zinc-950: #09090b;
 
-  --marca-50: #e6f5e7;
-  --marca-100: #c3e6c6;
-  --marca-500: #18ac27;
-  --marca-600: #008f17;
-  --marca-700: #007c10;
-  --marca-800: #00610c;
-  --marca-900: #004608;
-  --marca-anillo: rgb(0 124 16 / 0.3);
+  /* Cromado: botones, foco, selección. Tinta, para que no compita con la foto
+     ni se confunda con un estado. */
+  --marca-50: #f4f4f5;
+  --marca-100: #e4e4e7;
+  --marca-500: #52525b;
+  --marca-600: #3f3f46;
+  --marca-700: #27272a;
+  --marca-800: #18181b;
+  --marca-900: #09090b;
+  --marca-anillo: rgb(39 39 42 / 0.25);
+
+  /* El verde tiene un solo significado: esta parcela se puede comprar. */
+  --verde-50: #f0fdf4;
+  --verde-100: #bbf7d0;
+  --verde-700: #15803d;
+  --verde-800: #166534;
 
   --ambar-50: #fffbeb;
   --ambar-200: #fde68a;
@@ -116,7 +129,7 @@ button { cursor: pointer; }
   box-shadow: var(--sombra-tarjeta);
 }
 
-/* --- Botón con borde (el "outline" de Cierra) ------------------------------- */
+/* --- Botón con borde ------------------------------------------------------- */
 
 .pastillon {
   display: inline-flex;
@@ -191,12 +204,12 @@ button { cursor: pointer; }
   color: var(--tinta-tenue);
   white-space: nowrap;
 }
-/* La etapa como "eyebrow" de Cierra: verde, en versalitas. */
+/* La etapa como rótulo superior: versalitas, en tinta suave. */
 #marca-etapa:not(:empty) {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--marca-700);
+  color: var(--tinta-tenue);
 }
 .marca__coord { font-variant-numeric: tabular-nums; }
 #marca-etapa:not(:empty) + .marca__coord { padding-left: 0.5rem; border-left: 1px solid var(--linea-fuerte); }
@@ -349,11 +362,15 @@ button { cursor: pointer; }
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
 }
 .chip:hover { background: var(--papel-suave); }
+/* El filtro encendido se invierte en vez de teñirse. Con el cromado en tinta, un
+   fondo gris claro no se distinguía del apagado; el punto conserva el color del
+   estado, que es lo que el chip está diciendo. */
 .chip[aria-pressed="true"] {
-  background: var(--marca-50);
-  border-color: var(--marca-100);
-  color: var(--marca-800);
+  background: var(--marca-800);
+  border-color: var(--marca-800);
+  color: #fff;
 }
+.chip[aria-pressed="true"] i { box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.35); }
 
 .rango { display: flex; gap: 0.6rem; }
 .rango label {
@@ -607,9 +624,9 @@ button { cursor: pointer; }
 }
 .accion svg { width: 1rem; height: 1rem; flex: none; color: var(--zinc-500); }
 .accion:hover { background: var(--zinc-100); color: var(--tinta); }
-.accion--whatsapp { color: var(--marca-700); }
-.accion--whatsapp svg { color: var(--marca-700); }
-.accion--whatsapp:hover { background: var(--marca-50); color: var(--marca-800); }
+.accion--whatsapp { color: var(--tinta); }
+.accion--whatsapp svg { color: var(--tinta); }
+.accion--whatsapp:hover { background: var(--zinc-100); color: var(--tinta); }
 
 .puntos {
   display: flex;
@@ -906,7 +923,7 @@ button { cursor: pointer; }
 
 .ficha__meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 
-/* Pills de estado, con los tonos de Cierra. */
+/* Pills de estado. */
 .insignia, .ficha__etapa {
   display: inline-flex;
   align-items: center;
@@ -919,7 +936,7 @@ button { cursor: pointer; }
   font: 500 0.75rem/1.25rem var(--sans);
 }
 .insignia i { display: none; }
-.insignia--disponible { background: var(--marca-50); color: var(--marca-800); box-shadow: inset 0 0 0 1px var(--marca-100); }
+.insignia--disponible { background: var(--verde-50); color: var(--verde-800); box-shadow: inset 0 0 0 1px var(--verde-100); }
 .insignia--reservado { background: var(--ambar-50); color: var(--ambar-800); box-shadow: inset 0 0 0 1px var(--ambar-200); }
 .insignia--vendido { background: var(--azul-50); color: var(--azul-700); box-shadow: inset 0 0 0 1px var(--azul-200); }
 .insignia--no_disponible { background: var(--zinc-900); color: #fff; box-shadow: inset 0 0 0 1px var(--zinc-900); }
