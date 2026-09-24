@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consola — Tu Masterplan</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23007c10'/><circle cx='16' cy='16' r='8' fill='none' stroke='%23fff' stroke-width='2.5'/></svg>">
+<link rel="stylesheet" href="consola.css">
+</head>
+<body>
+
+<header class="barra">
+  <div class="marca">
+    <svg class="marca__hito" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <path d="M16 4v6M16 22v6M4 16h6M22 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M16 10.5 21.5 16 16 21.5 10.5 16Z" fill="currentColor"/>
+    </svg>
+    <div class="marca__texto">
+      <strong>Tu Masterplan</strong>
+      <span>Consola de loteos</span>
+    </div>
+  </div>
+  <button id="nuevo" class="boton">Nuevo loteo</button>
+  <form method="post" action="/salir" id="salir" hidden>
+    <button class="boton boton--texto" type="submit">Salir</button>
+  </form>
+</header>
+
+<main class="lienzo">
+  <div id="aviso" class="aviso" hidden></div>
+  <section id="lista" class="lista" aria-live="polite"></section>
+</main>
+
+<!-- Alta de un loteo -->
+<dialog id="alta" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2>Nuevo loteo</h2>
+  <p class="ayuda">Arrastra la carpeta del vuelo: el KMZ del topógrafo y las panorámicas
+    del dron. Da lo mismo cómo se llamen los archivos.</p>
+
+  <label class="soltadero" id="soltadero">
+    <input id="archivos" type="file" multiple webkitdirectory hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 16V4m0 0 4 4m-4-4L8 8M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"
+            fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span id="soltadero-texto">Arrastra la carpeta aquí o haz clic para elegirla</span>
+  </label>
+
+  <label class="campo">
+    <span>Nombre del loteo</span>
+    <input id="nombre" type="text" placeholder="Praderas de Cauquenes" autocomplete="off">
+  </label>
+
+  <details class="alternativa">
+    <summary>O usar una carpeta que ya está en este computador</summary>
+    <p class="ayuda">Más rápido: no copia los cientos de megas de las panorámicas.</p>
+    <div class="fila">
+      <input id="ruta" type="text" placeholder="/Users/mac/Desktop/Cauquenes_170926" autocomplete="off">
+      <button id="vincular" class="boton boton--contorno" type="button">Usar</button>
+    </div>
+  </details>
+
+  <div id="progreso" class="progreso" hidden><i></i></div>
+  <div class="modal__pie">
+    <button id="cancelar" class="boton boton--texto" type="button">Cancelar</button>
+    <button id="subir" class="boton" type="button" disabled>Subir y crear</button>
+  </div>
+</dialog>
+
+<template id="plantilla-proyecto">
+  <article class="proyecto">
+    <header class="proyecto__cabecera">
+      <div class="proyecto__identidad">
+        <h2 class="proyecto__nombre"></h2>
+        <div class="proyecto__meta"></div>
+      </div>
+      <div class="proyecto__acciones">
+        <button class="boton boton--contorno" data-accion="ajustes">Datos</button>
+        <button class="boton boton--contorno" data-accion="construir">Construir</button>
+        <button class="boton" data-accion="publicar">Publicar</button>
+      </div>
+    </header>
+
+    <dl class="cifras" hidden></dl>
+
+    <form class="ajustes" hidden>
+      <label class="campo"><span>Nombre</span><input name="nombre" type="text" autocomplete="off"></label>
+      <label class="campo"><span>Etapa</span><input name="etapa" type="text" placeholder="Etapas 1 a 4" autocomplete="off"></label>
+      <label class="campo"><span>WhatsApp</span><input name="whatsapp" type="text" placeholder="56912345678" autocomplete="off"></label>
+      <label class="campo"><span>Nombre en el CRM</span><input name="parcelacion" type="text" placeholder="PRADERAS DE CAUQUENES" autocomplete="off"></label>
+      <label class="campo"><span>Despegue del dron <i>lon, lat</i></span><input name="despegue" type="text" placeholder="-72.27591, -35.86774" autocomplete="off"></label>
+      <label class="campo campo--ancho"><span>Referencias en el horizonte</span><input name="referencias" type="text" placeholder="Cauquenes, Pelluhue, Chanco" autocomplete="off"></label>
+      <div class="ajustes__pie">
+        <button class="boton" data-accion="guardar" type="button">Guardar</button>
+        <button class="boton boton--texto" data-accion="olvidar" type="button">Quitar de la lista</button>
+      </div>
+    </form>
+
+    <pre class="consola-log" hidden></pre>
+    <section class="calce" hidden>
+      <h3>Control de calce <small>los polígonos tienen que caer sobre los caminos</small></h3>
+      <div class="calce__tiras"></div>
+    </section>
+  </article>
+</template>
+
+<script type="module" src="consola.js"></script>
+</body>
+</html>

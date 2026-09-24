@@ -1,4 +1,4 @@
-# Masterplan 360 — Hacienda Vichuquén
+# Tu Masterplan — notas de diseño (Hacienda Vichuquén, el primer loteo)
 
 Diseño aprobado el 2026-07-30.
 
@@ -96,6 +96,13 @@ Mapa: Leaflet sobre imagen satelital Esri (sin API key), sincronizado en ambos s
 con el visor.
 
 ## Dirección visual
+
+> **Septiembre de 2026.** El sitio pasó al sistema visual de Cierra: Plus Jakarta
+> Sans, grises zinc con verde `#007c10`, tarjetas con borde y sombra mínima, pills
+> de estado con los tonos de la app. Lo que sigue describe la dirección editorial
+> original (Fraunces + ocre): sigue vigente lo que dice sobre jerarquía, sobre que
+> la fotografía manda y sobre cómo se marca una parcela; la paleta y las
+> tipografías ya no.
 
 La fotografía manda. El cromado son pastillas claras apoyadas encima: cada parcela es
 un contorno blanco fino más un disco con su número, y el resto de la interfaz son

@@ -1,0 +1,8 @@
+# Las pruebas de humo no son parte del sitio publicado.
+pruebas.html
+
+# El CLI de Vercel deja estos dentro de la carpeta que despliega. Vercel no sirve
+# archivos que empiezan con punto, pero no tienen por qué viajar en el paquete:
+# .env.local trae un token OIDC.
+.env.local
+.vercel

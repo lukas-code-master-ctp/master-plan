@@ -18,13 +18,25 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from . import geo
 from .proyeccion import Vista
 from .solar import DiscoSolar, detectar_disco, posicion_solar, rumbo_desde_sol
 
 Image.MAX_IMAGE_PIXELS = None
 
-ALTURAS_NOMINALES = (50, 100, 300, 500)
 ANCHO_ANALISIS = 3600
+
+# El rótulo de altura se redondea a la decena. El GPS reporta la altura con
+# decimales (117,3 / 118,7 / 119,1) y las alturas de vuelo son valores redondos.
+# Antes se ajustaba a la lista fija (50, 100, 300, 500), que era el plan de vuelo
+# del primer proyecto: un vuelo a 118 m caía en 100 y tres tomas distintas
+# terminaban compartiendo el mismo id.
+PASO_ALTURA_M = 10
+
+# Dos tomas separadas por menos que esto son la misma posición de vuelo: el dron
+# despega del mismo punto y deriva unos metros al subir. Entre posiciones distintas
+# hay cientos de metros, así que el umbral no es delicado.
+DISTANCIA_MISMA_POSICION_M = 60.0
 
 
 @dataclass
@@ -42,7 +54,7 @@ class Panorama:
 
     @property
     def altura_nominal(self) -> int:
-        return min(ALTURAS_NOMINALES, key=lambda h: abs(h - self.altura_relativa))
+        return int(round(self.altura_relativa / PASO_ALTURA_M) * PASO_ALTURA_M)
 
     @property
     def id(self) -> str:
@@ -70,18 +82,65 @@ class RumboResuelto:
 
 
 def buscar_panoramas(carpeta: Path) -> list[Panorama]:
-    """Recorre las carpetas POSICION NN y devuelve las panorámicas ordenadas."""
+    """Recorre la carpeta y devuelve las panorámicas ordenadas.
+
+    La misma foto suele estar dos veces (la carpeta de trabajo y el volcado de la
+    tarjeta). Misma hora, mismo GPS y misma altura es la misma toma, y una toma es
+    una vista; el nombre del archivo no sirve porque se repite entre posiciones.
+    """
     encontradas = []
+    tomas: set[tuple] = set()
     for ruta in sorted(carpeta.rglob("*")):
         if ruta.suffix.lower() not in (".jpg", ".jpeg"):
             continue
         if "REFERENCIA" in ruta.stem.upper():
             continue
         panorama = leer_panorama(ruta)
-        if panorama:
-            encontradas.append(panorama)
+        if not panorama:
+            continue
+        toma = (panorama.momento, round(panorama.lon, 7), round(panorama.lat, 7),
+                round(panorama.altura_relativa, 1))
+        if toma in tomas:
+            continue
+        tomas.add(toma)
+        encontradas.append(panorama)
+    asignar_posiciones(encontradas)
     encontradas.sort(key=lambda p: (p.posicion, p.altura_nominal))
     return encontradas
+
+
+def asignar_posiciones(panoramas: list[Panorama]) -> None:
+    """Numera las posiciones de vuelo que la carpeta no rotula.
+
+    En el primer proyecto las fotos venían separadas en carpetas `POSICION NN` y de
+    ahí salía el número. Un vuelo entregado sin esas carpetas dejaba a todas las
+    tomas en la posición 0; como el id de la vista es posición + altura, varias
+    vistas quedaban con el mismo id y `construir` las sobreescribía sin avisar.
+
+    Las que ya traen número se respetan. Al resto se le agrupa por cercanía y se
+    numera en orden de captura, que es el orden en que voló el piloto.
+    """
+    sin_numero = [p for p in panoramas if p.posicion == 0]
+    if not sin_numero:
+        return
+
+    grupos: list[list[Panorama]] = []
+    for panorama in sorted(sin_numero, key=lambda p: p.momento):
+        cercano = next(
+            (g for g in grupos
+             if any(geo.distancia((o.lon, o.lat), (panorama.lon, panorama.lat))
+                    <= DISTANCIA_MISMA_POSICION_M for o in g)),
+            None)
+        if cercano is None:
+            grupos.append([panorama])
+        else:
+            cercano.append(panorama)
+
+    numero = max((p.posicion for p in panoramas), default=0)
+    for grupo in grupos:
+        numero += 1
+        for panorama in grupo:
+            panorama.posicion = numero
 
 
 def leer_panorama(ruta: Path) -> Panorama | None:

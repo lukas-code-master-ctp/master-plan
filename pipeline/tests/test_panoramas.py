@@ -10,6 +10,7 @@ from pipeline.panoramas import (
     RumboResuelto,
     _numero_de_posicion,
     a_vista,
+    asignar_posiciones,
     buscar_panoramas,
     leer_panorama,
     resolver_rumbo,
@@ -77,8 +78,11 @@ def test_la_altura_sale_del_xmp_y_no_del_nombre_del_archivo(tmp_path):
 
 @pytest.mark.parametrize("relativa,esperada", [
     (49.275, 50), (100.094, 100), (299.893, 300), (499.723, 500),
+    # Alturas que no estaban en el plan de vuelo del primer proyecto: antes se
+    # aplastaban contra (50, 100, 300, 500) y 117 se rotulaba como 100.
+    (117.332, 120), (118.674, 120), (226.399, 230),
 ])
-def test_la_altura_nominal_redondea_a_la_del_vuelo(tmp_path, relativa, esperada):
+def test_la_altura_nominal_redondea_a_la_decena(tmp_path, relativa, esperada):
     ruta = escribir_panorama(tmp_path / "POSICION 01" / "foto.JPG", relativa=relativa)
     assert leer_panorama(ruta).altura_nominal == esperada
 
@@ -107,7 +111,8 @@ def test_deduce_el_numero_de_posicion_de_la_carpeta(carpeta, esperado):
 
 
 def test_busca_panoramas_ordenadas_e_ignora_las_referencias(tmp_path):
-    escribir_panorama(tmp_path / "POSICION 02" / "100 METROS.JPG", relativa=100.0)
+    # Otra posición es otro punto de despegue: cambia el GPS, no solo la carpeta.
+    escribir_panorama(tmp_path / "POSICION 02" / "100 METROS.JPG", relativa=100.0, lon=-71.9970)
     escribir_panorama(tmp_path / "POSICION 01" / "300 METROS.JPG", relativa=300.0)
     escribir_panorama(tmp_path / "POSICION 01" / "100 METROS.JPG", relativa=100.0)
     Image.new("RGB", (60, 30)).save(tmp_path / "POSICION 01" / "REFERENCIA (73, 80).jpg")
@@ -158,3 +163,81 @@ def test_convierte_a_vista_conservando_la_pose(tmp_path):
     assert vista.posicion == 4
     assert vista.rumbo0 == pytest.approx(12.35)
     assert vista.terreno_plano() == pytest.approx(185.170 - 100.281)
+
+
+# --- posiciones de vuelo -----------------------------------------------------
+
+def test_un_vuelo_sin_carpetas_posicion_numera_por_cercania(tmp_path):
+    """Sin carpetas `POSICION NN` todas caían en la posición 0 y compartían id."""
+    for i, (lon, minuto) in enumerate([(-72.0025, 10), (-71.9970, 12), (-71.9915, 14)]):
+        escribir_panorama(tmp_path / f"DJI_{i}.JPG", lon=lon, relativa=118.0,
+                          momento=f"2026-03-05T19:{minuto}:00-03:00")
+
+    encontradas = buscar_panoramas(tmp_path)
+
+    assert [p.posicion for p in encontradas] == [1, 2, 3]
+    assert [p.id for p in encontradas] == ["p01-120", "p02-120", "p03-120"]
+
+
+def test_dos_alturas_en_el_mismo_punto_son_una_sola_posicion(tmp_path):
+    escribir_panorama(tmp_path / "baja.JPG", lon=-72.0025, relativa=118.0,
+                      momento="2026-03-05T19:10:00-03:00")
+    escribir_panorama(tmp_path / "alta.JPG", lon=-72.0023, relativa=226.4,
+                      momento="2026-03-05T19:12:00-03:00")
+
+    encontradas = buscar_panoramas(tmp_path)
+
+    assert {p.posicion for p in encontradas} == {1}
+    assert [p.id for p in encontradas] == ["p01-120", "p01-230"]
+
+
+def test_las_posiciones_se_numeran_en_orden_de_captura(tmp_path):
+    escribir_panorama(tmp_path / "segunda.JPG", lon=-71.9970,
+                      momento="2026-03-05T19:20:00-03:00")
+    escribir_panorama(tmp_path / "primera.JPG", lon=-72.0025,
+                      momento="2026-03-05T19:05:00-03:00")
+
+    pors = {p.ruta.stem: p.posicion for p in buscar_panoramas(tmp_path)}
+
+    assert pors == {"primera": 1, "segunda": 2}
+
+
+def test_las_carpetas_posicion_siguen_mandando_cuando_existen(tmp_path):
+    """El primer proyecto trae las fotos rotuladas y ese número no se toca."""
+    escribir_panorama(tmp_path / "POSICION 03" / "a.JPG", lon=-72.0025)
+    escribir_panorama(tmp_path / "POSICION 01" / "b.JPG", lon=-71.9970)
+
+    encontradas = buscar_panoramas(tmp_path)
+
+    assert [p.posicion for p in encontradas] == [1, 3]
+
+
+def test_los_numeros_asignados_continuan_despues_de_los_rotulados(tmp_path):
+    escribir_panorama(tmp_path / "POSICION 02" / "rotulada.JPG", lon=-72.0025)
+    escribir_panorama(tmp_path / "suelta.JPG", lon=-71.9900)
+
+    pors = {p.ruta.stem: p.posicion for p in buscar_panoramas(tmp_path)}
+
+    assert pors == {"rotulada": 2, "suelta": 3}
+
+
+def test_asignar_posiciones_no_toca_una_lista_ya_numerada(tmp_path):
+    panoramas = [leer_panorama(escribir_panorama(tmp_path / "POSICION 07" / "a.JPG"))]
+
+    asignar_posiciones(panoramas)
+
+    assert panoramas[0].posicion == 7
+
+
+# --- copias -------------------------------------------------------------------
+
+def test_ignora_las_copias_de_una_misma_panoramica(tmp_path):
+    """El piloto suele dejar la misma foto en dos carpetas (la de trabajo y el
+    volcado de la tarjeta). Es una vista, no dos."""
+    escribir_panorama(tmp_path / "360" / "DJI_0246.JPG", momento="2026-03-05T19:05:00-03:00")
+    escribir_panorama(tmp_path / "Dron" / "DJI_0246.JPG", momento="2026-03-05T19:05:00-03:00")
+
+    panoramas = buscar_panoramas(tmp_path)
+
+    assert len(panoramas) == 1
+    assert panoramas[0].ruta.parent.name == "360"

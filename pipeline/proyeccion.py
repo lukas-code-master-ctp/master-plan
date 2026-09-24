@@ -33,6 +33,13 @@ class Vista:
     altura_relativa: float   # metros sobre el punto de despegue
     altura_absoluta: float   # metros sobre el nivel del mar
     rumbo0: float            # azimut de la columna x=0, en grados
+    # Corrección fina que sale de calibrar contra la foto (ver calibracion.py):
+    # un giro residual, dos inclinaciones del nivelado de la panorámica y un
+    # desnivel del terreno. En cero, la proyección es la geométrica pura.
+    giro: float = 0.0
+    inclinacion_este: float = 0.0
+    inclinacion_norte: float = 0.0
+    desnivel: float = 0.0
 
     @property
     def origen(self) -> geo.Punto:
@@ -66,11 +73,31 @@ def proyectar_punto(vista: Vista, punto: geo.Punto,
         return 0.0, -90.0, 0.0
 
     cota = vista.terreno_plano() if cota_terreno is None else cota_terreno
-    caida = vista.altura_absoluta - cota
+    caida = vista.altura_absoluta - (cota + vista.desnivel)
 
     azimut = math.degrees(math.atan2(este, norte)) % 360.0
     elevacion = -math.degrees(math.atan2(caida, distancia))
+    if vista.giro or vista.inclinacion_este or vista.inclinacion_norte:
+        azimut, elevacion = corregir(azimut, elevacion, vista.giro,
+                                     vista.inclinacion_este, vista.inclinacion_norte)
     return azimut, elevacion, distancia
+
+
+def corregir(azimut: float, elevacion: float, giro: float,
+             inclinacion_este: float, inclinacion_norte: float) -> tuple[float, float]:
+    """Aplica a una dirección el giro y las inclinaciones de la vista.
+
+    Primero se inclina sobre el eje este, después sobre el eje norte y al final se
+    gira en torno a la vertical. calibracion.py hace lo mismo vectorizado; si uno
+    cambia, el otro también.
+    """
+    x, y, z = direccion(azimut, elevacion)
+    tx, ty, g = (math.radians(v) for v in (inclinacion_este, inclinacion_norte, giro))
+    y, z = y * math.cos(tx) - z * math.sin(tx), y * math.sin(tx) + z * math.cos(tx)
+    x, z = x * math.cos(ty) + z * math.sin(ty), -x * math.sin(ty) + z * math.cos(ty)
+    x, y = x * math.cos(g) - y * math.sin(g), x * math.sin(g) + y * math.cos(g)
+    return (math.degrees(math.atan2(x, y)) % 360.0,
+            math.degrees(math.asin(max(-1.0, min(1.0, z)))))
 
 
 def direccion(azimut: float, elevacion: float) -> tuple[float, float, float]:

@@ -4,7 +4,13 @@
     {
       "name": "masterplan360",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8765", "--directory", "web"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8765",
+        "--directory",
+        "salidas"
+      ],
       "port": 8765
     }
   ]

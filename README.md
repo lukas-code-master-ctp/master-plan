@@ -1,4 +1,4 @@
-# Masterplan 360
+# Tu Masterplan
 
 Visor aéreo interactivo de un loteo: panorámicas 360 desde las posiciones de vuelo,
 con las parcelas marcadas encima, un plano satelital sincronizado y la ficha comercial
@@ -12,31 +12,80 @@ Sirve para cualquier loteo, no solo para el que se construyó primero.
 
 ## Empezar con un proyecto nuevo
 
-Necesitas tres cosas en una carpeta:
+La forma cómoda es la consola:
 
-1. **Un KMZ** con los polígonos de las parcelas y un punto por lote con su nombre
-   (`LOTE A123`). Así vienen los que exporta Global Mapper.
-2. **Una planilla .xlsx** con al menos una columna `Parcela`. Ver [La planilla](#la-planilla).
-3. **Las panorámicas del dron**, equirectangulares y con el XMP intacto. Pueden estar
-   en subcarpetas por posición de vuelo.
+```bash
+./consola.sh
+```
+
+Abre http://localhost:8780 en el navegador. Ahí arrastras la carpeta del vuelo,
+completas los datos del loteo, aprietas **Construir**, miras el control de calce y
+recién entonces **Publicar**. Corre en este computador a propósito: una carpeta de
+panorámicas pesa unos 200 MB y no tiene sentido subirlas a otro lado para
+procesarlas acá al lado. Si la carpeta ya está en el disco, en "usar una carpeta que
+ya está en este computador" se registra sin copiar nada.
+
+Todo lo que hace la consola se puede hacer a mano, y es lo que sigue.
+
+### Lo que necesita un loteo
+
+Una carpeta con:
+
+1. **Un KMZ** del loteo. Sirven los dos formatos que exporta Global Mapper: polígonos
+   con un punto por lote (`LOTE A123`), o el dibujo CAD tal cual, como red de líneas
+   con un punto por lote. Ver [El KMZ](#el-kmz).
+2. **Las panorámicas del dron**, equirectangulares y con el XMP intacto. Da lo mismo
+   en qué subcarpetas vengan o si la misma foto está dos veces: las tomas se agrupan
+   por GPS y se numeran en orden de captura.
+3. **`proyecto.json`** con el nombre del loteo (opcional; sin él se usa el nombre de la
+   carpeta). Es lo mismo que edita el botón "Datos" de la consola:
+
+   ```json
+   {"nombre": "Praderas de Cauquenes", "etapa": "Etapas 1 a 4", "whatsapp": "56912345678",
+    "despegue": [-72.27591, -35.86774],
+    "referencias": ["Cauquenes", "Pelluhue", "Chanco"]}
+   ```
+
+   `despegue` es dónde despegó el dron (lon, lat). Importa más de lo que parece: ver
+   [El terreno](#el-terreno). `referencias` son pueblos u otros hitos que se rotulan
+   en el horizonte ("CAUQUENES · 12 KM") para que el visitante se ubique; van por
+   nombre (se geocodifican solos, eligiendo el homónimo más cercano) o como
+   `{"nombre": …, "lon": …, "lat": …}`.
+
+4. **Una planilla .xlsx** con los datos comerciales (opcional). Si no hay, salen del
+   export del CRM. Ver [La planilla](#la-planilla).
+
+### A mano
 
 Los archivos se descubren por tipo, no por nombre, así que da lo mismo cómo se llamen:
 
 ```bash
 pip install -r requirements.txt
-python -m pipeline.construir --proyecto "C:/ruta/a/Villa seca"
+python -m pipeline.construir --proyecto "/ruta/a/Cauquenes_170926"
 ```
 
-Sin `--proyecto` busca en la carpeta que contiene a `masterplan360`.
+Eso deja en `salidas/praderas-de-cauquenes/sitio/` un sitio completo y listo para
+subir (unos 20 MB por cada tres panorámicas, casi todo imágenes). Antes de publicar
+conviene revisar el calce:
 
-Eso deja en `web/` un sitio completo y listo para subir. Antes de publicar conviene
-revisar el calce con `python -m pipeline.qa_overlay`.
+```bash
+python -m pipeline.qa_overlay --proyecto "/ruta/a/Cauquenes_170926"
+```
 
-### Qué hay que ajustar a mano
+Todo lo que dice `proyecto.json` se puede pasar o pisar por línea de comandos:
+`--nombre`, `--etapa`, `--whatsapp`, `--parcelacion`, `--despegue`, `--referencias`,
+`--salida`, `--crm`, `--sin-crm`.
 
-- `pipeline/config.py`: `NOMBRE_PROYECTO`, `NOMBRE_ETAPA` y `WHATSAPP`.
-- Las panorámicas tienen que traer su XMP. Si pasaron por un editor que lo borró, el
-  pipeline no puede resolver el rumbo y no hay cómo proyectar.
+### El slug: la identidad del loteo
+
+`proyecto.json` puede llevar un `slug`. Es la identidad del loteo —su carpeta de
+salida, su proyecto en el hosting y su URL— y **se asigna una vez**: no cambia aunque
+cambie el nombre, y dos loteos que se llamen igual tienen slugs distintos. Sin slug
+guardado se sugiere uno del nombre, que es lo que pasa con una carpeta suelta en este
+computador.
+
+`vercel_proyecto` y `url_publicada` se escriben solos al publicar, leídos de lo que
+responde el hosting. No se tocan a mano.
 
 ## Cómo se usa
 
@@ -46,136 +95,265 @@ La web necesita servirse por HTTP: abrir `index.html` con doble clic no funciona
 porque el navegador bloquea la lectura de los archivos de datos.
 
 ```bash
-cd masterplan360/web && python -m http.server 8000
+cd masterplan360/salidas && python -m http.server 8000
 ```
 
-Y entrar a http://localhost:8000
+Y entrar a http://localhost:8000/praderas-de-cauquenes/sitio/ (cada proyecto
+construido tiene su carpeta).
 
-En Claude Code el servidor está declarado en `.claude/launch.json` con el nombre
-`masterplan360`, así que basta con abrir la vista previa.
+En Claude Code el servidor está declarado en `.claude/launch.json`, así que basta
+con abrir la vista previa.
 
 ### Publicar
 
-Sube el contenido de `web/` a tu hosting. Es un sitio estático: no necesita PHP, ni
-base de datos, ni Node en el servidor. Funciona en Netlify, Vercel, S3, cPanel o
-cualquier hosting compartido.
+Desde la consola, con el botón **Publicar**. A mano:
 
-Pesa unos 85 MB, casi todo panorámicas.
+```bash
+./publicar.sh salidas/<loteo>/sitio masterplan-<loteo> [--crear]
+```
+
+El script no deduce nada: recibe qué publicar y cómo se llama el proyecto en el
+hosting, porque ese nombre es la identidad del loteo y deducirlo del nombre hacía que
+dos loteos homónimos se pisaran el sitio. `--crear` va **solo la primera vez**; si el
+proyecto ya existe, `vercel project add` falla y el script muere, que es exactamente
+lo que antes se tragaba un `|| true`. Al terminar deja `publicacion.json` con la URL
+real, que la consola guarda.
+
+Necesita el CLI (`npm i -g vercel`) y `vercel login`, o `VERCEL_TOKEN` en el
+contenedor. Publica en la cuenta de CTP; `VERCEL_SCOPE=<equipo>` lo manda a otro.
+
+`web/vercel.json` va dentro de cada sitio y fija las cabeceras: `datos/` sin caché
+(para que los estados y precios se vean al tiro), panorámicas cacheadas 30 días, y
+una CSP que solo deja cargar lo propio más las teselas satelitales de Esri.
+`pruebas.html` no se sube (`.vercelignore`).
+
+Es un sitio estático, así que también sirve cualquier otro hosting (Netlify, S3,
+cPanel): basta con subir la carpeta.
 
 ### Actualizar los datos
 
-Editas la planilla como siempre (marcar un lote como `RESERVADO`, agregar precios,
-etc.) y regeneras:
+Cuando cambian los estados o los precios (en la planilla o en el CRM), regeneras:
 
 ```bash
-python -m pipeline.construir --sin-imagenes
+python -m pipeline.construir --proyecto "/ruta/a/Cauquenes_170926" --sin-imagenes
 ```
 
 `--sin-imagenes` salta el reprocesamiento de panorámicas, que es lo lento. Úsalo
 siempre que solo hayan cambiado datos comerciales. Sin esa opción regenera todo, pero
 igual se salta las imágenes que ya están al día.
 
-Después vuelve a subir `web/datos/`.
+Después, `./publicar.sh` de nuevo (o vuelve a subir `sitio/datos/`).
 
 **Ojo con la caché al actualizar.** Los archivos de datos se sirven como cualquier
 otro estático, así que un visitante que ya entró puede seguir viendo los precios y
-estados viejos hasta que su navegador revalide. Si tu hosting lo permite, ponle
-`Cache-Control: no-cache` a `datos/` (las panorámicas sí conviene que se cacheen
-largo: no cambian). En Netlify eso es un `_headers`; en Apache, un `.htaccess`.
+estados viejos hasta que su navegador revalide. En Vercel eso ya está resuelto por
+`vercel.json` (`datos/` va con `Cache-Control: no-cache`); en otro hosting hay que
+configurarlo a mano: en Netlify es un `_headers`, en Apache un `.htaccess`.
 
 ### Revisar antes de publicar
 
 ```bash
-python -m pipeline.qa_overlay
+python -m pipeline.qa_overlay --proyecto "/ruta/a/Cauquenes_170926"
 ```
 
-Deja en `control-calce/` una imagen por vista con los polígonos dibujados sobre la
-panorámica. Sirve para confirmar de un vistazo que todo cae donde corresponde.
+Deja en `salidas/<proyecto>/control-calce/` una imagen por vista con los polígonos
+dibujados sobre la panorámica. Sirve para confirmar de un vistazo que todo cae donde
+corresponde.
+
+## La consola en línea
+
+La consola corre local con `./consola.sh`, y la misma imagen se despliega en Cloud
+Run para que el equipo la use desde cualquier parte:
+
+```bash
+gcloud builds submit --config=cloudbuild.yaml
+```
+
+No va en Vercel a propósito: **Vercel corta el cuerpo de cada petición en 4,5 MB** y
+una panorámica pesa más de 60, y tampoco tiene disco donde escribir el sitio. Cloud
+Run con `--use-http2` no tiene ese tope, aguanta una hora por petición y monta el
+bucket de datos como volumen en `/datos`, así que el pipeline escribe igual que en
+este computador.
+
+Lo que hay que dejar puesto antes del primer despliegue:
+
+| Qué | Dónde |
+|---|---|
+| Bucket de datos | `gs://tumasterplan-datos` en la misma región |
+| `consola-clave` | Secret Manager — la contraseña para entrar |
+| `consola-secreto` | Secret Manager — con qué se firman las sesiones |
+| `vercel-token` | Secret Manager — para publicar los loteos ([vercel.com/account/tokens](https://vercel.com/account/tokens)) |
+| `crm.csv` | en la carpeta de cada loteo que tenga export comercial |
+
+**Entrar.** Una contraseña compartida y una galleta firmada (`consola/acceso.py`). Sin
+`CONSOLA_CLAVE` y fuera de este computador la consola **se niega a funcionar**: vale
+más que no arranque a que quede abierta. `CONSOLA_ENTORNO=local` (lo que hay al correr
+`./consola.sh`) es lo que la deja sin contraseña en la máquina de uno.
+
+**El dominio.** Hoy cada loteo queda en `masterplan-<slug>.vercel.app`. Con
+`MASTERPLAN_DOMINIO=tumasterplan.cl` (la sustitución `_DOMINIO` del cloudbuild) la
+consola pasa a mostrar `<slug>.tumasterplan.cl`; falta apuntar el dominio en Vercel,
+una vez por loteo.
 
 ## El diseño
 
-La fotografía manda. El cromado son pastillas claras apoyadas encima que no tapan el
-terreno: cada parcela es un contorno blanco fino más un disco con su número.
+El sitio usa el sistema visual de Cierra, para que se sienta parte de la misma
+familia: Plus Jakarta Sans (autoalojada en `web/vendor/fuentes/`, porque la CSP no
+deja cargar de Google Fonts), superficies blancas sobre grises zinc, verde de marca
+`#007c10`, radios de 6/8/12 px y sombras apenas insinuadas. Los tokens están en
+`:root` de `web/css/estilos.css`.
 
-**El disco es el objetivo de clic real**, no el polígono. Un número redondo se acierta
-mucho mejor que el borde de una figura irregular, sobre todo con el dedo.
+La fotografía manda. Arriba va una barra fija con el nombre del loteo, la etapa como
+"eyebrow" verde, el buscador y los filtros; el resto de la pantalla es la panorámica,
+y el cromado —ficha, plano, leyenda, instrumentos— son tarjetas blancas con borde que
+se apoyan encima sin taparla.
 
-- **El estado lo lleva el disco, no la línea.** Al ser un color sólido se lee igual
-  sobre bosque, sobre tierra y sobre cielo, y deja todos los contornos blancos y
-  limpios. Blanco = disponible, amarillo = reservado, rojo = vendido.
-- **Tipografías**: Fraunces (títulos; el eje *wonk* le da cualidad de grabado),
-  Instrument Sans (interfaz) e IBM Plex Mono (datos: coordenadas, alturas, rótulos).
-  Autoalojadas en `web/vendor/fuentes/`, 396 KB. El sitio no le pide nada a Google.
-- **Ocre** para lo accionable: el botón primario, la altura activa, el punto de vuelo
-  seleccionado y el anillo de la parcela elegida.
+Cada parcela se marca con un contorno blanco fino y un disco numerado, que es el
+objetivo de clic: un número redondo se acierta mucho mejor que el borde de un
+polígono, sobre todo con el dedo. El estado lo lleva el disco, con los mismos tonos
+que las pills de Cierra —verde disponible, ámbar reservado, azul vendido, oscuro no
+disponible—; al ser un color sólido se lee igual sobre bosque, tierra o cielo. Se
+definen en `pipeline/config.py` (`ESTADOS`), el sitio los lee del JSON, y la ficha,
+la leyenda y los filtros los muestran como pills.
 
-Si cambias los colores en `pipeline/config.py`, ojo con dos cosas: que el color se lea
-sobre la fotografía, y que el texto del disco lo elige `datos.js` por luminancia, así
-que un color claro recibe texto oscuro y viceversa, solo.
+## El terreno
 
-Lo único que sale a internet en tiempo de ejecución son las teselas satelitales del
-plano (Esri). Si eso no te sirve, el visor 360 funciona igual sin conexión.
+La proyección necesita saber a qué altura está el suelo bajo cada vértice. Asumirlo
+plano funciona en un loteo llano y falla en una ladera: un lote 24 m más abajo que el
+despegue, a 600 m del dron, se dibuja 60 m más lejos de donde está, y se nota contra
+los caminos.
+
+Por eso el pipeline baja un modelo de elevación (teselas Terrarium de AWS Open Data,
+~8 m por píxel, sin llave) y proyecta cada vértice a su cota real. Las teselas quedan
+en `.cache/terreno/`; sin red y sin caché avisa y sigue con terreno plano.
+
+**El punto de despegue ancla todo.** El dron mide sus alturas respecto de donde
+despegó, y su "altura absoluta" viene en un datum que no calza con el del DEM. Así
+que el DEM aporta los desniveles y la cota del despegue la fija el dron: si el
+despegue está mal ubicado, todos los lotes se corren juntos. Sin `despegue` en
+`proyecto.json` se asume que el dron despegó bajo la primera toma, que es lo normal
+pero no seguro: en Praderas de Cauquenes despegó bajo la última, y la diferencia
+(16 m de cota) corría los lotes lejanos unos 40 m. La forma de comprobarlo es el
+control de calce: los polígonos tienen que caer sobre los caminos.
+
+## El calce fino
+
+Con el sol y el terreno resueltos queda un residuo de ~0,5–1°: el nivelado de la
+panorámica no es perfecto, el GPS del dron tiene unos metros de error y el DEM
+también. Como el KMZ trae los caminos y los caminos de tierra se ven claros en la
+foto, el pipeline ajusta por vista un giro, dos inclinaciones y un desnivel hasta que
+las líneas del KMZ caen sobre los píxeles de camino. El ajuste queda en
+`vistas.json` (`diagnostico.calibracion`); si no mejora el calce al menos un 3 % se
+descarta, y `--sin-calibrar` lo apaga.
+
+## El KMZ
+
+Llega de dos formas y las dos sirven:
+
+- **Polígonos**: un polígono por lote y, aparte, un punto con el nombre (`LOTE A123`).
+  Es lo que exporta Global Mapper cuando el topógrafo ya cerró los lotes.
+- **Red de líneas**: el dibujo CAD tal cual, donde cada arista es una línea suelta y
+  hay un punto con el nombre dentro de cada lote. El pipeline cierra la red y se queda
+  con las caras que tienen exactamente un nombre adentro; las demás (caminos, franjas
+  de servidumbre, el recuadro de la leyenda) se descartan solas. Las divisorias que
+  quedan a menos de 0,5 m del borde se pegan; un hueco mayor deja dos lotes fusionados
+  en una sola cara, que aparece gris y sin nombre en el plano para que se note.
+
+**Etapas.** Si el loteo tiene etapas, cada una repite la numeración desde 1 y el
+dibujo las distingue por color. Para separarlas el KMZ necesita la leyenda: un
+cuadrito de cada color junto a un rótulo `ETAPA 1`, `ETAPA 2`… (así viene de Global
+Mapper). El id de cada lote queda como `etapa-número` (`2-7`) y el sitio lo muestra
+como "Parcela 7 · Etapa 2". Sin leyenda, dos lotes con el mismo nombre cortan el
+pipeline con un aviso: es un dato que falta, no algo que se pueda adivinar.
 
 ## La planilla
 
-El pipeline detecta las columnas por nombre, sin distinguir tildes ni mayúsculas.
-Reconoce:
+Los datos comerciales salen, en este orden, de:
+
+1. **Un .xlsx en la carpeta del proyecto**, si lo hay.
+2. **Un `crm.csv` en la carpeta del loteo**, o el que se pase con `--crm`, filtrado
+   por la parcelación del proyecto: el nombre en mayúsculas o lo que diga
+   `parcelacion` en `proyecto.json`. Las etapas del CRM (`PRADERAS DE CAUQUENES ET2`)
+   calzan con las del KMZ; la parcelación sin sufijo es la etapa 1. En este
+   computador, sin `crm.csv` propio se usa el export de `agente_reporteria`; si está
+   desactualizado, corre antes su `refresh_data.sh`. **No hay ningún export global en
+   la carpeta de datos**: con varios loteos, eso sería que quien no trae planilla
+   hereda los precios de otro. Si el loteo no figura en el export, se avisa y las
+   parcelas salen como no disponibles.
+3. **Nada**: las parcelas salen como "No disponible".
+
+La planilla puede ser .xlsx o .csv. Las columnas se detectan por nombre, sin
+distinguir tildes ni mayúsculas. Reconoce:
 
 | Columna | Obligatoria | Notas |
 |---|---|---|
-| `Parcela` | Sí | Acepta `A214`, `Lote A 420`, `LOTE A24` |
-| `Estado` | No | `Disponible`, `Reservado`, `Vendido`, `No disponible` |
+| `Parcela` | Sí | También se acepta `Lote`. Formatos: `A214`, `Lote A 420`, `LOTE 42`, `7-1` |
+| `Parcelación` | No | Con sufijo `ET2` / `ETAPA 2` separa las etapas |
+| `Estado` | No | `Disponible`, `Reservado`, `Vendido`, `No disponible`. Del CRM: `AGENDA`, `PRE-RESERVA` y `BORRADOR` cuentan como reservado; `ESCRITURA` y `ENTRADA CBR`, como vendido |
 | `Superficie` | No | En m². Entiende `13.124` como 13.124 m² |
-| `Servidumbre` | No | En metros |
-| `Precio` | No | Si falta, la ficha dice "A consultar" |
+| `Servidumbre` | No | Ancho en metros |
+| `Servidumbre m2` | No | Superficie de la servidumbre (es lo que trae el CRM) |
+| `Precio` | No | Si falta o es 0, la ficha dice "A consultar" |
 | `Moneda` | No | `CLP` (por defecto) o `UF` |
 | `Link de pago` | No | Puede ser distinto por parcela |
 
 Para agregar precios basta con sumar una columna `Precio` al xlsx. No hay que tocar
 código.
 
-El teléfono de WhatsApp está en `pipeline/config.py`, en `WHATSAPP`.
-
 ## Estructura
 
-**En el repo no está `web/datos/` ni `web/panoramas/`**: son salida del pipeline, no
-código. La primera vez hay que correrlo para tener un sitio.
+**En el repo no está `salidas/`**: es lo que produce el pipeline, no código. La
+primera vez hay que correrlo para tener un sitio.
 
 ```
-masterplan360/
+tumasterplan/
 ├── pipeline/          Python: lee las fuentes y produce los datos
-│   ├── config.py      Rutas, colores, umbrales; descubre las fuentes
+│   ├── config.py      Rutas, colores, umbrales; descubre las fuentes y el proyecto
 │   ├── solar.py       Posición del sol y detección del disco solar
-│   ├── kmz.py         Lectura del KMZ del loteo
-│   ├── excel.py       Lectura de la planilla comercial
+│   ├── kmz.py         Lectura del KMZ: polígonos o red de líneas, etapas por color
+│   ├── terreno.py     Modelo de elevación (teselas Terrarium) para seguir las laderas
+│   ├── excel.py       Lectura de la planilla comercial (.xlsx o .csv)
+│   ├── crm.py         La planilla desde el export del CRM
 │   ├── panoramas.py   Pose de cada foto y resolución del rumbo
 │   ├── proyeccion.py  Proyección de polígonos a coordenadas angulares
 │   ├── imagenes.py    Niveles de imagen para la web
 │   ├── construir.py   Orquestador
 │   └── qa_overlay.py  Control de calce
-├── web/               El sitio (se sube tal cual)
+├── consola.sh         Abre la consola en el navegador
+├── publicar.sh        Sube a Vercel el sitio de un proyecto
+├── consola/           La consola: subir, construir, revisar y publicar
+│   ├── app.py         API
+│   ├── proyectos.py   Qué loteos conoce y en qué estado están
+│   ├── trabajos.py    Corre el pipeline y muestra su avance en vivo
+│   ├── comandos.py    Qué le pide al pipeline
+│   └── web/           La página
+├── web/               El sitio (html, css, js): la plantilla de la que se copia cada salida
 │   ├── js/            Visor WebGL, mapa, ficha, filtros
-│   ├── datos/         Generado por el pipeline
-│   ├── panoramas/     Generado por el pipeline
+│   ├── vercel.json    Cabeceras (caché, CSP) que viajan con cada sitio
 │   └── pruebas.html   Pruebas de humo en navegador
-├── control-calce/     Generado por qa_overlay (no se sube)
+├── salidas/           Generado por el pipeline, un proyecto por carpeta
+│   └── <proyecto>/
+│       ├── sitio/         Se sube tal cual (html + datos/ + panoramas/)
+│       └── control-calce/ Generado por qa_overlay (no se sube)
 └── docs/diseno.md     Por qué está hecho así
 ```
 
 ## Pruebas
 
 ```bash
-python -m pytest pipeline/tests -q
+python -m pytest -q                      # pipeline + consola
 node --test web/js/camara.test.js
 ```
 
 Y las de navegador, con el servidor levantado: http://localhost:8000/pruebas.html
 
-Las tres capas cubren cosas distintas. Las de Python validan la astronomía y la
+Las capas cubren cosas distintas. Las de Python validan la astronomía y la
 geometría contra invariantes conocidas. Las de Node validan la matemática de cámara.
 Las de navegador levantan la aplicación real y comprueban que el panorama se dibuja,
 que los polígonos caen sobre la imagen, que las tipografías cargan y que los flujos
-responden.
+responden. Las de la consola levantan su API con un pipeline de mentira: prueban la
+orquestación —qué se lanza, qué se muestra, qué no se deja hacer— sin construir un
+loteo entero.
 
 Las de navegador cargan `index.html` dentro de un iframe con `requestAnimationFrame`
 y `ResizeObserver` parcheados por temporizador. Sin eso no corren en una pestaña de
@@ -212,10 +390,8 @@ primeros problemas se repiten en cualquier loteo y conviene detectarlos temprano
    (292, 293, 300, 301) no están en el KMZ, así que esa vista solo muestra parcelas
    lejanas.
 
-2. **Terreno plano.** La proyección asume el suelo a la altura del punto de despegue.
-   Produce un desfase vertical leve en las parcelas más lejanas. Si consigues las
-   curvas de nivel del loteo, `proyeccion.py` acepta un modelo de elevación y el calce
-   queda exacto sin cambiar nada más.
+2. ~~**Terreno plano.**~~ Resuelto: la proyección usa un modelo de elevación. Ver
+   [El terreno](#el-terreno).
 
 3. **Sin precios.** La planilla no los trae y el link de pago es uno solo genérico
    para las 202 parcelas. Ver la tabla de columnas más arriba.

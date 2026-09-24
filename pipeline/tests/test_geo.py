@@ -74,3 +74,16 @@ def test_la_caja_envolvente_cubre_todos_los_vertices():
     for lon, lat in CUADRADO:
         assert lon_min <= lon <= lon_max
         assert lat_min <= lat <= lat_max
+
+
+# --- desde_metros ------------------------------------------------------------
+
+def test_desde_metros_deshace_a_metros():
+    from pipeline.geo import a_metros, desde_metros
+    origen = (-72.27, -35.86)
+    punto = (-72.2612, -35.8531)
+
+    vuelta = desde_metros(a_metros(punto, origen), origen)
+
+    assert vuelta[0] == pytest.approx(punto[0], abs=1e-9)
+    assert vuelta[1] == pytest.approx(punto[1], abs=1e-9)

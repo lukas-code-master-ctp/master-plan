@@ -1,0 +1,61 @@
+# Construye y despliega la consola de Tu Masterplan en Cloud Run:
+#   gcloud builds submit --config=cloudbuild.yaml
+#
+# Los datos (proyectos subidos, sitios construidos, cachés) viven en un bucket
+# montado como volumen: el disco de la instancia se pierde al reiniciar.
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '${_IMAGEN}:$BUILD_ID', '-t', '${_IMAGEN}:latest', '.']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '--all-tags', '${_IMAGEN}']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICIO}'
+      - '--image=${_IMAGEN}:$BUILD_ID'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'          # la puerta es la contraseña de la consola
+      - '--use-http2'                      # sin esto, 32 MiB por petición
+      - '--min-instances=0'
+      # Una sola instancia a propósito: el estado de los trabajos vive en memoria
+      # del proceso, así que con dos el seguimiento cae en la instancia que no
+      # lanzó el build y devuelve 404 con la construcción corriendo bien. Una
+      # construcción es trabajo de CPU: repartirla no la acelera.
+      - '--max-instances=1'
+      # Sin esto Cloud Run estrangula la CPU fuera del manejo de peticiones, y la
+      # construcción corre en un hilo de fondo: solo avanza a velocidad plena
+      # mientras el navegador sondea. Al cerrar la pestaña se arrastraría, y
+      # --timeout no la rescata porque no hay petición que expire.
+      - '--no-cpu-throttling'
+      - '--memory=4Gi'                     # una panorámica son 104 megapíxeles
+      - '--cpu=2'
+      - '--timeout=1800'                   # construir un loteo con imágenes
+      - '--port=8080'
+      - '--add-volume=name=datos,type=cloud-storage,bucket=${_BUCKET}'
+      - '--add-volume-mount=volume=datos,mount-path=/datos'
+      - '--set-secrets=CONSOLA_CLAVE=consola-clave:latest,CONSOLA_SECRETO=consola-secreto:latest,VERCEL_TOKEN=vercel-token:latest'
+      # _DOMINIO vacío deja los loteos en masterplan-<slug>.vercel.app; con
+      # tumasterplan.cl pasan a <slug>.tumasterplan.cl.
+      - '--set-env-vars=^|^CONSOLA_ENTORNO=produccion|MASTERPLAN_DATOS=/datos|VERCEL_SCOPE=${_VERCEL_SCOPE}|MASTERPLAN_DOMINIO=${_DOMINIO}'
+
+substitutions:
+  _REGION: southamerica-east1
+  _REPO: ctp-crm                          # repositorio de Artifact Registry
+  _SERVICIO: tumasterplan-consola
+  _BUCKET: tumasterplan-datos
+  _IMAGEN: southamerica-east1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/tumasterplan-consola
+  _VERCEL_SCOPE: eruiz-6997s-projects
+  _DOMINIO: ''                          # cuando exista: tumasterplan.cl
+
+images:
+  - '${_IMAGEN}:$BUILD_ID'
+  - '${_IMAGEN}:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
