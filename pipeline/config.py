@@ -271,11 +271,12 @@ DECIMALES_COORD = 7
 # El estado lo lleva la pastilla del número, no el contorno de la parcela. Como la
 # pastilla es un disco sólido, el color se lee igual de bien sobre bosque que sobre
 # tierra o cielo, y el contorno queda blanco y limpio para todas.
-# Los tonos son los de las pills de estado de Cierra: verde disponible, ámbar en
-# proceso, azul inscrita, oscuro no disponible. Un disco sólido de ese color se
-# lee igual sobre bosque, tierra o cielo.
+# Verde disponible, ámbar en proceso, azul inscrita, oscuro no disponible: son
+# convenciones del rubro, no marca de nadie. El verde es el único color saturado
+# del cromado —el resto es tinta— para que en la pantalla solo haya una cosa
+# verde: la parcela que se puede comprar.
 ESTADOS = {
-    "disponible": {"etiqueta": "Disponible", "color": "#007c10", "vendible": True},
+    "disponible": {"etiqueta": "Disponible", "color": "#15803d", "vendible": True},
     "reservado": {"etiqueta": "Reservado", "color": "#f59e0b", "vendible": False},
     "vendido": {"etiqueta": "Vendido", "color": "#2563eb", "vendible": False},
     "no_disponible": {"etiqueta": "No disponible", "color": "#18181b", "vendible": False},

@@ -1,9 +1,10 @@
 /*
  * Consola de Tu Masterplan.
  *
- * Mismo sistema visual que el sitio publicado y que Cierra: Plus Jakarta Sans,
- * grises zinc, verde de marca, tarjetas con borde y sombra mínima. Acá no hay
- * fotografía de fondo, así que el fondo es gris claro y las tarjetas blancas.
+ * Mismo sistema visual que el sitio publicado: Plus Jakarta Sans, grises zinc,
+ * cromado de tinta, tarjetas con borde y sombra mínima. Acá no hay fotografía de
+ * fondo, así que el fondo es gris claro y las tarjetas blancas. El verde queda
+ * reservado para "construido"; el resto es tinta.
  */
 @font-face {
   font-family: 'Plus Jakarta Sans';
@@ -17,8 +18,9 @@
   --zinc-50: #fafafa; --zinc-100: #f4f4f5; --zinc-200: #e4e4e7; --zinc-300: #d4d4d8;
   --zinc-400: #a1a1aa; --zinc-500: #71717a; --zinc-600: #52525b; --zinc-700: #3f3f46;
   --zinc-900: #18181b; --zinc-950: #09090b;
-  --marca-50: #e6f5e7; --marca-100: #c3e6c6; --marca-700: #007c10; --marca-800: #00610c;
-  --marca-900: #004608; --marca-anillo: rgb(0 124 16 / 0.3);
+  --marca-50: #f4f4f5; --marca-100: #e4e4e7; --marca-700: #27272a; --marca-800: #18181b;
+  --marca-900: #09090b; --marca-anillo: rgb(39 39 42 / 0.25);
+  --verde-50: #f0fdf4; --verde-100: #bbf7d0; --verde-700: #15803d; --verde-800: #166534;
   --ambar-50: #fffbeb; --ambar-200: #fde68a; --ambar-800: #92400e;
   --rojo-50: #fef2f2; --rojo-200: #fecaca; --rojo-700: #b91c1c;
   --sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
