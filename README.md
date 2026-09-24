@@ -196,6 +196,14 @@ pierda el acceso en la petición siguiente y no doce horas después. Sin
 `CONSOLA_SECRETO` y fuera de este computador la consola **se niega a funcionar**:
 sin secreto de firma, cualquiera se fabrica una galleta.
 
+**Quién crea los loteos.** Un loteo nace en un solo lugar: el back-office
+(`/api/plataforma/…`, solo rol `plataforma`), y nace **pagado**. La nota de cobro es
+obligatoria —sin pasarela, esa línea de texto es todo el control de pago que hay— y
+queda en el historial con quién la escribió. Una loteadora no puede crearse un loteo:
+sube su vuelo dentro de los que le habilitaron. Concentrar el control en el alta es lo
+que evita repartirlo por cada ruta que escribe algo, que es como se termina con un
+cliente trabajando gratis sin que nadie se entere.
+
 **Cada cliente ve lo suyo.** Las rutas no reciben un `cliente_id` que se pueda olvidar
 de filtrar: reciben `registro.para(sesion)`, una vista que solo alcanza los loteos de
 esa loteadora (`consola/proyectos.py`). Pedir uno ajeno da **404, no 403**: contestar
@@ -355,7 +363,7 @@ tumasterplan/
 
 ```bash
 python -m pytest -q                      # pipeline + consola
-node --test web/js/camara.test.js
+node --test web/js/*.test.js consola/web/*.test.js
 ```
 
 Y las de navegador, con el servidor levantado: http://localhost:8000/pruebas.html

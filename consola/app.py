@@ -22,7 +22,8 @@ from pipeline import config
 
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
 from .comandos import Comandos, encadenar
-from .datos import Base, NoEncontrado, ProyectoYaExiste
+from .datos import (
+    Base, ClienteYaExiste, EmailYaExiste, NoEncontrado, ProyectoYaExiste)
 from .proyectos import Proyecto, Registro, Subida, Vista
 from .trabajos import Trabajos
 
@@ -89,6 +90,12 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def vista(sesion: Sesion = Depends(quien)) -> Vista:
         """Los loteos de quien pide, y ningún otro."""
         return registro.para(sesion)
+
+    def solo_plataforma(sesion: Sesion = Depends(quien)) -> Sesion:
+        """Lo que puede hacer el equipo de CTP y ninguna loteadora."""
+        if not sesion.es_plataforma:
+            raise HTTPException(403, "esto lo hace el equipo de Tu Masterplan")
+        return sesion
 
     # --- entrar y salir ------------------------------------------------------
 
@@ -176,24 +183,31 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def listar(mios: Vista = Depends(vista)) -> list[dict]:
         return [_como_json(p, trabajos) for p in mios.listar()]
 
-    @app.post("/api/proyectos", status_code=201)
-    async def crear(peticion: Request, nombre: str = Form(...),
-                    archivos: list[UploadFile] = File(...)) -> dict:
-        mios = registro.para(peticion.state.sesion)
+    @app.post("/api/proyectos/{slug}/archivos", status_code=201)
+    async def subir(slug: str, archivos: list[UploadFile] = File(...),
+                    mios: Vista = Depends(vista)) -> dict:
+        """Sube el vuelo a un loteo que ya existe.
+
+        No crea nada: el loteo lo da de alta CTP cuando cobró. Por eso acá no hay
+        control de pago —no hay nada que controlar— y el único punto donde sí lo
+        hay es el alta.
+        """
         subidas = [Subida(ruta=a.filename or "", contenido=await a.read()) for a in archivos]
         try:
-            proyecto = mios.crear(nombre, subidas)
-        except (ValueError, ProyectoYaExiste) as error:
+            proyecto = mios.subir(slug, subidas)
+        except ValueError as error:
             raise HTTPException(400, str(error)) from error
         return _como_json(proyecto, trabajos)
 
     @app.post("/api/proyectos/vincular", status_code=201)
-    def vincular(ruta: str = Body(..., embed=True), mios: Vista = Depends(vista)) -> dict:
+    def vincular(ruta: str = Body(..., embed=True),
+                 yo: Sesion = Depends(solo_plataforma)) -> dict:
         # Registrar una ruta cualquiera del servidor sería leer su disco. Tiene
         # sentido en el computador donde están las fotos y en ningún otro lado.
         if not acceso.local:
             raise HTTPException(403, "vincular carpetas solo funciona en el computador "
                                      "donde están las fotos")
+        mios = registro.para(yo)
         try:
             proyecto = mios.vincular(Path(ruta))
         except FileNotFoundError as error:
@@ -258,6 +272,98 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         mios.ver(trabajo.proyecto)
         return trabajo.como_json(desde)
 
+    # --- back-office: solo el equipo de CTP ------------------------------------
+    #
+    # Todo lo de acá cuelga de /api/plataforma/ a propósito: la guardia se ve en
+    # la ruta, así que una que se cuelgue del prefijo sin pedirla salta a la vista
+    # leyendo, no solo corriendo las pruebas.
+
+    @app.get("/api/plataforma/clientes")
+    def loteadoras(_: Sesion = Depends(solo_plataforma)) -> list[dict]:
+        return [_cliente_json(c, base) for c in base.clientes()]
+
+    @app.post("/api/plataforma/clientes", status_code=201)
+    def crear_loteadora(campos: dict = Body(...),
+                        yo: Sesion = Depends(solo_plataforma)) -> dict:
+        """Da de alta una loteadora con su dueño.
+
+        Devuelve la clave provisional **una sola vez**: no se guarda en claro en
+        ninguna parte, así que si se pierde hay que generar otra.
+        """
+        nombre = str(campos.get("nombre") or "").strip()
+        email = str(campos.get("email") or "").strip()
+        duenio = str(campos.get("duenio") or "").strip() or email
+        if not nombre or not email:
+            raise HTTPException(400, "hacen falta el nombre de la loteadora y el correo del dueño")
+        try:
+            cliente, clave = base.crear_cliente(nombre, email, duenio)
+        except (ClienteYaExiste, EmailYaExiste) as error:
+            raise HTTPException(409, str(error)) from error
+        base.anotar("alta de loteadora", cliente_id=cliente.id,
+                    usuario_id=yo.usuario_id, detalle=email)
+        return {**_cliente_json(cliente, base), "clave_provisional": clave}
+
+    @app.post("/api/plataforma/clientes/{cliente_id}/usuarios", status_code=201)
+    def crear_cuenta(cliente_id: int, campos: dict = Body(...),
+                     yo: Sesion = Depends(solo_plataforma)) -> dict:
+        base.cliente(cliente_id)                       # 404 si no existe
+        email = str(campos.get("email") or "").strip()
+        nombre = str(campos.get("nombre") or "").strip() or email
+        if not email:
+            raise HTTPException(400, "falta el correo")
+        try:
+            usuario, clave = base.crear_usuario(cliente_id, email, nombre)
+        except EmailYaExiste as error:
+            raise HTTPException(409, str(error)) from error
+        base.anotar("alta de cuenta", cliente_id=cliente_id,
+                    usuario_id=yo.usuario_id, detalle=email)
+        return {"email": usuario.email, "clave_provisional": clave}
+
+    @app.post("/api/plataforma/clientes/{cliente_id}/estado")
+    def cambiar_estado(cliente_id: int, campos: dict = Body(...),
+                       yo: Sesion = Depends(solo_plataforma)) -> dict:
+        """Suspender corta las sesiones de toda su gente en la petición siguiente."""
+        estado = str(campos.get("estado") or "")
+        if estado not in ("activo", "suspendido"):
+            raise HTTPException(400, "el estado es 'activo' o 'suspendido'")
+        cliente = base.cliente(cliente_id)
+        if cliente.id == yo.cliente_id:
+            # Suspender la propia loteadora deja a CTP sin poder entrar a
+            # reactivarla: no hay nadie por encima que lo arregle.
+            raise HTTPException(409, "no puedes suspender tu propia loteadora")
+        base.reactivar(cliente_id) if estado == "activo" else base.suspender(cliente_id)
+        base.anotar(f"loteadora {estado}", cliente_id=cliente_id, usuario_id=yo.usuario_id)
+        return _cliente_json(base.cliente(cliente_id), base)
+
+    @app.post("/api/plataforma/clientes/{cliente_id}/proyectos", status_code=201)
+    def habilitar_loteo(cliente_id: int, campos: dict = Body(...),
+                        yo: Sesion = Depends(solo_plataforma)) -> dict:
+        """Habilita un loteo pagado. **Es el único lugar donde nace un proyecto.**
+
+        La nota de cobro es obligatoria y no por burocracia: es lo único que
+        distingue un loteo cobrado de uno regalado, porque el cobro pasa fuera
+        del sistema. Sin pasarela, esta línea de texto ES el control de pago.
+        """
+        base.cliente(cliente_id)                       # 404 si no existe
+        nombre = str(campos.get("nombre") or "").strip()
+        cobro = str(campos.get("nota_cobro") or "").strip()
+        if not nombre:
+            raise HTTPException(400, "falta el nombre del loteo")
+        if not cobro:
+            raise HTTPException(402, "falta la nota de cobro: un loteo se habilita cuando se pagó")
+        try:
+            proyecto = registro.habilitar(cliente_id, nombre, nota_cobro=cobro)
+        except ProyectoYaExiste as error:
+            raise HTTPException(409, str(error)) from error
+        base.anotar("loteo habilitado", cliente_id=cliente_id, usuario_id=yo.usuario_id,
+                    detalle=f"{proyecto.slug} · {cobro}")
+        return _como_json(proyecto, trabajos)
+
+    @app.get("/api/plataforma/historial")
+    def historial(_: Sesion = Depends(solo_plataforma)) -> list[dict]:
+        return [{"que": e.que, "cliente_id": e.cliente_id, "detalle": e.detalle,
+                 "cuando": e.cuando.isoformat()} for e in base.historial()]
+
     # --- archivos generados --------------------------------------------------
 
     @app.get("/calce/{slug}/{archivo}")
@@ -295,6 +401,17 @@ def _pagina_de_entrada(mal: bool = False) -> str:
     plantilla = (WEB / "entrar.html").read_text(encoding="utf-8")
     error = ('<p class="aviso">El correo o la contraseña no son esos.</p>' if mal else "")
     return plantilla.replace("<!--ERROR-->", error)
+
+
+def _cliente_json(cliente, base: Base) -> dict:
+    return {
+        "id": cliente.id,
+        "slug": cliente.slug,
+        "nombre": cliente.nombre,
+        "estado": cliente.estado,
+        "cuentas": [u.email for u in base.usuarios_de(cliente.id)],
+        "loteos": len(base.proyectos(cliente_id=cliente.id)),
+    }
 
 
 def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:

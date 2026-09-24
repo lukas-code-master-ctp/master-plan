@@ -214,3 +214,19 @@ button { cursor: pointer; }
   color: var(--zinc-500);
 }
 .vacio strong { color: var(--zinc-900); font-size: 1rem; }
+
+/* El padrón de loteadoras: una fila por cada una, con lo que hay que saber de un vistazo. */
+.modal--ancho { width: min(40rem, calc(100vw - 2rem)); }
+
+.padron { display: grid; gap: 0.5rem; margin-bottom: 1rem; }
+
+.padron__fila {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--zinc-200); border-radius: var(--radio);
+}
+
+.padron__fila .ayuda { display: block; }
+
+.fila--envuelve { flex-wrap: wrap; }
+.fila--envuelve input { flex: 1 1 10rem; }

@@ -49,9 +49,12 @@ class ComandosDePrueba:
 def montar(tmp_path, local=True, crm_por_defecto=None):
     """La consola entera sobre una base de prueba, con dos loteadoras dentro."""
     base = Base(f"sqlite:///{tmp_path / 'consola.db'}")
-    for nombre, email in (("Los Robles", "ana@losrobles.cl"), ("Del Valle", "luis@delvalle.cl")):
+    for nombre, email in (("CompraTuParcela", "ctp@ctp.cl"),
+                          ("Los Robles", "ana@losrobles.cl"),
+                          ("Del Valle", "luis@delvalle.cl")):
         base.crear_cliente(nombre, email, nombre)
         base.cambiar_clave(email, CLAVE)
+    base.ascender_a_plataforma("ctp@ctp.cl")
     registro = Registro(base=base, subidas=tmp_path / "proyectos", salidas=tmp_path / "salidas",
                         crm_por_defecto=crm_por_defecto)
     comandos = ComandosDePrueba()
@@ -60,7 +63,7 @@ def montar(tmp_path, local=True, crm_por_defecto=None):
     return app, base, registro, comandos
 
 
-def entrar(app, email="ana@losrobles.cl"):
+def entrar(app, email="ctp@ctp.cl"):
     cliente = TestClient(app, follow_redirects=False)
     respuesta = cliente.post("/entrar", data={"email": email, "clave": CLAVE})
     assert respuesta.status_code == 303, respuesta.text
@@ -75,9 +78,14 @@ def entorno(tmp_path):
 
 @pytest.fixture
 def ana_y_luis(tmp_path):
-    """Dos loteadoras entrando a la misma consola."""
+    """Dos loteadoras y el equipo de CTP, entrando a la misma consola."""
     app, _, registro, comandos = montar(tmp_path)
-    return entrar(app, "ana@losrobles.cl"), entrar(app, "luis@delvalle.cl"), registro, comandos
+    return (entrar(app, "ctp@ctp.cl"), entrar(app, "ana@losrobles.cl"),
+            entrar(app, "luis@delvalle.cl"), registro, comandos)
+
+
+def id_de(registro, email):
+    return registro.base.usuario_por_email(email).cliente_id
 
 
 def esperar_trabajo(cliente, identificador, limite=15.0):
@@ -141,10 +149,18 @@ def test_desplegada_no_se_pueden_vincular_carpetas_del_servidor(tmp_path):
     assert cliente.get("/api/sesion").json()["puede_vincular"] is False
 
 
-def test_subir_los_archivos_de_un_proyecto(entorno):
-    cliente, _, _ = entorno
+def habilitar(cliente, cliente_id, nombre, cobro="transferencia 4821"):
+    respuesta = cliente.post(f"/api/plataforma/clientes/{cliente_id}/proyectos",
+                             json={"nombre": nombre, "nota_cobro": cobro})
+    assert respuesta.status_code == 201, respuesta.text
+    return respuesta.json()["slug"]
 
-    respuesta = cliente.post("/api/proyectos", data={"nombre": "Vive Cauquenes"}, files=[
+
+def test_subir_los_archivos_a_un_loteo_habilitado(entorno, tmp_path):
+    cliente, registro, _ = entorno
+    slug = habilitar(cliente, id_de(registro, "ana@losrobles.cl"), "Vive Cauquenes")
+
+    respuesta = cliente.post(f"/api/proyectos/{slug}/archivos", files=[
         ("archivos", ("loteo.kmz", b"kmz", "application/octet-stream")),
         ("archivos", ("POSICION 01/a.JPG", b"jpg", "image/jpeg")),
     ])
@@ -155,9 +171,10 @@ def test_subir_los_archivos_de_un_proyecto(entorno):
 
 
 def test_subir_sin_kmz_avisa(entorno):
-    cliente, _, _ = entorno
+    cliente, registro, _ = entorno
+    slug = habilitar(cliente, id_de(registro, "ana@losrobles.cl"), "X")
 
-    respuesta = cliente.post("/api/proyectos", data={"nombre": "X"}, files=[
+    respuesta = cliente.post(f"/api/proyectos/{slug}/archivos", files=[
         ("archivos", ("a.JPG", b"jpg", "image/jpeg")),
     ])
 
@@ -413,6 +430,7 @@ def test_un_loteo_sin_publicar_muestra_donde_iria(entorno, tmp_path):
 SIN_SESION = "no pide nada: es la puerta o un archivo de la propia página"
 SOLO_SUYO = "solo habla de lo de quien pide; no nombra ningún loteo ajeno"
 AJENO_404 = "nombra un loteo: si no es suyo, 404"
+SOLO_CTP = "back-office: una loteadora recibe 403"
 
 RUTAS = {
     ("GET", "/entrar"): SIN_SESION,
@@ -425,14 +443,20 @@ RUTAS = {
     ("GET", "/api/sesion"): SOLO_SUYO,
     ("POST", "/api/clave"): SOLO_SUYO,
     ("GET", "/api/proyectos"): SOLO_SUYO,
-    ("POST", "/api/proyectos"): SOLO_SUYO,
-    ("POST", "/api/proyectos/vincular"): SOLO_SUYO,
     ("PATCH", "/api/proyectos/{slug}"): AJENO_404,
     ("DELETE", "/api/proyectos/{slug}"): AJENO_404,
+    ("POST", "/api/proyectos/{slug}/archivos"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/construir"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/publicar"): AJENO_404,
     ("GET", "/api/trabajos/{identificador}"): AJENO_404,
     ("GET", "/calce/{slug}/{archivo}"): AJENO_404,
+    ("POST", "/api/proyectos/vincular"): SOLO_CTP,
+    ("GET", "/api/plataforma/clientes"): SOLO_CTP,
+    ("POST", "/api/plataforma/clientes"): SOLO_CTP,
+    ("POST", "/api/plataforma/clientes/{cliente_id}/usuarios"): SOLO_CTP,
+    ("POST", "/api/plataforma/clientes/{cliente_id}/estado"): SOLO_CTP,
+    ("POST", "/api/plataforma/clientes/{cliente_id}/proyectos"): SOLO_CTP,
+    ("GET", "/api/plataforma/historial"): SOLO_CTP,
 }
 
 
@@ -448,11 +472,21 @@ def test_toda_ruta_de_la_consola_declara_que_pasa_con_un_cliente_ajeno(tmp_path)
     assert set(RUTAS) - reales == set(), "RUTAS declara rutas que ya no existen"
 
 
-def de_ana(ana, tmp_path, nombre="De Ana"):
-    respuesta = ana.post("/api/proyectos/vincular",
-                         json={"ruta": str(carpeta_de_loteo(tmp_path, nombre))})
-    assert respuesta.status_code == 201
-    return respuesta.json()["slug"]
+def test_toda_ruta_de_plataforma_esta_declarada_como_tal(tmp_path):
+    """Al revés que el de arriba: que nadie cuelgue algo de /api/plataforma/ y lo
+    declare como si cualquiera pudiera pedirlo."""
+    for (_, ruta), quien in RUTAS.items():
+        if ruta.startswith("/api/plataforma/"):
+            assert quien == SOLO_CTP, f"{ruta} cuelga del back-office pero no lo dice"
+
+
+def de_ana(ctp, ana, registro, nombre="De Ana"):
+    """Un loteo habilitado a nombre de Ana, con su KMZ adentro."""
+    slug = habilitar(ctp, id_de(registro, "ana@losrobles.cl"), nombre)
+    respuesta = ana.post(f"/api/proyectos/{slug}/archivos",
+                         files=[("archivos", ("loteo.kmz", b"kmz", "application/octet-stream"))])
+    assert respuesta.status_code == 201, respuesta.text
+    return slug
 
 
 @pytest.mark.parametrize("pedir", [
@@ -461,10 +495,12 @@ def de_ana(ana, tmp_path, nombre="De Ana"):
     lambda web, slug: web.post(f"/api/proyectos/{slug}/construir", json={}),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True}),
     lambda web, slug: web.get(f"/calce/{slug}/p01-210.jpg"),
-], ids=["ajustar", "olvidar", "construir", "publicar", "calce"])
-def test_el_loteo_de_otra_contesta_404_en_todas_las_rutas(ana_y_luis, tmp_path, pedir):
-    ana, luis, _, comandos = ana_y_luis
-    slug = de_ana(ana, tmp_path)
+    lambda web, slug: web.post(f"/api/proyectos/{slug}/archivos",
+                               files=[("archivos", ("x.kmz", b"kmz", "application/octet-stream"))]),
+], ids=["ajustar", "olvidar", "construir", "publicar", "calce", "subir"])
+def test_el_loteo_de_otra_contesta_404_en_todas_las_rutas(ana_y_luis, pedir):
+    ctp, ana, luis, registro, comandos = ana_y_luis
+    slug = de_ana(ctp, ana, registro)
 
     assert pedir(luis, slug).status_code == 404
 
@@ -473,10 +509,10 @@ def test_el_loteo_de_otra_contesta_404_en_todas_las_rutas(ana_y_luis, tmp_path, 
     assert [p["slug"] for p in ana.get("/api/proyectos").json()] == [slug]
 
 
-def test_el_avance_de_una_construccion_ajena_tampoco_se_ve(ana_y_luis, tmp_path):
+def test_el_avance_de_una_construccion_ajena_tampoco_se_ve(ana_y_luis):
     """El avance cuenta qué loteo es y qué está pasando con él: se pide igual que el loteo."""
-    ana, luis, _, _ = ana_y_luis
-    slug = de_ana(ana, tmp_path)
+    ctp, ana, luis, registro, _ = ana_y_luis
+    slug = de_ana(ctp, ana, registro)
     identificador = ana.post(f"/api/proyectos/{slug}/construir", json={}).json()["id"]
 
     assert luis.get(f"/api/trabajos/{identificador}").status_code == 404
@@ -484,30 +520,166 @@ def test_el_avance_de_una_construccion_ajena_tampoco_se_ve(ana_y_luis, tmp_path)
 
 
 def test_un_trabajo_que_no_existe_tambien_da_404(ana_y_luis):
-    ana, _, _, _ = ana_y_luis
+    _, ana, _, _, _ = ana_y_luis
 
     assert ana.get("/api/trabajos/noexiste").status_code == 404
 
 
-def test_la_lista_de_cada_una_es_la_suya(ana_y_luis, tmp_path):
-    ana, luis, _, _ = ana_y_luis
-    de_ana(ana, tmp_path, "De Ana")
-    luis.post("/api/proyectos/vincular",
-              json={"ruta": str(carpeta_de_loteo(tmp_path, "De Luis"))})
+def test_la_lista_de_cada_una_es_la_suya(ana_y_luis):
+    ctp, ana, luis, registro, _ = ana_y_luis
+    de_ana(ctp, ana, registro, "De Ana")
+    habilitar(ctp, id_de(registro, "luis@delvalle.cl"), "De Luis")
 
     assert [p["slug"] for p in ana.get("/api/proyectos").json()] == ["de-ana"]
     assert [p["slug"] for p in luis.get("/api/proyectos").json()] == ["de-luis"]
 
 
-def test_dos_loteadoras_con_el_mismo_nombre_de_loteo_no_se_pisan(ana_y_luis, tmp_path):
+def test_ctp_ve_los_loteos_de_todas(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+    de_ana(ctp, ana, registro, "De Ana")
+    habilitar(ctp, id_de(registro, "luis@delvalle.cl"), "De Luis")
+
+    assert sorted(p["slug"] for p in ctp.get("/api/proyectos").json()) == ["de-ana", "de-luis"]
+
+
+def test_dos_loteadoras_con_el_mismo_nombre_de_loteo_no_se_pisan(ana_y_luis):
     """Antes el slug salía del nombre: la segunda en publicar desplegaba encima del
     sitio de la primera, y `vercel project add || true` se comía el error."""
-    ana, luis, _, _ = ana_y_luis
-    una = ana.post("/api/proyectos/vincular",
-                   json={"ruta": str(carpeta_de_loteo(tmp_path / "a", "Las Araucarias"))}).json()
-    otra = luis.post("/api/proyectos/vincular",
-                     json={"ruta": str(carpeta_de_loteo(tmp_path / "b", "Las Araucarias"))}).json()
+    ctp, _, _, registro, _ = ana_y_luis
 
-    assert una["slug"] == "las-araucarias"
-    assert otra["slug"] == "las-araucarias-2"
-    assert una["url"] != otra["url"]
+    una = habilitar(ctp, id_de(registro, "ana@losrobles.cl"), "Las Araucarias")
+    otra = habilitar(ctp, id_de(registro, "luis@delvalle.cl"), "Las Araucarias")
+
+    assert una == "las-araucarias"
+    assert otra == "las-araucarias-2"
+
+
+# --- el back-office es solo de CTP ------------------------------------------------
+
+@pytest.mark.parametrize("pedir", [
+    lambda web, cid: web.get("/api/plataforma/clientes"),
+    lambda web, cid: web.post("/api/plataforma/clientes",
+                              json={"nombre": "Trucha", "email": "t@t.cl"}),
+    lambda web, cid: web.post(f"/api/plataforma/clientes/{cid}/usuarios",
+                              json={"email": "otro@t.cl"}),
+    lambda web, cid: web.post(f"/api/plataforma/clientes/{cid}/estado",
+                              json={"estado": "suspendido"}),
+    lambda web, cid: web.post(f"/api/plataforma/clientes/{cid}/proyectos",
+                              json={"nombre": "Gratis", "nota_cobro": "no pagué"}),
+    lambda web, cid: web.get("/api/plataforma/historial"),
+], ids=["listar", "crear cliente", "crear cuenta", "suspender", "habilitar loteo", "historial"])
+def test_una_loteadora_no_entra_al_back_office(ana_y_luis, pedir):
+    """Sobre todo la penúltima: si un cliente pudiera habilitarse loteos solo,
+    el cobro no existiría."""
+    _, ana, _, registro, _ = ana_y_luis
+
+    assert pedir(ana, id_de(registro, "ana@losrobles.cl")).status_code == 403
+
+
+def test_vincular_una_carpeta_tampoco_es_para_las_loteadoras(ana_y_luis, tmp_path):
+    _, ana, _, _, _ = ana_y_luis
+
+    respuesta = ana.post("/api/proyectos/vincular",
+                         json={"ruta": str(carpeta_de_loteo(tmp_path))})
+
+    assert respuesta.status_code == 403
+
+
+# --- dar de alta una loteadora y cobrarle -----------------------------------------
+
+def test_crear_una_loteadora_devuelve_su_clave_una_sola_vez(ana_y_luis):
+    ctp, _, _, registro, _ = ana_y_luis
+
+    respuesta = ctp.post("/api/plataforma/clientes",
+                         json={"nombre": "Bosques del Sur", "email": "pia@bosques.cl",
+                               "duenio": "Pía Soto"})
+
+    assert respuesta.status_code == 201
+    cuerpo = respuesta.json()
+    clave = cuerpo["clave_provisional"]
+    assert len(clave) >= 12
+    assert cuerpo["cuentas"] == ["pia@bosques.cl"]
+    assert cuerpo["loteos"] == 0
+    # Con esa clave se entra, y no vuelve a aparecer en ninguna respuesta.
+    assert "clave_provisional" not in ctp.get("/api/plataforma/clientes").json()[0]
+    assert registro.base.clave_valida(registro.base.usuario_por_email("pia@bosques.cl"), clave)
+
+
+def test_no_se_puede_repetir_el_correo_de_otra_loteadora(ana_y_luis):
+    ctp, _, _, _, _ = ana_y_luis
+
+    respuesta = ctp.post("/api/plataforma/clientes",
+                         json={"nombre": "Otra", "email": "ana@losrobles.cl"})
+
+    assert respuesta.status_code == 409
+
+
+def test_un_loteo_no_se_habilita_sin_decir_como_se_pagó(ana_y_luis):
+    """No hay pasarela: el cobro pasa por transferencia y esta línea de texto es
+    todo el control de pago que existe. Sin ella no se habilita nada."""
+    ctp, _, _, registro, _ = ana_y_luis
+
+    respuesta = ctp.post(f"/api/plataforma/clientes/{id_de(registro, 'ana@losrobles.cl')}/proyectos",
+                         json={"nombre": "Las Araucarias"})
+
+    assert respuesta.status_code == 402
+    assert ctp.get("/api/proyectos").json() == []
+
+
+def test_habilitar_un_loteo_lo_deja_vacio_esperando_las_fotos(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+
+    slug = habilitar(ctp, id_de(registro, "ana@losrobles.cl"), "Las Araucarias", "transf. 4821")
+
+    assert registro.base.proyecto(slug).pagado is True
+    mio = ana.get("/api/proyectos").json()[0]
+    assert mio["slug"] == slug
+    assert mio["construido"] is False
+    assert mio["fuentes_encontradas"]["kmz"] is None
+
+
+def test_suspender_una_loteadora_la_deja_afuera_en_la_peticion_siguiente(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+    assert ana.get("/api/proyectos").status_code == 200
+
+    ctp.post(f"/api/plataforma/clientes/{id_de(registro, 'ana@losrobles.cl')}/estado",
+             json={"estado": "suspendido"})
+
+    assert ana.get("/api/proyectos").status_code == 401
+
+
+def test_ctp_no_puede_suspenderse_a_si_misma(ana_y_luis):
+    """No hay nadie por encima que lo arregle: quedaría la consola sin operador."""
+    ctp, _, _, registro, _ = ana_y_luis
+
+    respuesta = ctp.post(f"/api/plataforma/clientes/{id_de(registro, 'ctp@ctp.cl')}/estado",
+                         json={"estado": "suspendido"})
+
+    assert respuesta.status_code == 409
+    assert ctp.get("/api/plataforma/clientes").status_code == 200
+
+
+def test_agregar_una_cuenta_mas_a_una_loteadora(ana_y_luis):
+    ctp, _, _, registro, _ = ana_y_luis
+
+    respuesta = ctp.post(f"/api/plataforma/clientes/{id_de(registro, 'ana@losrobles.cl')}/usuarios",
+                         json={"email": "socio@losrobles.cl", "nombre": "Socio"})
+
+    assert respuesta.status_code == 201
+    assert len(respuesta.json()["clave_provisional"]) >= 12
+    cuentas = [c for c in ctp.get("/api/plataforma/clientes").json()
+               if c["nombre"] == "Los Robles"][0]["cuentas"]
+    assert "socio@losrobles.cl" in cuentas
+
+
+def test_lo_que_decide_algo_queda_anotado(ana_y_luis):
+    """Sin pasarela, el historial es lo único que dice quién habilitó qué y por
+    qué cobro. Construir y publicar no se anotan: eso está en el disco."""
+    ctp, ana, _, registro, _ = ana_y_luis
+    slug = de_ana(ctp, ana, registro)
+
+    historial = ctp.get("/api/plataforma/historial").json()
+
+    assert [h["que"] for h in historial] == ["loteo habilitado"]
+    assert "transferencia 4821" in historial[0]["detalle"]
+    assert slug in historial[0]["detalle"]

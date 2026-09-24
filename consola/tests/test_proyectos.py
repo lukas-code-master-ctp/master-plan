@@ -29,6 +29,10 @@ def loteadora(base, registro, nombre, email):
     return registro.para(sesion_de(base, email))
 
 
+def id_de(base, email):
+    return base.usuario_por_email(email).cliente_id
+
+
 @pytest.fixture
 def ana(base, registro):
     """La vista de una loteadora cualquiera."""
@@ -105,44 +109,71 @@ def test_una_carpeta_que_no_existe_avisa(ana, tmp_path):
         ana.vincular(tmp_path / "no-esta")
 
 
-def test_crear_un_proyecto_desde_archivos_subidos(ana):
-    proyecto = ana.crear("Vive Cauquenes", [
+def test_habilitar_un_loteo_lo_deja_vacio_y_pagado(base, registro):
+    """Lo da de alta CTP cuando cobró; el cliente después mete sus fotos adentro."""
+    cliente, _ = base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
+
+    proyecto = registro.habilitar(cliente.id, "Vive Cauquenes", nota_cobro="transferencia 4821")
+
+    assert proyecto.slug == "vive-cauquenes"
+    assert proyecto.fuentes.is_dir()
+    assert proyecto.fuentes_encontradas()["kmz"] is None
+    assert base.proyecto("vive-cauquenes").pagado is True
+    assert base.proyecto("vive-cauquenes").nota_cobro == "transferencia 4821"
+
+
+def test_subir_el_vuelo_a_un_loteo_habilitado(base, registro, ana):
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "Vive Cauquenes", nota_cobro="ok")
+
+    proyecto = ana.subir("vive-cauquenes", [
         Subida("loteo.kmz", b"kmz"),
         Subida("POSICION 01/DJI_0001.JPG", b"jpg"),
         Subida("POSICION 02/DJI_0002.JPG", b"jpg"),
     ])
 
-    assert proyecto.slug == "vive-cauquenes"
     assert (proyecto.fuentes / "loteo.kmz").read_bytes() == b"kmz"
     # La estructura de carpetas se conserva: de ahí sale la posición de vuelo.
     assert (proyecto.fuentes / "POSICION 02" / "DJI_0002.JPG").exists()
     assert json.loads((proyecto.fuentes / "proyecto.json").read_text())["nombre"] == "Vive Cauquenes"
 
 
-def test_las_rutas_de_la_subida_no_pueden_escaparse(ana):
+def test_se_puede_subir_de_nuevo_para_agregar_lo_que_faltaba(base, registro, ana):
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "X", nota_cobro="ok")
+    ana.subir("x", [Subida("loteo.kmz", b"kmz")])
+
+    proyecto = ana.subir("x", [Subida("POSICION 03/DJI_0003.JPG", b"jpg")])
+
+    assert proyecto.fuentes_encontradas()["kmz"] == "loteo.kmz"
+    assert proyecto.fuentes_encontradas()["panoramicas"] == 1
+
+
+def test_las_rutas_de_la_subida_no_pueden_escaparse(base, registro, ana):
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "X", nota_cobro="ok")
+
     with pytest.raises(ValueError, match="ruta"):
-        ana.crear("X", [Subida("loteo.kmz", b"kmz"), Subida("../../fuera.jpg", b"x")])
+        ana.subir("x", [Subida("../../fuera.jpg", b"x")])
 
 
-def test_una_subida_que_falla_no_deja_el_loteo_anotado(ana):
-    """Si quedara anotado y vacío, el nombre quedaría tomado y no se podría reintentar."""
-    with pytest.raises(ValueError):
-        ana.crear("X", [Subida("loteo.kmz", b"kmz"), Subida("../../fuera.jpg", b"x")])
+def test_subir_sin_kmz_avisa(base, registro, ana):
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "X", nota_cobro="ok")
 
-    assert ana.listar() == []
-    assert ana.crear("X", [Subida("loteo.kmz", b"kmz")]).slug == "x"
-
-
-def test_subir_sin_kmz_avisa(ana):
     with pytest.raises(ValueError, match="KMZ"):
-        ana.crear("X", [Subida("fotos/a.JPG", b"jpg")])
+        ana.subir("x", [Subida("fotos/a.JPG", b"jpg")])
 
 
-def test_el_mismo_cliente_no_puede_subir_dos_loteos_con_el_mismo_nombre(ana):
-    ana.crear("Las Araucarias", [Subida("loteo.kmz", b"kmz")])
+def test_no_se_puede_subir_a_un_loteo_que_no_es_suyo(base, registro, ana, luis):
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "De Ana", nota_cobro="ok")
+
+    with pytest.raises(NoEncontrado):
+        luis.subir("de-ana", [Subida("loteo.kmz", b"kmz")])
+
+
+def test_el_mismo_cliente_no_puede_tener_dos_loteos_con_el_mismo_nombre(base, registro):
+    cliente, _ = base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
+    registro.habilitar(cliente.id, "Las Araucarias", nota_cobro="ok")
 
     with pytest.raises(ProyectoYaExiste):
-        ana.crear("Las Araucarias", [Subida("loteo.kmz", b"kmz")])
+        registro.habilitar(cliente.id, "Las Araucarias", nota_cobro="ok")
 
 
 def test_ajustar_reescribe_proyecto_json(ana, tmp_path):
@@ -246,11 +277,12 @@ def test_nada_de_lo_que_se_puede_hacer_alcanza_el_loteo_de_otra(ana, luis, tmp_p
     assert ana.ver("de-ana").etapa == ""
 
 
-def test_dos_loteadoras_pueden_llamar_igual_a_su_loteo_sin_pisarse(ana, luis, tmp_path):
+def test_dos_loteadoras_pueden_llamar_igual_a_su_loteo_sin_pisarse(base, registro,
+                                                                   ana, luis):
     """El agujero que había: el slug salía del nombre, así que la segunda en
     publicar desplegaba encima del sitio de la primera."""
-    una = ana.vincular(carpeta_de_loteo(tmp_path / "a", "Las Araucarias"))
-    otra = luis.vincular(carpeta_de_loteo(tmp_path / "b", "Las Araucarias"))
+    una = registro.habilitar(id_de(base, "ana@losrobles.cl"), "Las Araucarias", nota_cobro="ok")
+    otra = registro.habilitar(id_de(base, "luis@delvalle.cl"), "Las Araucarias", nota_cobro="ok")
 
     assert una.slug == "las-araucarias"
     assert otra.slug == "las-araucarias-2"
@@ -266,10 +298,10 @@ def test_el_equipo_de_ctp_ve_los_loteos_de_todas(ana, luis, ctp, tmp_path):
     assert ctp.ver("de-ana").nombre == "De Ana"
 
 
-def test_lo_que_sube_ctp_queda_a_nombre_de_ctp(base, ctp):
-    """Mira los de todas, pero lo que crea es suyo: si quedara a nombre del último
-    cliente que miró, el dueño del loteo dependería del orden de los clics."""
-    proyecto = ctp.crear("Vuelo Propio", [Subida("loteo.kmz", b"kmz")])
+def test_lo_que_vincula_ctp_queda_a_nombre_de_ctp(base, ctp, tmp_path):
+    """Mira los de todas, pero lo que registra es suyo: si quedara a nombre del
+    último cliente que miró, el dueño del loteo dependería del orden de los clics."""
+    proyecto = ctp.vincular(carpeta_de_loteo(tmp_path, "Vuelo Propio"))
 
     guardado = base.proyecto(proyecto.slug)
     assert guardado.cliente_id == base.usuario_por_email("eduardo@ctp.cl").cliente_id

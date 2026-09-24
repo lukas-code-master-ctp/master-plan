@@ -4,7 +4,6 @@ Importa que sea explícito: la consola dice DÓNDE va cada cosa en vez de dejar 
 el pipeline lo resuelva de constantes globales, porque con varios clientes esas
 constantes son las mismas para todos.
 """
-from pathlib import Path
 
 import pytest
 
