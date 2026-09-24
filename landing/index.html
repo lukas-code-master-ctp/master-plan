@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tu Masterplan — el loteo, visto desde el aire</title>
+<meta name="description" content="Tus parcelas dibujadas sobre la fotografía real del loteo, en 360° desde el aire. El comprador gira, busca su número y ve precio, superficie y estado.">
+<meta property="og:title" content="Tu Masterplan">
+<meta property="og:description" content="Tus parcelas sobre la fotografía real del loteo, en 360° desde el aire.">
+<meta property="og:image" content="/hero-chico.webp">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2318181b'/><circle cx='16' cy='16' r='8' fill='none' stroke='%23fff' stroke-width='2.5'/></svg>">
+<link rel="preload" href="/fuente.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url(/fuente.woff2) format('woff2');
+}
+
+:root {
+  --zinc-100: #f4f4f5;
+  --zinc-200: #e4e4e7;
+  --zinc-400: #a1a1aa;
+  --zinc-500: #71717a;
+  --zinc-600: #52525b;
+  --zinc-900: #18181b;
+  --tinta: var(--zinc-900);
+  --papel: #ffffff;
+  /* El único color saturado, igual que en el visor: significa "se puede comprar". */
+  --verde: #15803d;
+
+  --sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --titular: clamp(2.1rem, 1.1rem + 4.2vw, 4.4rem);
+  --bajada: clamp(1rem, 0.95rem + 0.4vw, 1.25rem);
+  --seccion: clamp(3.5rem, 2.5rem + 4vw, 7rem);
+  --borde: 0.75rem;
+  --gutter: 1rem;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--papel);
+  color: var(--tinta);
+  font: 400 1rem/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.ancho { width: min(68rem, 100% - var(--gutter) * 2); margin-inline: auto; }
+
+a { color: inherit; }
+
+/* --- Barra ---------------------------------------------------------------- */
+
+.barra {
+  position: absolute; inset: 0 0 auto; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 1.25rem 0;
+  color: #fff;
+}
+.marca { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; letter-spacing: -0.01em; }
+.marca svg { width: 1.75rem; height: 1.75rem; flex: none; }
+
+/* --- Hero ----------------------------------------------------------------- */
+
+.hero { position: relative; isolation: isolate; color: #fff; }
+.hero__foto {
+  position: absolute; inset: 0; z-index: -2;
+  width: 100%; height: 100%; object-fit: cover;
+}
+/* El degradado no es decoración: sin él el titular blanco cae sobre cielo claro
+   y deja de leerse. */
+.hero::after {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(180deg, rgb(9 9 11 / 0.62) 0%, rgb(9 9 11 / 0.28) 42%, rgb(9 9 11 / 0.78) 100%);
+}
+.hero__cuerpo { padding: clamp(7rem, 16vh, 11rem) 0 clamp(3rem, 8vh, 5rem); }
+
+.rotulo {
+  font: 600 0.75rem/1 var(--sans);
+  letter-spacing: 0.14em; text-transform: uppercase;
+  opacity: 0.85;
+}
+
+h1 {
+  margin: 1rem 0 0;
+  max-width: 16ch;
+  font: 700 var(--titular)/1.03 var(--sans);
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.bajada {
+  margin: 1.25rem 0 0;
+  max-width: 46ch;
+  font-size: var(--bajada);
+  color: rgb(255 255 255 / 0.88);
+}
+
+.acciones { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 2rem; }
+
+.boton {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.8rem 1.35rem;
+  border: 1px solid transparent; border-radius: var(--borde);
+  background: var(--papel); color: var(--tinta);
+  font: 600 0.9375rem/1 var(--sans); text-decoration: none;
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), background 150ms, border-color 150ms;
+}
+.boton:hover { transform: translateY(-2px); }
+.boton:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.boton--fantasma {
+  background: transparent; color: #fff; border-color: rgb(255 255 255 / 0.45);
+}
+.boton--fantasma:hover { background: rgb(255 255 255 / 0.12); border-color: #fff; }
+
+.boton--tinta { background: var(--tinta); color: #fff; }
+.boton--tinta:hover { background: #000; }
+.boton--linea { background: transparent; border-color: var(--zinc-200); }
+.boton--linea:hover { background: var(--zinc-100); }
+
+/* La prueba viva, pegada al borde inferior del hero. */
+.prueba {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 1rem;
+  padding: 1rem 0 1.5rem;
+  border-top: 1px solid rgb(255 255 255 / 0.22);
+  font-size: 0.875rem; color: rgb(255 255 255 / 0.82);
+}
+.prueba b { font-weight: 600; color: #fff; }
+.prueba a { text-underline-offset: 3px; }
+
+/* --- Secciones ------------------------------------------------------------- */
+
+section { padding-block: var(--seccion); }
+
+h2 {
+  margin: 0;
+  font: 700 clamp(1.5rem, 1.1rem + 1.6vw, 2.25rem)/1.15 var(--sans);
+  letter-spacing: -0.025em;
+  max-width: 20ch;
+  text-wrap: balance;
+}
+.intro { margin: 1rem 0 0; max-width: 52ch; color: var(--zinc-600); font-size: var(--bajada); }
+
+/* Rejilla rota a propósito: la primera pieza pesa más que las demás. */
+.recibe { display: grid; gap: 1px; margin-top: 3rem; background: var(--zinc-200); border: 1px solid var(--zinc-200); border-radius: var(--borde); overflow: hidden; }
+@media (min-width: 40rem) { .recibe { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 62rem) { .recibe { grid-template-columns: repeat(3, 1fr); } }
+
+.pieza { background: var(--papel); padding: 1.6rem 1.4rem; }
+.pieza h3 { margin: 0 0 0.4rem; font: 600 1rem/1.3 var(--sans); letter-spacing: -0.01em; }
+.pieza p { margin: 0; color: var(--zinc-600); font-size: 0.9375rem; }
+.pieza--ancha { grid-column: 1 / -1; }
+@media (min-width: 62rem) { .pieza--ancha { grid-column: span 2; } }
+.pieza--ancha h3 { font-size: 1.25rem; }
+
+/* --- Dos caminos ----------------------------------------------------------- */
+
+.caminos { display: grid; gap: 1.25rem; margin-top: 3rem; }
+@media (min-width: 48rem) { .caminos { grid-template-columns: 1fr 1fr; } }
+
+.camino {
+  display: flex; flex-direction: column; gap: 0.75rem;
+  padding: 1.75rem 1.6rem;
+  border: 1px solid var(--zinc-200); border-radius: var(--borde);
+}
+.camino h3 { margin: 0; font: 700 1.25rem/1.2 var(--sans); letter-spacing: -0.02em; }
+.camino p { margin: 0; color: var(--zinc-600); font-size: 0.9375rem; }
+.camino ul { margin: 0.25rem 0 0; padding-left: 1.1rem; font-size: 0.9375rem; color: var(--zinc-600); }
+.camino li { margin-bottom: 0.3rem; }
+
+/* La tarjeta oscura, después de la clara y no antes: así el color del texto es lo
+   último que se declara y no depende de contar especificidades. Un gris de cuerpo
+   sobre tinta da 1,9:1 y no se lee. */
+.camino--destacado { background: var(--tinta); color: #fff; border-color: var(--tinta); }
+.camino--destacado p, .camino--destacado ul { color: rgb(255 255 255 / 0.9); }
+/* Sin opacidad: 0.72 sobre el gris de cuerpo daba 3,3:1 contra el blanco, por
+   debajo del mínimo legible. Un gris más claro y sólido da 4,6:1. */
+.camino .cola { margin-top: auto; padding-top: 1rem; font-size: 0.8125rem; color: var(--zinc-500); }
+.camino--destacado .cola { color: rgb(255 255 255 / 0.72); }
+
+/* --- Qué hace falta --------------------------------------------------------- */
+
+.franja { background: var(--zinc-100); }
+.lista-limpia { margin: 2.5rem 0 0; padding: 0; list-style: none; display: grid; gap: 1px; background: var(--zinc-200); border-block: 1px solid var(--zinc-200); }
+.lista-limpia li { background: var(--zinc-100); padding: 1.1rem 0.25rem; display: grid; gap: 0.2rem; }
+@media (min-width: 48rem) { .lista-limpia li { grid-template-columns: 14rem 1fr; gap: 1.5rem; align-items: baseline; } }
+.lista-limpia b { font-weight: 600; }
+.lista-limpia span { color: var(--zinc-600); font-size: 0.9375rem; }
+
+/* --- Cierre ----------------------------------------------------------------- */
+
+.cierre { text-align: left; }
+.cierre .acciones { margin-top: 2rem; }
+.pendiente {
+  margin-top: 2rem; padding: 0.9rem 1.1rem;
+  border: 1px dashed var(--zinc-400); border-radius: var(--borde);
+  color: var(--zinc-500); font-size: 0.8125rem;
+}
+
+footer {
+  padding: 2.5rem 0 3.5rem;
+  border-top: 1px solid var(--zinc-200);
+  color: var(--zinc-500); font-size: 0.8125rem;
+  display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; justify-content: space-between;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+  .boton:hover { transform: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <!-- En un teléfono la versión grande son 200 KB de más que no se ven. -->
+  <img class="hero__foto" src="/hero.webp"
+       srcset="/hero-chico.webp 1200w, /hero.webp 2400w" sizes="100vw"
+       alt="Vista aérea de un loteo en Cauquenes: parcelas, caminos de tierra y el volcán en el horizonte."
+       width="2400" height="1350" fetchpriority="high" decoding="async">
+
+  <div class="barra ancho">
+    <span class="marca">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M16 4v6M16 22v6M4 16h6M22 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M16 10.5 21.5 16 16 21.5 10.5 16Z" fill="currentColor"/>
+      </svg>
+      Tu Masterplan
+    </span>
+    <a class="boton boton--fantasma" href="#contacto">Pedir el mío</a>
+  </div>
+
+  <div class="hero__cuerpo ancho">
+    <p class="rotulo">Masterplan 360 para loteos</p>
+    <h1>Un plano no muestra la vista. Esto sí.</h1>
+    <p class="bajada">
+      Tus parcelas dibujadas sobre la fotografía real del terreno, en 360° desde el aire.
+      El comprador gira, busca su número y ve el precio, la superficie y si está disponible
+      —sin llamar a nadie, desde el teléfono, un domingo a las once de la noche.
+    </p>
+    <div class="acciones">
+      <a class="boton" href="https://masterplan-praderas-de-cauquenes.vercel.app" target="_blank" rel="noopener">
+        Ver un loteo de verdad
+      </a>
+      <a class="boton boton--fantasma" href="#como">Cómo se hace</a>
+    </div>
+  </div>
+
+  <div class="prueba ancho">
+    <span><b>Praderas de Cauquenes</b> · 88 parcelas · 4 etapas · publicado y en uso</span>
+    <a href="https://masterplan-praderas-de-cauquenes.vercel.app" target="_blank" rel="noopener">Abrirlo →</a>
+  </div>
+</header>
+
+<main>
+
+<section class="ancho">
+  <h2>Lo que recibe tu comprador</h2>
+  <p class="intro">
+    Un sitio propio, con su dirección, que se abre desde un enlace de WhatsApp.
+    No una app que haya que instalar ni un PDF que haya que pedirle a alguien.
+  </p>
+
+  <div class="recibe">
+    <div class="pieza pieza--ancha">
+      <h3>La parcela sobre la foto, no sobre un dibujo</h3>
+      <p>
+        El polígono del topógrafo proyectado sobre la panorámica del dron, con el
+        relieve del terreno tomado en cuenta. Se ve dónde da el sol, qué árboles hay,
+        cómo llega el camino y qué se mira desde ahí.
+      </p>
+    </div>
+    <div class="pieza">
+      <h3>Precio, superficie y estado</h3>
+      <p>Al día con tu planilla. Disponible, reservada o vendida, con su número visible.</p>
+    </div>
+    <div class="pieza">
+      <h3>Buscador y filtros</h3>
+      <p>Por número, por estado, por etapa y por rango de precio. Encuentra la suya en un segundo.</p>
+    </div>
+    <div class="pieza">
+      <h3>Contacto directo</h3>
+      <p>Un botón de WhatsApp que llega a tu vendedor con la parcela ya escrita en el mensaje.</p>
+    </div>
+    <div class="pieza">
+      <h3>El entorno rotulado</h3>
+      <p>A cuántos kilómetros queda cada pueblo, marcado sobre el horizonte que se está mirando.</p>
+    </div>
+  </div>
+</section>
+
+<section class="ancho" id="como">
+  <h2>Dos formas de tenerlo</h2>
+  <p class="intro">La diferencia es solo quién toma las fotos. El resultado es el mismo.</p>
+
+  <div class="caminos">
+    <article class="camino camino--destacado">
+      <h3>Vamos y lo volamos</h3>
+      <p>Llegamos con el dron, tomamos las panorámicas desde los puntos que muestran mejor el loteo y lo armamos con tu KMZ.</p>
+      <ul>
+        <li>Un día de vuelo en terreno.</li>
+        <li>Tú revisas antes de que salga al aire.</li>
+        <li>Publicado, con su enlace listo para mandar.</li>
+      </ul>
+      <p class="cola">Lo más simple si no tienes dron ni quién lo maneje.</p>
+    </article>
+
+    <article class="camino">
+      <h3>Lo armas tú</h3>
+      <p>Si ya tienes panorámicas 360 del dron y el plano del topógrafo, entras a la consola, las subes y lo construyes.</p>
+      <ul>
+        <li>Arrastras la carpeta del vuelo.</li>
+        <li>Revisas el control de calce: los polígonos tienen que caer sobre los caminos.</li>
+        <li>Publicas cuando estés conforme.</li>
+      </ul>
+      <p class="cola">Sale más barato y lo repites cada vez que cambien los precios.</p>
+    </article>
+  </div>
+</section>
+
+<section class="franja">
+  <div class="ancho">
+    <h2>Qué necesitamos de ti</h2>
+    <p class="intro">Tres cosas, y dos ya las tienes.</p>
+
+    <ul class="lista-limpia">
+      <li>
+        <b>El plano digital</b>
+        <span>El KMZ o el DXF del topógrafo, con los lotes numerados. Sirve tal como te lo entregó; no hay que redibujar nada.</span>
+      </li>
+      <li>
+        <b>Las panorámicas del dron</b>
+        <span>Equirectangulares de 360°, tomadas a unos 200 m. Si no las tienes, las tomamos nosotros.</span>
+      </li>
+      <li>
+        <b>Tu planilla de precios</b>
+        <span>Opcional. Sin ella las parcelas salen sin precio, que es honesto pero vende menos.</span>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section class="ancho cierre" id="contacto">
+  <h2>Se cobra por loteo, una vez.</h2>
+  <p class="intro">
+    Sin suscripción y sin cobro mensual. El precio depende del tamaño del loteo y de si
+    hay que ir a volarlo: escríbenos con el nombre y cuántas parcelas son, y te lo decimos.
+  </p>
+
+  <div class="acciones">
+    <a class="boton boton--tinta" href="mailto:hola@tumasterplan.cl?subject=Quiero%20un%20masterplan%20para%20mi%20loteo">Escribir un correo</a>
+    <a class="boton boton--linea" href="https://masterplan-praderas-de-cauquenes.vercel.app" target="_blank" rel="noopener">Ver el ejemplo otra vez</a>
+  </div>
+
+  <p class="pendiente">
+    Pendiente antes de publicar esto: poner el correo y el WhatsApp de verdad
+    (<code>hola@tumasterplan.cl</code> todavía no existe) y apuntar el dominio
+    <code>tumasterplan.cl</code> cuando esté comprado.
+  </p>
+</section>
+
+</main>
+
+<footer class="ancho">
+  <span>Tu Masterplan · Operado por CompraTuParcela</span>
+  <span>Hecho en Chile, con drones y planos de topógrafo.</span>
+</footer>
+
+</body>
+</html>

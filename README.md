@@ -163,6 +163,20 @@ Deja en `salidas/<proyecto>/control-calce/` una imagen por vista con los polígo
 dibujados sobre la panorámica. Sirve para confirmar de un vistazo que todo cae donde
 corresponde.
 
+## La landing
+
+`landing/` es la página pública de tumasterplan.cl: un HTML, la tipografía y el hero,
+440 KB en total y **sin una línea de JavaScript** (la CSP la sirve con `script-src
+'none'`). El hero sale de la panorámica de Cauquenes, reproyectada a perspectiva con
+el mismo cálculo gnomónico que usa el visor.
+
+No está publicada todavía: faltan el correo y el WhatsApp de verdad. El propio pie de
+la página lo dice, para que no se publique por descuido.
+
+```bash
+./publicar.sh landing tumasterplan --crear     # cuando estén los datos de contacto
+```
+
 ## La consola en línea
 
 La consola corre local con `./consola.sh`, y la misma imagen se despliega en Cloud
