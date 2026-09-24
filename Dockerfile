@@ -37,4 +37,6 @@ USER consola
 
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sh", "-c", "hypercorn --factory consola.app:crear_app --bind 0.0.0.0:$PORT --workers 1"]
+# `crear_app()` con paréntesis: así se le pasa una fábrica a hypercorn. El
+# `--factory` de uvicorn no existe acá, y el proceso muere al arrancar.
+CMD ["sh", "-c", "hypercorn 'consola.app:crear_app()' --bind 0.0.0.0:$PORT --workers 1"]

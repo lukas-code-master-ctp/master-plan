@@ -2,7 +2,8 @@
 import pytest
 
 from consola.datos import (
-    Base, ClienteYaExiste, EmailYaExiste, NoEncontrado, ProyectoYaExiste)
+    Base, ClienteYaExiste, EmailYaExiste, NoEncontrado, ProyectoYaExiste,
+    url_por_defecto)
 
 
 @pytest.fixture
@@ -237,3 +238,31 @@ def test_un_loteo_subido_no_guarda_carpeta(base):
     cliente, _ = base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
 
     assert base.crear_proyecto(cliente.id, "Las Araucarias").carpeta is None
+
+
+# --- dónde vive la base ------------------------------------------------------------
+
+def test_en_este_computador_la_base_es_un_archivo_al_lado_de_los_datos(monkeypatch, tmp_path):
+    monkeypatch.delenv("MASTERPLAN_BD", raising=False)
+    monkeypatch.setenv("CONSOLA_ENTORNO", "local")
+    monkeypatch.setattr("pipeline.config.DATOS", tmp_path)
+
+    assert url_por_defecto() == f"sqlite:///{tmp_path / 'consola.db'}"
+
+
+def test_desplegada_sin_MASTERPLAN_BD_no_arranca(monkeypatch):
+    """En el servidor la carpeta de datos es un bucket montado, y SQLite sobre
+    GCS no tiene bloqueo de archivos: la base se corrompería con los correos y
+    los hashes de clave adentro. Mejor que la revisión no despliegue."""
+    monkeypatch.delenv("MASTERPLAN_BD", raising=False)
+    monkeypatch.setenv("CONSOLA_ENTORNO", "produccion")
+
+    with pytest.raises(RuntimeError, match="MASTERPLAN_BD"):
+        url_por_defecto()
+
+
+def test_con_MASTERPLAN_BD_se_usa_esa(monkeypatch):
+    monkeypatch.setenv("CONSOLA_ENTORNO", "produccion")
+    monkeypatch.setenv("MASTERPLAN_BD", "postgresql+psycopg://x/y")
+
+    assert url_por_defecto() == "postgresql+psycopg://x/y"

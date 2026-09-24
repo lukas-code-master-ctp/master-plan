@@ -350,11 +350,34 @@ class Base:
             con.execute(update(clientes).where(clientes.c.id == cliente_id).values(estado=estado))
 
 
+def es_local() -> bool:
+    """¿Esto corre en el computador de uno, o desplegado?
+
+    Es la misma pregunta que se hace `acceso`, y se responde en un solo lugar
+    para que no puedan contestarla distinto.
+    """
+    return os.environ.get("CONSOLA_ENTORNO", "local") == "local"
+
+
 def url_por_defecto() -> str:
-    """`MASTERPLAN_BD`, o un archivo junto a los datos. Nunca sobre el bucket
-    montado: ahí no hay bloqueo de archivos y la base se corrompe."""
+    """`MASTERPLAN_BD`, o un archivo junto a los datos si esto es un computador.
+
+    Desplegada, la carpeta de datos es un bucket montado, y SQLite sobre GCS no
+    tiene bloqueo de archivos: la base se corrompería, y adentro van los correos
+    y los hashes de clave de los clientes. Así que ahí no se adivina nada —se
+    exige una base de verdad— y si falta, esto revienta al arrancar. Una revisión
+    que no despliega se ve; una base que se corrompe de a poco, no.
+    """
+    indicada = os.environ.get("MASTERPLAN_BD")
+    if indicada:
+        return indicada
+    if not es_local():
+        raise RuntimeError(
+            "Falta MASTERPLAN_BD. Desplegada, la consola necesita una base de "
+            "verdad (Postgres): la carpeta de datos es un bucket montado y SQLite "
+            "sobre GCS se corrompe.")
     from pipeline import config
-    return os.environ.get("MASTERPLAN_BD") or f"sqlite:///{config.DATOS / 'consola.db'}"
+    return f"sqlite:///{config.DATOS / 'consola.db'}"
 
 
 def _ahora() -> datetime:

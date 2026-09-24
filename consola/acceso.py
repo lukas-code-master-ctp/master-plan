@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .datos import Base, Usuario
+from .datos import Base, Usuario, es_local
 
 GALLETA = "consola"
 HORAS_POR_DEFECTO = 12
@@ -116,7 +116,7 @@ def desde_el_entorno(base: Base | None = None) -> Acceso:
     """
     from pipeline import config
 
-    local = os.environ.get("CONSOLA_ENTORNO", "local") == "local"
+    local = es_local()
     secreto = os.environ.get("CONSOLA_SECRETO") or (_secreto_local(config.DATOS) if local else "")
     return Acceso(
         base=base if base is not None else Base(),

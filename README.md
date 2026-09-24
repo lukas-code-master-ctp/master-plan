@@ -184,6 +184,7 @@ Lo que hay que dejar puesto antes del primer despliegue:
 |---|---|
 | Bucket de datos | `gs://tumasterplan-datos` en la misma región |
 | `consola-secreto` | Secret Manager — con qué se firman las sesiones |
+| `masterplan-bd` | Secret Manager — la Postgres de las cuentas. **Sin esto no arranca**: la carpeta de datos es un bucket montado y SQLite sobre GCS no tiene bloqueo de archivos, así que la base —con los correos y los hashes de clave— se corrompería |
 | `vercel-token` | Secret Manager — para publicar los loteos ([vercel.com/account/tokens](https://vercel.com/account/tokens)) |
 | `crm.csv` | en la carpeta de cada loteo que tenga export comercial |
 
