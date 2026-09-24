@@ -9,7 +9,11 @@
 const $ = (sel, raiz = document) => raiz.querySelector(sel);
 const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
 
-const estado = { proyectos: [], abiertos: new Set(), registros: new Map(), sondeos: new Map() };
+const estado = {
+  sesion: null, proyectos: [], abiertos: new Set(), registros: new Map(), sondeos: new Map(),
+  // A qué loteo se le están subiendo archivos ahora mismo.
+  subiendoA: null,
+};
 
 // --- API ---------------------------------------------------------------------
 
@@ -45,8 +49,11 @@ async function refrescar() {
 function pintar() {
   const lista = $('#lista');
   if (!estado.proyectos.length) {
-    lista.innerHTML = `<div class="vacio"><strong>Todavía no hay loteos</strong>
-      <span>Sube la carpeta del vuelo —el KMZ y las panorámicas— y la consola hace el resto.</span></div>`;
+    lista.innerHTML = estado.sesion?.rol === 'plataforma'
+      ? `<div class="vacio"><strong>Todavía no hay loteos</strong>
+         <span>Habilítale uno a una loteadora y después sube el vuelo.</span></div>`
+      : `<div class="vacio"><strong>Todavía no hay loteos</strong>
+         <span>Cuando contrates uno aparece acá, listo para que subas el vuelo.</span></div>`;
     return;
   }
   lista.replaceChildren(...estado.proyectos.map(tarjeta));
@@ -61,7 +68,14 @@ function tarjeta(proyecto) {
   const enCurso = Boolean(proyecto.trabajo);
   const construir = $('[data-accion="construir"]', nodo);
   construir.textContent = proyecto.construido ? 'Reconstruir' : 'Construir';
-  construir.disabled = enCurso;
+  // Un loteo recién habilitado está vacío: no hay nada que construir hasta que
+  // suban el vuelo. Ofrecer el botón sería prometer algo que falla.
+  const conFuentes = Boolean(proyecto.fuentes_encontradas.kmz);
+  construir.disabled = enCurso || !conFuentes;
+  const archivos = $('[data-accion="archivos"]', nodo);
+  archivos.textContent = conFuentes ? 'Archivos' : 'Subir el vuelo';
+  if (!conFuentes) archivos.className = 'boton';
+  archivos.disabled = enCurso;
   const publicar = $('[data-accion="publicar"]', nodo);
   publicar.disabled = enCurso || !proyecto.construido;
 
@@ -166,6 +180,7 @@ function linea(texto) {
 async function manejar(accion, proyecto, nodo) {
   try {
     avisar(null);
+    if (accion === 'archivos') return abrirSubida(proyecto);
     if (accion === 'ajustes') return alternarAjustes(nodo, proyecto);
     if (accion === 'guardar') return await guardar(nodo, proyecto);
     if (accion === 'olvidar') return await olvidar(proyecto);
@@ -276,20 +291,22 @@ function volcar(slug, registro) {
 
 let archivosElegidos = [];
 
+function abrirSubida(proyecto) {
+  estado.subiendoA = proyecto.slug;
+  archivosElegidos = [];
+  $('#ruta').value = '';
+  $('#alta-loteo').textContent = `Loteo: ${proyecto.nombre}`;
+  $('#soltadero-texto').textContent = 'Arrastra la carpeta aquí o haz clic para elegirla';
+  $('#progreso').hidden = true;
+  $('#subir').disabled = true;
+  $('#alta').showModal();
+}
+
 function prepararAlta() {
   const dialogo = $('#alta');
   const soltadero = $('#soltadero');
   const entrada = $('#archivos');
 
-  $('#nuevo').addEventListener('click', () => {
-    archivosElegidos = [];
-    $('#nombre').value = '';
-    $('#ruta').value = '';
-    $('#soltadero-texto').textContent = 'Arrastra la carpeta aquí o haz clic para elegirla';
-    $('#progreso').hidden = true;
-    $('#subir').disabled = true;
-    dialogo.showModal();
-  });
   $('#cancelar').addEventListener('click', () => dialogo.close());
 
   entrada.addEventListener('change', () => tomar([...entrada.files].map(
@@ -344,19 +361,13 @@ function tomar(encontrados) {
   $('#soltadero-texto').textContent = utiles.length
     ? `${kmz} KMZ · ${fotos} panorámicas · ${megas.toFixed(0)} MB`
     : 'No encontré ni KMZ ni panorámicas en esa carpeta';
-  if (!$('#nombre').value && encontrados.length) {
-    const raiz = encontrados[0].archivo.webkitRelativePath?.split('/')[0];
-    if (raiz) $('#nombre').value = raiz.replace(/[_-]+/g, ' ');
-  }
-  $('#subir').disabled = !(kmz && fotos);
+  $('#subir').disabled = !utiles.length;
 }
 
 function subir() {
-  const nombre = $('#nombre').value.trim();
-  if (!nombre) return avisar('Ponle un nombre al loteo.');
+  if (!estado.subiendoA) return;
 
   const cuerpo = new FormData();
-  cuerpo.append('nombre', nombre);
   for (const { archivo, ruta } of archivosElegidos) cuerpo.append('archivos', archivo, ruta);
 
   const barra = $('#progreso');
@@ -365,7 +376,7 @@ function subir() {
 
   // XHR y no fetch: es la única forma de ver el avance de una subida de 200 MB.
   const peticion = new XMLHttpRequest();
-  peticion.open('POST', '/api/proyectos');
+  peticion.open('POST', `/api/proyectos/${estado.subiendoA}/archivos`);
   peticion.upload.addEventListener('progress', (evento) => {
     if (evento.lengthComputable) $('i', barra).style.width = `${(evento.loaded / evento.total) * 100}%`;
   });
@@ -392,16 +403,121 @@ async function vincular() {
   }
 }
 
+// --- Back-office: solo lo ve el equipo -----------------------------------------
+//
+// Que los botones estén escondidos no protege nada —el servidor contesta 403
+// igual—; es para que una loteadora no vea puertas que no puede abrir.
+
+let loteadoras = [];
+
+async function cargarLoteadoras() {
+  loteadoras = await pedir('/api/plataforma/clientes');
+  $('#clientes-lista').replaceChildren(...loteadoras.map(filaLoteadora));
+  const elegir = $('#habilitar-cliente');
+  elegir.replaceChildren(...loteadoras.map((c) => {
+    const opcion = document.createElement('option');
+    opcion.value = c.id;
+    opcion.textContent = c.nombre;
+    return opcion;
+  }));
+}
+
+function filaLoteadora(cliente) {
+  const fila = document.createElement('div');
+  fila.className = 'padron__fila';
+  const cuentas = cliente.cuentas.join(', ');
+  fila.innerHTML = `<div><strong></strong><span class="ayuda"></span></div>`;
+  $('strong', fila).textContent = cliente.nombre;
+  $('.ayuda', fila).textContent =
+    `${cliente.loteos} loteo(s) · ${cuentas}${cliente.estado === 'activo' ? '' : ' · SUSPENDIDA'}`;
+
+  const boton = document.createElement('button');
+  boton.className = 'boton boton--texto';
+  boton.type = 'button';
+  boton.textContent = cliente.estado === 'activo' ? 'Suspender' : 'Reactivar';
+  boton.addEventListener('click', async () => {
+    const nuevo = cliente.estado === 'activo' ? 'suspendido' : 'activo';
+    if (nuevo === 'suspendido' && !confirm(
+      `Suspender a ${cliente.nombre}\n\nSu gente queda afuera en la petición siguiente.`)) return;
+    try {
+      await pedir(`/api/plataforma/clientes/${cliente.id}/estado`, json({ estado: nuevo }));
+      await cargarLoteadoras();
+    } catch (error) { avisar(error.message); }
+  });
+  fila.append(boton);
+  return fila;
+}
+
+function prepararBackOffice() {
+  for (const boton of $$('[data-cerrar]')) {
+    boton.addEventListener('click', () => boton.closest('dialog').close());
+  }
+
+  $('#loteadoras').addEventListener('click', async () => {
+    $('#clientes-clave').hidden = true;
+    try { await cargarLoteadoras(); } catch (error) { return avisar(error.message); }
+    $('#clientes').showModal();
+  });
+
+  $('#cliente-crear').addEventListener('click', async () => {
+    const nombre = $('#cliente-nombre').value.trim();
+    const email = $('#cliente-email').value.trim();
+    if (!nombre || !email) return avisar('Hacen falta el nombre de la loteadora y el correo del dueño.');
+    try {
+      const creada = await pedir('/api/plataforma/clientes',
+        json({ nombre, email, duenio: $('#cliente-duenio').value.trim() }));
+      // La clave no se guarda en claro en ninguna parte: si se pierde acá, se pierde.
+      const caja = $('#clientes-clave');
+      caja.textContent = `${creada.nombre}\n${email}\nClave provisional: ${creada.clave_provisional}\n\n`
+        + 'Cópiala ahora: no se vuelve a mostrar. Pásasela por un canal aparte.';
+      caja.hidden = false;
+      for (const campo of ['#cliente-nombre', '#cliente-email', '#cliente-duenio']) $(campo).value = '';
+      await cargarLoteadoras();
+    } catch (error) { avisar(error.message); }
+  });
+
+  $('#nuevo').addEventListener('click', async () => {
+    try { await cargarLoteadoras(); } catch (error) { return avisar(error.message); }
+    if (!loteadoras.length) return avisar('Primero da de alta una loteadora.');
+    $('#habilitar-nombre').value = '';
+    $('#habilitar-cobro').value = '';
+    $('#habilitar').showModal();
+  });
+
+  $('#habilitar-listo').addEventListener('click', async () => {
+    const cliente = $('#habilitar-cliente').value;
+    const nombre = $('#habilitar-nombre').value.trim();
+    const cobro = $('#habilitar-cobro').value.trim();
+    if (!nombre) return avisar('Ponle un nombre al loteo.');
+    if (!cobro) return avisar('Anota cómo se pagó: es el único registro del cobro.');
+    try {
+      await pedir(`/api/plataforma/clientes/${cliente}/proyectos`,
+        json({ nombre, nota_cobro: cobro }));
+      $('#habilitar').close();
+      await refrescar();
+    } catch (error) { avisar(error.message); }
+  });
+}
+
 // --- Arranque ------------------------------------------------------------------
 
 // Quién entró, y qué puede hacer. Vincular una carpeta del disco solo tiene
 // sentido en el computador donde están las fotos: desplegada, el servidor lo
 // rechaza, así que ni se ofrece.
 fetch('/api/sesion').then((r) => r.json()).then((sesion) => {
+  estado.sesion = sesion;
   $('#salir').hidden = false;
   $('#quien').textContent = `${sesion.cliente} · ${sesion.quien}`;
-  $('#carpeta-local').hidden = !sesion.puede_vincular;
+  const equipo = sesion.rol === 'plataforma';
+  $('#nuevo').hidden = !equipo;
+  $('#loteadoras').hidden = !equipo;
+  $('#carpeta-local').hidden = !(equipo && sesion.puede_vincular);
+  if (sesion.debe_cambiar_clave) {
+    avisar('Estás usando la clave provisional. Cámbiala: se genera una vez y viaja por correo o papel.');
+  }
+  pintar();
 }).catch(() => { /* sin sesión: la puerta ya redirigió */ });
 
 prepararAlta();
+prepararBackOffice();
 refrescar().catch((error) => avisar(error.message));

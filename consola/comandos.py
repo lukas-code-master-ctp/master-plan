@@ -10,7 +10,6 @@ porque sus constantes globales son las mismas para todos los clientes.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 from pipeline import config
 

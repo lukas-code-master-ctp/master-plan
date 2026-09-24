@@ -21,7 +21,11 @@ sitio="${1:?uso: ./publicar.sh <carpeta-del-sitio> <proyecto-en-vercel> [--crear
 proyecto="${2:?falta el nombre del proyecto en el hosting}"
 crear="${3:-}"
 
-scope="${VERCEL_SCOPE:-eruiz-6997s-projects}"
+# El equipo Pro. No es un detalle de cuenta: el plan Hobby prohíbe el uso
+# comercial —"Hobby teams are restricted to non-commercial personal use only"—
+# y estos sitios venden parcelas. Apuntar al equipo equivocado además crea un
+# proyecto nuevo con el mismo nombre y bifurca el sitio publicado.
+scope="${VERCEL_SCOPE:-lrencoret-1882s-projects}"
 # En el contenedor no hay sesión interactiva: el token viene por variable.
 token=()
 [ -n "${VERCEL_TOKEN:-}" ] && token=(--token "$VERCEL_TOKEN")

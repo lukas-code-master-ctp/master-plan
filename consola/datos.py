@@ -143,6 +143,16 @@ class Usuario:
 
 
 @dataclass(frozen=True)
+class Evento:
+    id: int
+    cliente_id: int | None
+    usuario_id: int | None
+    que: str
+    detalle: str | None
+    cuando: datetime
+
+
+@dataclass(frozen=True)
 class ProyectoGuardado:
     id: int
     cliente_id: int
@@ -342,6 +352,31 @@ class Base:
     def olvidar_proyecto(self, slug: str) -> None:
         with self.motor.begin() as con:
             con.execute(delete(proyectos).where(proyectos.c.slug == slug))
+
+    # --- registro de lo que pasó ------------------------------------------------------
+
+    def anotar(self, que: str, *, cliente_id: int | None = None,
+               usuario_id: int | None = None, detalle: str | None = None) -> None:
+        """Deja constancia de un acto de la plataforma.
+
+        Solo se anota lo que decide algo y no se puede reconstruir mirando los
+        archivos: dar de alta una loteadora, habilitar un loteo cobrado,
+        suspender a alguien. Construir y publicar no van acá —el resultado está
+        en el disco y en el hosting—, y una bitácora que anota todo no se lee.
+        """
+        with self.motor.begin() as con:
+            con.execute(insert(eventos).values(
+                cliente_id=cliente_id, usuario_id=usuario_id, que=que,
+                detalle=detalle, cuando=_ahora()))
+
+    def historial(self, cliente_id: int | None = None, limite: int = 200) -> list[Evento]:
+        consulta = select(eventos).order_by(eventos.c.id.desc()).limit(limite)
+        if cliente_id is not None:
+            consulta = consulta.where(eventos.c.cliente_id == cliente_id)
+        with self.motor.connect() as con:
+            return [Evento(id=f.id, cliente_id=f.cliente_id, usuario_id=f.usuario_id,
+                           que=f.que, detalle=f.detalle, cuando=f.cuando)
+                    for f in con.execute(consulta)]
 
     # --- interno ---------------------------------------------------------------------
 

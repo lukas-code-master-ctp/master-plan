@@ -22,7 +22,8 @@
     </div>
   </div>
   <span id="quien" class="ayuda"></span>
-  <button id="nuevo" class="boton">Nuevo loteo</button>
+  <button id="loteadoras" class="boton boton--contorno" hidden>Loteadoras</button>
+  <button id="nuevo" class="boton" hidden>Habilitar loteo</button>
   <form method="post" action="/salir" id="salir" hidden>
     <button class="boton boton--texto" type="submit">Salir</button>
   </form>
@@ -33,12 +34,13 @@
   <section id="lista" class="lista" aria-live="polite"></section>
 </main>
 
-<!-- Alta de un loteo -->
+<!-- Subir el vuelo a un loteo ya habilitado -->
 <dialog id="alta" class="modal">
   <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
-  <h2>Nuevo loteo</h2>
+  <h2>Subir el vuelo</h2>
   <p class="ayuda">Arrastra la carpeta del vuelo: el KMZ del topógrafo y las panorámicas
     del dron. Da lo mismo cómo se llamen los archivos.</p>
+  <p class="ayuda" id="alta-loteo"></p>
 
   <label class="soltadero" id="soltadero">
     <input id="archivos" type="file" multiple webkitdirectory hidden>
@@ -47,11 +49,6 @@
             fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <span id="soltadero-texto">Arrastra la carpeta aquí o haz clic para elegirla</span>
-  </label>
-
-  <label class="campo">
-    <span>Nombre del loteo</span>
-    <input id="nombre" type="text" placeholder="Praderas de Cauquenes" autocomplete="off">
   </label>
 
   <details class="alternativa" id="carpeta-local" hidden>
@@ -66,8 +63,57 @@
   <div id="progreso" class="progreso" hidden><i></i></div>
   <div class="modal__pie">
     <button id="cancelar" class="boton boton--texto" type="button">Cancelar</button>
-    <button id="subir" class="boton" type="button" disabled>Subir y crear</button>
+    <button id="subir" class="boton" type="button" disabled>Subir</button>
   </div>
+</dialog>
+
+<!-- Habilitar un loteo: el único lugar donde nace uno, y donde se anota el cobro -->
+<dialog id="habilitar" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2>Habilitar un loteo</h2>
+  <p class="ayuda">El loteo nace vacío y pagado. Después la loteadora sube sus fotos
+    adentro; sola no puede crearse ninguno.</p>
+
+  <label class="campo">
+    <span>Loteadora</span>
+    <select id="habilitar-cliente"></select>
+  </label>
+  <label class="campo">
+    <span>Nombre del loteo</span>
+    <input id="habilitar-nombre" type="text" placeholder="Praderas de Cauquenes" autocomplete="off">
+  </label>
+  <label class="campo">
+    <span>Cómo se pagó</span>
+    <input id="habilitar-cobro" type="text" placeholder="Transferencia 4821, 20/09" autocomplete="off">
+  </label>
+  <p class="ayuda">Sin pasarela de pago, esta línea es el único registro de que se cobró.
+    Queda en el historial con tu nombre y la fecha.</p>
+
+  <div class="modal__pie">
+    <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
+    <button id="habilitar-listo" class="boton" type="button">Habilitar</button>
+  </div>
+</dialog>
+
+<!-- Padrón de loteadoras -->
+<dialog id="clientes" class="modal modal--ancho">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2>Loteadoras</h2>
+  <div id="clientes-lista" class="padron"></div>
+
+  <details class="alternativa">
+    <summary>Dar de alta una loteadora</summary>
+    <div class="fila fila--envuelve">
+      <input id="cliente-nombre" type="text" placeholder="Bosques del Sur" autocomplete="off">
+      <input id="cliente-email" type="email" placeholder="correo del dueño" autocomplete="off">
+      <input id="cliente-duenio" type="text" placeholder="nombre del dueño" autocomplete="off">
+      <button id="cliente-crear" class="boton" type="button">Crear</button>
+    </div>
+    <p class="ayuda">Se genera una clave provisional que se muestra <strong>una sola vez</strong>.
+      Anótala y pásasela por un canal aparte.</p>
+  </details>
+
+  <pre id="clientes-clave" class="consola-log" hidden></pre>
 </dialog>
 
 <template id="plantilla-proyecto">
@@ -78,6 +124,7 @@
         <div class="proyecto__meta"></div>
       </div>
       <div class="proyecto__acciones">
+        <button class="boton boton--contorno" data-accion="archivos">Archivos</button>
         <button class="boton boton--contorno" data-accion="ajustes">Datos</button>
         <button class="boton boton--contorno" data-accion="construir">Construir</button>
         <button class="boton" data-accion="publicar">Publicar</button>

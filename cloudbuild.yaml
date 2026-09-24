@@ -60,7 +60,7 @@ substitutions:
   _SERVICIO: tumasterplan-consola
   _BUCKET: tumasterplan-datos
   _IMAGEN: southamerica-east1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/tumasterplan-consola
-  _VERCEL_SCOPE: eruiz-6997s-projects
+  _VERCEL_SCOPE: lrencoret-1882s-projects   # el equipo Pro: Hobby prohíbe el uso comercial
   _DOMINIO: ''                          # cuando exista: tumasterplan.cl
 
 images:
