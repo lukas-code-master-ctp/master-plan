@@ -25,6 +25,9 @@ panorámicas pesa unos 200 MB y no tiene sentido subirlas a otro lado para
 procesarlas acá al lado. Si la carpeta ya está en el disco, en "usar una carpeta que
 ya está en este computador" se registra sin copiar nada.
 
+La primera vez el script crea la cuenta de casa e **imprime por pantalla una clave
+provisional**. Anótala y cámbiala al entrar: no se vuelve a mostrar.
+
 Todo lo que hace la consola se puede hacer a mano, y es lo que sigue.
 
 ### Lo que necesita un loteo
@@ -180,15 +183,24 @@ Lo que hay que dejar puesto antes del primer despliegue:
 | Qué | Dónde |
 |---|---|
 | Bucket de datos | `gs://tumasterplan-datos` en la misma región |
-| `consola-clave` | Secret Manager — la contraseña para entrar |
 | `consola-secreto` | Secret Manager — con qué se firman las sesiones |
 | `vercel-token` | Secret Manager — para publicar los loteos ([vercel.com/account/tokens](https://vercel.com/account/tokens)) |
 | `crm.csv` | en la carpeta de cada loteo que tenga export comercial |
 
-**Entrar.** Una contraseña compartida y una galleta firmada (`consola/acceso.py`). Sin
-`CONSOLA_CLAVE` y fuera de este computador la consola **se niega a funcionar**: vale
-más que no arranque a que quede abierta. `CONSOLA_ENTORNO=local` (lo que hay al correr
-`./consola.sh`) es lo que la deja sin contraseña en la máquina de uno.
+**Entrar.** Una cuenta por persona: correo y contraseña con bcrypt, y una galleta
+firmada con HMAC (`consola/acceso.py`, `consola/datos.py`). La galleta lleva solo el
+id del usuario y la hora; el rol y de qué loteadora es se releen de la base en cada
+petición, para que una cuenta desactivada, degradada o con la clave recién cambiada
+pierda el acceso en la petición siguiente y no doce horas después. Sin
+`CONSOLA_SECRETO` y fuera de este computador la consola **se niega a funcionar**:
+sin secreto de firma, cualquiera se fabrica una galleta.
+
+**Cada cliente ve lo suyo.** Las rutas no reciben un `cliente_id` que se pueda olvidar
+de filtrar: reciben `registro.para(sesion)`, una vista que solo alcanza los loteos de
+esa loteadora (`consola/proyectos.py`). Pedir uno ajeno da **404, no 403**: contestar
+"existe pero no es tuyo" ya es contar algo. El inventario de rutas está declarado en
+`consola/tests/test_app.py`, y una prueba lo compara con `app.routes` y **falla si
+alguien agrega una ruta sin decir qué pasa cuando la pide otro cliente**.
 
 **El dominio.** Hoy cada loteo queda en `masterplan-<slug>.vercel.app`. Con
 `MASTERPLAN_DOMINIO=tumasterplan.cl` (la sustitución `_DOMINIO` del cloudbuild) la

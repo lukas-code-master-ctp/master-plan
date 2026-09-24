@@ -21,6 +21,7 @@
       <span>Consola de loteos</span>
     </div>
   </div>
+  <span id="quien" class="ayuda"></span>
   <button id="nuevo" class="boton">Nuevo loteo</button>
   <form method="post" action="/salir" id="salir" hidden>
     <button class="boton boton--texto" type="submit">Salir</button>
@@ -53,7 +54,7 @@
     <input id="nombre" type="text" placeholder="Praderas de Cauquenes" autocomplete="off">
   </label>
 
-  <details class="alternativa">
+  <details class="alternativa" id="carpeta-local" hidden>
     <summary>O usar una carpeta que ya está en este computador</summary>
     <p class="ayuda">Más rápido: no copia los cientos de megas de las panorámicas.</p>
     <div class="fila">

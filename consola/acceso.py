@@ -1,14 +1,14 @@
-"""Entrar a la consola.
+"""Entrar a la consola: quién es cada quien, y hasta cuándo.
 
-Una contraseña compartida y una galleta firmada. Suena poco, y para tres o cuatro
-personas de la casa lo es a propósito: la consola construye y publica loteos, no
-guarda datos de clientes, y una cuenta por persona sería ceremonia sin beneficio.
-Lo que sí importa es que no quede abierta, y de eso se ocupan dos cosas: la galleta
-va firmada con HMAC —así nadie se la fabrica— y la aplicación **se niega a
-funcionar** si la despliegan sin contraseña.
+La galleta va firmada con HMAC y lleva lo mínimo: el id del usuario y desde
+cuándo. El correo, el rol y de qué loteadora es se vuelven a leer de la base en
+cada petición. Cuesta dos consultas y compra algo que una galleta autocontenida
+no puede dar: que una cuenta desactivada, degradada, con la clave recién
+cambiada o de un cliente suspendido pierda el acceso en la petición siguiente y
+no doce horas después.
 
-Si algún día hace falta saber quién hizo qué, el lugar es `Sesion.quien`: hoy lo
-llena la contraseña, mañana lo puede llenar Google.
+No hay tabla de sesiones. La revocación es una fecha por usuario
+(`sesiones_validas_desde`): una galleta firmada antes de esa marca no vale.
 """
 from __future__ import annotations
 
@@ -17,45 +17,66 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .datos import Base, Usuario
 
 GALLETA = "consola"
 HORAS_POR_DEFECTO = 12
 
+# Dónde queda el secreto de firma cuando nadie lo indica: solo en este computador.
+# Desplegada, la consola lo exige por variable de entorno.
+ARCHIVO_SECRETO = ".secreto-consola"
 
-@dataclass
+
+@dataclass(frozen=True)
 class Sesion:
-    quien: str
+    """Quién está pidiendo. Se arma desde la base, nunca desde la galleta."""
+    usuario_id: int
+    cliente_id: int
+    rol: str
+    quien: str                        # el correo: para mostrarlo y para el registro
+    debe_cambiar_clave: bool = False
     desde: float = field(default_factory=time.time)
+
+    @property
+    def es_plataforma(self) -> bool:
+        """El equipo de CTP, que opera todas las loteadoras."""
+        return self.rol == "plataforma"
 
 
 class Acceso:
-    def __init__(self, clave: str | None, secreto: str | None, horas: int = HORAS_POR_DEFECTO,
-                 local: bool = False):
-        self.clave = clave or ""
-        # Sin secreto propio, la firma se deriva de la contraseña: cambiarla también
-        # invalida las sesiones abiertas, que es lo que uno espera.
-        self.secreto = (secreto or f"derivado-de-{self.clave}").encode()
+    def __init__(self, base: Base, secreto: str | None = None,
+                 horas: int = HORAS_POR_DEFECTO, local: bool = False):
+        self.base = base
+        self.secreto = (secreto or "").encode()
         self.horas = horas
         self.local = local
 
     @property
-    def exigida(self) -> bool:
-        return bool(self.clave)
-
-    @property
     def desprotegida(self) -> bool:
-        """Sin contraseña y fuera de este computador: no debe funcionar así."""
-        return not self.clave and not self.local
+        """Sin secreto de firma cualquiera se fabrica una galleta. Que no arranque."""
+        return not self.secreto
 
-    def es_valida(self, intento: str | None) -> bool:
-        # compare_digest y no ==: comparar de a un carácter delata la contraseña
-        # por el tiempo que tarda en fallar.
-        return bool(intento) and hmac.compare_digest(intento or "", self.clave)
+    def entrar(self, email: str, clave: str) -> Sesion | None:
+        usuario = self.base.usuario_por_email(email) if email else None
+        if usuario is None or not usuario.activo:
+            # Se gasta el tiempo igual: contestar al instante cuando el correo no
+            # existe convierte el formulario en un buscador de cuentas.
+            self.base.verificar_en_vano()
+            return None
+        if not self.base.clave_valida(usuario, clave):
+            return None
+        if self.base.cliente(usuario.cliente_id).estado != "activo":
+            return None
+        return _sesion_de(usuario)
 
     def firmar(self, sesion: Sesion) -> str:
-        cuerpo = _a_base64(json.dumps({"quien": sesion.quien, "desde": sesion.desde}).encode())
+        cuerpo = _a_base64(json.dumps({"u": sesion.usuario_id, "d": sesion.desde}).encode())
         return f"{cuerpo}.{self._firma(cuerpo)}"
 
     def leer(self, galleta: str | None) -> Sesion | None:
@@ -66,29 +87,72 @@ class Acceso:
             return None
         try:
             datos = json.loads(_de_base64(cuerpo))
-            sesion = Sesion(quien=str(datos["quien"]), desde=float(datos["desde"]))
+            usuario_id, desde = int(datos["u"]), float(datos["d"])
         except (ValueError, KeyError, TypeError):
             return None
-        if time.time() - sesion.desde > self.horas * 3600:
+        if time.time() - desde > self.horas * 3600:
             return None
-        return sesion
+
+        usuario = self.base.usuario(usuario_id)
+        if usuario is None or not usuario.activo:
+            return None
+        if desde < _marca(usuario.sesiones_validas_desde):
+            return None
+        if self.base.cliente(usuario.cliente_id).estado != "activo":
+            return None
+        return _sesion_de(usuario, desde)
 
     def _firma(self, cuerpo: str) -> str:
         return _a_base64(hmac.new(self.secreto, cuerpo.encode(), hashlib.sha256).digest())
 
 
-def desde_el_entorno() -> Acceso:
+def desde_el_entorno(base: Base | None = None) -> Acceso:
     """La configuración de acceso, de variables de entorno.
 
-    `CONSOLA_ENTORNO=local` (o nada) es este computador; cualquier otra cosa se
-    considera desplegada y ahí la contraseña no es opcional.
+    `CONSOLA_ENTORNO=local` (o nada) es este computador, y ahí el secreto de firma
+    se genera solo en un archivo al lado de los datos. Desplegada, se exige por
+    variable: un secreto en el volumen de datos viaja en cada respaldo, junto a los
+    archivos de los clientes.
     """
+    from pipeline import config
+
+    local = os.environ.get("CONSOLA_ENTORNO", "local") == "local"
+    secreto = os.environ.get("CONSOLA_SECRETO") or (_secreto_local(config.DATOS) if local else "")
     return Acceso(
-        clave=os.environ.get("CONSOLA_CLAVE"),
-        secreto=os.environ.get("CONSOLA_SECRETO"),
+        base=base if base is not None else Base(),
+        secreto=secreto,
         horas=int(os.environ.get("CONSOLA_HORAS", HORAS_POR_DEFECTO)),
-        local=os.environ.get("CONSOLA_ENTORNO", "local") == "local",
+        local=local,
     )
+
+
+def _secreto_local(carpeta: Path) -> str:
+    archivo = Path(carpeta) / ARCHIVO_SECRETO
+    if archivo.is_file():
+        return archivo.read_text(encoding="utf-8").strip()
+    archivo.parent.mkdir(parents=True, exist_ok=True)
+    secreto = secrets.token_urlsafe(32)
+    archivo.write_text(secreto, encoding="utf-8")
+    archivo.chmod(0o600)
+    return secreto
+
+
+def _sesion_de(usuario: Usuario, desde: float | None = None) -> Sesion:
+    return Sesion(usuario_id=usuario.id, cliente_id=usuario.cliente_id, rol=usuario.rol,
+                  quien=usuario.email, debe_cambiar_clave=usuario.debe_cambiar_clave,
+                  desde=desde if desde is not None else time.time())
+
+
+def _marca(momento: datetime) -> float:
+    """La fecha en segundos, leyéndola en UTC aunque venga sin zona.
+
+    SQLite no guarda la zona: devuelve la hora en UTC pero sin decirlo, y tomarla
+    como hora local la correría varias horas hacia el futuro. Toda galleta quedaría
+    firmada 'antes' de la marca de revocación y nadie podría entrar.
+    """
+    if momento.tzinfo is None:
+        momento = momento.replace(tzinfo=timezone.utc)
+    return momento.timestamp()
 
 
 def _a_base64(crudo: bytes) -> str:

@@ -33,8 +33,12 @@
   <!--ERROR-->
   <form method="post" action="/entrar">
     <label class="campo">
+      <span>Correo</span>
+      <input name="email" type="email" autocomplete="username" autofocus required>
+    </label>
+    <label class="campo">
       <span>Contraseña</span>
-      <input name="clave" type="password" autocomplete="current-password" autofocus required>
+      <input name="clave" type="password" autocomplete="current-password" required>
     </label>
     <button class="boton" type="submit">Entrar</button>
   </form>

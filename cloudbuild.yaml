@@ -38,7 +38,7 @@ steps:
       - '--port=8080'
       - '--add-volume=name=datos,type=cloud-storage,bucket=${_BUCKET}'
       - '--add-volume-mount=volume=datos,mount-path=/datos'
-      - '--set-secrets=CONSOLA_CLAVE=consola-clave:latest,CONSOLA_SECRETO=consola-secreto:latest,VERCEL_TOKEN=vercel-token:latest'
+      - '--set-secrets=CONSOLA_SECRETO=consola-secreto:latest,VERCEL_TOKEN=vercel-token:latest'
       # _DOMINIO vacío deja los loteos en masterplan-<slug>.vercel.app; con
       # tumasterplan.cl pasan a <slug>.tumasterplan.cl.
       - '--set-env-vars=^|^CONSOLA_ENTORNO=produccion|MASTERPLAN_DATOS=/datos|VERCEL_SCOPE=${_VERCEL_SCOPE}|MASTERPLAN_DOMINIO=${_DOMINIO}'

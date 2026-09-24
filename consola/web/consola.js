@@ -394,10 +394,14 @@ async function vincular() {
 
 // --- Arranque ------------------------------------------------------------------
 
-// El botón de salir solo tiene sentido si hay sesión: en el computador de uno,
-// la consola no pide contraseña y el botón sobra.
-fetch('/api/sesion').then((r) => r.json()).then(({ exigida }) => { $('#salir').hidden = !exigida; })
-  .catch(() => { /* versión vieja del servidor: sin botón */ });
+// Quién entró, y qué puede hacer. Vincular una carpeta del disco solo tiene
+// sentido en el computador donde están las fotos: desplegada, el servidor lo
+// rechaza, así que ni se ofrece.
+fetch('/api/sesion').then((r) => r.json()).then((sesion) => {
+  $('#salir').hidden = false;
+  $('#quien').textContent = `${sesion.cliente} · ${sesion.quien}`;
+  $('#carpeta-local').hidden = !sesion.puede_vincular;
+}).catch(() => { /* sin sesión: la puerta ya redirigió */ });
 
 prepararAlta();
 refrescar().catch((error) => avisar(error.message));

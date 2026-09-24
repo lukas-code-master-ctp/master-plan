@@ -12,6 +12,11 @@ PUERTO="${PUERTO:-8780}"
 PYTHON=.venv/bin/python
 [ -x "$PYTHON" ] || PYTHON=python3
 
+# La primera vez crea la cuenta de casa e imprime su clave provisional, y adopta
+# los loteos que ya estaban registrados antes de que hubiera cuentas. Después no
+# hace nada.
+"$PYTHON" -m consola.arranque
+
 echo "▶ Consola en http://localhost:$PUERTO"
 ( sleep 1.2; open "http://localhost:$PUERTO" 2>/dev/null || true ) &
-exec "$PYTHON" -m uvicorn consola.app:app --host 127.0.0.1 --port "$PUERTO" --log-level warning
+exec "$PYTHON" -m uvicorn --factory consola.app:crear_app --host 127.0.0.1 --port "$PUERTO" --log-level warning

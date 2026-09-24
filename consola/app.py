@@ -1,8 +1,13 @@
 """La consola de Tu Masterplan: subir un loteo, construirlo, revisarlo y publicarlo.
 
-Corre en la máquina donde están las fotos —una carpeta de panorámicas pesa unos
-200 MB y no tiene sentido subirlas a ningún lado para procesarlas acá al lado—, así
-que el servidor escucha en localhost y sirve una sola página.
+Corre donde están las fotos —una carpeta de panorámicas pesa unos 200 MB y no tiene
+sentido moverlas para procesarlas acá al lado— y sirve una sola página.
+
+**Cómo se evita que un cliente vea lo de otro.** El middleware `puerta` es la única
+entrada: resuelve quién pide y deja la sesión en la petición. Las rutas no reciben
+un `cliente_id` que se pueda olvidar de filtrar: reciben `registro.para(sesion)`, una
+vista que solo alcanza los loteos de esa loteadora. Pedir uno ajeno da 404, no 403:
+contestar "existe pero no es tuyo" ya es contar algo.
 """
 from __future__ import annotations
 
@@ -10,14 +15,15 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from pipeline import config
 
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
 from .comandos import Comandos, encadenar
-from .proyectos import Proyecto, Registro, Subida
+from .datos import Base, NoEncontrado, ProyectoYaExiste
+from .proyectos import Proyecto, Registro, Subida, Vista
 from .trabajos import Trabajos
 
 WEB = Path(__file__).resolve().parent / "web"
@@ -40,33 +46,49 @@ def url_propuesta(slug: str) -> str:
         return f"https://{slug}.{dominio}"
     return f"https://{nombre_propuesto(slug)}.vercel.app"
 
+
 # Lo único que se puede pedir sin haber entrado: la propia página de entrada y lo
 # que necesita para verse.
 LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2")
 
 
 def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None,
-              comandos=None, acceso: Acceso | None = None) -> FastAPI:
-    registro = registro or Registro(crm_por_defecto=config.csv_del_crm())
+              comandos=None, acceso: Acceso | None = None, base: Base | None = None) -> FastAPI:
+    acceso = acceso if acceso is not None else desde_el_entorno(base)
+    base = base if base is not None else acceso.base
+    registro = registro or Registro(base=base, crm_por_defecto=config.csv_del_crm())
     trabajos = trabajos or Trabajos(directorio=config.RAIZ)
     comandos = comandos or Comandos()
-    acceso = acceso if acceso is not None else desde_el_entorno()
 
-    app = FastAPI(title="Tu Masterplan — consola", docs_url=None, redoc_url=None)
+    # Sin documentación automática ni esquema: la consola tiene una sola página que
+    # la usa, y el inventario de rutas lo vigila una prueba, no un JSON público.
+    app = FastAPI(title="Tu Masterplan — consola", docs_url=None, redoc_url=None,
+                  openapi_url=None)
 
     @app.middleware("http")
     async def puerta(peticion: Request, seguir):
         """Una sola puerta para todo: una ruta nueva no puede olvidarse de cerrarla."""
         if acceso.desprotegida:
             return JSONResponse(status_code=503, content={"detail":
-                "La consola está desplegada sin contraseña. Define CONSOLA_CLAVE "
-                "(y CONSOLA_SECRETO) antes de abrirla."})
+                "La consola no tiene secreto de firma. Define CONSOLA_SECRETO "
+                "antes de desplegarla."})
         ruta = peticion.url.path
-        if not acceso.exigida or ruta in LIBRES or acceso.leer(peticion.cookies.get(GALLETA)):
+        if ruta in LIBRES:
             return await seguir(peticion)
-        if ruta.startswith("/api/"):
-            return JSONResponse(status_code=401, content={"detail": "hay que entrar primero"})
-        return RedirectResponse("/entrar", status_code=307)
+        sesion = acceso.leer(peticion.cookies.get(GALLETA))
+        if sesion is None:
+            if ruta.startswith("/api/"):
+                return JSONResponse(status_code=401, content={"detail": "hay que entrar primero"})
+            return RedirectResponse("/entrar", status_code=307)
+        peticion.state.sesion = sesion
+        return await seguir(peticion)
+
+    def quien(peticion: Request) -> Sesion:
+        return peticion.state.sesion
+
+    def vista(sesion: Sesion = Depends(quien)) -> Vista:
+        """Los loteos de quien pide, y ningún otro."""
+        return registro.para(sesion)
 
     # --- entrar y salir ------------------------------------------------------
 
@@ -75,12 +97,16 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return HTMLResponse(_pagina_de_entrada(mal), status_code=401 if mal else 200)
 
     @app.post("/entrar")
-    def entrar(peticion: Request, clave: str = Form(default="")) -> Response:
-        if not acceso.es_valida(clave):
+    def entrar(peticion: Request, email: str = Form(default=""),
+               clave: str = Form(default="")) -> Response:
+        sesion = acceso.entrar(email, clave)
+        if sesion is None:
+            # Un solo mensaje para clave mala, correo inexistente y cuenta
+            # desactivada: distinguirlos convierte el formulario en un buscador.
             return HTMLResponse(_pagina_de_entrada(mal=True), status_code=401)
         respuesta = RedirectResponse("/", status_code=303)
         respuesta.set_cookie(
-            GALLETA, acceso.firmar(Sesion(quien="equipo")),
+            GALLETA, acceso.firmar(sesion),
             max_age=acceso.horas * 3600, httponly=True, samesite="lax",
             secure=peticion.url.scheme == "https", path="/")
         return respuesta
@@ -91,11 +117,19 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         respuesta.delete_cookie(GALLETA, path="/")
         return respuesta
 
-    def buscar(slug: str) -> Proyecto:
-        try:
-            return registro.ver(slug)
-        except KeyError as error:
-            raise HTTPException(404, str(error)) from error
+    @app.post("/api/clave")
+    def cambiar_clave(campos: dict = Body(...), sesion: Sesion = Depends(quien)) -> Response:
+        """Cambiar la propia clave. Corta también las sesiones abiertas, la de acá
+        incluida: es lo que uno espera al cambiarla porque sospecha de alguien."""
+        if acceso.entrar(sesion.quien, str(campos.get("actual") or "")) is None:
+            raise HTTPException(403, "la clave actual no es esa")
+        nueva = str(campos.get("nueva") or "")
+        if len(nueva) < 10:
+            raise HTTPException(400, "la clave nueva tiene que tener al menos 10 caracteres")
+        base.cambiar_clave(sesion.quien, nueva)
+        respuesta = JSONResponse({"listo": True})
+        respuesta.delete_cookie(GALLETA, path="/")
+        return respuesta
 
     def lanzar(proyecto: Proyecto, accion: str, comando: list[str], al_terminar=None) -> dict:
         try:
@@ -126,50 +160,65 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                             media_type="font/woff2")
 
     @app.get("/api/sesion")
-    def sesion() -> dict:
-        return {"exigida": acceso.exigida}
+    def sesion(quien_es: Sesion = Depends(quien)) -> dict:
+        return {
+            "quien": quien_es.quien,
+            "rol": quien_es.rol,
+            "cliente": base.cliente(quien_es.cliente_id).nombre,
+            "debe_cambiar_clave": quien_es.debe_cambiar_clave,
+            # La carpeta del disco solo se puede vincular donde está el disco.
+            "puede_vincular": acceso.local,
+        }
 
     # --- proyectos -----------------------------------------------------------
 
     @app.get("/api/proyectos")
-    def listar() -> list[dict]:
-        return [_como_json(p, trabajos) for p in registro.listar()]
+    def listar(mios: Vista = Depends(vista)) -> list[dict]:
+        return [_como_json(p, trabajos) for p in mios.listar()]
 
     @app.post("/api/proyectos", status_code=201)
-    async def crear(nombre: str = Form(...), archivos: list[UploadFile] = File(...)) -> dict:
+    async def crear(peticion: Request, nombre: str = Form(...),
+                    archivos: list[UploadFile] = File(...)) -> dict:
+        mios = registro.para(peticion.state.sesion)
         subidas = [Subida(ruta=a.filename or "", contenido=await a.read()) for a in archivos]
         try:
-            proyecto = registro.crear(nombre, subidas)
-        except ValueError as error:
+            proyecto = mios.crear(nombre, subidas)
+        except (ValueError, ProyectoYaExiste) as error:
             raise HTTPException(400, str(error)) from error
         return _como_json(proyecto, trabajos)
 
     @app.post("/api/proyectos/vincular", status_code=201)
-    def vincular(ruta: str = Body(..., embed=True)) -> dict:
+    def vincular(ruta: str = Body(..., embed=True), mios: Vista = Depends(vista)) -> dict:
+        # Registrar una ruta cualquiera del servidor sería leer su disco. Tiene
+        # sentido en el computador donde están las fotos y en ningún otro lado.
+        if not acceso.local:
+            raise HTTPException(403, "vincular carpetas solo funciona en el computador "
+                                     "donde están las fotos")
         try:
-            proyecto = registro.vincular(Path(ruta))
+            proyecto = mios.vincular(Path(ruta))
         except FileNotFoundError as error:
             raise HTTPException(404, str(error)) from error
-        except ValueError as error:
+        except (ValueError, ProyectoYaExiste) as error:
             raise HTTPException(400, str(error)) from error
         return _como_json(proyecto, trabajos)
 
     @app.patch("/api/proyectos/{slug}")
-    def ajustar(slug: str, campos: dict = Body(...)) -> dict:
-        buscar(slug)
-        permitidos = ("nombre", "etapa", "whatsapp", "parcelacion", "despegue", "referencias")
-        return _como_json(registro.ajustar(slug, {c: campos.get(c) for c in permitidos}), trabajos)
+    def ajustar(slug: str, campos: dict = Body(...), mios: Vista = Depends(vista)) -> dict:
+        try:
+            return _como_json(mios.ajustar(slug, campos), trabajos)
+        except ProyectoYaExiste as error:
+            raise HTTPException(400, str(error)) from error
 
     @app.delete("/api/proyectos/{slug}", status_code=204)
-    def olvidar(slug: str) -> None:
-        buscar(slug)
-        registro.olvidar(slug)
+    def olvidar(slug: str, mios: Vista = Depends(vista)) -> None:
+        mios.olvidar(slug)
 
     # --- acciones ------------------------------------------------------------
 
     @app.post("/api/proyectos/{slug}/construir", status_code=202)
-    def construir(slug: str, opciones: dict = Body(default={})) -> dict:
-        proyecto = buscar(slug)
+    def construir(slug: str, opciones: dict = Body(default={}),
+                  mios: Vista = Depends(vista)) -> dict:
+        proyecto = mios.ver(slug)
         sin_imagenes = bool(opciones.get("sin_imagenes"))
         # El control de calce va pegado a la construcción: es lo que hay que mirar
         # antes de publicar, y pedirlo aparte se olvida.
@@ -179,8 +228,9 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         ))
 
     @app.post("/api/proyectos/{slug}/publicar", status_code=202)
-    def publicar(slug: str, opciones: dict = Body(default={})) -> dict:
-        proyecto = buscar(slug)
+    def publicar(slug: str, opciones: dict = Body(default={}),
+                 mios: Vista = Depends(vista)) -> dict:
+        proyecto = mios.ver(slug)
         if not proyecto.construido:
             raise HTTPException(409, "todavía no está construido")
         # Publicar deja el loteo a la vista de cualquiera con el enlace, con sus
@@ -194,28 +244,38 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         nombre = proyecto.vercel_proyecto or nombre_propuesto(proyecto.slug)
         return lanzar(proyecto, "publicar",
                       comandos.publicar(proyecto, vercel_proyecto=nombre, crear=primera_vez),
-                      al_terminar=_anotar_publicacion(registro, proyecto, nombre))
+                      al_terminar=_anotar_publicacion(mios, proyecto, nombre))
 
     @app.get("/api/trabajos/{identificador}")
-    def ver_trabajo(identificador: str, desde: int = 0) -> dict:
+    def ver_trabajo(identificador: str, desde: int = 0,
+                    mios: Vista = Depends(vista)) -> dict:
         try:
-            return trabajos.ver(identificador).como_json(desde)
+            trabajo = trabajos.ver(identificador)
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
+        # El avance de una construcción dice de qué loteo es y qué está pasando:
+        # se pide como se pide el loteo.
+        mios.ver(trabajo.proyecto)
+        return trabajo.como_json(desde)
 
     # --- archivos generados --------------------------------------------------
 
     @app.get("/calce/{slug}/{archivo}")
-    def calce(slug: str, archivo: str) -> FileResponse:
-        proyecto = buscar(slug)
+    def calce(slug: str, archivo: str, mios: Vista = Depends(vista)) -> FileResponse:
+        proyecto = mios.ver(slug)
         if archivo not in proyecto.control_de_calce():
             raise HTTPException(404, "esa imagen de control no existe")
         return FileResponse(proyecto.salida.qa / archivo, media_type="image/jpeg")
 
+    @app.exception_handler(NoEncontrado)
+    async def no_encontrado(peticion: Request, error: NoEncontrado):
+        """Lo que no existe y lo que es de otro se contestan igual."""
+        return JSONResponse(status_code=404, content={"detail": str(error)})
+
     return app
 
 
-def _anotar_publicacion(registro: Registro, proyecto: Proyecto, nombre: str):
+def _anotar_publicacion(mios: Vista, proyecto: Proyecto, nombre: str):
     """Guarda el nombre y la URL que devolvió el hosting, no los que supusimos."""
     rastro = proyecto.salida.base / "publicacion.json"
 
@@ -223,7 +283,7 @@ def _anotar_publicacion(registro: Registro, proyecto: Proyecto, nombre: str):
         if trabajo.estado != "listo":
             return
         datos = json.loads(rastro.read_text(encoding="utf-8")) if rastro.is_file() else {}
-        registro.anotar_publicacion(
+        mios.anotar_publicacion(
             proyecto.slug,
             vercel_proyecto=datos.get("proyecto") or nombre,
             url=datos.get("url") or url_propuesta(proyecto.slug))
@@ -233,7 +293,7 @@ def _anotar_publicacion(registro: Registro, proyecto: Proyecto, nombre: str):
 
 def _pagina_de_entrada(mal: bool = False) -> str:
     plantilla = (WEB / "entrar.html").read_text(encoding="utf-8")
-    error = ('<p class="aviso">La contraseña no es esa.</p>' if mal else "")
+    error = ('<p class="aviso">El correo o la contraseña no son esos.</p>' if mal else "")
     return plantilla.replace("<!--ERROR-->", error)
 
 
@@ -256,5 +316,3 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "trabajo": ultimo.como_json() if ultimo and not ultimo.terminado else None,
     }
 
-
-app = crear_app()

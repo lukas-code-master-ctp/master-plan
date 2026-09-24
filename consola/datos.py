@@ -73,6 +73,11 @@ proyectos = Table(
     # en el hosting y el de su carpeta de salida.
     Column("slug", String(80), nullable=False, unique=True),
     Column("nombre", String(160), nullable=False),
+    # De dónde salen las fuentes. Vacío significa "lo que subieron", que vive en
+    # `proyectos/<slug>/` y se arma con el slug; una ruta absoluta es una carpeta
+    # que ya estaba en el disco y se vinculó sin copiar. Se guarda solo en ese
+    # caso para que la base siga sirviendo si los datos cambian de lugar.
+    Column("carpeta", Text, nullable=True),
     Column("vercel_proyecto", String(120), nullable=True, unique=True),
     Column("url_publicada", String(300), nullable=True),
     Column("publicado_en", DateTime(timezone=True), nullable=True),
@@ -101,6 +106,10 @@ class ClienteYaExiste(Exception):
 
 class EmailYaExiste(Exception):
     """Ese correo ya tiene cuenta, en esta loteadora o en otra."""
+
+
+class ProyectoYaExiste(Exception):
+    """Este cliente ya tiene un loteo con ese nombre."""
 
 
 class NoEncontrado(Exception):
@@ -139,6 +148,7 @@ class ProyectoGuardado:
     cliente_id: int
     slug: str
     nombre: str
+    carpeta: str | None
     vercel_proyecto: str | None
     url_publicada: str | None
     publicado_en: datetime | None
@@ -215,8 +225,48 @@ class Base:
             fila = con.execute(select(usuarios).where(usuarios.c.id == usuario_id)).first()
         return _usuario(fila) if fila else None
 
+    def usuarios_de(self, cliente_id: int) -> list[Usuario]:
+        with self.motor.connect() as con:
+            return [_usuario(f) for f in con.execute(
+                select(usuarios).where(usuarios.c.cliente_id == cliente_id)
+                .order_by(usuarios.c.email))]
+
+    def crear_usuario(self, cliente_id: int, email: str, nombre: str,
+                      rol: str = "equipo") -> tuple[Usuario, str]:
+        """Una cuenta más dentro de una loteadora que ya existe."""
+        if rol not in ROLES:
+            raise ValueError(f"rol desconocido: {rol!r}")
+        ahora = _ahora()
+        clave = _clave_provisional()
+        with self.motor.begin() as con:
+            if con.execute(select(usuarios.c.id)
+                           .where(func.lower(usuarios.c.email) == email.strip().lower())).first():
+                raise EmailYaExiste(f"{email} ya tiene cuenta")
+            con.execute(insert(usuarios).values(
+                cliente_id=cliente_id, email=email.strip().lower(), nombre=nombre.strip(),
+                clave_hash=CLAVES.hash(clave), rol=rol, activo=True,
+                debe_cambiar_clave=True, sesiones_validas_desde=ahora, creado_en=ahora))
+        encontrado = self.usuario_por_email(email)
+        assert encontrado is not None
+        return encontrado, clave
+
     def clave_valida(self, usuario: Usuario, intento: str) -> bool:
         return CLAVES.verify(intento, usuario.clave_hash) if intento else False
+
+    def verificar_en_vano(self) -> None:
+        """Gasta el mismo tiempo que verificar una clave de verdad.
+
+        Sin esto, un correo sin cuenta contesta al instante y uno con cuenta tarda
+        lo que tarda bcrypt: probar correos diría cuáles están registrados.
+        """
+        CLAVES.dummy_verify()
+
+    def desactivar_usuario(self, email: str) -> None:
+        """Le quita la cuenta y corta lo que tuviera abierto."""
+        with self.motor.begin() as con:
+            con.execute(update(usuarios)
+                        .where(func.lower(usuarios.c.email) == email.strip().lower())
+                        .values(activo=False, sesiones_validas_desde=_ahora()))
 
     def cambiar_clave(self, email: str, nueva: str) -> None:
         """Cambiar la clave corta también lo que estuviera abierto."""
@@ -253,7 +303,8 @@ class Base:
         return _proyecto(fila)
 
     def crear_proyecto(self, cliente_id: int, nombre: str, *, slug: str | None = None,
-                       nota_cobro: str | None = None, vercel_proyecto: str | None = None,
+                       carpeta: str | None = None, nota_cobro: str | None = None,
+                       vercel_proyecto: str | None = None,
                        url_publicada: str | None = None) -> ProyectoGuardado:
         """Un loteo nace pagado: solo se crea cuando CTP ya cobró.
 
@@ -262,12 +313,26 @@ class Base:
         ahora = _ahora()
         with self.motor.begin() as con:
             elegido = slug or _slug_libre(con, nombre)
-            con.execute(insert(proyectos).values(
-                cliente_id=cliente_id, slug=elegido, nombre=nombre.strip(),
-                vercel_proyecto=vercel_proyecto, url_publicada=url_publicada,
-                publicado_en=ahora if url_publicada else None,
-                pagado_en=ahora, nota_cobro=nota_cobro, creado_en=ahora))
+            try:
+                con.execute(insert(proyectos).values(
+                    cliente_id=cliente_id, slug=elegido, nombre=nombre.strip(),
+                    carpeta=carpeta, vercel_proyecto=vercel_proyecto,
+                    url_publicada=url_publicada,
+                    publicado_en=ahora if url_publicada else None,
+                    pagado_en=ahora, nota_cobro=nota_cobro, creado_en=ahora))
+            except IntegrityError as error:
+                raise ProyectoYaExiste(f"ya hay un loteo llamado {nombre!r}") from error
         return self.proyecto(elegido)
+
+    def renombrar_proyecto(self, slug: str, nombre: str) -> None:
+        """El nombre cambia; el slug no. El slug es la carpeta de salida y la URL
+        publicada, y cambiarlo dejaría el sitio anterior colgando."""
+        with self.motor.begin() as con:
+            try:
+                con.execute(update(proyectos).where(proyectos.c.slug == slug)
+                            .values(nombre=nombre.strip()))
+            except IntegrityError as error:
+                raise ProyectoYaExiste(f"ya hay un loteo llamado {nombre!r}") from error
 
     def anotar_publicacion(self, slug: str, vercel_proyecto: str, url: str) -> None:
         with self.motor.begin() as con:
@@ -334,5 +399,6 @@ def _usuario(fila) -> Usuario:
 def _proyecto(fila) -> ProyectoGuardado:
     return ProyectoGuardado(
         id=fila.id, cliente_id=fila.cliente_id, slug=fila.slug, nombre=fila.nombre,
+        carpeta=fila.carpeta,
         vercel_proyecto=fila.vercel_proyecto, url_publicada=fila.url_publicada,
         publicado_en=fila.publicado_en, pagado_en=fila.pagado_en, nota_cobro=fila.nota_cobro)

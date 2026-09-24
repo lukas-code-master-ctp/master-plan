@@ -1,7 +1,8 @@
 """La base de la consola: clientes, usuarios y proyectos."""
 import pytest
 
-from consola.datos import Base, ClienteYaExiste, EmailYaExiste, NoEncontrado
+from consola.datos import (
+    Base, ClienteYaExiste, EmailYaExiste, NoEncontrado, ProyectoYaExiste)
 
 
 @pytest.fixture
@@ -182,3 +183,57 @@ def test_la_base_sobrevive_a_reiniciar(tmp_path):
 
     assert [c.slug for c in otra.clientes()] == ["los-robles"]
     assert otra.usuario_por_email("ana@losrobles.cl").cliente_id == cliente.id
+
+
+def test_crear_una_cuenta_mas_dentro_de_una_loteadora(base):
+    cliente, _ = base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
+
+    usuario, clave = base.crear_usuario(cliente.id, "luis@losrobles.cl", "Luis")
+
+    assert usuario.cliente_id == cliente.id
+    assert usuario.rol == "equipo"
+    assert base.clave_valida(usuario, clave) is True
+    assert [u.email for u in base.usuarios_de(cliente.id)] == ["ana@losrobles.cl",
+                                                               "luis@losrobles.cl"]
+
+
+def test_una_cuenta_nueva_no_puede_robarle_el_correo_a_otra(base):
+    base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
+    otro, _ = base.crear_cliente("Del Valle", "luis@delvalle.cl", "Luis")
+
+    with pytest.raises(EmailYaExiste):
+        base.crear_usuario(otro.id, "ana@losrobles.cl", "Ana")
+
+
+def test_desactivar_una_cuenta_la_deja_sin_entrar(base):
+    cliente, _ = base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
+    base.crear_usuario(cliente.id, "luis@losrobles.cl", "Luis")
+
+    base.desactivar_usuario("luis@losrobles.cl")
+
+    assert base.usuario_por_email("luis@losrobles.cl").activo is False
+
+
+def test_el_mismo_cliente_no_puede_repetir_el_nombre_del_loteo(base):
+    """Dos loteos con el mismo nombre en la misma loteadora son un error de dedo."""
+    cliente, _ = base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
+    base.crear_proyecto(cliente.id, "Las Araucarias")
+
+    with pytest.raises(ProyectoYaExiste):
+        base.crear_proyecto(cliente.id, "Las Araucarias")
+
+
+def test_un_loteo_recuerda_la_carpeta_que_se_le_vinculo(base):
+    cliente, _ = base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
+
+    proyecto = base.crear_proyecto(cliente.id, "Las Araucarias", carpeta="/Users/mac/Araucarias")
+
+    assert base.proyecto(proyecto.slug, cliente_id=cliente.id).carpeta == "/Users/mac/Araucarias"
+
+
+def test_un_loteo_subido_no_guarda_carpeta(base):
+    """Vacío quiere decir 'donde van las subidas', que se arma con el slug: así la
+    base sigue sirviendo si los datos cambian de lugar."""
+    cliente, _ = base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
+
+    assert base.crear_proyecto(cliente.id, "Las Araucarias").carpeta is None

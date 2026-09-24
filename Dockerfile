@@ -37,4 +37,4 @@ USER consola
 
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sh", "-c", "hypercorn consola.app:app --bind 0.0.0.0:$PORT --workers 1"]
+CMD ["sh", "-c", "hypercorn --factory consola.app:crear_app --bind 0.0.0.0:$PORT --workers 1"]

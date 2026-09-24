@@ -1,26 +1,38 @@
-"""Los proyectos que conoce la consola.
+"""Los loteos que conoce la consola.
 
-Un proyecto es una carpeta con el KMZ, las panorámicas y un `proyecto.json`. Puede
+Un loteo es una carpeta con el KMZ, las panorámicas y un `proyecto.json`. Puede
 venir de dos lados: subida desde el navegador (se guarda en `proyectos/<slug>/`) o
 una carpeta que ya está en el disco, que se vincula sin copiar nada —las
 panorámicas pesan cientos de megas y no tiene sentido duplicarlas.
 
-El estado del proyecto no se guarda acá: se deduce mirando sus archivos y su
-salida. Así la consola nunca miente sobre lo que hay construido.
+De quién es cada loteo lo dice la base; qué hay construido lo dicen sus archivos.
+Esa división importa: el avance nunca se guarda, se mira, y así la consola no
+puede mentir sobre lo que existe.
+
+**Las rutas no usan `Registro` directo.** Piden `registro.para(sesion)` y reciben
+una `Vista` que solo alcanza los loteos de esa loteadora. El cliente no es un
+argumento que se pueda olvidar: es parte de quién creó la vista.
 """
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from pipeline import config
 
-ARCHIVO_REGISTRO = config.DATOS / "proyectos.json"
+from .acceso import Sesion
+from .datos import Base, NoEncontrado, ProyectoGuardado
+
 CARPETA_SUBIDAS = config.DATOS / "proyectos"
 
 EXTENSIONES_FOTO = (".jpg", ".jpeg")
+
+# Lo que se guarda en `proyecto.json`, que es lo que lee el pipeline. El resto
+# —de quién es, dónde quedó publicado— vive en la base y no se duplica acá.
+CAMPOS_DEL_PIPELINE = ("nombre", "etapa", "whatsapp", "parcelacion", "despegue", "referencias")
 
 
 @dataclass(frozen=True)
@@ -89,6 +101,8 @@ class Proyecto:
         Acá alcanza con mirar nombre y tamaño; el pipeline, que sí tiene que acertar,
         compara la hora, el GPS y la altura del XMP.
         """
+        if not self.fuentes.is_dir():
+            return {"kmz": None, "panoramicas": 0, "megas": 0, "planilla": None}
         kmz = sorted(p.name for p in self.fuentes.rglob("*.kmz"))
         planillas = sorted(p.name for p in self.fuentes.rglob("*.xlsx") if not p.name.startswith("~$"))
         fotos: dict[tuple[str, int], int] = {}
@@ -105,11 +119,14 @@ class Proyecto:
 
 
 class Registro:
-    """Las carpetas que la consola tiene a la vista, en un JSON al lado del código."""
+    """Todos los loteos del sistema, y dónde viven sus archivos.
 
-    def __init__(self, archivo: Path = ARCHIVO_REGISTRO, subidas: Path = CARPETA_SUBIDAS,
+    No se usa directo desde las rutas: se pide `para(sesion)`.
+    """
+
+    def __init__(self, base: Base, subidas: Path = CARPETA_SUBIDAS,
                  salidas: Path = config.SALIDAS, crm_por_defecto: Path | None = None):
-        self.archivo = Path(archivo)
+        self.base = base
         self.subidas = Path(subidas)
         self.salidas = Path(salidas)
         # Un export comercial para los loteos que no traen el suyo. Tiene sentido
@@ -117,49 +134,86 @@ class Registro:
         # deja en None para que nadie herede los precios de otro.
         self.crm_por_defecto = Path(crm_por_defecto) if crm_por_defecto else None
 
+    def para(self, sesion: Sesion) -> Vista:
+        """Los loteos que esta sesión puede tocar. Plataforma los ve todos."""
+        return Vista(registro=self, duenio=sesion.cliente_id,
+                     filtro=None if sesion.es_plataforma else sesion.cliente_id)
+
+
+@dataclass(frozen=True)
+class Vista:
+    """El registro visto por alguien.
+
+    `filtro` es de quién puede ver (None = todos, para el equipo de CTP) y `duenio`
+    de quién queda lo que cree. Son distintos a propósito: un operador de CTP mira
+    los loteos de cualquiera, pero los que sube quedan a nombre de CTP.
+    """
+    registro: Registro
+    duenio: int
+    filtro: int | None
+
     # --- lectura -------------------------------------------------------------
 
     def listar(self) -> list[Proyecto]:
-        return [self._leer(ruta) for ruta in self._rutas() if ruta.is_dir()]
+        return [self._leer(g) for g in self.registro.base.proyectos(cliente_id=self.filtro)]
 
     def ver(self, slug: str) -> Proyecto:
-        for proyecto in self.listar():
-            if proyecto.slug == slug:
-                return proyecto
-        raise KeyError(f"no tengo registrado el proyecto {slug!r}")
+        """El loteo, o `NoEncontrado` si no existe o no es suyo. No se distingue:
+        decir "existe pero no es tuyo" ya es contar algo."""
+        return self._leer(self.registro.base.proyecto(slug, cliente_id=self.filtro))
 
     # --- alta ----------------------------------------------------------------
 
+    def crear(self, nombre: str, archivos: list[Subida]) -> Proyecto:
+        """Guarda los archivos subidos en una carpeta nueva y registra el loteo."""
+        if not any(a.ruta.lower().endswith(".kmz") for a in archivos):
+            raise ValueError("falta el KMZ del loteo entre los archivos")
+
+        guardado = self.registro.base.crear_proyecto(self.duenio, nombre)
+        carpeta = self.registro.subidas / guardado.slug
+        try:
+            carpeta.mkdir(parents=True, exist_ok=True)
+            for archivo in archivos:
+                destino = _destino_seguro(carpeta, archivo.ruta)
+                destino.parent.mkdir(parents=True, exist_ok=True)
+                destino.write_bytes(archivo.contenido)
+            self._escribir_json(carpeta, guardado.slug, {"nombre": nombre})
+        except Exception:
+            # Sin esto el loteo quedaría anotado y vacío, y el nombre bloqueado
+            # para volver a intentarlo.
+            self.registro.base.olvidar_proyecto(guardado.slug)
+            shutil.rmtree(carpeta, ignore_errors=True)
+            raise
+        return self._leer(self.registro.base.proyecto(guardado.slug, cliente_id=self.filtro))
+
     def vincular(self, carpeta: Path) -> Proyecto:
-        """Registra una carpeta que ya está en el disco, sin copiar nada."""
+        """Registra una carpeta que ya está en el disco, sin copiar nada.
+
+        Solo tiene sentido en el computador donde están las fotos; la consola
+        desplegada no la ofrece, porque sería leer cualquier ruta del servidor.
+        """
         carpeta = Path(carpeta).expanduser().resolve()
         if not carpeta.is_dir():
             raise FileNotFoundError(f"no existe la carpeta {carpeta}")
         if not any(carpeta.rglob("*.kmz")):
             raise ValueError(f"no encontré el KMZ del loteo dentro de {carpeta.name}")
 
-        rutas = self._rutas()
-        if carpeta not in rutas:
-            self._guardar(rutas + [carpeta])
-        return self._leer(carpeta)
+        ya = self._por_carpeta(carpeta)
+        if ya is not None:
+            return self._leer(ya)
 
-    def crear(self, nombre: str, archivos: list[Subida]) -> Proyecto:
-        """Guarda los archivos subidos en una carpeta nueva y la registra."""
-        if not any(a.ruta.lower().endswith(".kmz") for a in archivos):
-            raise ValueError("falta el KMZ del loteo entre los archivos")
-
-        carpeta = self.subidas / config.Proyecto(nombre=nombre).slug
-        carpeta.mkdir(parents=True, exist_ok=True)
-        for archivo in archivos:
-            destino = self._destino_seguro(carpeta, archivo.ruta)
-            destino.parent.mkdir(parents=True, exist_ok=True)
-            destino.write_bytes(archivo.contenido)
-
-        archivo_json = carpeta / "proyecto.json"
-        if not archivo_json.is_file():
-            archivo_json.write_text(json.dumps({"nombre": nombre}, ensure_ascii=False, indent=1),
-                                    encoding="utf-8")
-        return self.vincular(carpeta)
+        datos = config.cargar_proyecto(carpeta)
+        # Si la carpeta ya trae slug, se respeta: es un loteo construido y quizá
+        # publicado, y cambiárselo dejaría su sitio colgando. Lo mismo con dónde
+        # quedó publicado: la carpeta se describe a sí misma, así que adoptarla
+        # devuelve el loteo entero aunque la base se hubiera perdido.
+        suyo = _leer_json(carpeta / "proyecto.json")
+        guardado = self.registro.base.crear_proyecto(
+            self.duenio, datos.nombre, slug=datos.slug_guardado or None, carpeta=str(carpeta),
+            vercel_proyecto=suyo.get("vercel_proyecto") or None,
+            url_publicada=suyo.get("url_publicada") or None)
+        self._escribir_json(carpeta, guardado.slug, {})
+        return self._leer(guardado)
 
     # --- edición -------------------------------------------------------------
 
@@ -169,79 +223,90 @@ class Registro:
         El slug no cambia aunque cambie el nombre: es la carpeta de salida y la URL
         publicada, y renombrarlo dejaría el sitio anterior colgando.
         """
-        return self._escribir(slug, {c: v for c, v in campos.items() if v is not None})
-
-    def _escribir(self, slug: str, campos: dict) -> Proyecto:
-        """Reescribe `proyecto.json` dejando intacto lo que no se toca."""
         proyecto = self.ver(slug)
-        archivo = proyecto.fuentes / "proyecto.json"
-        datos = _leer_json(archivo)
-        datos.update(campos)
-        datos["slug"] = slug
-        archivo.write_text(json.dumps(datos, ensure_ascii=False, indent=1), encoding="utf-8")
-        return self._leer(proyecto.fuentes)
+        limpios = {c: v for c, v in campos.items() if v is not None and c in CAMPOS_DEL_PIPELINE}
+        if "nombre" in limpios:
+            self.registro.base.renombrar_proyecto(slug, str(limpios["nombre"]))
+        self._escribir_json(proyecto.fuentes, slug, limpios)
+        return self.ver(slug)
 
     def anotar_publicacion(self, slug: str, *, vercel_proyecto: str, url: str) -> Proyecto:
-        """Guarda con qué nombre y en qué URL quedó publicado el loteo."""
-        return self._escribir(slug, {"vercel_proyecto": vercel_proyecto, "url_publicada": url})
+        """Guarda con qué nombre y en qué URL quedó publicado el loteo.
+
+        Se escribe en los dos lados: la base es de donde se lee, y la copia en la
+        carpeta es lo que permite volver a adoptar el loteo con su identidad si
+        algún día hay que rehacer la base.
+        """
+        proyecto = self.ver(slug)
+        self.registro.base.anotar_publicacion(slug, vercel_proyecto, url)
+        self._escribir_json(proyecto.fuentes, slug,
+                            {"vercel_proyecto": vercel_proyecto, "url_publicada": url})
+        return self.ver(slug)
 
     def olvidar(self, slug: str) -> None:
-        """Saca el proyecto de la lista. No borra archivos: no son nuestros."""
-        proyecto = self.ver(slug)
-        self._guardar([r for r in self._rutas() if r != proyecto.fuentes])
+        """Saca el loteo de la lista. No borra archivos: no son nuestros."""
+        self.ver(slug)
+        self.registro.base.olvidar_proyecto(slug)
 
     # --- interno -------------------------------------------------------------
 
-    def _rutas(self) -> list[Path]:
-        if not self.archivo.is_file():
-            return []
-        return [Path(r) for r in json.loads(self.archivo.read_text(encoding="utf-8"))]
+    def _por_carpeta(self, carpeta: Path) -> ProyectoGuardado | None:
+        for guardado in self.registro.base.proyectos(cliente_id=self.filtro):
+            if guardado.carpeta and Path(guardado.carpeta) == carpeta:
+                return guardado
+        return None
 
-    def _guardar(self, rutas: list[Path]) -> None:
-        self.archivo.parent.mkdir(parents=True, exist_ok=True)
-        self.archivo.write_text(json.dumps([str(r) for r in rutas], ensure_ascii=False, indent=1),
-                                encoding="utf-8")
-
-    def _leer(self, carpeta: Path) -> Proyecto:
-        # `cargar_proyecto` ya honra el slug guardado en proyecto.json: un loteo
-        # renombrado conserva el slug con el que se construyó y publicó.
+    def _leer(self, guardado: ProyectoGuardado) -> Proyecto:
+        carpeta = (Path(guardado.carpeta) if guardado.carpeta
+                   else self.registro.subidas / guardado.slug)
         datos = config.cargar_proyecto(carpeta)
-        slug = datos.slug
-        guardado = _leer_json(carpeta / "proyecto.json")
         return Proyecto(
-            slug=slug,
-            nombre=datos.nombre,
+            slug=guardado.slug,
+            nombre=guardado.nombre,
             etapa=datos.etapa,
             whatsapp=datos.whatsapp,
             despegue=datos.despegue,
             referencias=datos.referencias,
             fuentes=carpeta,
-            salida=config.Salida(self.salidas / slug),
+            salida=config.Salida(self.registro.salidas / guardado.slug),
             crm=self._crm_de(carpeta),
-            vercel_proyecto=guardado.get("vercel_proyecto") or None,
-            url_publicada=guardado.get("url_publicada") or None,
+            vercel_proyecto=guardado.vercel_proyecto,
+            url_publicada=guardado.url_publicada,
         )
+
+    def _escribir_json(self, carpeta: Path, slug: str, campos: dict) -> None:
+        """Deja en la carpeta lo que el pipeline necesita leer, sin tocar lo demás."""
+        archivo = carpeta / "proyecto.json"
+        datos = _leer_json(archivo)
+        datos.update(campos)
+        datos["slug"] = slug
+        archivo.write_text(json.dumps(datos, ensure_ascii=False, indent=1), encoding="utf-8")
 
     def _crm_de(self, carpeta: Path) -> Path | None:
         propio = carpeta / "crm.csv"
         if propio.is_file():
             return propio
-        return self.crm_por_defecto if self.crm_por_defecto and self.crm_por_defecto.is_file() else None
-
-    @staticmethod
-    def _destino_seguro(carpeta: Path, relativa: str) -> Path:
-        """Impide que un nombre con `..` escriba fuera de la carpeta del proyecto."""
-        destino = (carpeta / relativa).resolve()
-        if carpeta.resolve() not in destino.parents:
-            raise ValueError(f"ruta inválida en la subida: {relativa!r}")
-        return destino
+        por_defecto = self.registro.crm_por_defecto
+        return por_defecto if por_defecto and por_defecto.is_file() else None
 
 
 def _leer_json(archivo: Path) -> dict:
     return json.loads(archivo.read_text(encoding="utf-8")) if archivo.is_file() else {}
 
 
+def _destino_seguro(carpeta: Path, relativa: str) -> Path:
+    """Impide que un nombre con `..` escriba fuera de la carpeta del proyecto."""
+    destino = (carpeta / relativa).resolve()
+    if carpeta.resolve() not in destino.parents:
+        raise ValueError(f"ruta inválida en la subida: {relativa!r}")
+    return destino
+
+
 def fecha_legible(iso: str | None) -> str:
     if not iso:
         return ""
     return datetime.fromisoformat(iso).strftime("%d/%m/%Y %H:%M")
+
+
+__all__ = ["CARPETA_SUBIDAS", "NoEncontrado", "Proyecto", "Registro", "Subida", "Vista",
+           "fecha_legible"]
