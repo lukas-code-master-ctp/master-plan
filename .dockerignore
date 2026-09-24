@@ -1,0 +1,16 @@
+.venv/
+.git/
+salidas/
+proyectos/
+proyectos.json
+.cache/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+trabajo_talhuenes/
+docs/
+web/datos/
+web/panoramas/
+control-calce/

@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Pruebas de humo — Masterplan 360</title>
+<title>Pruebas de humo — Tu Masterplan</title>
 <style>
   body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #0d1117; color: #e6edf3; }
   h1 { font-size: 1.1rem; padding: 0.75rem 1rem; margin: 0; border-bottom: 1px solid #2a323f; }
@@ -15,7 +15,7 @@
 </style>
 </head>
 <body>
-<h1>Pruebas de humo — Masterplan 360</h1>
+<h1>Pruebas de humo — Tu Masterplan</h1>
 <div id="resumen">Ejecutando…</div>
 <ol id="resultados"></ol>
 <iframe id="marco" title="Aplicación bajo prueba"></iframe>
@@ -79,7 +79,7 @@ async function correr() {
   const doc = marco.contentDocument;
   const $ = (s) => doc.querySelector(s);
 
-  const arranco = await esperarA(() => $('#overlay').children.length > 0);
+  const arranco = await esperarA(() => $('#overlay').querySelectorAll('.parcela').length > 0);
   revisar('la aplicación arranca y dibuja el overlay', arranco);
 
   revisar('no se muestra el error de carga', $('#error-carga').hidden,
@@ -100,9 +100,9 @@ async function correr() {
           `brillo ${muestra.brillo.toFixed(0)}, variedad ${muestra.variedad}`);
 
   // --- Overlay ---------------------------------------------------------------
-  const visibles = [...$('#overlay').children].filter((g) => g.style.display !== 'none');
+  const visibles = [...$('#overlay').querySelectorAll('.parcela')].filter((g) => g.style.display !== 'none');
   revisar('hay parcelas proyectadas sobre la vista', visibles.length >= 5,
-          `${visibles.length} visibles de ${$('#overlay').children.length}`);
+          `${visibles.length} visibles de ${$('#overlay').querySelectorAll('.parcela').length}`);
 
   const rutas = visibles.map((g) => g.querySelector('path').getAttribute('d'));
   revisar('los polígonos tienen geometría válida',
@@ -168,23 +168,27 @@ async function correr() {
   const alturaPrevia = alturaPresionada();
   const altura = [...$('#controles-altura').children].find(
     (b) => !b.disabled && b.getAttribute('aria-pressed') !== 'true');
-  revisar('hay otra altura disponible en esta posición', Boolean(altura),
-          `presionada ${alturaPrevia}`);
-  altura?.click();
-  const cambio = await esperarA(() => alturaPresionada() === altura?.textContent);
-  revisar('cambiar de altura cambia la vista', cambio,
-          `${alturaPrevia} m → ${alturaPresionada()} m`);
-  await esperar(600);
-  revisar('la nueva vista vuelve a proyectar parcelas',
-          [...$('#overlay').children].filter((g) => g.style.display !== 'none').length >= 5,
-          `${[...$('#overlay').children].filter((g) => g.style.display !== 'none').length} visibles`);
+  if (!altura) {
+    // Un vuelo a una sola altura no tiene nada que cambiar: no es una falla.
+    revisar('cambiar de altura (una sola altura en esta posición, se omite)', true,
+            `presionada ${alturaPrevia}`);
+  } else {
+    altura.click();
+    const cambio = await esperarA(() => alturaPresionada() === altura.textContent);
+    revisar('cambiar de altura cambia la vista', cambio,
+            `${alturaPrevia} m → ${alturaPresionada()} m`);
+    await esperar(600);
+    revisar('la nueva vista vuelve a proyectar parcelas',
+            [...$('#overlay').querySelectorAll('.parcela')].filter((g) => g.style.display !== 'none').length >= 5,
+            `${[...$('#overlay').querySelectorAll('.parcela')].filter((g) => g.style.display !== 'none').length} visibles`);
+  }
 
   const posicion = [...$('#controles-posicion').children].find(
     (b) => b.getAttribute('aria-pressed') !== 'true');
   posicion?.click();
   await esperar(900);
   revisar('cambiar de posición reencuadra hacia las parcelas',
-          [...$('#overlay').children].filter((g) => {
+          [...$('#overlay').querySelectorAll('.parcela')].filter((g) => {
             const caja = g.getBoundingClientRect();
             return g.style.display !== 'none' && caja.width > 1
               && caja.left < ventana.innerWidth && caja.right > 0;
@@ -192,13 +196,22 @@ async function correr() {
           `posición ${posicion?.textContent}`);
 
   // --- Buscador --------------------------------------------------------------
+  // El lote de prueba sale del catálogo cargado: cada loteo numera a su manera.
   const buscador = $('#buscador');
-  buscador.value = '191';
+  const catalogo = await (await fetch('datos/parcelas.json')).json();
+  const loteBuscado = catalogo.parcelas[Math.floor(catalogo.parcelas.length / 2)];
+  buscador.value = String(loteBuscado.numero);
   buscador.dispatchEvent(new ventana.Event('input'));
   await esperar(120);
   const sugerencias = [...$('#sugerencias').children].map((li) => li.textContent);
+  // La sugerencia dice "Parcela 7 · Etapa 2", no el id "2-7": se busca por número
+  // y, si el loteo tiene etapas, por la etapa del lote.
+  const esperado = loteBuscado.etapa != null
+    ? (t) => t.includes(`Parcela ${loteBuscado.numero}`) && t.includes(`Etapa ${loteBuscado.etapa}`)
+    : (t) => t.includes(loteBuscado.id);
   revisar('el buscador encuentra por número de lote',
-          sugerencias.some((t) => t.includes('A191')), sugerencias.slice(0, 3).join(' | '));
+          sugerencias.some(esperado),
+          `buscado ${loteBuscado.id} — ${sugerencias.slice(0, 3).join(' | ')}`);
 
   // --- Filtros ---------------------------------------------------------------
   $('#solo-con-vista').checked = true;
@@ -211,18 +224,18 @@ async function correr() {
   const chip = $('#filtro-estados').children[0];
   chip?.click();
   await esperar(200);
-  const atenuadas = [...$('#overlay').children].filter(
+  const atenuadas = [...$('#overlay').querySelectorAll('.parcela')].filter(
     (g) => g.classList.contains('parcela--atenuada'));
   revisar('filtrar por estado atenúa las parcelas excluidas', atenuadas.length > 0,
           `${atenuadas.length} atenuadas`);
 
   // --- Tipografías -----------------------------------------------------------
   await doc.fonts.ready;
-  for (const familia of ['Fraunces', 'Instrument Sans', 'IBM Plex Mono']) {
+  for (const familia of ['Plus Jakarta Sans']) {
     revisar(`la tipografía ${familia} está cargada`, doc.fonts.check(`1rem "${familia}"`));
   }
   revisar('el nombre del proyecto usa la tipografía de display',
-          ventana.getComputedStyle($('.marca__nombre')).fontFamily.includes('Fraunces'));
+          ventana.getComputedStyle($('.marca__nombre')).fontFamily.includes('Plus Jakarta Sans'));
 
   // --- Mapa ------------------------------------------------------------------
   revisar('el mapa dibuja los polígonos del loteo',

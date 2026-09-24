@@ -15,6 +15,7 @@ export class Catalogo {
     /** Con cuál abrir: la que mejor muestra el loteo, según el pipeline. */
     this.vistaInicial = this.vistaPorId.get(vistas.inicial) ?? this.vistas[0];
     this.overlays = new Map();
+    this.referencias = new Map();
   }
 
   static async cargar() {
@@ -30,8 +31,14 @@ export class Catalogo {
     if (!this.overlays.has(idVista)) {
       const datos = await pedirJson(`${RUTA_DATOS}/vistas/${idVista}.json`);
       this.overlays.set(idVista, new Map(datos.parcelas.map((p) => [p.id, p])));
+      this.referencias.set(idVista, datos.referencias ?? []);
     }
     return this.overlays.get(idVista);
+  }
+
+  /** Los hitos del horizonte de una vista (pueblos cercanos). Pide antes overlayDe. */
+  referenciasDe(idVista) {
+    return this.referencias.get(idVista) ?? [];
   }
 
   posiciones() {
@@ -68,6 +75,27 @@ export class Catalogo {
   etiquetaEstado(estado) {
     return this.estados[estado]?.etiqueta ?? estado;
   }
+
+  /** "Parcela 7": el número dentro de su etapa, o el id completo si el loteo no tiene etapas. */
+  titulo(parcela) {
+    return `Parcela ${parcela.etapa != null ? parcela.numero : parcela.id}`;
+  }
+
+  /** "Etapa 2", o nada. */
+  etapaDe(parcela) {
+    return parcela.etapa != null ? `Etapa ${parcela.etapa}` : '';
+  }
+
+  /** "Parcela 7 · Etapa 2", para listas y mensajes donde la etapa no está a la vista. */
+  nombre(parcela) {
+    const etapa = this.etapaDe(parcela);
+    return etapa ? `${this.titulo(parcela)} · ${etapa}` : this.titulo(parcela);
+  }
+
+  /** Lo que va en la pastilla sobre el terreno: el número a secas. */
+  rotulo(id) {
+    return this.porId.get(id)?.rotulo ?? id.replace(/^A/, '');
+  }
 }
 
 /** Filtro sobre el catálogo. Devuelve el conjunto de ids que pasan. */
@@ -93,7 +121,9 @@ export function buscar(parcelas, consulta, limite = 8) {
   const digitos = texto.replace(/\D/g, '');
 
   const coincide = (p) => {
-    if (p.id === texto || p.id === `A${digitos}`) return 3;
+    if (p.id === texto) return 3;
+    // Por número, sin importar si el loteo antepone letra de sector ("A191") o no
+    // ("42"): p.numero ya trae solo los dígitos del identificador.
     if (digitos && String(p.numero) === digitos) return 3;
     if (p.id.includes(texto)) return 2;
     if (digitos && String(p.numero).startsWith(digitos)) return 1;

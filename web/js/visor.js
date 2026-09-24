@@ -38,7 +38,7 @@ const ANCHO_MINIMO_ETIQUETA_PX = 42;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export class Visor {
-  constructor(elemento, { alElegirParcela, alPasarSobreParcela, alMoverCamara } = {}) {
+  constructor(elemento, { alElegirParcela, alPasarSobreParcela, alMoverCamara, rotuloDe } = {}) {
     this.elemento = elemento;
     this.lienzo = elemento.querySelector('canvas');
     this.svg = elemento.querySelector('svg');
@@ -49,9 +49,13 @@ export class Visor {
     this.camara = new Camara();
     this.vista = null;
     this.overlay = new Map();
+    this.referencias = [];
+    this.nodosReferencia = [];
+    this.capaReferencias = null;
     this.nodos = new Map();
     this.seleccionada = null;
     this.estiloParcela = () => ({ color: '#ffffff', texto: '#1c1a17', atenuada: false });
+    this.rotuloDe = rotuloDe ?? ((id) => id.replace(/^A/, ''));
     this.cargaEnCurso = 0;
     this.cuadroPedido = false;
 
@@ -124,9 +128,10 @@ export class Visor {
 
   // --- Vista -----------------------------------------------------------------
 
-  async mostrarVista(vista, overlay, { avisar } = {}) {
+  async mostrarVista(vista, overlay, { avisar, referencias = [] } = {}) {
     this.vista = vista;
     this.overlay = overlay;
+    this.referencias = referencias;
     this._limpiarNodos();
     this._pintar();
 
@@ -258,6 +263,7 @@ export class Visor {
   _dibujarOverlay() {
     const { ancho, alto } = this;
     if (!ancho) return;
+    this._dibujarReferencias(ancho, alto);
 
     for (const [id, parcela] of this.overlay) {
       const nodo = this._nodoDe(id);
@@ -309,7 +315,7 @@ export class Visor {
     const numero = document.createElementNS(SVG_NS, 'text');
     numero.setAttribute('class', 'parcela__numero');
     numero.setAttribute('dy', '0.34em');
-    numero.textContent = id.replace(/^A/, '');
+    numero.textContent = this.rotuloDe(id);
     pastilla.append(disco, numero);
 
     grupo.append(forma, pastilla);
@@ -326,6 +332,49 @@ export class Visor {
   _limpiarNodos() {
     this.svg.replaceChildren();
     this.nodos.clear();
+    this.nodosReferencia = [];
+    this.capaReferencias = null;
+  }
+
+  // Hitos del horizonte ("CAUQUENES · 12 KM"): un tick y un rótulo, sin interacción.
+  _dibujarReferencias(ancho, alto) {
+    this.referencias.forEach((referencia, indice) => {
+      const nodo = this._nodoReferencia(indice, referencia);
+      const [x, y, z] = this.camara.aCamara(referencia.az, referencia.el);
+      if (z <= 0.05 || !this.camara.puedeVerse([referencia.az, referencia.el], ancho, alto, 1.0)) {
+        nodo.style.display = 'none';
+        return;
+      }
+      const [px, py] = this.camara.aPantalla([x, y, z], ancho, alto);
+      nodo.style.display = '';
+      nodo.setAttribute('transform', `translate(${px.toFixed(1)} ${py.toFixed(1)})`);
+    });
+  }
+
+  _nodoReferencia(indice, referencia) {
+    let nodo = this.nodosReferencia[indice];
+    if (nodo) return nodo;
+    nodo = document.createElementNS(SVG_NS, 'g');
+    nodo.setAttribute('class', 'referencia');
+    const tick = document.createElementNS(SVG_NS, 'line');
+    tick.setAttribute('class', 'referencia__tick');
+    tick.setAttribute('y1', '-3');
+    tick.setAttribute('y2', '-22');
+    const texto = document.createElementNS(SVG_NS, 'text');
+    texto.setAttribute('class', 'referencia__texto');
+    texto.setAttribute('y', '-28');
+    texto.textContent = `${referencia.nombre} · ${Math.round(referencia.distancia_km)} km`.toUpperCase();
+    nodo.append(tick, texto);
+    // Van en su propia capa, antes que las parcelas: quedan debajo y nadie que
+    // recorra los hijos del overlay buscando parcelas se los encuentra.
+    if (!this.capaReferencias) {
+      this.capaReferencias = document.createElementNS(SVG_NS, 'g');
+      this.capaReferencias.setAttribute('class', 'referencias');
+      this.svg.prepend(this.capaReferencias);
+    }
+    this.capaReferencias.append(nodo);
+    this.nodosReferencia[indice] = nodo;
+    return nodo;
   }
 
   marcarSeleccionada(id) {

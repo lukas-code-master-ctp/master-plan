@@ -14,6 +14,13 @@ export function formatearPrecio(precio, moneda) {
   return `$${NUMERO.format(Math.round(precio))}`;
 }
 
+/** El ancho en metros si la planilla lo trae; si no, la superficie de la servidumbre. */
+export function formatearServidumbre(parcela) {
+  if (parcela.servidumbre_m != null) return `${NUMERO.format(parcela.servidumbre_m)} m`;
+  if (parcela.servidumbre_m2 != null) return `${NUMERO.format(Math.round(parcela.servidumbre_m2))} m²`;
+  return '—';
+}
+
 export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
   const estado = parcela.estado;
   const color = catalogo.color(estado);
@@ -25,8 +32,11 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
   contenedor.innerHTML = `
     <div class="ficha__cabecera">
       <div>
-        <h2 class="ficha__titulo">Parcela ${parcela.id}</h2>
-        <span class="insignia"><i style="background:${color}"></i>${catalogo.etiquetaEstado(estado)}</span>
+        <h2 class="ficha__titulo">${catalogo.titulo(parcela)}</h2>
+        <div class="ficha__meta">
+          <span class="insignia insignia--${estado}"><i style="background:${color}"></i>${catalogo.etiquetaEstado(estado)}</span>
+          ${parcela.etapa != null ? `<span class="ficha__etapa">${catalogo.etapaDe(parcela)}</span>` : ''}
+        </div>
       </div>
       <button class="ficha__cerrar" type="button" aria-label="Cerrar ficha">✕</button>
     </div>
@@ -38,8 +48,7 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
       </div>
       <div class="dato">
         <span class="dato__rotulo">Servidumbre</span>
-        <span class="dato__valor">${parcela.servidumbre_m != null
-          ? `${NUMERO.format(parcela.servidumbre_m)} m` : '—'}</span>
+        <span class="dato__valor">${formatearServidumbre(parcela)}</span>
       </div>
       <div class="dato">
         <span class="dato__rotulo">Precio</span>
@@ -71,7 +80,7 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
 
   if (vendible && catalogo.meta.whatsapp) {
     const mensaje = encodeURIComponent(
-      `Hola, me interesa la parcela ${parcela.id} de ${catalogo.meta.proyecto}.`);
+      `Hola, me interesa la ${catalogo.nombre(parcela).toLowerCase()} de ${catalogo.meta.proyecto}.`);
     const enlace = document.createElement('a');
     enlace.className = 'boton boton--whatsapp';
     enlace.href = `https://wa.me/${catalogo.meta.whatsapp}?text=${mensaje}`;
@@ -81,7 +90,7 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
     zona.append(enlace);
   }
 
-  zona.append(boton('Copiar enlace', 'boton boton--contorno', async (evento) => {
+  zona.append(boton('Copiar enlace', 'boton boton--texto', async (evento) => {
     const url = new URL(location.href);
     url.searchParams.set('lote', parcela.id);
     try {

@@ -225,3 +225,31 @@ def test_el_modelo_de_terreno_se_aplica_a_toda_la_parcela():
                                 terreno=lambda p: VISTA.terreno_plano() + 30)
     assert elevado.centro[1] > plano.centro[1]
     assert all(e2 > e1 for (_, e1), (_, e2) in zip(plano.anillo, elevado.anillo))
+
+
+# --- corrección fina de pose ---------------------------------------------------
+
+def test_una_inclinacion_sobre_el_eje_este_sube_lo_que_esta_al_norte():
+    from dataclasses import replace
+    inclinada = replace(VISTA, inclinacion_este=1.0)
+    norte = (VISTA.lon, VISTA.lat + 300 / geo.METROS_POR_GRADO_LAT)
+    este = (VISTA.lon + 300 / geo.metros_por_grado_lon(VISTA.lat), VISTA.lat)
+
+    _, el_norte_plano, _ = proyectar_punto(VISTA, norte)
+    _, el_norte_incl, _ = proyectar_punto(inclinada, norte)
+    _, el_este_plano, _ = proyectar_punto(VISTA, este)
+    _, el_este_incl, _ = proyectar_punto(inclinada, este)
+
+    assert el_norte_incl - el_norte_plano == pytest.approx(1.0, abs=0.05)
+    assert el_este_incl - el_este_plano == pytest.approx(0.0, abs=0.05)
+
+
+def test_el_desnivel_sube_el_terreno():
+    from dataclasses import replace
+    punto = (VISTA.lon, VISTA.lat + 300 / geo.METROS_POR_GRADO_LAT)
+    _, el_plano, _ = proyectar_punto(VISTA, punto)
+    _, el_subido, _ = proyectar_punto(replace(VISTA, desnivel=40.0), punto)
+    _, el_cota, _ = proyectar_punto(VISTA, punto, cota_terreno=VISTA.terreno_plano() + 40)
+
+    assert el_subido == pytest.approx(el_cota)
+    assert el_subido > el_plano

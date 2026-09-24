@@ -4,10 +4,24 @@ import { renderizarFicha } from './ficha.js';
 import { Mapa } from './mapa.js';
 import { Visor } from './visor.js';
 
-const ALTURAS = [50, 100, 300, 500];
 const ROMANOS = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 
 const $ = (selector) => document.querySelector(selector);
+
+/** Centro del loteo en grados y minutos, para el rótulo de la marca. */
+function coordenadasDelLoteo(vistas) {
+  if (!vistas.length) return '';
+  const media = (valores) => valores.reduce((a, b) => a + b, 0) / valores.length;
+  const lat = media(vistas.map((v) => v.lat));
+  const lon = media(vistas.map((v) => v.lon));
+  const gm = (valor) => {
+    const absoluto = Math.abs(valor);
+    const grados = Math.floor(absoluto);
+    const minutos = Math.round((absoluto - grados) * 60);
+    return minutos === 60 ? `${grados + 1}°00′` : `${grados}°${String(minutos).padStart(2, '0')}′`;
+  };
+  return `${gm(lat)}${lat < 0 ? 'S' : 'N'} · ${gm(lon)}${lon < 0 ? 'O' : 'E'}`;
+}
 
 const estado = {
   catalogo: null,
@@ -28,11 +42,13 @@ async function arrancar() {
 
   $('#marca-nombre').textContent = catalogo.meta.proyecto;
   $('#marca-etapa').textContent = catalogo.meta.etapa ?? '';
-  document.title = `Masterplan 360 — ${catalogo.meta.proyecto}`;
+  $('#marca-coord').textContent = coordenadasDelLoteo(catalogo.vistas);
+  document.title = `${catalogo.meta.proyecto} — Tu Masterplan`;
 
   estado.visibles = new Set(catalogo.parcelas.map((p) => p.id));
 
   estado.visor = new Visor($('#visor'), {
+    rotuloDe: (id) => catalogo.rotulo(id),
     alElegirParcela: (id) => seleccionar(id),
     alPasarSobreParcela: (id) => destacar(id),
     alMoverCamara: (camara) => {
@@ -76,7 +92,10 @@ async function cambiarVista(vista) {
   const reencuadrar = estado.vista?.posicion !== vista.posicion;
   estado.vista = vista;
   const overlay = await estado.catalogo.overlayDe(vista.id);
-  await estado.visor.mostrarVista(vista, overlay, { avisar: mostrarCarga });
+  await estado.visor.mostrarVista(vista, overlay, {
+    avisar: mostrarCarga,
+    referencias: estado.catalogo.referenciasDe(vista.id),
+  });
   if (reencuadrar) estado.visor.encuadrarParcelas();
   estado.visor.aplicarEstilos(estiloDe);
   estado.visor.marcarSeleccionada(estado.seleccionada);
@@ -171,7 +190,11 @@ function construirControles() {
   }));
 
   // El altímetro se lee de arriba hacia abajo, como un instrumento de vuelo.
-  $('#controles-altura').replaceChildren(...[...ALTURAS].reverse().map((altura) => {
+  // Las alturas salen del vuelo, no de una lista fija: cada loteo se vuela a las
+  // suyas y una lista escrita a mano deja el control muerto en cuanto no calzan.
+  const alturas = [...new Set(estado.catalogo.vistas.map((v) => v.altura_m))]
+    .sort((a, b) => a - b);
+  $('#controles-altura').replaceChildren(...[...alturas].reverse().map((altura) => {
     const boton = document.createElement('button');
     boton.type = 'button';
     boton.title = `${altura} metros de altura`;
@@ -209,7 +232,7 @@ function conectarAccionesRapidas() {
     const etiqueta = compartir.querySelector('.accion__texto');
     const original = etiqueta.textContent;
     const url = location.href;
-    const titulo = `${estado.catalogo.meta.proyecto} — Masterplan 360`;
+    const titulo = `${estado.catalogo.meta.proyecto} — Tu Masterplan`;
 
     if (navigator.share) {
       try {
@@ -239,7 +262,7 @@ function conectarAccionesRapidas() {
 
 function enlaceWhatsapp(parcela) {
   const mensaje = parcela
-    ? `Hola, me interesa la parcela ${parcela.id} de ${estado.catalogo.meta.proyecto}.`
+    ? `Hola, me interesa la ${estado.catalogo.nombre(parcela).toLowerCase()} de ${estado.catalogo.meta.proyecto}.`
     : `Hola, quiero información sobre ${estado.catalogo.meta.proyecto}.`;
   return `https://wa.me/${estado.catalogo.meta.whatsapp}?text=${encodeURIComponent(mensaje)}`;
 }
@@ -365,7 +388,7 @@ function conectarBuscador() {
       punto.style.background = estado.catalogo.color(parcela.estado);
       const medida = document.createElement('small');
       medida.textContent = parcela.superficie_m2 ? `${parcela.superficie_m2} m²` : '';
-      item.append(punto, `Parcela ${parcela.id}`, medida);
+      item.append(punto, estado.catalogo.nombre(parcela), medida);
       item.addEventListener('mousedown', (evento) => {
         evento.preventDefault();
         elegir(parcela.id);

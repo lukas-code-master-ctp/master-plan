@@ -102,3 +102,9 @@ def caja(anillo: Anillo) -> tuple[float, float, float, float]:
     lons = [p[0] for p in anillo]
     lats = [p[1] for p in anillo]
     return min(lons), min(lats), max(lons), max(lats)
+
+
+def desde_metros(xy: tuple[float, float], origen: Punto) -> Punto:
+    """(este, norte) en metros respecto de `origen` → (lon, lat). Inversa de `a_metros`."""
+    escala_lon = metros_por_grado_lon(origen[1])
+    return (origen[0] + xy[0] / escala_lon, origen[1] + xy[1] / METROS_POR_GRADO_LAT)

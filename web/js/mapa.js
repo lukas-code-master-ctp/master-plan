@@ -42,7 +42,7 @@ export class Mapa {
         className: 'parcela-mapa', weight: 1, fillOpacity: 0.28,
       }).addTo(this.mapa);
 
-      forma.bindTooltip(`Parcela ${parcela.id}`, { direction: 'top', sticky: true });
+      forma.bindTooltip(this.catalogo.nombre(parcela), { direction: 'top', sticky: true });
       forma.on('click', () => this.alElegirParcela(parcela.id));
       forma.on('mouseover', () => this.alPasarSobreParcela(parcela.id));
       forma.on('mouseout', () => this.alPasarSobreParcela(null));

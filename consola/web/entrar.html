@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar — Tu Masterplan</title>
+<link rel="stylesheet" href="/consola.css">
+<style>
+  body { display: grid; place-items: center; min-height: 100vh; }
+  .entrada {
+    width: min(22rem, calc(100vw - 2rem)); padding: 2rem;
+    background: #fff; border: 1px solid var(--zinc-200);
+    border-radius: var(--radio-lg); box-shadow: var(--sombra);
+  }
+  .entrada .marca { margin-bottom: 1.5rem; }
+  .entrada h1 { margin: 0 0 0.35rem; font: 700 1.125rem/1.2 var(--sans); }
+  .entrada form { display: grid; gap: 0.75rem; margin-top: 1.25rem; }
+  .entrada .boton { width: 100%; }
+  .entrada .aviso { margin: 0 0 1rem; }
+</style>
+</head>
+<body>
+<main class="entrada">
+  <div class="marca">
+    <svg class="marca__hito" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <path d="M16 4v6M16 22v6M4 16h6M22 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M16 10.5 21.5 16 16 21.5 10.5 16Z" fill="currentColor"/>
+    </svg>
+  </div>
+  <h1>Tu Masterplan</h1>
+  <p class="ayuda">Consola de loteos</p>
+  <!--ERROR-->
+  <form method="post" action="/entrar">
+    <label class="campo">
+      <span>Correo</span>
+      <input name="email" type="email" autocomplete="username" autofocus required>
+    </label>
+    <label class="campo">
+      <span>Contraseña</span>
+      <input name="clave" type="password" autocomplete="current-password" required>
+    </label>
+    <button class="boton" type="submit">Entrar</button>
+  </form>
+</main>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# Solo para la consola; el pipeline por sí solo no necesita nada de esto.
+fastapi>=0.115
+python-multipart>=0.0.9
+# Hypercorn y no uvicorn: habla HTTP/2 en claro, que es lo que deja subir
+# panorámicas de 60 MB a Cloud Run.
+hypercorn>=0.17
+# La base de la consola: clientes, usuarios y de quién es cada loteo.
+sqlalchemy>=2.0
+passlib[bcrypt]>=1.7
+# passlib 1.7 no habla con bcrypt 4; mismo pin que usa Cierra.
+bcrypt<4
+# En el servidor la base es Postgres; en este computador, SQLite.
+psycopg[binary]>=3.1

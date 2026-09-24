@@ -1,5 +1,18 @@
 # Todo lo que produce el pipeline. Se regenera con:
 #   python -m pipeline.construir
+salidas/
+# Lo que la consola sabe y lo que se sube por ella.
+proyectos.json
+proyectos.json.migrado
+proyectos/
+# La base de la consola: correos y hashes de clave de los clientes. Jamás en git.
+*.db
+*.db-journal
+*.sqlite3
+# Con esto se firman las galletas de sesión: quien lo tenga entra como cualquiera.
+.secreto-consola
+.cache/
+# (de antes de tener salidas por proyecto)
 web/datos/
 web/panoramas/
 control-calce/
@@ -14,3 +27,5 @@ venv/
 # Sistema
 .DS_Store
 Thumbs.db
+.mypy_cache/
+.ruff_cache/
