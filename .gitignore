@@ -29,3 +29,5 @@ venv/
 Thumbs.db
 .mypy_cache/
 .ruff_cache/
+# Los registros de la consola corriendo como servicio.
+logs/

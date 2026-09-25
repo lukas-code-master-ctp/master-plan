@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  La consola siempre encendida en este computador.
+
+    cp com.ctp.tumasterplan.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ctp.tumasterplan.plist
+
+  Queda en http://localhost:8780 y sobrevive a cerrar la terminal y a reiniciar.
+  Escucha solo en 127.0.0.1: desde fuera del computador no se alcanza, que es lo
+  que corresponde mientras sea un prototipo.
+
+  OJO — esto NO funciona con el proyecto dentro de ~/Desktop. macOS protege
+  Escritorio, Documentos y Descargas, y un agente de launchd no hereda el permiso
+  que sí tiene la Terminal: falla con "Operation not permitted" antes de arrancar.
+  Probado el 2026-09-25 y por eso está desactivado.
+
+  Dos formas de habilitarlo, cuando haga falta:
+    a) Mover el proyecto —y las carpetas de vuelo— fuera de ~/Desktop, por ejemplo
+       a ~/tumasterplan. Es la limpia: no pide permisos especiales.
+    b) Dar "Acceso a disco completo" a /bin/bash en Ajustes → Privacidad. Funciona,
+       pero se lo da a TODO lo que corra bash, que es mucho más de lo que hace falta.
+
+  Mientras tanto, ./consola.sh desde la Terminal hace lo mismo con un comando.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ctp.tumasterplan</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/mac/Desktop/Claude_code/master-plan/consola.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/mac/Desktop/Claude_code/master-plan</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Sin esto se abriría una ventana del navegador sola en cada arranque. -->
+    <key>SIN_NAVEGADOR</key>
+    <string>1</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Si el proceso se cae, launchd lo vuelve a levantar. -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/mac/Desktop/Claude_code/master-plan/logs/consola.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/mac/Desktop/Claude_code/master-plan/logs/consola.log</string>
+</dict>
+</plist>
