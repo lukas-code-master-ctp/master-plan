@@ -28,6 +28,30 @@ ya está en este computador" se registra sin copiar nada.
 La primera vez el script crea la cuenta de casa e **imprime por pantalla una clave
 provisional**. Anótala y cámbiala al entrar: no se vuelve a mostrar.
 
+### Dejarla siempre encendida (hoy no se puede acá)
+
+`com.ctp.tumasterplan.plist` la deja corriendo como servicio de macOS, igual que la
+sincronización de notaría. **Pero no funciona con el proyecto dentro de `~/Desktop`**:
+macOS protege Escritorio, Documentos y Descargas, y un agente de `launchd` no hereda
+el permiso que sí tiene la Terminal. Falla con `Operation not permitted` antes de
+arrancar —probado— y fallaría igual al leer las carpetas de vuelo, que también están
+en el Escritorio.
+
+Para habilitarlo hay que mover el proyecto y las carpetas de vuelo fuera de
+`~/Desktop` (por ejemplo a `~/tumasterplan`), y entonces:
+
+```bash
+cp com.ctp.tumasterplan.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.ctp.tumasterplan.plist
+launchctl kickstart -k gui/$UID/com.ctp.tumasterplan   # reiniciar tras cambiar código
+tail -f logs/consola.log                                # ver qué está haciendo
+```
+
+La alternativa —dar "Acceso a disco completo" a `/bin/bash`— funciona pero se lo da a
+todo lo que corra bash, que es mucho más de lo que hace falta.
+
+Mientras tanto, `./consola.sh` desde la Terminal hace lo mismo con un comando.
+
 Todo lo que hace la consola se puede hacer a mano, y es lo que sigue.
 
 ### Lo que necesita un loteo
