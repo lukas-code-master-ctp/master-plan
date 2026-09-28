@@ -29,10 +29,49 @@ const json = (datos) => ({
   method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(datos),
 });
 
+/**
+ * Dice algo, donde la persona está mirando.
+ *
+ * Un `<dialog>` modal se dibuja en la capa de arriba y tapa la página entera, así
+ * que un aviso puesto en el `<main>` mientras hay un diálogo abierto es invisible:
+ * uno aprieta un botón, no pasa nada aparente, cierra el diálogo y recién ahí
+ * descubre un mensaje rojo sin saber de qué era. Por eso el aviso va adentro del
+ * diálogo cuando hay uno abierto.
+ */
 function avisar(mensaje) {
-  const aviso = $('#aviso');
-  aviso.textContent = mensaje ?? '';
-  aviso.hidden = !mensaje;
+  const dialogo = document.querySelector('dialog[open]');
+  const general = $('#aviso');
+
+  if (!dialogo) {
+    general.textContent = mensaje ?? '';
+    general.hidden = !mensaje;
+    return;
+  }
+  // Que no quede un mensaje viejo esperando detrás del diálogo.
+  general.textContent = '';
+  general.hidden = true;
+
+  const dentro = avisoDe(dialogo);
+  dentro.textContent = mensaje ?? '';
+  dentro.hidden = !mensaje;
+}
+
+/** El hueco para avisos de un diálogo, creado la primera vez que hace falta. */
+function avisoDe(dialogo) {
+  let nodo = dialogo.querySelector('.aviso');
+  if (!nodo) {
+    nodo = document.createElement('p');
+    nodo.className = 'aviso';
+    const pie = dialogo.querySelector('.modal__pie');
+    if (pie) pie.before(nodo); else dialogo.append(nodo);
+  }
+  return nodo;
+}
+
+/** Al abrir un diálogo, se parte sin mensajes de la vez anterior. */
+function limpiarAvisos(dialogo) {
+  const nodo = dialogo.querySelector('.aviso');
+  if (nodo) { nodo.textContent = ''; nodo.hidden = true; }
 }
 
 // --- Lista -------------------------------------------------------------------
@@ -307,6 +346,7 @@ function abrirSubida(proyecto) {
   $('#soltadero-texto').textContent = 'Arrastra la carpeta aquí o haz clic para elegirla';
   $('#progreso').hidden = true;
   $('#subir').disabled = true;
+  limpiarAvisos($('#alta'));
   $('#alta').showModal();
 }
 
@@ -411,6 +451,24 @@ async function vincular() {
   }
 }
 
+/** Los pasos, en orden, según quién mira. */
+function pintarGuia(equipo) {
+  const pasos = equipo
+    ? ['Das de alta la loteadora en <b>Loteadoras</b>',
+       'Le habilitas un loteo cuando ya te pagó',
+       'Sube su vuelo con <b>Subir el vuelo</b> —o lo subes tú',
+       'Aprietas <b>Construir</b> y revisas el control de calce',
+       '<b>Publicas</b>, y le mandas el enlace']
+    : ['Subes el vuelo con <b>Subir el vuelo</b>: el KMZ y las panorámicas del dron',
+       'Aprietas <b>Construir</b>',
+       'Revisas el control de calce: los polígonos tienen que caer sobre los caminos',
+       '<b>Publicas</b> cuando estés conforme'];
+
+  const guia = $('#guia');
+  guia.innerHTML = pasos.map((paso, i) => `<span><i>${i + 1}</i>${paso}</span>`).join('');
+  guia.hidden = false;
+}
+
 // --- Back-office: solo lo ve el equipo -----------------------------------------
 //
 // Que los botones estén escondidos no protege nada —el servidor contesta 403
@@ -434,10 +492,22 @@ function filaLoteadora(cliente) {
   const fila = document.createElement('div');
   fila.className = 'padron__fila';
   const cuentas = cliente.cuentas.join(', ');
+  const loteos = `${cliente.loteos} ${cliente.loteos === 1 ? 'loteo' : 'loteos'}`;
   fila.innerHTML = `<div><strong></strong><span class="ayuda"></span></div>`;
   $('strong', fila).textContent = cliente.nombre;
   $('.ayuda', fila).textContent =
-    `${cliente.loteos} loteo(s) · ${cuentas}${cliente.estado === 'activo' ? '' : ' · SUSPENDIDA'}`;
+    `${loteos} · ${cuentas}${cliente.estado === 'activo' ? '' : ' · SUSPENDIDA'}`;
+
+  // La propia loteadora no se puede suspender —quedaría la consola sin operador y
+  // nadie por encima para arreglarlo—, así que el servidor lo rechaza. Ofrecer el
+  // botón sería prometer algo que siempre falla.
+  if (cliente.id === estado.sesion?.cliente_id) {
+    const nota = document.createElement('span');
+    nota.className = 'ayuda';
+    nota.textContent = 'la tuya';
+    fila.append(nota);
+    return fila;
+  }
 
   const boton = document.createElement('button');
   boton.className = 'boton boton--texto';
@@ -463,6 +533,7 @@ function prepararBackOffice() {
 
   $('#loteadoras').addEventListener('click', async () => {
     $('#clientes-clave').hidden = true;
+    limpiarAvisos($('#clientes'));
     try { await cargarLoteadoras(); } catch (error) { return avisar(error.message); }
     $('#clientes').showModal();
   });
@@ -489,6 +560,7 @@ function prepararBackOffice() {
     if (!loteadoras.length) return avisar('Primero da de alta una loteadora.');
     $('#habilitar-nombre').value = '';
     $('#habilitar-cobro').value = '';
+    limpiarAvisos($('#habilitar'));
     $('#habilitar').showModal();
   });
 
@@ -515,8 +587,15 @@ function prepararBackOffice() {
 fetch('/api/sesion').then((r) => r.json()).then((sesion) => {
   estado.sesion = sesion;
   $('#salir').hidden = false;
-  $('#quien').textContent = `${sesion.cliente} · ${sesion.quien}`;
+  $('#quien').textContent = sesion.quien;
   const equipo = sesion.rol === 'plataforma';
+  // Quién eres acá, dicho en la cabecera. Sin esto no se distingue la consola del
+  // equipo —que ve y opera todas las loteadoras— de la de un cliente, que ve la
+  // misma pantalla con menos botones.
+  $('#rol').textContent = equipo
+    ? `Operación · ${sesion.cliente}`
+    : sesion.cliente;
+  pintarGuia(equipo);
   $('#nuevo').hidden = !equipo;
   $('#loteadoras').hidden = !equipo;
   $('#carpeta-local').hidden = !(equipo && sesion.puede_vincular);

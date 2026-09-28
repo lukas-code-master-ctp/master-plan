@@ -18,7 +18,7 @@
     </svg>
     <div class="marca__texto">
       <strong>Tu Masterplan</strong>
-      <span>Consola de loteos</span>
+      <span id="rol">Consola de loteos</span>
     </div>
   </div>
   <span id="quien" class="ayuda"></span>
@@ -31,6 +31,9 @@
 
 <main class="lienzo">
   <div id="aviso" class="aviso" hidden></div>
+  <!-- Los pasos, siempre a la vista. Quien entra por primera vez no tiene por qué
+       deducir el orden mirando botones. El guion la llena según el rol. -->
+  <p id="guia" class="guia" hidden></p>
   <section id="lista" class="lista" aria-live="polite"></section>
 </main>
 
