@@ -31,3 +31,5 @@ Thumbs.db
 .ruff_cache/
 # Los registros de la consola cuando corre en segundo plano.
 logs/
+# El rastro que deja publicar.sh con la URL real del despliegue.
+publicacion.json
