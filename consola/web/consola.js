@@ -101,6 +101,9 @@ function tarjeta(proyecto) {
 function meta(proyecto) {
   const partes = [];
   if (proyecto.etapa) partes.push(pastilla(proyecto.etapa));
+  // Sin teléfono el visor esconde el botón de contacto: el comprador mira, se
+  // decide y no tiene a quién escribirle. Se avisa antes de publicar, no después.
+  if (proyecto.sin_contacto) partes.push(pastilla('Sin contacto', 'aviso'));
   partes.push(proyecto.construido
     ? pastilla('Construido', 'ok')
     : pastilla('Sin construir', 'aviso'));
@@ -189,7 +192,12 @@ async function manejar(accion, proyecto, nodo) {
       if (accion === 'publicar' && !confirm(
         `Publicar "${proyecto.nombre}" en ${proyecto.url}\n\n`
         + 'Queda a la vista de cualquiera con el enlace, con los precios y estados '
-        + 'que muestra el control de calce de arriba.')) return;
+        + 'que muestra el control de calce de arriba.'
+        + (proyecto.sin_contacto
+          ? '\n\nOJO: este loteo no tiene WhatsApp. El visor esconde el botón de '
+            + 'contacto, así que el comprador no va a tener a quién escribirle. '
+            + 'Ponlo en Datos antes de publicar.'
+          : ''))) return;
       estado.registros.set(proyecto.slug, []);
       const cuerpo = accion === 'publicar' ? { confirmado: true } : {};
       const { id } = await pedir(`/api/proyectos/${proyecto.slug}/${accion}`, json(cuerpo));
