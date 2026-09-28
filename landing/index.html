@@ -158,6 +158,51 @@ h2 {
 @media (min-width: 62rem) { .pieza--ancha { grid-column: span 2; } }
 .pieza--ancha h3 { font-size: 1.25rem; }
 
+/* --- Así se ve -------------------------------------------------------------- */
+/* La captura va sobre fondo oscuro: la pantalla del producto es clara y así se
+   despega del papel en vez de diluirse en él. */
+
+.muestra { background: var(--tinta); color: #fff; }
+.muestra h2 { color: #fff; }
+.muestra .intro { color: rgb(255 255 255 / 0.72); }
+
+.pantallas {
+  position: relative;
+  margin-top: clamp(2rem, 1rem + 4vw, 3.5rem);
+}
+.pantallas img { display: block; width: 100%; height: auto; }
+
+.pantalla {
+  border-radius: var(--borde);
+  overflow: hidden;
+  box-shadow: 0 30px 60px -20px rgb(0 0 0 / 0.65);
+  outline: 1px solid rgb(255 255 255 / 0.12);
+}
+
+/* El teléfono encima de la esquina: la misma parcela, en la mano. Se esconde en
+   pantallas chicas, donde taparía justo lo que hay que mirar. */
+/* Con el prefijo `.pantallas`, si no `.pantallas img { width:100% }` le gana por
+   especificidad y el teléfono sale del porte del computador, tapando todo. */
+.pantallas .pantalla--movil {
+  display: none;
+  position: absolute;
+  right: -0.5rem;
+  bottom: -1.5rem;
+  width: 14%;
+  min-width: 120px;
+  border-radius: 0.9rem;
+  outline-width: 2px;
+}
+@media (min-width: 52rem) { .pantallas .pantalla--movil { display: block; } }
+
+.pie-figura {
+  margin: 1.5rem 0 0;
+  color: rgb(255 255 255 / 0.62);
+  font-size: 0.875rem;
+  max-width: 54ch;
+}
+.pie-figura b { color: #fff; font-weight: 600; }
+
 /* --- Dos caminos ----------------------------------------------------------- */
 
 .caminos { display: grid; gap: 1.25rem; margin-top: 3rem; }
@@ -292,6 +337,30 @@ footer {
       <h3>El entorno rotulado</h3>
       <p>A cuántos kilómetros queda cada pueblo, marcado sobre el horizonte que se está mirando.</p>
     </div>
+  </div>
+</section>
+
+<section class="muestra">
+  <div class="ancho">
+    <h2>Esto es exactamente lo que verá</h2>
+    <p class="intro">
+      No es una maqueta ni un render: es Praderas de Cauquenes, publicado y en uso.
+      La parcela marcada sobre la fotografía, con su superficie, su precio y el
+      botón que le escribe a tu vendedor con el número ya puesto en el mensaje.
+    </p>
+
+    <div class="pantallas">
+      <img class="pantalla" src="/producto.webp" width="1360" height="850" loading="lazy" decoding="async"
+           alt="El visor en un computador: la parcela 2-7 resaltada sobre la fotografía aérea, con su ficha
+                mostrando 5.000 m², $8.990.000 y el botón «Me interesa esta parcela».">
+      <img class="pantalla pantalla--movil" src="/producto-movil.webp" width="420" height="840" loading="lazy" decoding="async"
+           alt="La misma vista en un teléfono.">
+    </div>
+
+    <p class="pie-figura">
+      Cada pastilla lleva el <b>número del lote tal como lo escribe tu CRM</b> —«2-7»,
+      no «7»— para que el comprador y el vendedor estén hablando de la misma parcela.
+    </p>
   </div>
 </section>
 
