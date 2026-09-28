@@ -73,6 +73,36 @@ def test_cada_parcela_lleva_numero_etapa_y_rotulo():
     assert (parcelas["7-1"]["numero"], parcelas["7-1"]["etapa"], parcelas["7-1"]["rotulo"]) == (1, None, "7-1")
 
 
+def test_con_varias_etapas_el_rotulo_lleva_la_etapa():
+    """Cauquenes tiene 4 etapas numeradas desde 1, así que del 1 al 12 cada número
+    aparece cuatro veces y en pantalla se ven dos discos "7" a la vez. Un comprador
+    que dice "quiero la 7" no está diciendo nada. Con etapas, el rótulo es el mismo
+    nombre que usa el CRM: "2-7"."""
+    geometrias = {
+        "1-7": ParcelaGeometrica(id="1-7", anillo=ANILLO, etapa=1),
+        "2-7": ParcelaGeometrica(id="2-7", anillo=ANILLO, etapa=2),
+    }
+
+    parcelas = {p["id"]: p for p in _armar_parcelas({}, geometrias, {})}
+
+    assert parcelas["1-7"]["rotulo"] == "1-7"
+    assert parcelas["2-7"]["rotulo"] == "2-7"
+    # El número y la etapa no cambian: el rótulo es solo cómo se muestra.
+    assert (parcelas["2-7"]["numero"], parcelas["2-7"]["etapa"]) == (7, 2)
+
+
+def test_con_una_sola_etapa_el_rotulo_sigue_siendo_el_numero():
+    """Si hay una etapa sola, anteponerla no distingue nada y ensucia la foto."""
+    geometrias = {
+        "1-7": ParcelaGeometrica(id="1-7", anillo=ANILLO, etapa=1),
+        "1-8": ParcelaGeometrica(id="1-8", anillo=ANILLO, etapa=1),
+    }
+
+    parcelas = {p["id"]: p for p in _armar_parcelas({}, geometrias, {})}
+
+    assert [p["rotulo"] for p in parcelas.values()] == ["7", "8"]
+
+
 def test_si_el_loteo_no_esta_en_el_crm_avisa_y_sigue(tmp_path, capsys):
     """Que el loteo no figure en el export no puede tumbar la construcción: se
     avisa y las parcelas salen como no disponibles, que es lo honesto."""

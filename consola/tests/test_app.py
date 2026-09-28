@@ -683,3 +683,18 @@ def test_lo_que_decide_algo_queda_anotado(ana_y_luis):
     assert [h["que"] for h in historial] == ["loteo habilitado"]
     assert "transferencia 4821" in historial[0]["detalle"]
     assert slug in historial[0]["detalle"]
+
+
+# --- publicar un loteo al que nadie puede escribirle -------------------------------
+
+def test_un_loteo_sin_whatsapp_se_marca_como_sin_contacto(entorno, tmp_path):
+    """Praderas salió publicado así: el comprador mira, se decide, y no hay a quién
+    escribirle. El botón de contacto del visor solo aparece si hay número."""
+    cliente, _, _ = entorno
+    cliente.post("/api/proyectos/vincular", json={"ruta": str(carpeta_de_loteo(tmp_path))})
+
+    assert cliente.get("/api/proyectos").json()[0]["sin_contacto"] is True
+
+    cliente.patch("/api/proyectos/loteo", json={"whatsapp": "56912345678"})
+
+    assert cliente.get("/api/proyectos").json()[0]["sin_contacto"] is False

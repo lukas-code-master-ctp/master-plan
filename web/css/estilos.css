@@ -451,12 +451,15 @@ button { cursor: pointer; }
   transition: fill-opacity 160ms ease, stroke-width 160ms ease;
 }
 
+/* El alto y el redondeo los pone el guion al medir el rótulo: con una etapa dice
+   "7" y queda redondo, con varias dice "4-35" y se estira. */
 .parcela__disco {
-  r: 13px;
   stroke: rgb(255 255 255 / 0.9);
   stroke-width: 1.5;
   filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.4));
-  transition: r 160ms var(--curva);
+  transition: transform 160ms var(--curva);
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 .parcela__numero {
@@ -467,7 +470,7 @@ button { cursor: pointer; }
 }
 
 .parcela:hover .parcela__forma { fill-opacity: 0.18; stroke-width: 2; }
-.parcela:hover .parcela__disco { r: 15px; }
+.parcela:hover .parcela__disco { transform: scale(1.15); }
 
 .parcela--seleccionada .parcela__forma {
   fill-opacity: 0.28;
@@ -475,7 +478,7 @@ button { cursor: pointer; }
   stroke-opacity: 1;
 }
 .parcela--seleccionada .parcela__disco {
-  r: 16px;
+  transform: scale(1.22);
   stroke: #fff;
   stroke-width: 3;
 }
@@ -999,7 +1002,7 @@ button { cursor: pointer; }
   .altimetro__unidad--pie { display: none; }
   .zoom button { width: 2.125rem; height: 2.125rem; }
 
-  .parcela__disco { r: 12px; }
+  .parcela__pastilla { transform-box: fill-box; }
 
   .barra-inferior { left: 0.85rem; right: 0.85rem; bottom: 4.2rem; flex-wrap: wrap; }
   .accion__texto { display: none; }

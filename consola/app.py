@@ -425,6 +425,9 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "referencias": list(proyecto.referencias),
         "fuentes": str(proyecto.fuentes),
         "fuentes_encontradas": proyecto.fuentes_encontradas(),
+        # Un loteo publicado sin teléfono deja al comprador mirando sin a quién
+        # escribirle: el visor esconde el botón de contacto si no hay número.
+        "sin_contacto": not proyecto.whatsapp,
         "construido": proyecto.construido,
         "resumen": proyecto.resumen(),
         "calce": proyecto.control_de_calce(),
