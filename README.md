@@ -256,7 +256,9 @@ nadie se entere.
 
 **Cuentas propias.** Cualquiera se registra en `/registro` (su loteadora, su nombre,
 correo y contraseña) o entra con Google. Quien se registra con correo confirma que es
-suyo con un enlace antes de construir; entrar sí puede de inmediato. "¿Olvidaste tu
+suyo con un enlace (y un botón) antes de poder entrar: sin eso, cualquiera registraría
+el correo de otro con una clave propia. Si el dueño de ese correo entra después con
+Google, la clave que puso el otro se anula. "¿Olvidaste tu
 contraseña?" manda un enlace de un solo uso que vence en 1 hora, y cambiarla corta las
 sesiones abiertas. Registrarse con un correo que ya existe y pedir un enlace para uno
 que no existe muestran lo mismo en pantalla: la diferencia llega solo al buzón. De los
