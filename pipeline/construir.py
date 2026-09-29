@@ -10,13 +10,12 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from . import config, geo, referencias, terreno
+from . import config, geo, referencias, terreno, visor
 from .crm import leer_crm
 from .excel import FichaComercial, leer_planilla
 from .calibracion import Ajuste, aplicar, calibrar, mapa_de_caminos
@@ -118,7 +117,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         vistas = calibradas
 
     print("Proyectando parcelas sobre cada vista...")
-    _copiar_plantilla_web(salida.web)
+    visor.copiar(salida.web)
     salida.vistas.mkdir(parents=True, exist_ok=True)
     apariciones: dict[str, list[tuple[str, float]]] = {}
     resumen_vistas = []
@@ -282,13 +281,6 @@ def _despegue_por_defecto(panoramas: list[Panorama]) -> geo.Punto:
     """Bajo la primera toma: el piloto sube en vertical y dispara antes de moverse."""
     primera = min(panoramas, key=lambda p: p.momento)
     return (primera.lon, primera.lat)
-
-
-def _copiar_plantilla_web(destino: Path) -> None:
-    """Copia el sitio (html, css, js, vendor) junto a los datos: la carpeta queda
-    autocontenida y se sube tal cual."""
-    ignorar = shutil.ignore_patterns("datos", "panoramas", "*.test.js", ".DS_Store")
-    shutil.copytree(config.PLANTILLA_WEB, destino, ignore=ignorar, dirs_exist_ok=True)
 
 
 def _revisar_ids_de_vista(panoramas: list[Panorama]) -> None:

@@ -26,6 +26,8 @@ class Trabajo:
     codigo: int | None = None
     lineas: list[str] = field(default_factory=list)
     comenzo: datetime = field(default_factory=datetime.now)
+    # Se prende cuando ya no queda nada por hacer, lo de `al_terminar` incluido.
+    fin: threading.Event = field(default_factory=threading.Event, repr=False, compare=False)
 
     @property
     def terminado(self) -> bool:
@@ -72,6 +74,16 @@ class Trabajos:
             raise KeyError(f"no existe el trabajo {identificador!r}")
         return trabajo
 
+    def esperar(self, identificador: str, tope: float | None = None) -> Trabajo:
+        """Bloquea hasta que el trabajo termine y haya guardado lo suyo.
+
+        Con `tope` (segundos) no espera más que eso: devuelve el trabajo igual,
+        quizá todavía corriendo; quien llama mira `terminado`.
+        """
+        trabajo = self.ver(identificador)
+        trabajo.fin.wait(tope)
+        return trabajo
+
     def ultimo(self, proyecto: str) -> Trabajo | None:
         suyos = [t for t in self._trabajos.values() if t.proyecto == proyecto]
         return max(suyos, key=lambda t: t.comenzo) if suyos else None
@@ -84,6 +96,13 @@ class Trabajos:
         return any(t.proyecto == proyecto and not t.terminado for t in self._trabajos.values())
 
     def _correr(self, trabajo: Trabajo, comando: list[str], al_terminar=None) -> None:
+        try:
+            self._seguir(trabajo, comando, al_terminar)
+        finally:
+            # Pase lo que pase, nadie queda esperando para siempre.
+            trabajo.fin.set()
+
+    def _seguir(self, trabajo: Trabajo, comando: list[str], al_terminar=None) -> None:
         try:
             proceso = subprocess.Popen(
                 comando, cwd=self.directorio, stdout=subprocess.PIPE,

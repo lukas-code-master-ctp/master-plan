@@ -32,10 +32,27 @@ class Comandos:
                 "--salida", str(proyecto.salida.base)]
 
     def publicar(self, proyecto, vercel_proyecto: str, crear: bool = False) -> list[str]:
-        orden = [str(PUBLICAR), str(proyecto.salida.web), vercel_proyecto]
+        """Copia el visor actual sobre el sitio y lo sube.
+
+        Siempre con el visor de hoy: un loteo construido antes de un deploy y
+        publicado después saldría con el viejo, y la huella anotada al terminar
+        diría que va con el nuevo, así que nunca se pondría al día.
+        """
+        subir = [str(PUBLICAR), str(proyecto.salida.web), vercel_proyecto]
         if crear:
-            orden.append("--crear")
-        return orden
+            subir.append("--crear")
+        return encadenar(self.copiar_visor(proyecto), subir)
+
+    def copiar_visor(self, proyecto) -> list[str]:
+        return [sys.executable, "-m", "pipeline.visor", "--sitio", str(proyecto.salida.web)]
+
+    def actualizar_visor(self, proyecto, vercel_proyecto: str) -> list[str]:
+        """Pone al día un loteo que ya está en línea: publicar, con el visor actual.
+
+        Nunca con `--crear`: si el proyecto no existe en el hosting es mejor que
+        falle a que nazca otro.
+        """
+        return self.publicar(proyecto, vercel_proyecto, crear=False)
 
 
 def encadenar(*comandos: list[str]) -> list[str]:

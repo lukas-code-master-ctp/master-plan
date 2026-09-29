@@ -288,3 +288,39 @@ def test_una_base_de_antes_de_los_disenos_se_pone_al_dia_sola(tmp_path):
     proyecto = base.proyecto("praderas")
     assert proyecto.nombre == "Praderas"
     assert proyecto.diseno_id is None
+
+
+def test_una_base_de_antes_de_la_huella_del_visor_se_pone_al_dia_sola(tmp_path):
+    """Los loteos publicados antes de guardar la huella quedan sin ella: cuentan
+    como publicados con un visor viejo."""
+    from sqlalchemy import create_engine, text
+    url = f"sqlite:///{tmp_path / 'vieja.db'}"
+    with create_engine(url).begin() as con:
+        con.execute(text(
+            "CREATE TABLE proyectos (id INTEGER PRIMARY KEY, cliente_id INTEGER NOT NULL, "
+            "slug VARCHAR(80) NOT NULL UNIQUE, nombre VARCHAR(160) NOT NULL, carpeta TEXT, "
+            "vercel_proyecto VARCHAR(120), url_publicada VARCHAR(300), publicado_en DATETIME, "
+            "pagado_en DATETIME, nota_cobro TEXT, creado_en DATETIME NOT NULL, "
+            "diseno_id INTEGER)"))
+        con.execute(text("INSERT INTO proyectos (cliente_id, slug, nombre, url_publicada, "
+                         "creado_en) VALUES (1, 'praderas', 'Praderas', 'https://p.vercel.app', "
+                         "'2026-09-24 10:00:00')"))
+
+    base = Base(url)
+    Base(url)                                   # y abrirla de nuevo no hace nada
+
+    proyecto = base.proyecto("praderas")
+    assert proyecto.url_publicada == "https://p.vercel.app"
+    assert proyecto.visor_publicado is None
+
+
+def test_anotar_el_visor_no_toca_lo_demas_de_la_publicacion(base):
+    cliente, _ = base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
+    base.crear_proyecto(cliente.id, "Praderas")
+    base.anotar_publicacion("praderas", "masterplan-praderas", "https://p.vercel.app")
+
+    base.anotar_visor("praderas", "a" * 64)
+
+    proyecto = base.proyecto("praderas")
+    assert proyecto.visor_publicado == "a" * 64
+    assert proyecto.url_publicada == "https://p.vercel.app"

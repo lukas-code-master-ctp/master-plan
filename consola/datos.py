@@ -153,6 +153,9 @@ proyectos = Table(
     Column("creado_en", DateTime(timezone=True), nullable=False),
     # Con qué marca se publica. Vacío = la de Tu Masterplan.
     Column("diseno_id", Integer, ForeignKey("disenos.id"), nullable=True),
+    # La huella del visor (`pipeline.visor.huella`) con que quedó publicado. Si no
+    # es la del visor de hoy, el loteo está en línea con un visor viejo.
+    Column("visor_publicado", String(64), nullable=True),
     UniqueConstraint("cliente_id", "nombre", name="un_nombre_por_cliente"),
 )
 
@@ -237,6 +240,7 @@ class ProyectoGuardado:
     pagado_en: datetime | None
     nota_cobro: str | None
     diseno_id: int | None = None
+    visor_publicado: str | None = None
 
     @property
     def pagado(self) -> bool:
@@ -535,6 +539,13 @@ class Base:
             con.execute(update(proyectos).where(proyectos.c.slug == slug).values(
                 vercel_proyecto=vercel_proyecto, url_publicada=url, publicado_en=_ahora()))
 
+    def anotar_visor(self, slug: str, huella: str) -> None:
+        """Con qué visor quedó publicado. Aparte de `anotar_publicacion` porque la
+        actualización automática cambia el visor sin tocar nombre ni URL."""
+        with self.motor.begin() as con:
+            con.execute(update(proyectos).where(proyectos.c.slug == slug).values(
+                visor_publicado=huella))
+
     def anotar_pago(self, slug: str, nota_cobro: str) -> bool:
         """El cobro de un loteo que el cliente se creó solo. Es lo que deja publicarlo.
 
@@ -701,6 +712,10 @@ def _migrar(motor) -> None:
         with motor.begin() as con:
             con.execute(text("ALTER TABLE proyectos ADD COLUMN diseno_id INTEGER "
                              "REFERENCES disenos(id)"))
+    # Los loteos ya publicados quedan sin huella: cuentan como visor viejo.
+    if "visor_publicado" not in columnas:
+        with motor.begin() as con:
+            con.execute(text("ALTER TABLE proyectos ADD COLUMN visor_publicado VARCHAR(64)"))
     # Las cuentas que ya existían las creó el equipo: nacen verificadas.
     columnas = {c["name"] for c in inspect(motor).get_columns("usuarios")}
     if "email_verificado" not in columnas:
@@ -751,4 +766,4 @@ def _proyecto(fila) -> ProyectoGuardado:
         carpeta=fila.carpeta,
         vercel_proyecto=fila.vercel_proyecto, url_publicada=fila.url_publicada,
         publicado_en=fila.publicado_en, pagado_en=fila.pagado_en, nota_cobro=fila.nota_cobro,
-        diseno_id=fila.diseno_id)
+        diseno_id=fila.diseno_id, visor_publicado=fila.visor_publicado)

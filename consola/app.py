@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import traceback
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import (
@@ -29,7 +32,7 @@ from fastapi import (
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from pipeline import config
+from pipeline import config, visor
 
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
 from .comandos import Comandos, encadenar
@@ -45,6 +48,7 @@ from .datos import (
 from .disenos import DisenoInvalido, Disenos, VistaDisenos
 from .disenos import como_json as diseno_json
 from .proyectos import LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
+from .republicar import republicar
 from .rutas_cuentas import (
     LIBRES_DE_CUENTAS,
     pagina_de_entrada,
@@ -95,7 +99,8 @@ LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2", *LIBRES_DE_CUENT
 def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None,
               comandos=None, acceso: Acceso | None = None, base: Base | None = None,
               disenos: Disenos | None = None, cuentas: Cuentas | None = None,
-              google: Google | None | bool = True) -> FastAPI:
+              google: Google | None | bool = True,
+              republicar_al_arrancar: bool | None = None) -> FastAPI:
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
     cuentas = cuentas or Cuentas(base=base, correo=correo_del_entorno(acceso.local),
@@ -107,11 +112,22 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                                     limites=Limites.desde_el_entorno())
     trabajos = trabajos or Trabajos(directorio=config.RAIZ)
     comandos = comandos or Comandos()
+    # Solo lo enciende el despliegue (cloudbuild.yaml): en el computador y en las
+    # pruebas arrancar la consola no sube nada a ningún lado.
+    if republicar_al_arrancar is None:
+        republicar_al_arrancar = os.environ.get("CONSOLA_REPUBLICAR_AL_ARRANCAR") == "1"
+
+    @asynccontextmanager
+    async def al_arrancar(_app):
+        """Los loteos publicados con un visor viejo se ponen al día en un hilo
+        aparte: la consola atiende desde el primer momento, no cuando termina."""
+        _republicar_en_segundo_plano(registro, trabajos, comandos, disenos)
+        yield
 
     # Sin documentación automática ni esquema: la consola tiene una sola página que
     # la usa, y el inventario de rutas lo vigila una prueba, no un JSON público.
     app = FastAPI(title="Tu Masterplan — consola", docs_url=None, redoc_url=None,
-                  openapi_url=None)
+                  openapi_url=None, lifespan=al_arrancar if republicar_al_arrancar else None)
 
     @app.middleware("http")
     async def puerta(peticion: Request, seguir):
@@ -598,6 +614,25 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     return app
 
 
+def _republicar_en_segundo_plano(registro: Registro, trabajos: Trabajos, comandos,
+                                 disenos: Disenos) -> threading.Thread:
+    """Lanza el recorrido en un hilo daemon. Lo que falle queda en el log y nada
+    más: un visor sin poner al día no es razón para que la consola no arranque."""
+
+    def correr() -> None:
+        try:
+            # La huella se saca acá y no antes: hashear el visor no tiene por qué
+            # demorar el arranque.
+            republicar(registro.todos(), trabajos, comandos, disenos, visor.huella())
+        except Exception:                   # noqa: BLE001 - nunca botar la consola
+            print("[republicar] se cortó el recorrido:\n" + traceback.format_exc(),
+                  flush=True)
+
+    hilo = threading.Thread(target=correr, name="republicar", daemon=True)
+    hilo.start()
+    return hilo
+
+
 def _diseno_para(marcas: VistaDisenos, valor, cliente_del_loteo: int) -> int | None:
     """El diseño pedido para un loteo, ya revisado. None = el por defecto."""
     if valor in (None, ""):
@@ -624,7 +659,10 @@ def _aplicar_diseno(mios: Vista, disenos: Disenos, slug: str):
 
 
 def _anotar_publicacion(mios: Vista, proyecto: Proyecto, nombre: str):
-    """Guarda el nombre y la URL que devolvió el hosting, no los que supusimos."""
+    """Guarda el nombre y la URL que devolvió el hosting, no los que supusimos.
+
+    Y con qué visor salió: si no, el próximo arranque lo daría por atrasado y lo
+    volvería a subir sin necesidad."""
     rastro = proyecto.salida.base / "publicacion.json"
 
     def guardar(trabajo) -> None:
@@ -635,6 +673,8 @@ def _anotar_publicacion(mios: Vista, proyecto: Proyecto, nombre: str):
             proyecto.slug,
             vercel_proyecto=datos.get("proyecto") or nombre,
             url=datos.get("url") or url_propuesta(proyecto.slug))
+        # Es la del visor que acaba de subir: `comandos.publicar` lo copia antes.
+        mios.anotar_visor(proyecto.slug, visor.huella())
 
     return guardar
 

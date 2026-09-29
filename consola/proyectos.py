@@ -141,6 +141,8 @@ class Proyecto:
     # De quién es, y con qué marca se publica (None = la de Tu Masterplan).
     cliente_id: int = 0
     diseno_id: int | None = None
+    # La huella del visor con que quedó publicado; None si nunca se anotó.
+    visor_publicado: str | None = None
 
     @property
     def publicado(self) -> bool:
@@ -230,6 +232,15 @@ class Registro:
         return Vista(registro=self, duenio=sesion.cliente_id,
                      filtro=None if sesion.es_plataforma else sesion.cliente_id)
 
+    def todos(self) -> Vista:
+        """Todos los loteos, sin sesión: para los trabajos internos de la consola
+        (como poner al día el visor al arrancar). Nunca para una ruta: ahí manda
+        `para(sesion)`.
+
+        No crea ni vincula loteos: no hay nadie a cuyo nombre dejarlos.
+        """
+        return _VistaInterna(registro=self, duenio=0, filtro=None)
+
     # --- alta de un loteo --------------------------------------------------------
 
     def habilitar(self, cliente_id: int, nombre: str, *,
@@ -278,6 +289,7 @@ class Registro:
             subido=guardado.carpeta is None,
             cliente_id=guardado.cliente_id,
             diseno_id=guardado.diseno_id,
+            visor_publicado=guardado.visor_publicado,
         )
 
     def _escribir_json(self, carpeta: Path, slug: str, campos: dict) -> None:
@@ -423,6 +435,13 @@ class Vista:
                                      {"vercel_proyecto": vercel_proyecto, "url_publicada": url})
         return self.ver(slug)
 
+    def anotar_visor(self, slug: str, huella: str) -> Proyecto:
+        """Con qué visor quedó publicado el loteo. Solo en la base: la carpeta no
+        necesita saberlo para volver a adoptar el loteo."""
+        self.ver(slug)
+        self.registro.base.anotar_visor(slug, huella)
+        return self.ver(slug)
+
     def olvidar(self, slug: str) -> None:
         """Saca el loteo de la lista.
 
@@ -458,6 +477,15 @@ class Vista:
                 return guardado
         return None
 
+
+class _VistaInterna(Vista):
+    """La de `Registro.todos()`: ve todo y no da de alta nada."""
+
+    def crear(self, nombre: str) -> Proyecto:
+        raise TypeError("la vista interna no crea loteos")
+
+    def vincular(self, carpeta: Path) -> Proyecto:
+        raise TypeError("la vista interna no vincula loteos")
 
 
 def _leer_json(archivo: Path) -> dict:

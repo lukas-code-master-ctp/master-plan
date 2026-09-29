@@ -370,6 +370,50 @@ def test_la_carpeta_se_describe_a_si_misma_por_si_hay_que_rehacer_la_base(ana, t
     assert guardado["url_publicada"] == "https://masterplan-loteo.vercel.app"
 
 
+def test_se_anota_con_que_visor_quedo_publicado(ana, tmp_path):
+    ana.vincular(carpeta_de_loteo(tmp_path))
+    ana.anotar_publicacion("loteo", vercel_proyecto="masterplan-loteo",
+                           url="https://masterplan-loteo.vercel.app")
+    assert ana.ver("loteo").visor_publicado is None
+
+    proyecto = ana.anotar_visor("loteo", "b" * 64)
+
+    assert proyecto.visor_publicado == "b" * 64
+    assert ana.ver("loteo").visor_publicado == "b" * 64
+
+
+def test_no_se_puede_anotar_el_visor_en_el_loteo_de_otra(ana, luis, tmp_path):
+    ana.vincular(carpeta_de_loteo(tmp_path, "De Ana"))
+
+    with pytest.raises(NoEncontrado):
+        luis.anotar_visor("de-ana", "b" * 64)
+
+    assert ana.ver("de-ana").visor_publicado is None
+
+
+# --- la vista interna, para los trabajos de la consola ----------------------------
+
+def test_la_vista_interna_ve_los_loteos_de_todas(registro, ana, luis, tmp_path):
+    ana.vincular(carpeta_de_loteo(tmp_path, "De Ana"))
+    luis.vincular(carpeta_de_loteo(tmp_path, "De Luis"))
+
+    todos = registro.todos()
+
+    assert sorted(p.slug for p in todos.listar()) == ["de-ana", "de-luis"]
+    assert todos.anotar_visor("de-luis", "c" * 64).visor_publicado == "c" * 64
+
+
+def test_la_vista_interna_no_da_de_alta_loteos(registro, tmp_path):
+    """No tiene a nombre de quién dejarlos: un loteo creado ahí quedaría huérfano."""
+    todos = registro.todos()
+
+    with pytest.raises(TypeError):
+        todos.crear("Huérfano")
+    with pytest.raises(TypeError):
+        todos.vincular(carpeta_de_loteo(tmp_path))
+    assert todos.listar() == []
+
+
 # --- el CRM es de cada cliente, nunca global -------------------------------------
 
 def test_un_loteo_usa_el_crm_que_tiene_en_su_carpeta(ana, tmp_path):
