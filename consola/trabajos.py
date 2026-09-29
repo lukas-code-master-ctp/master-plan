@@ -111,5 +111,11 @@ class Trabajos:
 
 
 def _entorno_sin_bufer() -> dict:
+    """Líneas enteras y en texto plano: se leen en la página, no en una terminal.
+
+    Sin `PYTHON_COLORS=0`, un Python 3.13+ lanzado desde una terminal con color
+    forzado pinta los tracebacks con códigos ANSI, que en la página salen como
+    basura del tipo `[35m`.
+    """
     import os
-    return {**os.environ, "PYTHONUNBUFFERED": "1"}
+    return {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHON_COLORS": "0", "NO_COLOR": "1"}
