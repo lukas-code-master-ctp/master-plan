@@ -67,6 +67,16 @@ a { color: inherit; }
 }
 .marca { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; letter-spacing: -0.01em; }
 .marca svg { width: 1.75rem; height: 1.75rem; flex: none; }
+/* Entrar es para quien ya tiene cuenta: un enlace, no compite con el botón. */
+.barra__acciones { display: flex; align-items: center; gap: 1.25rem; }
+.barra__enlace { color: #fff; font-weight: 600; font-size: 0.9375rem; text-decoration: none; opacity: 0.9; }
+.barra__enlace:hover { opacity: 1; text-decoration: underline; text-underline-offset: 3px; }
+.barra__enlace:focus-visible { outline: 2px solid #fff; outline-offset: 3px; border-radius: 2px; }
+.marca, .barra .boton, .barra__enlace { white-space: nowrap; }
+@media (max-width: 26rem) {
+  .barra__acciones { gap: 0.9rem; }
+  .barra .boton { padding: 0.6rem 0.9rem; font-size: 0.875rem; }
+}
 
 /* --- Hero ----------------------------------------------------------------- */
 
@@ -229,6 +239,7 @@ h2 {
 /* Sin opacidad: 0.72 sobre el gris de cuerpo daba 3,3:1 contra el blanco, por
    debajo del mínimo legible. Un gris más claro y sólido da 4,6:1. */
 .camino .cola { margin-top: auto; padding-top: 1rem; font-size: 0.8125rem; color: var(--zinc-500); }
+.camino .boton { align-self: flex-start; margin-top: 0.5rem; }
 .camino--destacado .cola { color: rgb(255 255 255 / 0.72); }
 
 /* --- Qué hace falta --------------------------------------------------------- */
@@ -281,7 +292,10 @@ footer {
       </svg>
       Tu Masterplan
     </span>
-    <a class="boton boton--fantasma" href="#contacto">Pedir el mío</a>
+    <nav class="barra__acciones" aria-label="Tu cuenta">
+      <a class="barra__enlace" href="https://app.tumasterplan.cl/entrar">Entrar</a>
+      <a class="boton boton--fantasma" href="#contacto">Pedir el mío</a>
+    </nav>
   </div>
 
   <div class="hero__cuerpo ancho">
@@ -293,16 +307,13 @@ footer {
       —sin llamar a nadie, desde el teléfono, un domingo a las once de la noche.
     </p>
     <div class="acciones">
-      <a class="boton" href="https://masterplan-praderas-de-cauquenes.vercel.app" target="_blank" rel="noopener">
-        Ver un loteo de verdad
-      </a>
+      <a class="boton" href="#contacto">Cotizar mi loteo</a>
       <a class="boton boton--fantasma" href="#como">Cómo se hace</a>
     </div>
   </div>
 
   <div class="prueba ancho">
-    <span><b>Praderas de Cauquenes</b> · 88 parcelas · 4 etapas · publicado y en uso</span>
-    <a href="https://masterplan-praderas-de-cauquenes.vercel.app" target="_blank" rel="noopener">Abrirlo →</a>
+    <span><b>Praderas de Cauquenes</b> · 88 parcelas · 4 etapas, cada una sobre la foto real</span>
   </div>
 </header>
 
@@ -385,13 +396,14 @@ footer {
 
     <article class="camino">
       <h3>Lo armas tú</h3>
-      <p>Si ya tienes panorámicas 360 del dron y el plano del topógrafo, entras a la consola, las subes y lo construyes.</p>
+      <p>Si ya tienes panorámicas 360 del dron y el plano del topógrafo, te damos una cuenta, las subes y lo construyes.</p>
       <ul>
         <li>Arrastras la carpeta del vuelo.</li>
         <li>Revisas el control de calce: los polígonos tienen que caer sobre los caminos.</li>
         <li>Publicas cuando estés conforme.</li>
       </ul>
-      <p class="cola">Sale más barato y lo repites cada vez que cambien los precios.</p>
+      <p class="cola">Armarlo y revisarlo es gratis. Sale más barato y lo repites cada vez que cambien los precios.</p>
+      <a class="boton boton--tinta" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20una%20cuenta%20en%20Tu%20Masterplan">Pedir mi cuenta</a>
     </article>
   </div>
 </section>
@@ -421,13 +433,14 @@ footer {
 <section class="ancho cierre" id="contacto">
   <h2>Se cobra por loteo, una vez.</h2>
   <p class="intro">
-    Sin suscripción y sin cobro mensual. El precio depende del tamaño del loteo y de si
-    hay que ir a volarlo: escríbenos con el nombre y cuántas parcelas son, y te lo decimos.
+    Armarlo y revisarlo es gratis: se paga recién al publicarlo. Sin suscripción y sin
+    cobro mensual. El precio depende del tamaño del loteo y de si hay que ir a volarlo:
+    escríbenos con el nombre y cuántas parcelas son, y te lo decimos.
   </p>
 
   <div class="acciones">
     <a class="boton boton--tinta" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20un%20masterplan%20para%20mi%20loteo">Escribir un correo</a>
-    <a class="boton boton--linea" href="https://masterplan-praderas-de-cauquenes.vercel.app" target="_blank" rel="noopener">Ver el ejemplo otra vez</a>
+    <a class="boton boton--linea" href="https://app.tumasterplan.cl/entrar">Entrar a la app</a>
   </div>
 
 </section>
