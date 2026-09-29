@@ -29,6 +29,12 @@ from .trabajos import Trabajos
 
 WEB = Path(__file__).resolve().parent / "web"
 
+# Los módulos de la página. Se sirven por nombre de una lista cerrada, no
+# cualquier archivo de la carpeta: una ruta que arma rutas de disco con lo que
+# llega en la URL es una ruta para leer el disco.
+MODULOS = ("app.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
+           "cuenta.js", "backoffice.js")
+
 # Cada loteo se publica como un proyecto propio en el hosting, llamado
 # `masterplan-<slug>`. Ese nombre y la URL resultante se GUARDAN al publicar por
 # primera vez (`Proyecto.vercel_proyecto` / `url_publicada`); lo de acá abajo es
@@ -156,9 +162,11 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def hoja() -> FileResponse:
         return FileResponse(WEB / "consola.css", media_type="text/css")
 
-    @app.get("/consola.js")
-    def guion() -> FileResponse:
-        return FileResponse(WEB / "consola.js", media_type="text/javascript")
+    @app.get("/js/{modulo}")
+    def guion(modulo: str) -> FileResponse:
+        if modulo not in MODULOS:
+            raise HTTPException(404, "no existe ese módulo")
+        return FileResponse(WEB / "js" / modulo, media_type="text/javascript")
 
     @app.get("/fuente.woff2")
     def fuente() -> FileResponse:
@@ -187,15 +195,32 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def listar(mios: Vista = Depends(vista)) -> list[dict]:
         return [_como_json(p, trabajos) for p in mios.listar()]
 
+    @app.post("/api/proyectos", status_code=201)
+    def crear(campos: dict = Body(...), mios: Vista = Depends(vista)) -> dict:
+        """Un master nuevo, a nombre de quien lo pide. Nace sin pagar: se puede
+        subir y construir, y publicar espera a que CTP anote el cobro."""
+        nombre = str(campos.get("nombre") or "").strip()
+        if not nombre:
+            raise HTTPException(400, "ponle un nombre al loteo")
+        try:
+            proyecto = mios.crear(nombre)
+        except ProyectoYaExiste as error:
+            raise HTTPException(409, str(error)) from error
+        return _como_json(proyecto, trabajos)
+
+    @app.get("/api/proyectos/{slug}/portada")
+    def ver_portada(slug: str, mios: Vista = Depends(vista)) -> FileResponse:
+        archivo = mios.ver(slug).portada()
+        if archivo is None:
+            raise HTTPException(404, "todavía no hay portada: falta construirlo")
+        return FileResponse(archivo, media_type="image/jpeg",
+                            headers={"Cache-Control": "private, no-cache"})
+
     @app.post("/api/proyectos/{slug}/archivos", status_code=201)
     async def subir(slug: str, archivos: list[UploadFile] = File(...),
                     mios: Vista = Depends(vista)) -> dict:
-        """Sube el vuelo a un loteo que ya existe.
-
-        No crea nada: el loteo lo da de alta CTP cuando cobró. Por eso acá no hay
-        control de pago —no hay nada que controlar— y el único punto donde sí lo
-        hay es el alta.
-        """
+        """Sube el vuelo a un loteo que ya existe. Se puede repetir para agregar
+        lo que faltó."""
         subidas = [Subida(ruta=a.filename or "", contenido=await a.read()) for a in archivos]
         try:
             proyecto = mios.subir(slug, subidas)
@@ -251,6 +276,10 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         proyecto = mios.ver(slug)
         if not proyecto.construido:
             raise HTTPException(409, "todavía no está construido")
+        # El único control de cobro: un loteo se arma gratis, se publica pagado.
+        if not proyecto.pagado:
+            raise HTTPException(402, "este loteo todavía no está habilitado para "
+                                     "publicarse: escríbenos y lo dejamos listo")
         # Publicar deja el loteo a la vista de cualquiera con el enlace, con sus
         # precios y sus estados. Que no baste un clic ni un POST suelto.
         if not opciones.get("confirmado"):
@@ -342,7 +371,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     @app.post("/api/plataforma/clientes/{cliente_id}/proyectos", status_code=201)
     def habilitar_loteo(cliente_id: int, campos: dict = Body(...),
                         yo: Sesion = Depends(solo_plataforma)) -> dict:
-        """Habilita un loteo pagado. **Es el único lugar donde nace un proyecto.**
+        """Habilita un loteo ya pagado, a nombre de una loteadora.
 
         La nota de cobro es obligatoria y no por burocracia: es lo único que
         distingue un loteo cobrado de uno regalado, porque el cobro pasa fuera
@@ -362,6 +391,24 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         base.anotar("loteo habilitado", cliente_id=cliente_id, usuario_id=yo.usuario_id,
                     detalle=f"{proyecto.slug} · {cobro}")
         return _como_json(proyecto, trabajos)
+
+    @app.post("/api/plataforma/proyectos/{slug}/pago")
+    def anotar_pago(slug: str, campos: dict = Body(...),
+                    yo: Sesion = Depends(solo_plataforma)) -> dict:
+        """Deja publicar un loteo que el cliente se creó solo, porque ya pagó.
+
+        La nota es obligatoria por lo mismo que al habilitar: sin pasarela, es el
+        único registro de que se cobró.
+        """
+        cobro = str(campos.get("nota_cobro") or "").strip()
+        if not cobro:
+            raise HTTPException(400, "anota cómo se pagó")
+        guardado = base.proyecto(slug)                 # 404 si no existe
+        if not base.anotar_pago(slug, cobro):
+            raise HTTPException(409, "este loteo ya tiene su pago anotado")
+        base.anotar("loteo pagado", cliente_id=guardado.cliente_id,
+                    usuario_id=yo.usuario_id, detalle=f"{slug} · {cobro}")
+        return _como_json(registro.para(yo).ver(slug), trabajos)
 
     @app.get("/api/plataforma/historial")
     def historial(_: Sesion = Depends(solo_plataforma)) -> list[dict]:
@@ -425,6 +472,7 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "nombre": proyecto.nombre,
         "etapa": proyecto.etapa,
         "whatsapp": proyecto.whatsapp,
+        "parcelacion": proyecto.parcelacion,
         "despegue": list(proyecto.despegue) if proyecto.despegue else None,
         "referencias": list(proyecto.referencias),
         "fuentes": str(proyecto.fuentes),
@@ -437,6 +485,7 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "calce": proyecto.control_de_calce(),
         "url": proyecto.url_publicada or url_propuesta(proyecto.slug),
         "publicado": proyecto.publicado,
+        "pagado": proyecto.pagado,
         "trabajo": ultimo.como_json() if ultimo and not ultimo.terminado else None,
     }
 

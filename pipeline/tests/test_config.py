@@ -299,3 +299,22 @@ def test_se_puede_pedir_explicitamente_que_no_haya_crm(tmp_path, monkeypatch):
 
     assert descubrir_fuentes(tmp_path).crm == vecino
     assert descubrir_fuentes(tmp_path, sin_crm=True).crm is None
+
+
+def test_el_inventario_subido_como_csv_cuenta_como_planilla(tmp_path):
+    armar(tmp_path, excel="inventario.csv")
+
+    assert descubrir_fuentes(tmp_path).excel.name == "inventario.csv"
+
+
+def test_un_csv_cualquiera_no_se_toma_por_planilla(tmp_path):
+    armar(tmp_path, excel="coordenadas.csv")
+
+    assert descubrir_fuentes(tmp_path).excel is None
+
+
+def test_si_hay_xlsx_manda_sobre_el_csv(tmp_path):
+    armar(tmp_path, excel="inventario.csv")
+    (tmp_path / "precios.xlsx").write_bytes(b"xlsx")
+
+    assert descubrir_fuentes(tmp_path).excel.name == "precios.xlsx"

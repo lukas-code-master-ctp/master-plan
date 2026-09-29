@@ -320,7 +320,8 @@ def test_un_proyecto_construido_muestra_su_resumen(entorno, tmp_path):
 
 @pytest.mark.parametrize("ruta,tipo", [
     ("/consola.css", "text/css"),
-    ("/consola.js", "text/javascript"),
+    ("/js/app.js", "text/javascript"),
+    ("/js/plano.js", "text/javascript"),
     ("/fuente.woff2", "font/woff2"),
 ])
 def test_la_pagina_trae_sus_propios_archivos(entorno, ruta, tipo):
@@ -439,10 +440,12 @@ RUTAS = {
     ("GET", "/consola.css"): SIN_SESION,
     ("GET", "/fuente.woff2"): SIN_SESION,
     ("GET", "/"): SOLO_SUYO,
-    ("GET", "/consola.js"): SOLO_SUYO,
+    ("GET", "/js/{modulo}"): SOLO_SUYO,
     ("GET", "/api/sesion"): SOLO_SUYO,
     ("POST", "/api/clave"): SOLO_SUYO,
     ("GET", "/api/proyectos"): SOLO_SUYO,
+    ("POST", "/api/proyectos"): SOLO_SUYO,
+    ("GET", "/api/proyectos/{slug}/portada"): AJENO_404,
     ("PATCH", "/api/proyectos/{slug}"): AJENO_404,
     ("DELETE", "/api/proyectos/{slug}"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/archivos"): AJENO_404,
@@ -456,6 +459,7 @@ RUTAS = {
     ("POST", "/api/plataforma/clientes/{cliente_id}/usuarios"): SOLO_CTP,
     ("POST", "/api/plataforma/clientes/{cliente_id}/estado"): SOLO_CTP,
     ("POST", "/api/plataforma/clientes/{cliente_id}/proyectos"): SOLO_CTP,
+    ("POST", "/api/plataforma/proyectos/{slug}/pago"): SOLO_CTP,
     ("GET", "/api/plataforma/historial"): SOLO_CTP,
 }
 
@@ -495,9 +499,10 @@ def de_ana(ctp, ana, registro, nombre="De Ana"):
     lambda web, slug: web.post(f"/api/proyectos/{slug}/construir", json={}),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True}),
     lambda web, slug: web.get(f"/calce/{slug}/p01-210.jpg"),
+    lambda web, slug: web.get(f"/api/proyectos/{slug}/portada"),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/archivos",
                                files=[("archivos", ("x.kmz", b"kmz", "application/octet-stream"))]),
-], ids=["ajustar", "olvidar", "construir", "publicar", "calce", "subir"])
+], ids=["ajustar", "olvidar", "construir", "publicar", "calce", "portada", "subir"])
 def test_el_loteo_de_otra_contesta_404_en_todas_las_rutas(ana_y_luis, pedir):
     ctp, ana, luis, registro, comandos = ana_y_luis
     slug = de_ana(ctp, ana, registro)
@@ -567,7 +572,10 @@ def test_dos_loteadoras_con_el_mismo_nombre_de_loteo_no_se_pisan(ana_y_luis):
     lambda web, cid: web.post(f"/api/plataforma/clientes/{cid}/proyectos",
                               json={"nombre": "Gratis", "nota_cobro": "no pagué"}),
     lambda web, cid: web.get("/api/plataforma/historial"),
-], ids=["listar", "crear cliente", "crear cuenta", "suspender", "habilitar loteo", "historial"])
+    lambda web, cid: web.post("/api/plataforma/proyectos/cualquiera/pago",
+                              json={"nota_cobro": "me lo regalo"}),
+], ids=["listar", "crear cliente", "crear cuenta", "suspender", "habilitar loteo", "historial",
+        "anotar pago"])
 def test_una_loteadora_no_entra_al_back_office(ana_y_luis, pedir):
     """Sobre todo la penúltima: si un cliente pudiera habilitarse loteos solo,
     el cobro no existiría."""
@@ -709,3 +717,185 @@ def test_un_loteo_sin_whatsapp_se_marca_como_sin_contacto(entorno, tmp_path):
     cliente.patch("/api/proyectos/loteo", json={"whatsapp": "56912345678"})
 
     assert cliente.get("/api/proyectos").json()[0]["sin_contacto"] is False
+
+
+# --- el cliente se crea sus masters; el cobro va al publicar ----------------------
+
+def crear(web, nombre="Praderas de Cauquenes"):
+    respuesta = web.post("/api/proyectos", json={"nombre": nombre})
+    assert respuesta.status_code == 201, respuesta.text
+    return respuesta.json()
+
+
+def test_una_loteadora_se_crea_su_propio_master(ana_y_luis):
+    _, ana, luis, registro, _ = ana_y_luis
+
+    creado = crear(ana)
+
+    assert creado["slug"] == "praderas-de-cauquenes"
+    assert creado["pagado"] is False
+    assert creado["construido"] is False
+    guardado = registro.base.proyecto("praderas-de-cauquenes")
+    assert guardado.cliente_id == id_de(registro, "ana@losrobles.cl")
+    assert [p["slug"] for p in ana.get("/api/proyectos").json()] == ["praderas-de-cauquenes"]
+    assert luis.get("/api/proyectos").json() == []
+
+
+def test_crear_un_master_sin_nombre_avisa(ana_y_luis):
+    _, ana, _, _, _ = ana_y_luis
+
+    respuesta = ana.post("/api/proyectos", json={"nombre": "  "})
+
+    assert respuesta.status_code == 400
+
+
+def test_no_se_repite_el_nombre_de_un_master_propio(ana_y_luis):
+    _, ana, luis, _, _ = ana_y_luis
+    crear(ana)
+
+    assert ana.post("/api/proyectos", json={"nombre": "Praderas de Cauquenes"}).status_code == 409
+    # Otra loteadora sí puede llamar igual al suyo.
+    assert luis.post("/api/proyectos", json={"nombre": "Praderas de Cauquenes"}).status_code == 201
+
+
+def test_un_master_sin_pagar_se_construye_pero_no_se_publica(ana_y_luis):
+    _, ana, _, registro, comandos = ana_y_luis
+    slug = crear(ana)["slug"]
+    ana.post(f"/api/proyectos/{slug}/archivos",
+             files=[("archivos", ("loteo.kmz", b"kmz", "application/octet-stream"))])
+
+    construir = ana.post(f"/api/proyectos/{slug}/construir", json={})
+    assert construir.status_code == 202
+    esperar_trabajo(ana, construir.json()["id"])
+    construir_a_mano(registro, registro.salidas, slug)
+
+    respuesta = ana.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True})
+
+    assert respuesta.status_code == 402
+    assert not [p for p in comandos.pedidos if p[0] == "publicar"]
+
+
+def test_con_el_pago_anotado_se_publica(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+    construir_a_mano(registro, registro.salidas, slug)
+
+    pagado = ctp.post(f"/api/plataforma/proyectos/{slug}/pago",
+                      json={"nota_cobro": "transferencia 5120"})
+
+    assert pagado.status_code == 200
+    assert pagado.json()["pagado"] is True
+    assert registro.base.proyecto(slug).nota_cobro == "transferencia 5120"
+    respuesta = ana.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True})
+    assert respuesta.status_code == 202
+    assert any(e.que == "loteo pagado" for e in registro.base.historial())
+
+
+def test_anotar_un_pago_exige_decir_como_se_pago(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+
+    respuesta = ctp.post(f"/api/plataforma/proyectos/{slug}/pago", json={"nota_cobro": ""})
+
+    assert respuesta.status_code == 400
+    assert registro.base.proyecto(slug).pagado is False
+
+
+def test_anotar_el_pago_de_un_loteo_que_no_existe_da_404(ana_y_luis):
+    ctp, _, _, _, _ = ana_y_luis
+
+    respuesta = ctp.post("/api/plataforma/proyectos/no-existe/pago", json={"nota_cobro": "x"})
+
+    assert respuesta.status_code == 404
+
+
+def test_los_loteos_habilitados_por_ctp_siguen_naciendo_pagados(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+
+    habilitar(ctp, id_de(registro, "ana@losrobles.cl"), "Las Araucarias")
+
+    assert ana.get("/api/proyectos").json()[0]["pagado"] is True
+
+
+# --- lo que muestra Mis planos -------------------------------------------------
+
+def construir_con_precios(salidas, slug, parcelas):
+    from pipeline import config
+    salida = config.Salida(salidas / slug)
+    salida.datos.mkdir(parents=True, exist_ok=True)
+    conteo = {}
+    for parcela in parcelas:
+        conteo[parcela["estado"]] = conteo.get(parcela["estado"], 0) + 1
+    (salida.datos / "parcelas.json").write_text(json.dumps({
+        "generado": "2026-09-28T12:48:00",
+        "resumen": {"total": len(parcelas), "por_estado": conteo},
+        "parcelas": parcelas}))
+    (salida.datos / "vistas.json").write_text('{"vistas": []}')
+
+
+def test_mis_planos_trae_disponibles_y_precio_desde(ana_y_luis):
+    _, ana, _, registro, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+    construir_con_precios(registro.salidas, slug, [
+        {"estado": "disponible", "precio": 12_500_000, "moneda": "CLP"},
+        {"estado": "disponible", "precio": 9_990_000, "moneda": "CLP"},
+        # Vendida más barata: no cuenta para "desde".
+        {"estado": "vendido", "precio": 5_000_000, "moneda": "CLP"},
+        # Sin precio ("a consultar"): tampoco.
+        {"estado": "disponible", "precio": None, "moneda": "CLP"},
+        {"estado": "reservado", "precio": 8_000_000, "moneda": "CLP"},
+    ])
+
+    resumen = ana.get("/api/proyectos").json()[0]["resumen"]
+
+    assert resumen["parcelas"] == 5
+    assert resumen["disponibles"] == 3
+    assert resumen["precio_desde"] == {"monto": 9_990_000, "moneda": "CLP"}
+
+
+def test_sin_disponibles_con_precio_no_hay_precio_desde(ana_y_luis):
+    _, ana, _, registro, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+    construir_con_precios(registro.salidas, slug, [
+        {"estado": "vendido", "precio": 5_000_000, "moneda": "CLP"},
+    ])
+
+    resumen = ana.get("/api/proyectos").json()[0]["resumen"]
+
+    assert resumen["disponibles"] == 0
+    assert resumen["precio_desde"] is None
+
+
+def test_un_master_sin_construir_no_tiene_portada(ana_y_luis):
+    _, ana, _, _, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+
+    assert ana.get(f"/api/proyectos/{slug}/portada").status_code == 404
+
+
+def test_el_nombre_en_el_crm_vuelve_como_se_guardo(entorno, tmp_path):
+    cliente, _, _ = entorno
+    cliente.post("/api/proyectos/vincular", json={"ruta": str(carpeta_de_loteo(tmp_path))})
+    assert cliente.get("/api/proyectos").json()[0]["parcelacion"] == ""
+
+    respuesta = cliente.patch("/api/proyectos/loteo", json={"parcelacion": "LOTEO ET2"})
+
+    assert respuesta.json()["parcelacion"] == "LOTEO ET2"
+
+
+def test_la_pagina_no_sirve_modulos_que_no_son_suyos(entorno):
+    cliente, _, _ = entorno
+
+    assert cliente.get("/js/..%2Fapp.py").status_code == 404
+    assert cliente.get("/js/otro.js").status_code == 404
+
+
+def test_un_pago_anotado_no_se_pisa(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+    ctp.post(f"/api/plataforma/proyectos/{slug}/pago", json={"nota_cobro": "transferencia 1"})
+
+    respuesta = ctp.post(f"/api/plataforma/proyectos/{slug}/pago", json={"nota_cobro": "otra"})
+
+    assert respuesta.status_code == 409
+    assert registro.base.proyecto(slug).nota_cobro == "transferencia 1"

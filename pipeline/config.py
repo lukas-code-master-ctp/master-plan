@@ -87,7 +87,10 @@ def descubrir_fuentes(carpeta: Path, crm: Path | None = None,
     return Fuentes(
         kmz=_unico(carpeta, "*.kmz", "el KMZ del loteo"),
         panoramas=_carpeta_de_panoramas(carpeta),
-        excel=_opcional(carpeta, "*.xlsx"),
+        # La planilla puede llegar como CSV cuando se sube sola por el campo
+        # "Inventario" de la consola; ese sí se busca por nombre, porque un CSV
+        # suelto en la carpeta puede ser cualquier cosa.
+        excel=_opcional(carpeta, "*.xlsx") or _opcional(carpeta, "inventario.csv"),
         crm=csv_crm if csv_crm and Path(csv_crm).is_file() else None,
     )
 

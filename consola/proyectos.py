@@ -24,10 +24,15 @@ from pipeline import config
 
 from .acceso import Sesion
 from .datos import Base, NoEncontrado, ProyectoGuardado
+from .portada import portada
 
 CARPETA_SUBIDAS = config.DATOS / "proyectos"
 
 EXTENSIONES_FOTO = (".jpg", ".jpeg")
+
+# La planilla de precios y estados, cuando llega por el campo "Inventario" y no
+# dentro de la carpeta del vuelo. El pipeline la busca por este nombre.
+INVENTARIO_CSV = "inventario.csv"
 
 # Lo que se guarda en `proyecto.json`, que es lo que lee el pipeline. El resto
 # —de quién es, dónde quedó publicado— vive en la base y no se duplica acá.
@@ -59,6 +64,12 @@ class Proyecto:
     # que hacía que dos clientes con el mismo nombre se pisaran el sitio.
     vercel_proyecto: str | None = None
     url_publicada: str | None = None
+    # Sin pago se puede subir y construir, pero no publicar.
+    pagado: bool = True
+    # El nombre del loteo en el CRM tal como se escribió. Vacío es "el nombre en
+    # mayúsculas", que es lo que asume el pipeline; no se rellena acá para que
+    # renombrar el loteo no deje pegado el nombre viejo.
+    parcelacion: str = ""
 
     @property
     def publicado(self) -> bool:
@@ -75,10 +86,13 @@ class Proyecto:
             return {}
         datos = json.loads(archivo.read_text(encoding="utf-8"))
         vistas = json.loads((self.salida.datos / "vistas.json").read_text(encoding="utf-8"))
+        por_estado = datos["resumen"]["por_estado"]
         return {
             "generado": datos.get("generado"),
             "parcelas": datos["resumen"]["total"],
-            "por_estado": datos["resumen"]["por_estado"],
+            "por_estado": por_estado,
+            "disponibles": por_estado.get("disponible", 0),
+            "precio_desde": precio_desde(datos.get("parcelas", [])),
             "vistas": len(vistas["vistas"]),
             "calce": [
                 {"vista": v["id"], "error_sol": v["diagnostico"]["error_elevacion"],
@@ -86,6 +100,9 @@ class Proyecto:
                 for v in vistas["vistas"]
             ],
         }
+
+    def portada(self) -> Path | None:
+        return portada(self.salida)
 
     def control_de_calce(self) -> list[str]:
         if not self.salida.qa.is_dir():
@@ -104,6 +121,8 @@ class Proyecto:
             return {"kmz": None, "panoramicas": 0, "megas": 0, "planilla": None}
         kmz = sorted(p.name for p in self.fuentes.rglob("*.kmz"))
         planillas = sorted(p.name for p in self.fuentes.rglob("*.xlsx") if not p.name.startswith("~$"))
+        if not planillas and (self.fuentes / INVENTARIO_CSV).is_file():
+            planillas = [INVENTARIO_CSV]
         fotos: dict[tuple[str, int], int] = {}
         for ruta in self.fuentes.rglob("*"):
             if ruta.suffix.lower() in EXTENSIONES_FOTO:
@@ -138,18 +157,26 @@ class Registro:
         return Vista(registro=self, duenio=sesion.cliente_id,
                      filtro=None if sesion.es_plataforma else sesion.cliente_id)
 
-    # --- alta de un loteo (solo el back-office) --------------------------------
+    # --- alta de un loteo --------------------------------------------------------
 
     def habilitar(self, cliente_id: int, nombre: str, *,
                   nota_cobro: str | None = None) -> Proyecto:
-        """Le da de alta un loteo a una loteadora, ya pagado.
+        """Le da de alta un loteo a una loteadora, ya pagado. Lo usa el back-office."""
+        return self._nacer(cliente_id, nombre, nota_cobro=nota_cobro, pagado=True)
 
-        Es el único lugar donde nace un proyecto, y por eso es el único donde hay
-        que mirar el cobro. El cliente después sube sus fotos adentro; no puede
-        crearse uno solo. Repartir el control por cada ruta que escribe algo es
-        cómo se termina con un cliente trabajando gratis sin que nadie se entere.
+    def crear(self, cliente_id: int, nombre: str) -> Proyecto:
+        """El loteo que se crea el propio cliente: nace sin pagar.
+
+        Puede subir, construir y mirar el resultado cuantas veces quiera. El cobro
+        se controla en un solo lugar, al publicar, que es cuando el loteo empieza
+        a servirle a alguien más que a quien lo armó.
         """
-        guardado = self.base.crear_proyecto(cliente_id, nombre, nota_cobro=nota_cobro)
+        return self._nacer(cliente_id, nombre, pagado=False)
+
+    def _nacer(self, cliente_id: int, nombre: str, *, pagado: bool,
+               nota_cobro: str | None = None) -> Proyecto:
+        guardado = self.base.crear_proyecto(cliente_id, nombre, nota_cobro=nota_cobro,
+                                            pagado=pagado)
         carpeta = self.subidas / guardado.slug
         carpeta.mkdir(parents=True, exist_ok=True)
         self._escribir_json(carpeta, guardado.slug, {"nombre": nombre})
@@ -166,6 +193,7 @@ class Registro:
             nombre=guardado.nombre,
             etapa=datos.etapa,
             whatsapp=datos.whatsapp,
+            parcelacion=str(_leer_json(carpeta / "proyecto.json").get("parcelacion") or ""),
             despegue=datos.despegue,
             referencias=datos.referencias,
             fuentes=carpeta,
@@ -173,6 +201,7 @@ class Registro:
             crm=self._crm_de(carpeta),
             vercel_proyecto=guardado.vercel_proyecto,
             url_publicada=guardado.url_publicada,
+            pagado=guardado.pagado,
         )
 
     def _escribir_json(self, carpeta: Path, slug: str, campos: dict) -> None:
@@ -214,13 +243,16 @@ class Vista:
         decir "existe pero no es tuyo" ya es contar algo."""
         return self.registro._leer(self.registro.base.proyecto(slug, cliente_id=self.filtro))
 
-    # --- archivos ------------------------------------------------------------
+    # --- alta y archivos --------------------------------------------------------
+
+    def crear(self, nombre: str) -> Proyecto:
+        """Un loteo nuevo a nombre de quien lo crea, todavía sin pagar."""
+        return self.registro.crear(self.duenio, nombre)
 
     def subir(self, slug: str, archivos: list[Subida]) -> Proyecto:
         """Guarda los archivos del vuelo dentro de un loteo que ya existe.
 
-        Se puede subir de nuevo para agregar lo que faltó; lo que no se puede es
-        crear el loteo desde acá. Eso lo hace CTP cuando cobró.
+        Se puede subir de nuevo para agregar lo que faltó.
         """
         proyecto = self.ver(slug)
         carpeta = proyecto.fuentes
@@ -319,11 +351,30 @@ def _destino_seguro(carpeta: Path, relativa: str) -> Path:
     return destino
 
 
+def precio_desde(parcelas: list[dict]) -> dict | None:
+    """El precio más bajo entre las parcelas disponibles, o None si no hay ninguno.
+
+    Pesos y UF no se comparan entre sí: si el loteo mezcla monedas, manda la que
+    tiene más parcelas disponibles con precio, que es la que el comprador va a ver
+    más en el visor.
+    """
+    por_moneda: dict[str, list[float]] = {}
+    for parcela in parcelas:
+        precio = parcela.get("precio")
+        if parcela.get("estado") != "disponible" or not precio:
+            continue
+        por_moneda.setdefault(parcela.get("moneda") or "CLP", []).append(float(precio))
+    if not por_moneda:
+        return None
+    moneda, precios = max(por_moneda.items(), key=lambda par: len(par[1]))
+    return {"monto": min(precios), "moneda": moneda}
+
+
 def fecha_legible(iso: str | None) -> str:
     if not iso:
         return ""
     return datetime.fromisoformat(iso).strftime("%d/%m/%Y %H:%M")
 
 
-__all__ = ["CARPETA_SUBIDAS", "NoEncontrado", "Proyecto", "Registro", "Subida", "Vista",
-           "fecha_legible"]
+__all__ = ["CARPETA_SUBIDAS", "INVENTARIO_CSV", "NoEncontrado", "Proyecto", "Registro", "Subida", "Vista",
+           "fecha_legible", "precio_desde"]

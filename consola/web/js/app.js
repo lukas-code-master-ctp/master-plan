@@ -1,0 +1,108 @@
+/**
+ * La app de Tu Masterplan: la barra, el router y el arranque.
+ *
+ * Las pantallas viven en la misma página y se cambian con el hash de la URL
+ * (`#/planos`, `#/planos/nuevo`, `#/planos/<slug>`, `#/disenos`). Así el botón
+ * atrás funciona, un enlace a un loteo se puede mandar, y no hace falta que el
+ * servidor conozca más rutas que la de la página.
+ */
+import { $, $$, avisar, estado, pedir, ruta } from './comun.js';
+import { pintarBackOffice, prepararBackOffice } from './backoffice.js';
+import { pintarCuenta, prepararCuenta, recordarClaveProvisional } from './cuenta.js';
+import { abrirNuevo, prepararNuevo } from './nuevo.js';
+import { cerrarDialogos, pintarPlano, prepararPlano, seguir } from './plano.js';
+import { pintarPlanos } from './planos.js';
+
+const PANTALLAS = ['planos', 'nuevo', 'plano', 'disenos'];
+
+let anterior = null;
+// Se llegó a un loteo que no estaba en la lista y se está trayendo: al pintarlo
+// hay que rellenar sus datos como si recién se llegara.
+let refrescarAlLlegar = false;
+
+function mostrar() {
+  const destino = ruta(location.hash);
+  const clave = `${destino.pantalla}/${destino.slug ?? ''}`;
+  const llegando = clave !== anterior;
+  anterior = clave;
+
+  for (const nombre of PANTALLAS) $(`#pantalla-${nombre}`).hidden = nombre !== destino.pantalla;
+  const seccion = destino.pantalla === 'disenos' ? 'disenos' : 'planos';
+  for (const enlace of $$('.pestanas a')) {
+    if (enlace.dataset.seccion === seccion) enlace.setAttribute('aria-current', 'page');
+    else enlace.removeAttribute('aria-current');
+  }
+
+  if (llegando) {
+    avisar(null);
+    cerrarDialogos();
+    window.scrollTo(0, 0);
+  }
+  if (destino.pantalla === 'plano') {
+    const conocido = estado.proyectos.some((p) => p.slug === destino.slug);
+    // Un loteo creado en otra pestaña, o recién creado acá: la lista que hay
+    // todavía no lo trae. Se pide de nuevo una vez antes de decir que no existe.
+    if (!conocido && llegando) {
+      pintarPlano(destino.slug, { buscando: true });
+      refrescarAlLlegar = true;
+      refrescar().catch((error) => avisar(error.message));
+      return;
+    }
+    pintarPlano(destino.slug, { nuevo: llegando || refrescarAlLlegar });
+    refrescarAlLlegar = false;
+    return;
+  }
+  document.title = {
+    planos: 'Mis planos', nuevo: 'Nuevo master', disenos: 'Mis diseños',
+  }[destino.pantalla] + ' — Tu Masterplan';
+  if (destino.pantalla === 'planos') pintarPlanos();
+  if (destino.pantalla === 'nuevo' && llegando) abrirNuevo();
+}
+
+async function refrescar() {
+  estado.proyectos = await pedir('/api/proyectos');
+  // Un trabajo puede seguir corriendo de una recarga de página: retomarlo.
+  for (const proyecto of estado.proyectos) {
+    if (proyecto.trabajo && !estado.sondeos.has(proyecto.slug)) seguir(proyecto.slug, proyecto.trabajo.id);
+  }
+  mostrar();
+}
+
+function pintarGuia() {
+  const equipo = estado.sesion.rol === 'plataforma';
+  $('#guia').textContent = equipo
+    ? 'Los loteos de todas las loteadoras. Los que crees tú quedan a nombre de tu equipo.'
+    : 'Subes el vuelo, lo construyes, revisas que las parcelas caigan bien y lo publicas.';
+}
+
+async function arrancar() {
+  prepararCuenta();
+  prepararPlano({ refrescar });
+  prepararBackOffice({ refrescar });
+  prepararNuevo({
+    alCrear: async (slug) => {
+      location.hash = `#/planos/${encodeURIComponent(slug)}`;
+      await refrescar();
+    },
+  });
+  window.addEventListener('hashchange', mostrar);
+
+  try {
+    estado.sesion = await pedir('/api/sesion');
+  } catch {
+    location.href = '/entrar';       // la sesión venció entre carga y carga
+    return;
+  }
+  pintarCuenta();
+  pintarBackOffice();
+  pintarGuia();
+  try {
+    await refrescar();
+    recordarClaveProvisional();
+  } catch (error) {
+    mostrar();
+    avisar(error.message);
+  }
+}
+
+arrancar();

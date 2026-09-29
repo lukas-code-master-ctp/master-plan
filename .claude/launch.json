@@ -12,6 +12,15 @@
         "salidas"
       ],
       "port": 8765
+    },
+    {
+      "name": "consola",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "SIN_NAVEGADOR=1 exec ./consola.sh"
+      ],
+      "port": 8780
     }
   ]
 }

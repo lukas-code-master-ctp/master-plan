@@ -18,9 +18,11 @@ La forma cómoda es la consola:
 ./consola.sh
 ```
 
-Abre http://localhost:8780 en el navegador. Ahí arrastras la carpeta del vuelo,
-completas los datos del loteo, aprietas **Construir**, miras el control de calce y
-recién entonces **Publicar**. Corre en este computador a propósito: una carpeta de
+Abre http://localhost:8780 en el navegador. En **Mis planos → Nuevo master** le pones
+nombre, subes el KMZ, las panorámicas y, si la hay, la planilla de precios, y
+aprietas **Construir**. En el detalle del loteo ves la portada, las cifras y el
+control de calce, completas los datos (WhatsApp, referencias…) y recién entonces
+**Publicar**. Corre en este computador a propósito: una carpeta de
 panorámicas pesa unos 200 MB y no tiene sentido subirlas a otro lado para
 procesarlas acá al lado. Si la carpeta ya está en el disco, en "usar una carpeta que
 ya está en este computador" se registra sin copiar nada.
@@ -65,7 +67,7 @@ Una carpeta con:
    en qué subcarpetas vengan o si la misma foto está dos veces: las tomas se agrupan
    por GPS y se numeran en orden de captura.
 3. **`proyecto.json`** con el nombre del loteo (opcional; sin él se usa el nombre de la
-   carpeta). Es lo mismo que edita el botón "Datos" de la consola:
+   carpeta). Es lo mismo que editan los datos del loteo en la consola:
 
    ```json
    {"nombre": "Praderas de Cauquenes", "etapa": "Etapas 1 a 4", "whatsapp": "56912345678",
@@ -239,13 +241,18 @@ pierda el acceso en la petición siguiente y no doce horas después. Sin
 `CONSOLA_SECRETO` y fuera de este computador la consola **se niega a funcionar**:
 sin secreto de firma, cualquiera se fabrica una galleta.
 
-**Quién crea los loteos.** Un loteo nace en un solo lugar: el back-office
-(`/api/plataforma/…`, solo rol `plataforma`), y nace **pagado**. La nota de cobro es
-obligatoria —sin pasarela, esa línea de texto es todo el control de pago que hay— y
-queda en el historial con quién la escribió. Una loteadora no puede crearse un loteo:
-sube su vuelo dentro de los que le habilitaron. Concentrar el control en el alta es lo
-que evita repartirlo por cada ruta que escribe algo, que es como se termina con un
-cliente trabajando gratis sin que nadie se entere.
+**Quién crea los loteos, y dónde se cobra.** Una loteadora se crea sus masters sola
+(`POST /api/proyectos`), y nacen **sin pagar**: puede subir, construir y revisar
+cuantas veces quiera. El cobro se controla en un solo lugar, **al publicar**, que es
+cuando el loteo empieza a servirle a alguien más que a quien lo armó: publicar uno
+sin pago da 402. El equipo lo deja publicar anotando el pago
+(`/api/plataforma/proyectos/<slug>/pago`, solo rol `plataforma`), o habilita de
+entrada un loteo ya pagado a nombre de una loteadora cuando el vuelo lo hace el
+equipo. En los dos casos la nota de cobro es obligatoria —sin pasarela, esa línea de
+texto es todo el control de pago que hay— y queda en el historial con quién la
+escribió. Concentrar el control en un punto es lo que evita repartirlo por cada ruta
+que escribe algo, que es como se termina con un cliente trabajando gratis sin que
+nadie se entere.
 
 **Cada cliente ve lo suyo.** Las rutas no reciben un `cliente_id` que se pueda olvidar
 de filtrar: reciben `registro.para(sesion)`, una vista que solo alcanza los loteos de

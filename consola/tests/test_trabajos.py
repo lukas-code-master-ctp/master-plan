@@ -113,3 +113,15 @@ def test_un_aviso_que_falla_no_rompe_el_trabajo(trabajos):
     identificador = trabajos.lanzar("loteo", "publicar", guion("print('ok')"), al_terminar=explota)
 
     assert esperar(trabajos, identificador).estado == "listo"
+
+
+def test_un_traceback_llega_sin_codigos_de_color(trabajos, monkeypatch):
+    # Lanzada desde una terminal con color forzado, un Python 3.13+ pinta los
+    # tracebacks con ANSI; en la página eso sale como "[35m".
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    identificador = trabajos.lanzar("loteo", "construir", guion("raise ValueError('mal')"))
+
+    trabajo = esperar(trabajos, identificador)
+
+    assert not any("\x1b[" in linea for linea in trabajo.lineas)
+    assert any("ValueError: mal" in linea for linea in trabajo.lineas)

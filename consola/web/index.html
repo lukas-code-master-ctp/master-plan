@@ -3,47 +3,212 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Consola — Tu Masterplan</title>
+<title>Tu Masterplan</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2318181b'/><circle cx='16' cy='16' r='8' fill='none' stroke='%23fff' stroke-width='2.5'/></svg>">
 <link rel="stylesheet" href="consola.css">
 </head>
 <body>
 
 <header class="barra">
-  <div class="marca">
+  <a class="marca" href="#/planos" aria-label="Tu Masterplan, ir a Mis planos">
     <svg class="marca__hito" viewBox="0 0 32 32" aria-hidden="true">
       <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.6"/>
       <path d="M16 4v6M16 22v6M4 16h6M22 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
       <path d="M16 10.5 21.5 16 16 21.5 10.5 16Z" fill="currentColor"/>
     </svg>
-    <div class="marca__texto">
-      <strong>Tu Masterplan</strong>
-      <span id="rol">Consola de loteos</span>
+    <span class="marca__texto"><strong>Tu Masterplan</strong></span>
+  </a>
+
+  <nav class="pestanas" aria-label="Secciones">
+    <a href="#/planos" data-seccion="planos">Mis planos</a>
+    <a href="#/disenos" data-seccion="disenos">Mis diseños</a>
+  </nav>
+
+  <div class="cuenta">
+    <button id="avatar" class="avatar" type="button" aria-haspopup="menu" aria-expanded="false"
+            aria-controls="menu-cuenta" aria-label="Tu cuenta"></button>
+    <div id="menu-cuenta" class="menu" role="menu" hidden>
+      <div class="menu__quien">
+        <strong id="quien"></strong>
+        <span id="rol"></span>
+      </div>
+      <button id="abrir-clave" role="menuitem" type="button">Cambiar contraseña</button>
+      <button id="loteadoras" role="menuitem" type="button" hidden>Loteadoras</button>
+      <button id="nuevo" role="menuitem" type="button" hidden>Habilitar loteo a una loteadora</button>
+      <form method="post" action="/salir">
+        <button role="menuitem" type="submit">Salir</button>
+      </form>
     </div>
   </div>
-  <span id="quien" class="ayuda"></span>
-  <button id="loteadoras" class="boton boton--contorno" hidden>Loteadoras</button>
-  <button id="nuevo" class="boton" hidden>Habilitar loteo</button>
-  <form method="post" action="/salir" id="salir" hidden>
-    <button class="boton boton--texto" type="submit">Salir</button>
-  </form>
 </header>
 
+<div id="aviso" class="aviso aviso--fijo" role="alert" hidden></div>
+
 <main class="lienzo">
-  <div id="aviso" class="aviso" hidden></div>
-  <!-- Los pasos, siempre a la vista. Quien entra por primera vez no tiene por qué
-       deducir el orden mirando botones. El guion la llena según el rol. -->
-  <p id="guia" class="guia" hidden></p>
-  <section id="lista" class="lista" aria-live="polite"></section>
+
+  <!-- Mis planos -->
+  <section id="pantalla-planos" class="pantalla" aria-labelledby="titulo-planos" hidden>
+    <header class="pantalla__cabecera">
+      <div>
+        <h1 id="titulo-planos">Mis planos</h1>
+        <p id="guia" class="guia"></p>
+      </div>
+      <a class="boton" href="#/planos/nuevo">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        Nuevo master
+      </a>
+    </header>
+    <ul id="planos" class="planos" aria-live="polite"></ul>
+  </section>
+
+  <!-- Nuevo master -->
+  <section id="pantalla-nuevo" class="pantalla pantalla--angosta" aria-labelledby="titulo-nuevo" hidden>
+    <a class="volver" href="#/planos">← Mis planos</a>
+    <h1 id="titulo-nuevo">Nuevo master</h1>
+    <p class="ayuda">Sube el plano del topógrafo y las panorámicas del dron. Con eso se
+      construye el visor; revisas cómo quedó y recién ahí lo publicas.</p>
+
+    <form id="nuevo-master" class="formulario" novalidate>
+      <label class="renglon">
+        <span class="renglon__rotulo">Nombre</span>
+        <input id="nuevo-nombre" name="nombre" type="text" placeholder="Praderas de Cauquenes"
+               autocomplete="off" required>
+      </label>
+
+      <div class="renglon">
+        <span class="renglon__rotulo" id="rotulo-kmz">KMZ</span>
+        <label class="archivo" id="caja-kmz">
+          <input id="nuevo-kmz" type="file" accept=".kmz" aria-labelledby="rotulo-kmz">
+          <span class="archivo__texto" id="texto-kmz">Subir el plano (.kmz)</span>
+        </label>
+      </div>
+
+      <div class="renglon">
+        <span class="renglon__rotulo" id="rotulo-fotos">Panorámicas</span>
+        <div>
+          <label class="archivo archivo--alto" id="caja-fotos">
+            <input id="nuevo-fotos" type="file" accept=".jpg,.jpeg" multiple aria-labelledby="rotulo-fotos">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 16V4m0 0 4 4m-4-4L8 8M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"
+                    fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="archivo__texto" id="texto-fotos">Arrastra la carpeta del vuelo o elige las fotos</span>
+          </label>
+          <p class="nota">Las 360° del dron, tal como salen de la cámara. Si la carpeta
+            trae el KMZ o la planilla, se toman solos.
+            <label class="enlace">o elige la carpeta entera<input id="nuevo-carpeta" type="file" webkitdirectory hidden></label></p>
+        </div>
+      </div>
+
+      <div class="renglon">
+        <span class="renglon__rotulo" id="rotulo-inventario">Inventario <i>opcional</i></span>
+        <div>
+          <label class="archivo" id="caja-inventario">
+            <input id="nuevo-inventario" type="file" accept=".xlsx,.csv" aria-labelledby="rotulo-inventario">
+            <span class="archivo__texto" id="texto-inventario">Subir la planilla de precios (.xlsx o .csv)</span>
+          </label>
+          <p class="nota">Una fila por lote con su estado y precio. Sin planilla, las
+            parcelas quedan como no disponibles.</p>
+        </div>
+      </div>
+
+      <label class="renglon">
+        <span class="renglon__rotulo">Diseño</span>
+        <select id="nuevo-diseno" disabled>
+          <option>Tu Masterplan (por defecto)</option>
+        </select>
+      </label>
+
+      <details class="alternativa" id="carpeta-local" hidden>
+        <summary>O usar una carpeta que ya está en este computador</summary>
+        <p class="nota">Más rápido: no copia los cientos de megas de las panorámicas.</p>
+        <div class="fila">
+          <input id="ruta" type="text" placeholder="/Users/mac/Desktop/Cauquenes_170926" autocomplete="off">
+          <button id="vincular" class="boton boton--contorno" type="button">Usar</button>
+        </div>
+      </details>
+
+      <div id="nuevo-progreso" class="avance" hidden>
+        <div class="progreso"><i></i></div>
+        <span id="nuevo-paso"></span>
+      </div>
+
+      <div class="formulario__pie">
+        <button id="construir-nuevo" class="boton boton--grande" type="submit">Construir</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Un master -->
+  <section id="pantalla-plano" class="pantalla" aria-labelledby="plano-nombre" hidden>
+    <a class="volver" href="#/planos">← Mis planos</a>
+
+    <article class="plano-detalle" id="plano">
+      <header class="plano-detalle__cabecera">
+        <div class="plano-detalle__identidad">
+          <h1 id="plano-nombre"></h1>
+          <div id="plano-meta" class="meta"></div>
+        </div>
+        <div class="plano-detalle__acciones">
+          <button class="boton boton--contorno" data-accion="archivos" type="button">Subir archivos</button>
+          <button class="boton boton--contorno" data-accion="construir" type="button">Construir</button>
+        </div>
+      </header>
+
+      <figure class="portada" id="plano-portada"></figure>
+
+      <dl id="plano-cifras" class="cifras" hidden></dl>
+
+      <pre id="plano-registro" class="consola-log" hidden></pre>
+
+      <form id="plano-ajustes" class="ajustes">
+        <label class="campo"><span>Nombre</span><input name="nombre" type="text" autocomplete="off"></label>
+        <label class="campo"><span>Etapa</span><input name="etapa" type="text" placeholder="Etapas 1 a 4" autocomplete="off"></label>
+        <label class="campo"><span>WhatsApp</span><input name="whatsapp" type="text" inputmode="tel" placeholder="56912345678" autocomplete="off"></label>
+        <label class="campo"><span>Nombre en el CRM</span><input name="parcelacion" type="text" autocomplete="off"></label>
+        <label class="campo"><span>Despegue del dron <i>lon, lat</i></span><input name="despegue" type="text" placeholder="-72.27591, -35.86774" autocomplete="off"></label>
+        <label class="campo campo--ancho"><span>Referencias en el horizonte</span><input name="referencias" type="text" placeholder="Cauquenes, Pelluhue, Chanco" autocomplete="off"></label>
+        <div class="ajustes__pie">
+          <button class="boton" data-accion="guardar" type="button">Guardar</button>
+          <span id="plano-guardado" class="nota" role="status"></span>
+          <button class="boton boton--texto boton--peligro" data-accion="olvidar" type="button">Quitar de la lista</button>
+        </div>
+      </form>
+
+      <section id="plano-calce" class="calce" hidden>
+        <h2>Control de calce <small>los polígonos tienen que caer sobre los caminos</small></h2>
+        <div class="calce__tiras"></div>
+      </section>
+
+      <footer class="publicar">
+        <button class="boton boton--grande" data-accion="publicar" type="button">Publicar</button>
+        <p id="plano-publicar-nota" class="nota"></p>
+        <button class="boton boton--texto" data-accion="pago" type="button" hidden>Anotar pago</button>
+      </footer>
+    </article>
+  </section>
+
+  <!-- Mis diseños -->
+  <section id="pantalla-disenos" class="pantalla" aria-labelledby="titulo-disenos" hidden>
+    <header class="pantalla__cabecera">
+      <h1 id="titulo-disenos">Mis diseños</h1>
+      <button class="boton" type="button" disabled>Nuevo diseño</button>
+    </header>
+    <div class="vacio">
+      <strong>Muy pronto</strong>
+      <span>Acá vas a guardar la marca de tus loteos —logo, color y tipografía— y elegirla
+        al crear un master. Por ahora todos se publican con el diseño de Tu Masterplan.</span>
+    </div>
+  </section>
 </main>
 
-<!-- Subir el vuelo a un loteo ya habilitado -->
+<!-- Subir más archivos a un master que ya existe -->
 <dialog id="alta" class="modal">
   <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
-  <h2>Subir el vuelo</h2>
-  <p class="ayuda">Arrastra la carpeta del vuelo: el KMZ del topógrafo y las panorámicas
-    del dron. Da lo mismo cómo se llamen los archivos.</p>
+  <h2>Subir archivos</h2>
   <p class="ayuda" id="alta-loteo"></p>
+  <p class="ayuda">Arrastra la carpeta del vuelo, o lo que falte: el KMZ, panorámicas o la
+    planilla. Lo que ya estaba se mantiene.</p>
 
   <label class="soltadero" id="soltadero">
     <input id="archivos" type="file" multiple webkitdirectory hidden>
@@ -54,28 +219,56 @@
     <span id="soltadero-texto">Arrastra la carpeta aquí o haz clic para elegirla</span>
   </label>
 
-  <details class="alternativa" id="carpeta-local" hidden>
-    <summary>O usar una carpeta que ya está en este computador</summary>
-    <p class="ayuda">Más rápido: no copia los cientos de megas de las panorámicas.</p>
-    <div class="fila">
-      <input id="ruta" type="text" placeholder="/Users/mac/Desktop/Cauquenes_170926" autocomplete="off">
-      <button id="vincular" class="boton boton--contorno" type="button">Usar</button>
-    </div>
-  </details>
-
   <div id="progreso" class="progreso" hidden><i></i></div>
   <div class="modal__pie">
-    <button id="cancelar" class="boton boton--texto" type="button">Cancelar</button>
+    <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
     <button id="subir" class="boton" type="button" disabled>Subir</button>
   </div>
 </dialog>
 
-<!-- Habilitar un loteo: el único lugar donde nace uno, y donde se anota el cobro -->
+<!-- Cambiar la propia contraseña -->
+<dialog id="clave" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2>Cambiar contraseña</h2>
+  <p class="ayuda">Al cambiarla se cierran todas tus sesiones, esta incluida: vuelves a
+    entrar con la nueva.</p>
+  <label class="campo">
+    <span>Contraseña actual</span>
+    <input id="clave-actual" type="password" autocomplete="current-password">
+  </label>
+  <label class="campo">
+    <span>Nueva <i>al menos 10 caracteres</i></span>
+    <input id="clave-nueva" type="password" autocomplete="new-password" minlength="10">
+  </label>
+  <div class="modal__pie">
+    <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
+    <button id="clave-listo" class="boton" type="button">Cambiar</button>
+  </div>
+</dialog>
+
+<!-- Anotar el pago de un master que el cliente se creó solo (CTP) -->
+<dialog id="pago" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2>Anotar pago</h2>
+  <p class="ayuda" id="pago-loteo"></p>
+  <label class="campo">
+    <span>Cómo se pagó</span>
+    <input id="pago-cobro" type="text" placeholder="Transferencia 4821, 20/09" autocomplete="off">
+  </label>
+  <p class="ayuda">Sin pasarela de pago, esta línea es el único registro de que se cobró.
+    Queda en el historial con tu nombre y la fecha.</p>
+  <div class="modal__pie">
+    <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
+    <button id="pago-listo" class="boton" type="button">Habilitar publicación</button>
+  </div>
+</dialog>
+
+<!-- Habilitar un loteo ya pagado a una loteadora (CTP) -->
 <dialog id="habilitar" class="modal">
   <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
   <h2>Habilitar un loteo</h2>
-  <p class="ayuda">El loteo nace vacío y pagado. Después la loteadora sube sus fotos
-    adentro; sola no puede crearse ninguno.</p>
+  <p class="ayuda">Para cuando el loteo lo arma el equipo: nace vacío, pagado y a nombre de
+    la loteadora. Ella lo ve en sus planos.</p>
 
   <label class="campo">
     <span>Loteadora</span>
@@ -89,8 +282,6 @@
     <span>Cómo se pagó</span>
     <input id="habilitar-cobro" type="text" placeholder="Transferencia 4821, 20/09" autocomplete="off">
   </label>
-  <p class="ayuda">Sin pasarela de pago, esta línea es el único registro de que se cobró.
-    Queda en el historial con tu nombre y la fecha.</p>
 
   <div class="modal__pie">
     <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
@@ -98,7 +289,7 @@
   </div>
 </dialog>
 
-<!-- Padrón de loteadoras -->
+<!-- Padrón de loteadoras (CTP) -->
 <dialog id="clientes" class="modal modal--ancho">
   <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
   <h2>Loteadoras</h2>
@@ -119,44 +310,6 @@
   <pre id="clientes-clave" class="consola-log" hidden></pre>
 </dialog>
 
-<template id="plantilla-proyecto">
-  <article class="proyecto">
-    <header class="proyecto__cabecera">
-      <div class="proyecto__identidad">
-        <h2 class="proyecto__nombre"></h2>
-        <div class="proyecto__meta"></div>
-      </div>
-      <div class="proyecto__acciones">
-        <button class="boton boton--contorno" data-accion="archivos">Archivos</button>
-        <button class="boton boton--contorno" data-accion="ajustes">Datos</button>
-        <button class="boton boton--contorno" data-accion="construir">Construir</button>
-        <button class="boton" data-accion="publicar">Publicar</button>
-      </div>
-    </header>
-
-    <dl class="cifras" hidden></dl>
-
-    <form class="ajustes" hidden>
-      <label class="campo"><span>Nombre</span><input name="nombre" type="text" autocomplete="off"></label>
-      <label class="campo"><span>Etapa</span><input name="etapa" type="text" placeholder="Etapas 1 a 4" autocomplete="off"></label>
-      <label class="campo"><span>WhatsApp</span><input name="whatsapp" type="text" placeholder="56912345678" autocomplete="off"></label>
-      <label class="campo"><span>Nombre en el CRM</span><input name="parcelacion" type="text" placeholder="PRADERAS DE CAUQUENES" autocomplete="off"></label>
-      <label class="campo"><span>Despegue del dron <i>lon, lat</i></span><input name="despegue" type="text" placeholder="-72.27591, -35.86774" autocomplete="off"></label>
-      <label class="campo campo--ancho"><span>Referencias en el horizonte</span><input name="referencias" type="text" placeholder="Cauquenes, Pelluhue, Chanco" autocomplete="off"></label>
-      <div class="ajustes__pie">
-        <button class="boton" data-accion="guardar" type="button">Guardar</button>
-        <button class="boton boton--texto" data-accion="olvidar" type="button">Quitar de la lista</button>
-      </div>
-    </form>
-
-    <pre class="consola-log" hidden></pre>
-    <section class="calce" hidden>
-      <h3>Control de calce <small>los polígonos tienen que caer sobre los caminos</small></h3>
-      <div class="calce__tiras"></div>
-    </section>
-  </article>
-</template>
-
-<script type="module" src="consola.js"></script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

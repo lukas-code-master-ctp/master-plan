@@ -315,8 +315,13 @@ class Base:
     def crear_proyecto(self, cliente_id: int, nombre: str, *, slug: str | None = None,
                        carpeta: str | None = None, nota_cobro: str | None = None,
                        vercel_proyecto: str | None = None,
-                       url_publicada: str | None = None) -> ProyectoGuardado:
-        """Un loteo nace pagado: solo se crea cuando CTP ya cobró.
+                       url_publicada: str | None = None,
+                       pagado: bool = True) -> ProyectoGuardado:
+        """Da de alta un loteo.
+
+        Por defecto nace pagado, que es lo que pasa cuando lo habilita CTP. Con
+        `pagado=False` es el que se crea el propio cliente: puede subir y
+        construir, pero publicar espera a que CTP anote el cobro.
 
         Con `slug` se adopta un loteo que ya existía afuera, con su identidad intacta.
         """
@@ -329,7 +334,8 @@ class Base:
                     carpeta=carpeta, vercel_proyecto=vercel_proyecto,
                     url_publicada=url_publicada,
                     publicado_en=ahora if url_publicada else None,
-                    pagado_en=ahora, nota_cobro=nota_cobro, creado_en=ahora))
+                    pagado_en=ahora if pagado else None, nota_cobro=nota_cobro,
+                    creado_en=ahora))
             except IntegrityError as error:
                 raise ProyectoYaExiste(f"ya hay un loteo llamado {nombre!r}") from error
         return self.proyecto(elegido)
@@ -348,6 +354,18 @@ class Base:
         with self.motor.begin() as con:
             con.execute(update(proyectos).where(proyectos.c.slug == slug).values(
                 vercel_proyecto=vercel_proyecto, url_publicada=url, publicado_en=_ahora()))
+
+    def anotar_pago(self, slug: str, nota_cobro: str) -> bool:
+        """El cobro de un loteo que el cliente se creó solo. Es lo que deja publicarlo.
+
+        Un pago ya anotado no se pisa: la nota original es el registro del cobro.
+        Devuelve False si ya estaba pagado.
+        """
+        with self.motor.begin() as con:
+            cambio = con.execute(update(proyectos).where(
+                proyectos.c.slug == slug, proyectos.c.pagado_en.is_(None)).values(
+                pagado_en=_ahora(), nota_cobro=nota_cobro))
+        return cambio.rowcount == 1
 
     def olvidar_proyecto(self, slug: str) -> None:
         with self.motor.begin() as con:
