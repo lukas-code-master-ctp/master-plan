@@ -11,8 +11,12 @@
 #   gcloud artifacts repositories create tumasterplan --repository-format=docker \
 #     --location=southamerica-east1
 #   gcloud storage buckets create gs://tumasterplan-datos --location=southamerica-east1
+#   gcloud sql instances create tumasterplan-bd --database-version=POSTGRES_16 \
+#     --edition=ENTERPRISE --tier=db-f1-micro --region=southamerica-east1
 #   printf '%s' "$(openssl rand -base64 32)" | gcloud secrets create consola-secreto --data-file=-
-#   printf '%s' "postgresql+psycopg://…" | gcloud secrets create masterplan-bd --data-file=-
+#   # Cloud SQL por el socket que monta Cloud Run (--add-cloudsql-instances):
+#   printf '%s' "postgresql+psycopg://<usuario>:<clave>@/<base>?host=/cloudsql/<proyecto>:southamerica-east1:tumasterplan-bd" \
+#     | gcloud secrets create masterplan-bd --data-file=-
 #   printf '%s' "<token de vercel>"      | gcloud secrets create vercel-token --data-file=-
 steps:
   - name: 'gcr.io/cloud-builders/docker'
@@ -49,6 +53,7 @@ steps:
       - '--port=8080'
       - '--add-volume=name=datos,type=cloud-storage,bucket=${_BUCKET}'
       - '--add-volume-mount=volume=datos,mount-path=/datos'
+      - '--add-cloudsql-instances=${PROJECT_ID}:${_REGION}:${_INSTANCIA_BD}'
       - '--set-secrets=CONSOLA_SECRETO=consola-secreto:latest,MASTERPLAN_BD=masterplan-bd:latest,VERCEL_TOKEN=vercel-token:latest'
       # _DOMINIO vacío deja los loteos en masterplan-<slug>.vercel.app; con
       # tumasterplan.cl pasan a <slug>.tumasterplan.cl.
@@ -59,6 +64,7 @@ substitutions:
   _REPO: tumasterplan                     # repositorio de Artifact Registry
   _SERVICIO: tumasterplan-consola
   _BUCKET: tumasterplan-datos
+  _INSTANCIA_BD: tumasterplan-bd          # Cloud SQL, la Postgres de las cuentas
   _IMAGEN: southamerica-east1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/tumasterplan-consola
   _VERCEL_SCOPE: lrencoret-1882s-projects   # el equipo Pro: Hobby prohíbe el uso comercial
   _DOMINIO: ''                          # cuando exista: tumasterplan.cl
@@ -68,5 +74,8 @@ images:
   - '${_IMAGEN}:latest'
 
 options:
+  # _IMAGEN se arma con ${PROJECT_ID} y ${_REPO}: sin esto Cloud Build no expande
+  # sustituciones dentro de otras, y rechaza _REPO por "no usada en la plantilla".
+  dynamicSubstitutions: true
   logging: CLOUD_LOGGING_ONLY
   machineType: E2_HIGHCPU_8
