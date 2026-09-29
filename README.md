@@ -165,10 +165,15 @@ corresponde.
 
 ## La landing
 
-`landing/` es la página pública de tumasterplan.cl: un HTML, la tipografía y el hero,
-440 KB en total y **sin una línea de JavaScript** (la CSP la sirve con `script-src
-'none'`). El hero sale de la panorámica de Cauquenes, reproyectada a perspectiva con
-el mismo cálculo gnomónico que usa el visor.
+`landing/` es la página pública de tumasterplan.cl: un HTML, la tipografía y cuatro
+imágenes, ~540 KB en escritorio y **sin una línea de JavaScript** (la CSP la sirve con
+`script-src 'none'`). El hero sale de la panorámica de Cauquenes, reproyectada a
+perspectiva con el mismo cálculo gnomónico que usa el visor.
+
+Las capturas de `producto*.webp` son del visor real, tomadas con Chrome headless y
+`--use-angle=swiftshader` —sin eso no hay WebGL y la panorámica sale negra—. Se
+regeneran apuntando a un sitio construido; llevan un WhatsApp de ejemplo porque el
+botón de contacto solo se dibuja cuando el loteo tiene número.
 
 No está publicada todavía: faltan el correo y el WhatsApp de verdad. El propio pie de
 la página lo dice, para que no se publique por descuido.

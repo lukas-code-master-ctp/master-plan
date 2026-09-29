@@ -171,6 +171,10 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return {
             "quien": quien_es.quien,
             "rol": quien_es.rol,
+            # Su propio cliente, que ya conoce: la página lo usa para no ofrecerle
+            # suspender su propia loteadora, que es lo único que el back-office no
+            # deja hacer.
+            "cliente_id": quien_es.cliente_id,
             "cliente": base.cliente(quien_es.cliente_id).nombre,
             "debe_cambiar_clave": quien_es.debe_cambiar_clave,
             # La carpeta del disco solo se puede vincular donde está el disco.

@@ -687,6 +687,17 @@ def test_lo_que_decide_algo_queda_anotado(ana_y_luis):
 
 # --- publicar un loteo al que nadie puede escribirle -------------------------------
 
+def test_la_sesion_dice_de_que_loteadora_es(entorno, registro=None):
+    """La página lo usa para no ofrecer "suspender" sobre la propia loteadora,
+    que es lo único que el back-office rechaza siempre."""
+    cliente, registro, _ = entorno
+
+    cuerpo = cliente.get("/api/sesion").json()
+
+    assert cuerpo["cliente_id"] == id_de(registro, "ctp@ctp.cl")
+    assert cuerpo["cliente"] == "CompraTuParcela"
+
+
 def test_un_loteo_sin_whatsapp_se_marca_como_sin_contacto(entorno, tmp_path):
     """Praderas salió publicado así: el comprador mira, se decide, y no hay a quién
     escribirle. El botón de contacto del visor solo aparece si hay número."""

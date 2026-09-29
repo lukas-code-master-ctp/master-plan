@@ -26,7 +26,10 @@ crear="${3:-}"
 # y estos sitios venden parcelas. Apuntar al equipo equivocado además crea un
 # proyecto nuevo con el mismo nombre y bifurca el sitio publicado.
 scope="${VERCEL_SCOPE:-lrencoret-1882s-projects}"
-# En el contenedor no hay sesión interactiva: el token viene por variable.
+# En el contenedor no hay sesión interactiva: el token viene por variable. Acá,
+# con la sesión del CLI, el array queda vacío — y bash 3.2, el que trae macOS,
+# considera "unbound" la expansión de un array vacío bajo `set -u`. De ahí el
+# `${token[@]+...}`: expande a nada cuando no hay token, en vez de morirse.
 token=()
 [ -n "${VERCEL_TOKEN:-}" ] && token=(--token "$VERCEL_TOKEN")
 
@@ -39,11 +42,11 @@ echo "▶ Publicando $sitio como $proyecto en $scope"
 
 if [ "$crear" = "--crear" ]; then
   # Sin `|| true`: si el nombre ya está tomado, esto tiene que fallar.
-  vercel project add "$proyecto" --scope "$scope" "${token[@]}"
+  vercel project add "$proyecto" --scope "$scope" ${token[@]+"${token[@]}"}
 fi
 
-vercel link --yes --project "$proyecto" --scope "$scope" "${token[@]}" --cwd "$sitio" >/dev/null
-salida=$(vercel deploy --prod --yes --scope "$scope" "${token[@]}" --cwd "$sitio")
+vercel link --yes --project "$proyecto" --scope "$scope" ${token[@]+"${token[@]}"} --cwd "$sitio" >/dev/null
+salida=$(vercel deploy --prod --yes --scope "$scope" ${token[@]+"${token[@]}"} --cwd "$sitio")
 echo "$salida"
 
 # La URL del despliegue, para que la consola la persista. `vercel deploy` imprime

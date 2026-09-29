@@ -232,3 +232,20 @@ button { cursor: pointer; }
 
 .fila--envuelve { flex-wrap: wrap; }
 .fila--envuelve input { flex: 1 1 10rem; }
+
+/* Los pasos del flujo, en una línea. Va en gris y sin caja: tiene que estar
+   disponible para quien la necesita y desaparecer para quien ya sabe. */
+.guia {
+  margin: 0 0 1.25rem;
+  color: var(--zinc-500);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+.guia b { color: var(--zinc-700); font-weight: 600; }
+.guia i {
+  display: inline-block;
+  min-width: 1.15rem; height: 1.15rem; margin-right: 0.3rem;
+  border-radius: 999px; background: var(--zinc-200); color: var(--zinc-600);
+  font: 600 0.6875rem/1.15rem var(--sans); font-style: normal; text-align: center;
+}
+.guia span { white-space: nowrap; margin-right: 1rem; display: inline-block; }
