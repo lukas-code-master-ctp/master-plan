@@ -29,5 +29,7 @@ venv/
 Thumbs.db
 .mypy_cache/
 .ruff_cache/
-# Los registros de la consola corriendo como servicio.
+# Los registros de la consola cuando corre en segundo plano.
 logs/
+# El rastro que deja publicar.sh con la URL real del despliegue.
+publicacion.json

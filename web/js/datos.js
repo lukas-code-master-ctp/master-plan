@@ -76,9 +76,20 @@ export class Catalogo {
     return this.estados[estado]?.etiqueta ?? estado;
   }
 
-  /** "Parcela 7": el número dentro de su etapa, o el id completo si el loteo no tiene etapas. */
+  /**
+   * "Parcela 7", o "Parcela 4-10" cuando el loteo tiene varias etapas.
+   *
+   * Es el mismo texto que lleva la pastilla sobre el terreno: si el comprador ve
+   * "4-10" en la foto, la ficha que abre al tocarla tiene que llamarse igual. Sin
+   * etapas se usa el id completo, que puede traer letra de sector ("A214").
+   */
   titulo(parcela) {
-    return `Parcela ${parcela.etapa != null ? parcela.numero : parcela.id}`;
+    return `Parcela ${parcela.etapa != null ? parcela.rotulo : parcela.id}`;
+  }
+
+  /** ¿El rótulo ya distingue la etapa? Entonces volver a decirla es ruido. */
+  rotuloLlevaEtapa(parcela) {
+    return parcela.etapa != null && parcela.rotulo !== String(parcela.numero);
   }
 
   /** "Etapa 2", o nada. */
@@ -88,6 +99,7 @@ export class Catalogo {
 
   /** "Parcela 7 · Etapa 2", para listas y mensajes donde la etapa no está a la vista. */
   nombre(parcela) {
+    if (this.rotuloLlevaEtapa(parcela)) return this.titulo(parcela);
     const etapa = this.etapaDe(parcela);
     return etapa ? `${this.titulo(parcela)} · ${etapa}` : this.titulo(parcela);
   }

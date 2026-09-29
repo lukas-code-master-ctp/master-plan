@@ -154,7 +154,7 @@ async function correr() {
     revisar('hacer clic en una parcela abre su ficha', abrio);
     revisar('la ficha corresponde a la parcela clickeada',
             $('.ficha__titulo')?.textContent.includes(idElegida),
-            `esperaba A${idElegida}, salió "${$('.ficha__titulo')?.textContent ?? '—'}"`);
+            `la pastilla decía ${idElegida}, la ficha "${$('.ficha__titulo')?.textContent ?? '—'}"`);
     revisar('la ficha trae superficie y acciones',
             $('.datos')?.textContent.includes('m²') && $('.acciones')?.children.length >= 1);
     // El resaltado se aplica en el siguiente repintado, no en el mismo clic.
@@ -204,14 +204,19 @@ async function correr() {
   buscador.dispatchEvent(new ventana.Event('input'));
   await esperar(120);
   const sugerencias = [...$('#sugerencias').children].map((li) => li.textContent);
-  // La sugerencia dice "Parcela 7 · Etapa 2", no el id "2-7": se busca por número
-  // y, si el loteo tiene etapas, por la etapa del lote.
+  // La sugerencia llama a la parcela igual que la pastilla sobre el terreno: con
+  // varias etapas "Parcela 2-10", con una sola "Parcela 10".
   const esperado = loteBuscado.etapa != null
-    ? (t) => t.includes(`Parcela ${loteBuscado.numero}`) && t.includes(`Etapa ${loteBuscado.etapa}`)
+    ? (t) => t.includes(`Parcela ${loteBuscado.rotulo}`)
     : (t) => t.includes(loteBuscado.id);
   revisar('el buscador encuentra por número de lote',
           sugerencias.some(esperado),
           `buscado ${loteBuscado.id} — ${sugerencias.slice(0, 3).join(' | ')}`);
+  // Buscar "10" en un loteo de cuatro etapas trae cuatro parcelas distintas. Si
+  // las sugerencias se llamaran igual, elegir una sería adivinar.
+  revisar('las sugerencias no se repiten entre sí',
+          new Set(sugerencias).size === sugerencias.length,
+          `${sugerencias.length} sugerencias, ${new Set(sugerencias).size} distintas`);
 
   // --- Filtros ---------------------------------------------------------------
   $('#solo-con-vista').checked = true;
@@ -244,7 +249,44 @@ async function correr() {
   revisar('el mapa marca las posiciones de vuelo',
           doc.querySelectorAll('#mapa .punto-vuelo').length >= 3);
 
+  await planoEnTelefono(html);
+
   informar();
+}
+
+/*
+ * El plano, en un teléfono y con la aplicación recién arrancada.
+ *
+ * En escritorio los dos paneles conviven, así que el mapa siempre tuvo tamaño y
+ * el bug no aparece: hay que arrancar angosto, donde el plano nace escondido
+ * detrás de la vista aérea. Ahí Leaflet lo mide en 0×0, no puede resolver ningún
+ * zoom que contenga las parcelas y se queda mirando el planeta entero; el usuario
+ * aprieta "Plano" y ve el mundo. El zoom de las teselas cargadas lo delata.
+ */
+async function planoEnTelefono(html) {
+  const marco = document.createElement('iframe');
+  marco.style.cssText = 'width:390px;height:780px;border:1px solid #2a323f;margin:0 1rem 1rem';
+  document.body.append(marco);
+  marco.srcdoc = html.replace('<head>', `<head>${PARCHE}`);
+  await new Promise((listo) => { marco.onload = listo; });
+
+  const doc = marco.contentDocument;
+  const arranco = await esperarA(() => doc.querySelectorAll('#overlay .parcela').length > 0);
+  if (!arranco) {
+    revisar('al abrir el plano en un teléfono queda encuadrado en el loteo', false,
+            'la aplicación no alcanzó a arrancar en el marco angosto');
+    return;
+  }
+
+  doc.querySelector('#accion-plano').click();
+  await esperarA(() => doc.querySelectorAll('img.leaflet-tile').length > 0, 8000);
+  const zooms = [...doc.querySelectorAll('img.leaflet-tile')]
+    .map((img) => Number(img.src.match(/\/tile\/(\d+)\//)?.[1]))
+    .filter(Number.isFinite);
+
+  revisar('al abrir el plano en un teléfono queda encuadrado en el loteo, no en el mundo',
+          zooms.length > 0 && Math.min(...zooms) >= 12,
+          `zoom de las teselas: ${[...new Set(zooms)].join(', ') || 'ninguna cargada'}`);
 }
 
 function muestrear(gl, lienzo) {
