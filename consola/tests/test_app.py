@@ -463,6 +463,7 @@ RUTAS = {
     ("POST", "/api/plataforma/clientes/{cliente_id}/proyectos"): SOLO_CTP,
     ("POST", "/api/plataforma/proyectos/{slug}/pago"): SOLO_CTP,
     ("GET", "/api/plataforma/historial"): SOLO_CTP,
+    ("POST", "/api/plataforma/usuarios/clave"): SOLO_CTP,
     ("GET", "/api/disenos"): SOLO_SUYO,
     ("POST", "/api/disenos"): SOLO_SUYO,
     ("PATCH", "/api/disenos/{diseno_id}"): AJENO_404,
@@ -617,8 +618,9 @@ def test_dos_loteadoras_con_el_mismo_nombre_de_loteo_no_se_pisan(ana_y_luis):
     lambda web, cid: web.get("/api/plataforma/historial"),
     lambda web, cid: web.post("/api/plataforma/proyectos/cualquiera/pago",
                               json={"nota_cobro": "me lo regalo"}),
+    lambda web, cid: web.post("/api/plataforma/usuarios/clave", json={"email": "luis@delvalle.cl"}),
 ], ids=["listar", "crear cliente", "crear cuenta", "suspender", "habilitar loteo", "historial",
-        "anotar pago"])
+        "anotar pago", "clave nueva"])
 def test_una_loteadora_no_entra_al_back_office(ana_y_luis, pedir):
     """Sobre todo la penúltima: si un cliente pudiera habilitarse loteos solo,
     el cobro no existiría."""
@@ -1282,3 +1284,26 @@ def test_la_pagina_toma_prestada_la_marca_del_visor(entorno):
 
     assert respuesta.status_code == 200
     assert "export function paleta" in respuesta.text
+
+
+# --- clave nueva desde el equipo (sin correo, es la única forma) ---------------------
+
+def test_el_equipo_da_una_clave_provisional_nueva(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+
+    respuesta = ctp.post("/api/plataforma/usuarios/clave", json={"email": "Ana@LosRobles.cl"})
+
+    assert respuesta.status_code == 200
+    clave = respuesta.json()["clave_provisional"]
+    # La sesión que tenía abierta se corta, y entra con la nueva.
+    assert ana.get("/api/sesion").status_code == 401
+    assert ana.post("/entrar", data={"email": "ana@losrobles.cl", "clave": CLAVE}).status_code == 401
+    assert ana.post("/entrar", data={"email": "ana@losrobles.cl", "clave": clave}).status_code == 303
+    assert ana.get("/api/sesion").json()["debe_cambiar_clave"] is True
+    assert any(e.que == "clave provisional nueva" for e in registro.base.historial())
+
+
+def test_una_clave_nueva_para_un_correo_sin_cuenta_da_404(ana_y_luis):
+    ctp, _, _, _, _ = ana_y_luis
+
+    assert ctp.post("/api/plataforma/usuarios/clave", json={"email": "nadie@x.cl"}).status_code == 404

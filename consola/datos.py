@@ -398,6 +398,22 @@ class Base:
         assert encontrado is not None
         return encontrado
 
+    def nueva_clave_provisional(self, email: str) -> str:
+        """Una clave provisional nueva para una cuenta, y se cortan sus sesiones.
+
+        Para cuando no hay correo con que recuperarla: la da el equipo, se
+        muestra una vez y hay que cambiarla al entrar.
+        """
+        clave = _clave_provisional()
+        with self.motor.begin() as con:
+            cambio = con.execute(update(usuarios)
+                                 .where(func.lower(usuarios.c.email) == email.strip().lower())
+                                 .values(clave_hash=CLAVES.hash(clave), debe_cambiar_clave=True,
+                                         sesiones_validas_desde=_ahora()))
+        if cambio.rowcount != 1:
+            raise NoEncontrado(f"no hay una cuenta con el correo {email}")
+        return clave
+
     def anular_credenciales(self, usuario_id: int) -> None:
         """La clave pasa a ser una al azar que nadie conoce y se cortan las sesiones.
 

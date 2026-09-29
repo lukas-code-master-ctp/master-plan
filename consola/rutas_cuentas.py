@@ -59,10 +59,18 @@ def _aviso(texto: str | None, tono: str = "") -> str:
     return f'<p class="{clase}" role="alert">{escape(texto)}</p>'
 
 
-def pagina_de_entrada(error: str | None = None, *, con_google: bool, aviso: str | None = None,
-                      estado: int = 200) -> HTMLResponse:
+CONTACTO = "mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20una%20cuenta%20en%20Tu%20Masterplan"
+
+
+def pagina_de_entrada(error: str | None = None, *, con_google: bool, con_registro: bool = True,
+                      aviso: str | None = None, estado: int = 200) -> HTMLResponse:
     google = (f'<a class="boton boton--google" href="/entrar/google">{LOGO_GOOGLE}'
               'Continuar con Google</a><p class="separador">o</p>') if con_google else ""
+    # Sin correo que llegue, registrarse y recuperar la clave no se pueden
+    # terminar: no se ofrecen, y se manda a pedirle la cuenta al equipo.
+    enlaces = ('<a href="/olvide">¿Olvidaste tu contraseña?</a>'
+               '<a href="/registro">¿No tienes cuenta? Regístrate</a>') if con_registro else (
+               f'<a href="{CONTACTO}">¿No tienes cuenta u olvidaste la contraseña? Escríbenos</a>')
     return pagina("Entrar", f"""
   {_aviso(error)}{_aviso(aviso, "ok")}
   {google}
@@ -73,10 +81,7 @@ def pagina_de_entrada(error: str | None = None, *, con_google: bool, aviso: str 
       <input name="clave" type="password" autocomplete="current-password" required></label>
     <button class="boton" type="submit">Iniciar sesión</button>
   </form>
-  <nav class="entrada__enlaces">
-    <a href="/olvide">¿Olvidaste tu contraseña?</a>
-    <a href="/registro">¿No tienes cuenta? Regístrate</a>
-  </nav>""", estado)
+  <nav class="entrada__enlaces">{enlaces}</nav>""", estado)
 
 
 def _formulario_de_registro(error: str | None = None, campos: dict | None = None,
@@ -203,6 +208,17 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
     limitador = limitador or Limitador(maximo=5, segundos=3600)
     con_google = google is not None
 
+    def cerrado(que: str) -> HTMLResponse | None:
+        """La página de "por ahora no", si no hay correo que llegue."""
+        if cuentas.registro_abierto:
+            return None
+        return pagina(que, f"""
+  <h1>{escape(que)}</h1>
+  <p>Por ahora las cuentas las crea el equipo de Tu Masterplan, y también te da una
+    contraseña nueva si la olvidaste. Escríbenos y lo dejamos listo.</p>
+  <a class="boton" href="{CONTACTO}">Escribir un correo</a>
+  <nav class="entrada__enlaces"><a href="/entrar">Volver a entrar</a></nav>""")
+
     def demasiados() -> HTMLResponse:
         return pagina("Espera un momento", """
   <h1>Demasiados intentos</h1>
@@ -213,12 +229,14 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
 
     @rutas.get("/registro", response_class=HTMLResponse)
     def formulario_de_registro() -> HTMLResponse:
-        return _formulario_de_registro(con_google=con_google)
+        return cerrado("Crear cuenta") or _formulario_de_registro(con_google=con_google)
 
     @rutas.post("/registro", response_class=HTMLResponse)
     def registrarse(peticion: Request, loteadora: str = Form(default=""),
                     nombre: str = Form(default=""), email: str = Form(default=""),
                     clave: str = Form(default=""), sitio: str = Form(default="")) -> HTMLResponse:
+        if (respuesta := cerrado("Crear cuenta")) is not None:
+            return respuesta
         campos = {"loteadora": loteadora, "nombre": nombre, "email": email}
         listo = _revisa_tu_correo("Si el correo es válido, te mandamos un enlace para confirmarlo. "
                                   "Ábrelo y entras directo.")
@@ -255,6 +273,8 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
 
     @rutas.get("/olvide", response_class=HTMLResponse)
     def formulario_de_olvido() -> HTMLResponse:
+        if (respuesta := cerrado("Recuperar contraseña")) is not None:
+            return respuesta
         return pagina("Recuperar contraseña", """
   <h1>¿Olvidaste tu contraseña?</h1>
   <p>Escribe tu correo y te mandamos un enlace para elegir una nueva.</p>
@@ -267,6 +287,8 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
 
     @rutas.post("/olvide", response_class=HTMLResponse)
     def olvide(peticion: Request, email: str = Form(default="")) -> HTMLResponse:
+        if (respuesta := cerrado("Recuperar contraseña")) is not None:
+            return respuesta
         if not limitador.permitir(ip_de(peticion, acceso.local)):
             return demasiados()
         cuentas.pedir_restablecer(email.strip().lower(), url_base(peticion, acceso.local))
@@ -314,11 +336,11 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
         guardado = acceso.abrir(peticion.cookies.get(GALLETA_ESTADO)) or {}
         if not code or not state or not secrets.compare_digest(str(guardado.get("s", "")), state):
             return pagina_de_entrada("No se pudo entrar con Google. Vuelve a intentarlo.",
-                                     con_google=True, estado=400)
+                                     con_google=True, con_registro=cuentas.registro_abierto, estado=400)
         try:
             quien_es = google.identidad(code, _vuelta(peticion, acceso.local))
         except CuentaInvalida as error:
-            return pagina_de_entrada(str(error), con_google=True, estado=400)
+            return pagina_de_entrada(str(error), con_google=True, con_registro=cuentas.registro_abierto, estado=400)
 
         base = acceso.base
         usuario = base.usuario_por_identidad("google", quien_es.sujeto)
@@ -343,7 +365,7 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
             return respuesta
         sesion = acceso.sesion_para(usuario)
         if sesion is None:
-            return pagina_de_entrada("Esa cuenta está desactivada.", con_google=True, estado=403)
+            return pagina_de_entrada("Esa cuenta está desactivada.", con_google=True, con_registro=cuentas.registro_abierto, estado=403)
         respuesta = poner_sesion(RedirectResponse("/#/planos", status_code=303), acceso, sesion, peticion)
         respuesta.delete_cookie(GALLETA_ESTADO, path="/")
         return respuesta
@@ -353,7 +375,7 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
         alta = acceso.abrir(peticion.cookies.get(GALLETA_ALTA))
         if not alta:
             return pagina_de_entrada("Se venció el paso por Google. Vuelve a intentarlo.",
-                                     con_google=con_google, estado=400)
+                                     con_google=con_google, con_registro=cuentas.registro_abierto, estado=400)
         return _formulario_de_alta_google(alta["e"])
 
     @rutas.post("/registro/google")
@@ -361,7 +383,7 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
         alta = acceso.abrir(peticion.cookies.get(GALLETA_ALTA))
         if not alta:
             return pagina_de_entrada("Se venció el paso por Google. Vuelve a intentarlo.",
-                                     con_google=con_google, estado=400)
+                                     con_google=con_google, con_registro=cuentas.registro_abierto, estado=400)
         if not loteadora.strip():
             return _formulario_de_alta_google(alta["e"], "Falta el nombre de tu loteadora.", 400)
         base = acceso.base
@@ -371,7 +393,7 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
         except EmailYaExiste:
             # Alguien creó la cuenta entre la ida y la vuelta: que entre normal.
             return pagina_de_entrada("Ese correo ya tiene cuenta. Entra con Google de nuevo.",
-                                     con_google=True, estado=409)
+                                     con_google=True, con_registro=cuentas.registro_abierto, estado=409)
         base.enlazar_identidad(usuario.id, "google", alta["s"])
         sesion = acceso.sesion_para(usuario)
         respuesta = poner_sesion(RedirectResponse("/#/planos", status_code=303), acceso, sesion, peticion)

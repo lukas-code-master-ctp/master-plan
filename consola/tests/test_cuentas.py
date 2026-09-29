@@ -521,3 +521,57 @@ def test_el_alta_con_google_sin_pasar_por_google_no_crea_nada(entorno):
 
     assert respuesta.status_code == 400
     assert len(base.clientes()) == 1
+
+
+# --- sin correo que llegue, no se abre lo que depende de él -------------------------
+
+class CorreoQueNoLlega(CorreoDePrueba):
+    puede_enviar = False
+
+
+@pytest.fixture
+def sin_correo(tmp_path):
+    base = Base(f"sqlite:///{tmp_path / 'consola.db'}")
+    base.crear_cliente("CompraTuParcela", "ctp@ctp.cl", "CTP")
+    base.cambiar_clave("ctp@ctp.cl", CLAVE)
+    correo = CorreoQueNoLlega()
+    app = crear_app(
+        registro=Registro(base=base, subidas=tmp_path / "proyectos", salidas=tmp_path / "salidas"),
+        trabajos=Trabajos(), comandos=ComandosDePrueba(),
+        acceso=Acceso(base=base, secreto="un-secreto", local=False), base=base,
+        disenos=Disenos(base=base, carpeta=tmp_path / "disenos"),
+        cuentas=Cuentas(base=base, correo=correo), google=None)
+    return TestClient(app, follow_redirects=False), base, correo
+
+
+def test_sin_correo_la_entrada_no_ofrece_registrarse_ni_recuperar(sin_correo):
+    web, _, _ = sin_correo
+
+    pagina = web.get("/entrar").text
+
+    assert 'href="/registro"' not in pagina
+    assert 'href="/olvide"' not in pagina
+    assert "Escríbenos" in pagina
+
+
+@pytest.mark.parametrize("pedir", [
+    lambda web: web.get("/registro"),
+    lambda web: registrarse(web),
+    lambda web: web.get("/olvide"),
+    lambda web: web.post("/olvide", data={"email": "ctp@ctp.cl"}),
+], ids=["ver registro", "registrarse", "ver olvide", "pedir enlace"])
+def test_sin_correo_registrarse_y_recuperar_mandan_a_escribirle_al_equipo(sin_correo, pedir):
+    web, base, correo = sin_correo
+
+    respuesta = pedir(web)
+
+    assert "las cuentas las crea el equipo" in respuesta.text
+    assert base.usuario_por_email("pia@bosques.cl") is None
+    assert correo.enviados == []
+
+
+def test_el_correo_en_el_registro_abre_el_registro_solo_en_este_computador():
+    from consola.cuentas import CorreoEnElRegistro
+
+    assert CorreoEnElRegistro(local=True).puede_enviar is True
+    assert CorreoEnElRegistro(local=False).puede_enviar is False

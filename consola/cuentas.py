@@ -46,6 +46,10 @@ class CuentaInvalida(ValueError):
 # --- correo ----------------------------------------------------------------------
 
 class Correo(Protocol):
+    # Si los correos llegan a alguien. Sin eso no se abre el registro ni la
+    # recuperación de contraseña: serían flujos que nadie puede terminar.
+    puede_enviar: bool
+
     def enviar(self, para: str, asunto: str, texto: str) -> None: ...
 
 
@@ -53,6 +57,7 @@ class CorreoSendGrid:
     """El mismo proveedor que usan los reportes de CTP, por su API HTTP."""
 
     URL = "https://api.sendgrid.com/v3/mail/send"
+    puede_enviar = True
 
     def __init__(self, clave: str, remitente: str, nombre: str = "Tu Masterplan"):
         self.clave = clave
@@ -82,6 +87,9 @@ class CorreoEnElRegistro:
 
     def __init__(self, local: bool):
         self.local = local
+        # En este computador el enlace se lee en el registro: sirve para probar.
+        # Desplegada no llega a nadie, y el registro queda cerrado.
+        self.puede_enviar = local
         self.enviados: list[tuple[str, str, str]] = []
 
     def enviar(self, para: str, asunto: str, texto: str) -> None:
@@ -186,6 +194,11 @@ class Cuentas:
         # Por buzón de destino, aparte del tope por IP: cambiar de IP no deja
         # llenar de correos el buzón de alguien.
         self.por_buzon = Limitador(maximo=3, segundos=3600)
+
+    @property
+    def registro_abierto(self) -> bool:
+        """Registrarse y recuperar la contraseña piden un correo que llegue."""
+        return getattr(self.correo, "puede_enviar", True)
 
     def registrar(self, datos: Registro, url_base: str) -> None:
         """Crea la cuenta sin verificar y manda el enlace. Si el correo ya tenía
