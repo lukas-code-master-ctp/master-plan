@@ -19,6 +19,16 @@
         "SIN_NAVEGADOR=1 exec ./consola.sh"
       ],
       "port": 8780
+    },
+    {
+      "name": "landing",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "exec python3 -m http.server \"${PORT:-8770}\" --directory landing"
+      ],
+      "port": 8770,
+      "autoPort": true
     }
   ]
 }
