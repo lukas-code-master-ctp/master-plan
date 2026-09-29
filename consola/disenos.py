@@ -179,16 +179,19 @@ class Disenos:
         return archivo if archivo.is_file() else None
 
     def escribir_en_sitio(self, diseno_id: int | None, datos: Path) -> None:
-        """Deja el diseño junto a los datos del sitio, o lo saca si no hay.
+        """Deja el diseño junto a los datos del sitio.
 
         `datos` es `sitio/datos` de un loteo construido. Se reescribe entero
-        cada vez: un logo o un diseño viejo que quedara ahí se publicaría.
+        cada vez: un logo o un diseño viejo que quedara ahí se publicaría. Sin
+        diseño se escribe `null` y no se borra el archivo: el visor lo pide
+        siempre, y un 404 en cada visita ensucia la consola del navegador de
+        quien mira el sitio.
         """
         for viejo in datos.glob("logo.*"):
             viejo.unlink()
         destino = datos / "diseno.json"
         if diseno_id is None:
-            destino.unlink(missing_ok=True)
+            destino.write_text("null", encoding="utf-8")
             return
         diseno = self.base.diseno(diseno_id)
         contenido = {
