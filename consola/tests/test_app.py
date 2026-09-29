@@ -470,14 +470,48 @@ RUTAS = {
     ("POST", "/api/disenos/{diseno_id}/logo"): AJENO_404,
     ("DELETE", "/api/disenos/{diseno_id}/logo"): AJENO_404,
     ("GET", "/api/disenos/{diseno_id}/logo"): AJENO_404,
+    ("GET", "/registro"): SIN_SESION,
+    ("POST", "/registro"): SIN_SESION,
+    ("GET", "/verificar"): SIN_SESION,
+    ("POST", "/verificar"): SIN_SESION,
+    ("GET", "/olvide"): SIN_SESION,
+    ("POST", "/olvide"): SIN_SESION,
+    ("GET", "/restablecer"): SIN_SESION,
+    ("POST", "/restablecer"): SIN_SESION,
+    ("GET", "/entrar/google"): SIN_SESION,
+    ("GET", "/entrar/google/vuelta"): SIN_SESION,
+    ("GET", "/registro/google"): SIN_SESION,
+    ("POST", "/registro/google"): SIN_SESION,
 }
+
+
+def rutas_de(rutas, prefijo=""):
+    """Todas las rutas, entrando también a los routers incluidos.
+
+    FastAPI 0.14x guarda un `include_router` como un objeto aparte, sin `path` ni
+    `methods`: recorrer solo `app.routes` se salteaba en silencio todo lo que
+    colgara de un router, y ese es justo el lugar donde se agregan rutas nuevas.
+    """
+    for ruta in rutas:
+        incluido = getattr(ruta, "original_router", None)
+        if incluido is not None:
+            yield from rutas_de(incluido.routes, prefijo + getattr(incluido, "prefix", ""))
+            continue
+        for metodo in getattr(ruta, "methods", ()):
+            if metodo not in ("HEAD", "OPTIONS"):
+                yield metodo, prefijo + ruta.path
+
+
+def test_el_inventario_ve_las_rutas_de_los_routers_incluidos(tmp_path):
+    app, _, _, _ = montar(tmp_path)
+
+    assert ("POST", "/registro") in set(rutas_de(app.routes))
 
 
 def test_toda_ruta_de_la_consola_declara_que_pasa_con_un_cliente_ajeno(tmp_path):
     app, _, _, _ = montar(tmp_path)
 
-    reales = {(metodo, ruta.path) for ruta in app.routes
-              for metodo in getattr(ruta, "methods", ()) if metodo not in ("HEAD", "OPTIONS")}
+    reales = set(rutas_de(app.routes))
 
     assert reales - set(RUTAS) == set(), (
         "hay rutas sin declarar en RUTAS: agrégalas diciendo qué pasa cuando las "

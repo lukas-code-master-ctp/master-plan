@@ -15,7 +15,17 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import (
+    Body,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
@@ -23,10 +33,25 @@ from pipeline import config
 
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
 from .comandos import Comandos, encadenar
+from .cuentas import Cuentas, Google, correo_del_entorno, google_del_entorno
 from .datos import (
-    Base, ClienteYaExiste, DisenoYaExiste, EmailYaExiste, NoEncontrado, ProyectoYaExiste)
-from .disenos import Disenos, DisenoInvalido, VistaDisenos, como_json as diseno_json
+    Base,
+    ClienteYaExiste,
+    DisenoYaExiste,
+    EmailYaExiste,
+    NoEncontrado,
+    ProyectoYaExiste,
+)
+from .disenos import DisenoInvalido, Disenos, VistaDisenos
+from .disenos import como_json as diseno_json
 from .proyectos import LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
+from .rutas_cuentas import (
+    LIBRES_DE_CUENTAS,
+    pagina_de_entrada,
+    poner_sesion,
+    rutas_de_cuentas,
+    url_base,
+)
 from .trabajos import Trabajos
 
 WEB = Path(__file__).resolve().parent / "web"
@@ -64,14 +89,19 @@ def url_propuesta(slug: str) -> str:
 
 # Lo único que se puede pedir sin haber entrado: la propia página de entrada y lo
 # que necesita para verse.
-LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2")
+LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2", *LIBRES_DE_CUENTAS)
 
 
 def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None,
               comandos=None, acceso: Acceso | None = None, base: Base | None = None,
-              disenos: Disenos | None = None) -> FastAPI:
+              disenos: Disenos | None = None, cuentas: Cuentas | None = None,
+              google: Google | None | bool = True) -> FastAPI:
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
+    cuentas = cuentas or Cuentas(base=base, correo=correo_del_entorno(acceso.local),
+                                 en_segundo_plano=True)
+    # `True` = lo que diga el entorno; las pruebas pasan uno propio o `None`.
+    google = google_del_entorno() if google is True else (google or None)
     disenos = disenos or Disenos(base=base)
     registro = registro or Registro(base=base, crm_por_defecto=config.csv_del_crm(),
                                     limites=Limites.desde_el_entorno())
@@ -122,22 +152,27 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
 
     @app.get("/entrar", response_class=HTMLResponse)
     def formulario(mal: bool = False) -> HTMLResponse:
-        return HTMLResponse(_pagina_de_entrada(mal), status_code=401 if mal else 200)
+        return pagina_de_entrada("El correo o la contraseña no son esos." if mal else None,
+                                 con_google=google is not None, estado=401 if mal else 200)
 
     @app.post("/entrar")
     def entrar(peticion: Request, email: str = Form(default=""),
                clave: str = Form(default="")) -> Response:
-        sesion = acceso.entrar(email, clave)
+        usuario = acceso.credenciales(email, clave)
+        # La clave es la suya pero no confirmó el correo: decírselo solo le cuenta
+        # algo a quien ya sabe la clave. Se le reenvía el enlace.
+        if usuario is not None and not usuario.email_verificado:
+            cuentas.enviar_verificacion(usuario, url_base(peticion, acceso.local))
+            return pagina_de_entrada(
+                aviso=f"Falta confirmar tu correo. Te mandamos el enlace a {usuario.email}.",
+                con_google=google is not None, estado=403)
+        sesion = acceso.sesion_para(usuario)
         if sesion is None:
             # Un solo mensaje para clave mala, correo inexistente y cuenta
             # desactivada: distinguirlos convierte el formulario en un buscador.
-            return HTMLResponse(_pagina_de_entrada(mal=True), status_code=401)
-        respuesta = RedirectResponse("/", status_code=303)
-        respuesta.set_cookie(
-            GALLETA, acceso.firmar(sesion),
-            max_age=acceso.horas * 3600, httponly=True, samesite="lax",
-            secure=peticion.url.scheme == "https", path="/")
-        return respuesta
+            return pagina_de_entrada("El correo o la contraseña no son esos.",
+                                     con_google=google is not None, estado=401)
+        return poner_sesion(RedirectResponse("/", status_code=303), acceso, sesion, peticion)
 
     @app.post("/salir")
     def salir() -> Response:
@@ -531,6 +566,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             raise HTTPException(404, "esa imagen de control no existe")
         return FileResponse(proyecto.salida.qa / archivo, media_type="image/jpeg")
 
+    app.include_router(rutas_de_cuentas(acceso, cuentas, google))
+
     @app.exception_handler(DisenoInvalido)
     async def diseno_invalido(peticion: Request, error: DisenoInvalido):
         return JSONResponse(status_code=400, content={"detail": str(error)})
@@ -582,12 +619,6 @@ def _anotar_publicacion(mios: Vista, proyecto: Proyecto, nombre: str):
             url=datos.get("url") or url_propuesta(proyecto.slug))
 
     return guardar
-
-
-def _pagina_de_entrada(mal: bool = False) -> str:
-    plantilla = (WEB / "entrar.html").read_text(encoding="utf-8")
-    error = ('<p class="aviso">El correo o la contraseña no son esos.</p>' if mal else "")
-    return plantilla.replace("<!--ERROR-->", error)
 
 
 def _cliente_json(cliente, base: Base) -> dict:

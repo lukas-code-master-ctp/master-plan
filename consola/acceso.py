@@ -63,6 +63,10 @@ class Acceso:
         return not self.secreto
 
     def entrar(self, email: str, clave: str) -> Sesion | None:
+        return self.sesion_para(self.credenciales(email, clave))
+
+    def credenciales(self, email: str, clave: str) -> Usuario | None:
+        """El usuario si la clave es la suya, confirmado o no. No abre sesión."""
         usuario = self.base.usuario_por_email(email) if email else None
         if usuario is None or not usuario.activo:
             # Se gasta el tiempo igual: contestar al instante cuando el correo no
@@ -71,9 +75,41 @@ class Acceso:
             return None
         if not self.base.clave_valida(usuario, clave):
             return None
+        return usuario
+
+    def sesion_para(self, usuario: Usuario | None) -> Sesion | None:
+        """Una sesión para alguien que ya probó quién es: con su clave, con el
+        enlace del correo o con Google.
+
+        **Sin correo confirmado no hay sesión.** Si no, cualquiera registra el
+        correo de otro con una clave suya, espera a que el dueño lo confirme (o
+        entre con Google) y queda adentro de esa cuenta.
+        """
+        if usuario is None or not usuario.activo or not usuario.email_verificado:
+            return None
         if self.base.cliente(usuario.cliente_id).estado != "activo":
             return None
         return _sesion_de(usuario)
+
+    def sellar(self, datos: dict, minutos: int) -> str:
+        """Datos firmados y con vencimiento, para una galleta de paso (el ida y
+        vuelta a Google). No es una sesión: no deja entrar a nada."""
+        cuerpo = _a_base64(json.dumps({"v": datos, "h": time.time() + minutos * 60}).encode())
+        return f"{cuerpo}.{self._firma('sello:' + cuerpo)}"
+
+    def abrir(self, sellado: str | None) -> dict | None:
+        if not sellado or "." not in sellado:
+            return None
+        cuerpo, _, firma = sellado.rpartition(".")
+        if not hmac.compare_digest(firma, self._firma("sello:" + cuerpo)):
+            return None
+        try:
+            contenido = json.loads(_de_base64(cuerpo))
+            if time.time() > float(contenido["h"]):
+                return None
+            return dict(contenido["v"])
+        except (ValueError, KeyError, TypeError):
+            return None
 
     def firmar(self, sesion: Sesion) -> str:
         cuerpo = _a_base64(json.dumps({"u": sesion.usuario_id, "d": sesion.desde}).encode())
@@ -96,7 +132,7 @@ class Acceso:
         usuario = self.base.usuario(usuario_id)
         if usuario is None or not usuario.activo:
             return None
-        if desde < _marca(usuario.sesiones_validas_desde):
+        if desde < _marca(usuario.sesiones_validas_desde) or not usuario.email_verificado:
             return None
         if self.base.cliente(usuario.cliente_id).estado != "activo":
             return None
