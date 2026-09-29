@@ -114,9 +114,11 @@
 
       <label class="renglon">
         <span class="renglon__rotulo">Diseño</span>
-        <select id="nuevo-diseno" disabled>
-          <option>Tu Masterplan (por defecto)</option>
-        </select>
+        <span>
+          <select id="nuevo-diseno"></select>
+          <span class="nota">La marca con que se publica. Se cambia cuando quieras en
+            <a href="#/disenos">Mis diseños</a>.</span>
+        </span>
       </label>
 
       <details class="alternativa" id="carpeta-local" hidden>
@@ -167,6 +169,7 @@
         <label class="campo"><span>WhatsApp</span><input name="whatsapp" type="text" inputmode="tel" placeholder="56912345678" autocomplete="off"></label>
         <label class="campo"><span>Nombre en el CRM</span><input name="parcelacion" type="text" autocomplete="off"></label>
         <label class="campo"><span>Despegue del dron <i>lon, lat</i></span><input name="despegue" type="text" placeholder="-72.27591, -35.86774" autocomplete="off"></label>
+        <label class="campo"><span>Diseño</span><select name="diseno"></select></label>
         <label class="campo campo--ancho"><span>Referencias en el horizonte</span><input name="referencias" type="text" placeholder="Cauquenes, Pelluhue, Chanco" autocomplete="off"></label>
         <div class="ajustes__pie">
           <button class="boton" data-accion="guardar" type="button">Guardar</button>
@@ -189,15 +192,103 @@
   </section>
 
   <!-- Mis diseños -->
-  <section id="pantalla-disenos" class="pantalla" aria-labelledby="titulo-disenos" hidden>
+  <section id="pantalla-disenos" class="pantalla pantalla--angosta" aria-labelledby="titulo-disenos" hidden>
     <header class="pantalla__cabecera">
-      <h1 id="titulo-disenos">Mis diseños</h1>
-      <button class="boton" type="button" disabled>Nuevo diseño</button>
+      <div>
+        <h1 id="titulo-disenos">Mis diseños</h1>
+        <p class="guia">La marca con que se publican tus loteos: logo, color, tipografía y
+          los textos de los botones.</p>
+      </div>
+      <a class="boton" href="#/disenos/nuevo">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        Nuevo diseño
+      </a>
     </header>
-    <div class="vacio">
-      <strong>Muy pronto</strong>
-      <span>Acá vas a guardar la marca de tus loteos —logo, color y tipografía— y elegirla
-        al crear un master. Por ahora todos se publican con el diseño de Tu Masterplan.</span>
+    <ul id="disenos" class="disenos" aria-live="polite"></ul>
+  </section>
+
+  <!-- Un diseño -->
+  <section id="pantalla-diseno" class="pantalla" aria-labelledby="diseno-titulo" hidden>
+    <a class="volver" href="#/disenos">← Mis diseños</a>
+    <h1 id="diseno-titulo">Nuevo diseño</h1>
+
+    <div class="editor">
+      <form id="diseno-form" class="formulario" novalidate>
+        <label class="renglon">
+          <span class="renglon__rotulo">Nombre</span>
+          <input name="nombre" type="text" placeholder="Los Robles" autocomplete="off" required>
+        </label>
+
+        <div class="renglon">
+          <span class="renglon__rotulo" id="rotulo-color">Color</span>
+          <div class="color">
+            <input id="diseno-color" name="color" type="color" value="#27272a" aria-labelledby="rotulo-color">
+            <input id="diseno-hex" type="text" value="#27272a" maxlength="7" spellcheck="false"
+                   aria-label="Color en hexadecimal" autocomplete="off">
+            <span id="diseno-color-nota" class="nota" role="status"></span>
+          </div>
+        </div>
+
+        <div class="renglon">
+          <span class="renglon__rotulo" id="rotulo-logo">Logo</span>
+          <div>
+            <label class="archivo" id="caja-logo">
+              <input id="diseno-logo" type="file" accept=".png,.jpg,.jpeg,.webp,.svg" aria-labelledby="rotulo-logo">
+              <span class="archivo__texto" id="texto-logo">Subir el logo (PNG, JPG, WebP o SVG)</span>
+            </label>
+            <p class="nota">Se muestra en la barra del sitio, a 36 px de alto. Mejor con fondo
+              transparente. <button id="diseno-quitar-logo" class="enlace" type="button" hidden>Quitar el logo</button></p>
+          </div>
+        </div>
+
+        <label class="renglon">
+          <span class="renglon__rotulo">Tipografía</span>
+          <select id="diseno-tipografia" name="tipografia">
+            <option value="jakarta">Plus Jakarta Sans</option>
+            <option value="serif">Serif clásica</option>
+            <option value="sistema">La del sistema</option>
+          </select>
+        </label>
+
+        <label class="renglon">
+          <span class="renglon__rotulo">Botón de contacto <i>opcional</i></span>
+          <input name="texto_contacto" type="text" maxlength="60" placeholder="Me interesa esta parcela" autocomplete="off">
+        </label>
+
+        <label class="renglon">
+          <span class="renglon__rotulo">Botón de pago <i>opcional</i></span>
+          <input name="texto_pago" type="text" maxlength="40" placeholder="Comprar" autocomplete="off">
+        </label>
+
+        <div class="formulario__pie formulario__pie--separado">
+          <button id="diseno-borrar" class="boton boton--texto boton--peligro" type="button" hidden>Borrar diseño</button>
+          <button id="diseno-guardar" class="boton" type="submit">Guardar</button>
+        </div>
+      </form>
+
+      <!-- Cómo se va a ver en el sitio: la barra y la ficha de una parcela. -->
+      <aside class="previa" id="diseno-previa" aria-label="Vista previa">
+        <span class="previa__rotulo">Así se ve en el sitio</span>
+        <div class="previa__barra">
+          <span class="previa__marca" id="previa-marca">
+            <svg class="previa__hito" viewBox="0 0 32 32" aria-hidden="true">
+              <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M16 4v6M16 22v6M4 16h6M22 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M16 10.5 21.5 16 16 21.5 10.5 16Z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="previa__nombre"><strong>Praderas de Cauquenes</strong><small>Etapas 1 a 4</small></span>
+        </div>
+        <div class="previa__foto" aria-hidden="true"></div>
+        <div class="previa__ficha">
+          <strong>Parcela 21</strong>
+          <span class="previa__estado"><i></i>Disponible</span>
+          <span class="previa__precio">$9.990.000 <small>· 5.000 m²</small></span>
+          <span class="previa__boton" id="previa-pago">Comprar</span>
+          <span class="previa__boton" id="previa-contacto">Me interesa esta parcela</span>
+          <span class="previa__boton previa__boton--contorno">Ver desde el aire</span>
+        </div>
+      </aside>
     </div>
   </section>
 </main>

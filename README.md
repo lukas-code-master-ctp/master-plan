@@ -300,6 +300,27 @@ disponible—; al ser un color sólido se lee igual sobre bosque, tierra o cielo
 definen en `pipeline/config.py` (`ESTADOS`), el sitio los lee del JSON, y la ficha,
 la leyenda y los filtros los muestran como pills.
 
+### La marca de cada loteadora (Mis diseños)
+
+Una loteadora puede publicar con su propia marca. Un diseño es un color, un logo,
+una tipografía y los textos de los dos botones de la ficha. Se arma en **Mis diseños**
+de la consola, con una vista previa, y se elige al crear el master o en su detalle.
+
+- **Color:** de uno solo se deriva la escala `--marca-*` del cromado
+  (`web/js/marca.js`). Si es muy claro para llevar texto blanco, el tono del botón se
+  oscurece hasta llegar a 4,5:1. Los colores de estado no cambian: el verde de
+  "disponible" significa lo mismo en todos los sitios.
+- **Logo:** PNG, JPG, WebP o SVG de hasta 512 KB, en lugar de la brújula. Un SVG que
+  traiga código o enlaces externos se rechaza.
+- **Tipografía:** Plus Jakarta Sans, una serif clásica o la del sistema. Ninguna se
+  baja de afuera.
+- **Textos:** el del botón de contacto y el de pago; vacíos, los de siempre.
+
+El diseño no pasa por el pipeline. La consola lo escribe en `sitio/datos/diseno.json`
+(y el logo al lado) al terminar de construir y al publicar, así que cambiarlo solo
+pide volver a publicar. Sin ese archivo el visor se ve como siempre. La vista previa
+de la consola usa el mismo `marca.js` que el sitio publicado.
+
 ## El terreno
 
 La proyección necesita saber a qué altura está el suelo bajo cada vértice. Asumirlo

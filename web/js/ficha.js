@@ -1,4 +1,5 @@
 /** Ficha comercial de una parcela. */
+import { TEXTOS_POR_DEFECTO } from './marca.js';
 
 const NUMERO = new Intl.NumberFormat('es-CL');
 
@@ -73,7 +74,7 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
     enlace.href = parcela.link_pago;
     enlace.target = '_blank';
     enlace.rel = 'noopener';
-    enlace.textContent = precio ? 'Comprar' : 'Reservar';
+    enlace.textContent = catalogo.diseno?.texto_pago || (precio ? 'Comprar' : 'Reservar');
     zona.append(enlace);
   }
 
@@ -85,7 +86,7 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
     enlace.href = `https://wa.me/${catalogo.meta.whatsapp}?text=${mensaje}`;
     enlace.target = '_blank';
     enlace.rel = 'noopener';
-    enlace.textContent = 'Me interesa esta parcela';
+    enlace.textContent = catalogo.diseno?.texto_contacto || TEXTOS_POR_DEFECTO.contacto;
     zona.append(enlace);
   }
 

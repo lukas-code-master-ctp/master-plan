@@ -1,5 +1,6 @@
 /** Orquestador: conecta datos, visor, mapa, ficha y filtros. */
 import { Catalogo, ErrorDeDatos, buscar, filtrar } from './datos.js';
+import { aplicarMarca, ponerLogo } from './marca.js';
 import { renderizarFicha } from './ficha.js';
 import { Mapa } from './mapa.js';
 import { Visor } from './visor.js';
@@ -43,7 +44,12 @@ async function arrancar() {
   $('#marca-nombre').textContent = catalogo.meta.proyecto;
   $('#marca-etapa').textContent = catalogo.meta.etapa ?? '';
   $('#marca-coord').textContent = coordenadasDelLoteo(catalogo.vistas);
-  document.title = `${catalogo.meta.proyecto} — Tu Masterplan`;
+  // Con marca propia el sitio es de la loteadora: ni la brújula ni el nombre
+  // de Tu Masterplan en la pestaña.
+  const { diseno } = catalogo;
+  aplicarMarca(document.documentElement, diseno);
+  if (diseno?.logo) ponerLogo($('.marca__hito'), `datos/${diseno.logo}`, catalogo.meta.proyecto);
+  document.title = diseno ? catalogo.meta.proyecto : `${catalogo.meta.proyecto} — Tu Masterplan`;
 
   estado.visibles = new Set(catalogo.parcelas.map((p) => p.id));
 

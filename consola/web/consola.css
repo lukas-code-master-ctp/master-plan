@@ -234,6 +234,86 @@ button { cursor: pointer; }
 .avance .progreso { margin: 0; }
 .formulario__pie { display: flex; justify-content: center; padding-top: 0.5rem; }
 
+/* --- Mis diseños ------------------------------------------------------------------ */
+
+.disenos { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.diseno {
+  display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 1rem;
+  padding: 0.75rem 1rem 0.75rem 0.75rem;
+  background: #fff; border: 1px solid var(--zinc-200); border-radius: var(--radio-lg);
+  box-shadow: var(--sombra); text-decoration: none;
+  transition: border-color 150ms, box-shadow 200ms, transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.diseno:hover { border-color: var(--zinc-300); box-shadow: 0 8px 24px -12px rgb(0 0 0 / 0.18); transform: translateY(-1px); }
+/* La muestra es el botón como se va a ver: el color ya corregido, y el logo encima. */
+.diseno__muestra {
+  display: grid; place-items: center; width: 3rem; height: 3rem; overflow: hidden;
+  background: var(--muestra); border-radius: var(--radio-md);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+}
+.diseno__muestra img {
+  width: 100%; height: 100%; object-fit: contain; padding: 0.35rem 0.35rem 0.6rem;
+  background: #fff; border-bottom: 0.3rem solid var(--muestra);
+}
+.diseno__nombre { font-weight: 600; font-size: 0.9375rem; }
+.diseno__usos { font-size: 0.75rem; color: var(--zinc-500); }
+.diseno__editar { color: var(--zinc-400); transition: color 150ms; }
+.diseno__editar svg { display: block; width: 1.25rem; height: 1.25rem; }
+.diseno:hover .diseno__editar { color: var(--zinc-900); }
+@media (prefers-reduced-motion: reduce) { .diseno { transition: none; } .diseno:hover { transform: none; } }
+
+.editor { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: 1.5rem; align-items: start; }
+.color { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
+.color input[type="color"] {
+  width: 2.5rem; height: 2.5rem; padding: 0.2rem;
+  background: #fff; border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); cursor: pointer;
+}
+.renglon .color input[type="text"] { width: 7rem; font-family: var(--mono); }
+.color .nota { margin: 0; flex-basis: 100%; }
+.formulario__pie--separado { justify-content: space-between; }
+.formulario__pie--separado .boton:only-child { margin-left: auto; }
+
+/* La vista previa se pinta con `aplicarMarca`, que pone las mismas variables
+   --marca-* y --sans que usa el visor: lo de acá abajo solo dibuja la escena. */
+.previa {
+  position: sticky; top: 5rem;
+  display: grid; gap: 0; overflow: hidden;
+  background: #fff; border: 1px solid var(--zinc-200); border-radius: var(--radio-lg);
+  box-shadow: var(--sombra); font-family: var(--sans);
+}
+.previa__rotulo {
+  padding: 0.5rem 0.875rem; font: 600 0.625rem/1 var(--sans); letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--zinc-500); border-bottom: 1px solid var(--zinc-100);
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+.previa__barra { display: flex; align-items: center; gap: 0.625rem; padding: 0.75rem 0.875rem; border-bottom: 1px solid var(--zinc-200); }
+.previa__marca { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0.4rem; background: var(--marca-700); border-radius: var(--radio-md); color: #fff; flex: none; }
+.previa__marca--logo { width: auto; max-width: 7rem; padding: 0; background: none; }
+.previa__marca--logo .previa__hito { display: none; }
+.previa__marca img { display: block; height: 2.25rem; max-width: 7rem; object-fit: contain; }
+.previa__hito { width: 100%; height: 100%; }
+.previa__nombre { display: grid; gap: 0.1rem; min-width: 0; }
+.previa__nombre strong { font-size: 0.875rem; }
+.previa__nombre small { font-size: 0.6875rem; color: var(--zinc-500); }
+.previa__foto {
+  height: 6rem;
+  background:
+    linear-gradient(180deg, #9cc3e6 0 32%, #7c9b5b 32% 100%);
+}
+.previa__ficha { display: grid; gap: 0.5rem; padding: 0.875rem; }
+.previa__ficha strong { font-size: 1rem; }
+.previa__estado { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--zinc-700); }
+/* El verde de "disponible" no cambia con la marca: significa lo mismo en todos los sitios. */
+.previa__estado i { width: 0.6rem; height: 0.6rem; border-radius: 999px; background: #007c10; }
+.previa__precio { font-weight: 600; font-size: 0.9375rem; }
+.previa__precio small { font-weight: 400; color: var(--zinc-500); }
+.previa__boton {
+  display: grid; place-items: center; height: 2.5rem; padding: 0 0.75rem;
+  background: var(--marca-700); color: #fff; border-radius: var(--radio-sm);
+  font: 500 0.875rem/1 var(--sans); text-align: center;
+}
+.previa__boton--contorno { background: #fff; color: var(--zinc-900); box-shadow: inset 0 0 0 1px var(--zinc-300); }
+
 /* --- Un master ------------------------------------------------------------------- */
 
 .plano-detalle {
@@ -423,6 +503,10 @@ button { cursor: pointer; }
   .plano { grid-template-columns: 1fr; gap: 0.75rem; padding: 0.625rem 0.625rem 1rem; }
   .plano__cuerpo { padding: 0 0.375rem; }
   .plano__portada:empty { aspect-ratio: 16 / 3; }
+  .editor { grid-template-columns: 1fr; }
+  .previa { position: static; }
+  .diseno { grid-template-columns: auto 1fr auto; }
+  .diseno__usos { display: none; }
   .plano__flecha { display: none; }
   .formulario { padding: 1.25rem; }
   .renglon { grid-template-columns: 1fr; gap: 0.4rem; }

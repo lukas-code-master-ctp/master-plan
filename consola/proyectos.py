@@ -138,6 +138,9 @@ class Proyecto:
     # mayúsculas", que es lo que asume el pipeline; no se rellena acá para que
     # renombrar el loteo no deje pegado el nombre viejo.
     parcelacion: str = ""
+    # De quién es, y con qué marca se publica (None = la de Tu Masterplan).
+    cliente_id: int = 0
+    diseno_id: int | None = None
 
     @property
     def publicado(self) -> bool:
@@ -273,6 +276,8 @@ class Registro:
             url_publicada=guardado.url_publicada,
             pagado=guardado.pagado,
             subido=guardado.carpeta is None,
+            cliente_id=guardado.cliente_id,
+            diseno_id=guardado.diseno_id,
         )
 
     def _escribir_json(self, carpeta: Path, slug: str, campos: dict) -> None:
@@ -396,6 +401,13 @@ class Vista:
         if "nombre" in limpios:
             self.registro.base.renombrar_proyecto(slug, str(limpios["nombre"]))
         self.registro._escribir_json(proyecto.fuentes, slug, limpios)
+        return self.ver(slug)
+
+    def asignar_diseno(self, slug: str, diseno_id: int | None) -> Proyecto:
+        """Con qué marca se publica. Quién puede usar qué diseño lo decide
+        `VistaDisenos.para_el_loteo`; acá solo se anota."""
+        self.ver(slug)
+        self.registro.base.asignar_diseno(slug, diseno_id)
         return self.ver(slug)
 
     def anotar_publicacion(self, slug: str, *, vercel_proyecto: str, url: str) -> Proyecto:

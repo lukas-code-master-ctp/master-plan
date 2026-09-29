@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from consola.acceso import Acceso
 from consola.app import crear_app
 from consola.datos import Base
+from consola.disenos import Disenos
 from consola.proyectos import Limites, Registro
 from consola.trabajos import Trabajos
 
@@ -59,7 +60,8 @@ def montar(tmp_path, local=True, crm_por_defecto=None, limites=None):
                         crm_por_defecto=crm_por_defecto, limites=limites)
     comandos = ComandosDePrueba()
     app = crear_app(registro=registro, trabajos=Trabajos(), comandos=comandos,
-                    acceso=Acceso(base=base, secreto="un-secreto", local=local), base=base)
+                    acceso=Acceso(base=base, secreto="un-secreto", local=local), base=base,
+                    disenos=Disenos(base=base, carpeta=tmp_path / "disenos"))
     return app, base, registro, comandos
 
 
@@ -461,6 +463,13 @@ RUTAS = {
     ("POST", "/api/plataforma/clientes/{cliente_id}/proyectos"): SOLO_CTP,
     ("POST", "/api/plataforma/proyectos/{slug}/pago"): SOLO_CTP,
     ("GET", "/api/plataforma/historial"): SOLO_CTP,
+    ("GET", "/api/disenos"): SOLO_SUYO,
+    ("POST", "/api/disenos"): SOLO_SUYO,
+    ("PATCH", "/api/disenos/{diseno_id}"): AJENO_404,
+    ("DELETE", "/api/disenos/{diseno_id}"): AJENO_404,
+    ("POST", "/api/disenos/{diseno_id}/logo"): AJENO_404,
+    ("DELETE", "/api/disenos/{diseno_id}/logo"): AJENO_404,
+    ("GET", "/api/disenos/{diseno_id}/logo"): AJENO_404,
 }
 
 
@@ -1010,3 +1019,229 @@ def test_no_se_quita_un_loteo_mientras_construye(con_topes, monkeypatch):
 
     assert ana.delete(f"/api/proyectos/{slug}").status_code == 409
     assert (registro.subidas / slug).exists()
+
+
+# --- mis diseños ---------------------------------------------------------------
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+
+
+def un_diseno(web, nombre="Marca Robles", **campos):
+    respuesta = web.post("/api/disenos", json={"nombre": nombre, "color": "#1f5132", **campos})
+    assert respuesta.status_code == 201, respuesta.text
+    return respuesta.json()
+
+
+def test_crear_y_listar_un_diseno(ana_y_luis):
+    _, ana, luis, _, _ = ana_y_luis
+
+    creado = un_diseno(ana, tipografia="serif", texto_contacto="Quiero esta")
+
+    assert creado["color"] == "#1f5132"
+    assert creado["tipografia"] == "serif"
+    assert creado["texto_contacto"] == "Quiero esta"
+    assert creado["logo"] is False
+    assert [d["nombre"] for d in ana.get("/api/disenos").json()] == ["Marca Robles"]
+    assert luis.get("/api/disenos").json() == []
+
+
+@pytest.mark.parametrize("campos,mensaje", [
+    ({"nombre": ""}, "nombre"),
+    ({"nombre": "X", "color": "verde"}, "#RRGGBB"),
+    ({"nombre": "X", "tipografia": "comic-sans"}, "tipografía"),
+])
+def test_un_diseno_invalido_explica_por_que(ana_y_luis, campos, mensaje):
+    _, ana, _, _, _ = ana_y_luis
+
+    respuesta = ana.post("/api/disenos", json=campos)
+
+    assert respuesta.status_code == 400
+    assert mensaje in respuesta.json()["detail"]
+
+
+def test_no_se_repite_el_nombre_de_un_diseno(ana_y_luis):
+    _, ana, luis, _, _ = ana_y_luis
+    un_diseno(ana)
+
+    assert ana.post("/api/disenos", json={"nombre": "Marca Robles"}).status_code == 409
+    assert luis.post("/api/disenos", json={"nombre": "Marca Robles"}).status_code == 201
+
+
+@pytest.mark.parametrize("pedir", [
+    lambda web, i: web.patch(f"/api/disenos/{i}", json={"color": "#000000"}),
+    lambda web, i: web.delete(f"/api/disenos/{i}"),
+    lambda web, i: web.post(f"/api/disenos/{i}/logo", files={"archivo": ("l.png", PNG, "image/png")}),
+    lambda web, i: web.delete(f"/api/disenos/{i}/logo"),
+    lambda web, i: web.get(f"/api/disenos/{i}/logo"),
+], ids=["ajustar", "borrar", "subir logo", "quitar logo", "ver logo"])
+def test_el_diseno_de_otra_contesta_404(ana_y_luis, pedir):
+    _, ana, luis, _, _ = ana_y_luis
+    diseno = un_diseno(ana)
+    ana.post(f"/api/disenos/{diseno['id']}/logo", files={"archivo": ("l.png", PNG, "image/png")})
+
+    assert pedir(luis, diseno["id"]).status_code == 404
+
+
+def test_subir_y_ver_el_logo(ana_y_luis):
+    _, ana, _, _, _ = ana_y_luis
+    diseno = un_diseno(ana)
+
+    subido = ana.post(f"/api/disenos/{diseno['id']}/logo",
+                      files={"archivo": ("logo.png", PNG, "image/png")})
+    visto = ana.get(f"/api/disenos/{diseno['id']}/logo")
+
+    assert subido.json()["logo"] is True
+    assert visto.status_code == 200
+    assert visto.content == PNG
+    assert "default-src 'none'" in visto.headers["content-security-policy"]
+
+
+@pytest.mark.parametrize("nombre,contenido", [
+    ("logo.png", b"no soy un png"),
+    ("logo.gif", b"GIF89a"),
+    ("logo.svg", b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
+    ("logo.svg", b'<svg onload="alert(1)"></svg>'),
+    ("logo.svg", b'<svg xmlns="http://www.w3.org/2000/svg"><a:script xmlns:a="http://www.w3.org/2000/svg">'
+                 b'alert(1)</a:script></svg>'),
+    ("logo.svg", b'<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><div/></foreignObject></svg>'),
+    ("logo.svg", b'<svg xmlns="http://www.w3.org/2000/svg"><style>@import url(https://x.cl/a.css);</style></svg>'),
+    ("logo.svg", b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:x="http://www.w3.org/1999/xlink">'
+                 b'<use x:href="https://x.cl/a.svg#b"/></svg>'),
+    ("logo.svg", b'<!DOCTYPE svg [<!ENTITY a "aaaa">]><svg>&a;</svg>'),
+    ("logo.png", b"\x89PNG\r\n\x1a\n" + b"0" * (600 * 1024)),
+], ids=["png falso", "gif", "svg con script", "svg con evento", "script con prefijo",
+        "foreignObject", "css de afuera", "href externo", "entidades", "muy pesado"])
+def test_un_logo_que_no_sirve_se_rechaza(ana_y_luis, nombre, contenido):
+    _, ana, _, _, _ = ana_y_luis
+    diseno = un_diseno(ana)
+
+    respuesta = ana.post(f"/api/disenos/{diseno['id']}/logo",
+                         files={"archivo": (nombre, contenido, "application/octet-stream")})
+
+    assert respuesta.status_code == 400
+    assert ana.get("/api/disenos").json()[0]["logo"] is False
+
+
+def test_un_svg_limpio_sirve_de_logo(ana_y_luis):
+    """Como sale de Illustrator o Figma: degradados y <use> con referencias internas."""
+    _, ana, _, _, _ = ana_y_luis
+    diseno = un_diseno(ana)
+    svg = (b'<?xml version="1.0" encoding="UTF-8"?>'
+           b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">'
+           b'<defs><linearGradient id="g"><stop offset="0" stop-color="#1f5132"/></linearGradient>'
+           b'<circle id="c" cx="5" cy="5" r="4"/></defs>'
+           b'<style>.a{fill:url(#g)}</style>'
+           b'<use href="#c" class="a"/><use xlink:href="#c" fill="url(#g)"/></svg>')
+
+    respuesta = ana.post(f"/api/disenos/{diseno['id']}/logo",
+                         files={"archivo": ("logo.svg", svg, "image/svg+xml")})
+
+    assert respuesta.status_code == 200
+    assert ana.get(f"/api/disenos/{diseno['id']}/logo").headers["content-type"] == "image/svg+xml"
+
+
+def test_un_master_nace_con_su_diseno(ana_y_luis):
+    _, ana, _, _, _ = ana_y_luis
+    diseno = un_diseno(ana)
+
+    creado = ana.post("/api/proyectos", json={"nombre": "Con marca", "diseno_id": diseno["id"]})
+
+    assert creado.status_code == 201
+    assert creado.json()["diseno_id"] == diseno["id"]
+
+
+def test_no_se_usa_el_diseno_de_otra_loteadora(ana_y_luis):
+    _, ana, luis, _, _ = ana_y_luis
+    ajeno = un_diseno(luis)
+
+    creado = ana.post("/api/proyectos", json={"nombre": "Robado", "diseno_id": ajeno["id"]})
+
+    assert creado.status_code == 404
+    assert ana.get("/api/proyectos").json() == []
+
+
+def test_el_equipo_no_le_pone_a_un_cliente_la_marca_de_otro(ana_y_luis):
+    ctp, ana, luis, _, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+    de_luis = un_diseno(luis)
+
+    respuesta = ctp.patch(f"/api/proyectos/{slug}", json={"diseno_id": de_luis["id"]})
+
+    assert respuesta.status_code == 400
+    assert "otra loteadora" in respuesta.json()["detail"]
+
+
+def test_cambiar_y_quitar_el_diseno_de_un_master(ana_y_luis):
+    _, ana, _, _, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+    diseno = un_diseno(ana)
+
+    puesto = ana.patch(f"/api/proyectos/{slug}", json={"diseno_id": diseno["id"]})
+    quitado = ana.patch(f"/api/proyectos/{slug}", json={"diseno_id": None})
+
+    assert puesto.json()["diseno_id"] == diseno["id"]
+    assert quitado.json()["diseno_id"] is None
+
+
+def test_borrar_un_diseno_devuelve_sus_masters_al_por_defecto(ana_y_luis):
+    _, ana, _, _, _ = ana_y_luis
+    diseno = un_diseno(ana)
+    slug = ana.post("/api/proyectos", json={"nombre": "X", "diseno_id": diseno["id"]}).json()["slug"]
+
+    assert ana.delete(f"/api/disenos/{diseno['id']}").status_code == 204
+
+    assert [p["diseno_id"] for p in ana.get("/api/proyectos").json() if p["slug"] == slug] == [None]
+
+
+def test_un_cambio_de_nombre_que_falla_no_cambia_el_diseno(ana_y_luis):
+    _, ana, _, _, _ = ana_y_luis
+    crear(ana, "Uno")
+    slug = crear(ana, "Dos")["slug"]
+    diseno = un_diseno(ana)
+
+    respuesta = ana.patch(f"/api/proyectos/{slug}", json={"nombre": "Uno", "diseno_id": diseno["id"]})
+
+    assert respuesta.status_code == 400
+    assert [p["diseno_id"] for p in ana.get("/api/proyectos").json() if p["slug"] == slug] == [None]
+
+
+def test_publicar_deja_el_diseno_en_el_sitio(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+    diseno = un_diseno(ana, texto_pago="Reservar ya")
+    ana.post(f"/api/disenos/{diseno['id']}/logo", files={"archivo": ("logo.png", PNG, "image/png")})
+    slug = ana.post("/api/proyectos", json={"nombre": "Con marca", "diseno_id": diseno["id"]}).json()["slug"]
+    construir_a_mano(registro, registro.salidas, slug)
+    ctp.post(f"/api/plataforma/proyectos/{slug}/pago", json={"nota_cobro": "transferencia"})
+
+    assert ana.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True}).status_code == 202
+
+    datos = registro.salidas / slug / "sitio" / "datos"
+    escrito = json.loads((datos / "diseno.json").read_text())
+    assert escrito["color"] == "#1f5132"
+    assert escrito["texto_pago"] == "Reservar ya"
+    assert escrito["logo"] == "logo.png"
+    assert (datos / "logo.png").read_bytes() == PNG
+
+
+def test_publicar_sin_diseno_saca_el_que_habia(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+    diseno = un_diseno(ana)
+    slug = ana.post("/api/proyectos", json={"nombre": "X", "diseno_id": diseno["id"]}).json()["slug"]
+    construir_a_mano(registro, registro.salidas, slug)
+    ctp.post(f"/api/plataforma/proyectos/{slug}/pago", json={"nota_cobro": "transferencia"})
+    primera = ana.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True}).json()["id"]
+    esperar_trabajo(ana, primera)
+    ana.patch(f"/api/proyectos/{slug}", json={"diseno_id": None})
+
+    assert ana.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True}).status_code == 202
+
+    assert not (registro.salidas / slug / "sitio" / "datos" / "diseno.json").exists()
+
+
+def test_la_pagina_toma_prestada_la_marca_del_visor(entorno):
+    cliente, _, _ = entorno
+
+    respuesta = cliente.get("/js/marca.js")
+
+    assert respuesta.status_code == 200
+    assert "export function paleta" in respuesta.text

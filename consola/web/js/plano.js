@@ -6,6 +6,7 @@
 import {
   $, $$, abrirDialogo, avisar, estado, etapaDe, fecha, json, pastilla, pedir,
 } from './comun.js';
+import { opcionesDeDiseno } from './disenos.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
 
 let refrescar = async () => {};
@@ -198,6 +199,7 @@ function rellenarAjustes(proyecto) {
   form.elements.despegue.value = proyecto.despegue ? proyecto.despegue.join(', ') : '';
   form.elements.referencias.value = (proyecto.referencias ?? [])
     .map((r) => (typeof r === 'string' ? r : r.nombre)).join(', ');
+  opcionesDeDiseno(form.elements.diseno, proyecto.diseno_id);
   $('#plano-guardado').textContent = '';
 }
 
@@ -215,11 +217,18 @@ async function guardar(proyecto) {
     parcelacion: form.elements.parcelacion.value.trim(),
     despegue: numeros.length === 2 ? numeros : null,
     referencias: lista(form.elements.referencias.value),
+    diseno_id: form.elements.diseno.value || null,
   }, 'PATCH'));
   await refrescar();
-  rellenarAjustes(proyectoActual());
-  $('#plano-guardado').textContent = proyecto.construido
-    ? 'Guardado. Reconstruye para que se vea en el sitio.' : 'Guardado.';
+  const antes = proyecto.diseno_id ?? null;
+  const despues = proyectoActual();
+  rellenarAjustes(despues);
+  // El diseño se aplica al publicar; los demás datos, al reconstruir.
+  const soloDiseno = antes !== (despues.diseno_id ?? null) && proyecto.nombre === despues.nombre
+    && proyecto.etapa === despues.etapa && proyecto.whatsapp === despues.whatsapp;
+  $('#plano-guardado').textContent = !proyecto.construido ? 'Guardado.'
+    : soloDiseno ? 'Guardado. El diseño se aplica al publicar.'
+      : 'Guardado. Reconstruye para que se vea en el sitio.';
 }
 
 async function olvidar(proyecto) {

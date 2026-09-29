@@ -10,6 +10,7 @@ export const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
 export const estado = {
   sesion: null,
   proyectos: [],
+  disenos: [],
   // Las líneas del último trabajo de cada loteo, y el temporizador que las sondea.
   registros: new Map(),
   sondeos: new Map(),
@@ -83,6 +84,7 @@ export function abrirDialogo(dialogo) {
 /** Qué pantalla pide el hash, y de qué loteo si es el detalle. */
 export function ruta(hash) {
   const partes = hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
+  if (partes[0] === 'disenos' && partes[1]) return { pantalla: 'diseno', id: partes[1] };
   if (partes[0] === 'disenos') return { pantalla: 'disenos' };
   if (partes[0] === 'planos' && partes[1] === 'nuevo') return { pantalla: 'nuevo' };
   if (partes[0] === 'planos' && partes[1]) return { pantalla: 'plano', slug: partes[1] };

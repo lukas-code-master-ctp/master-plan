@@ -6,6 +6,7 @@
  * planos para terminar de subir desde su detalle: nada se pierde.
  */
 import { $, avisar, estado, json, pedir } from './comun.js';
+import { opcionesDeDiseno } from './disenos.js';
 import { desdeEntrada, esFoto, esKmz, esPlanilla, megas, soltadero, subir } from './subida.js';
 
 const eleccion = { kmz: null, fotos: [], inventario: null };
@@ -49,6 +50,7 @@ export function abrirNuevo() {
   eleccion.inventario = null;
   $('#nuevo-progreso').hidden = true;
   $('#carpeta-local').hidden = !(estado.sesion?.rol === 'plataforma' && estado.sesion?.puede_vincular);
+  opcionesDeDiseno($('#nuevo-diseno'), null);
   pintar();
   $('#nuevo-nombre').focus();
 }
@@ -130,7 +132,10 @@ async function construir(alCrear) {
   let slug = null;
   try {
     paso('Creando el loteo…', 0);
-    slug = (await pedir('/api/proyectos', json({ nombre: $('#nuevo-nombre').value.trim() }))).slug;
+    slug = (await pedir('/api/proyectos', json({
+      nombre: $('#nuevo-nombre').value.trim(),
+      diseno_id: $('#nuevo-diseno').value || null,
+    }))).slug;
     const lista = archivosASubir();
     const total = megas(lista);
     await subir(slug, lista, (fraccion) =>

@@ -10,10 +10,11 @@ import { $, $$, avisar, estado, pedir, ruta } from './comun.js';
 import { pintarBackOffice, prepararBackOffice } from './backoffice.js';
 import { pintarCuenta, prepararCuenta, recordarClaveProvisional } from './cuenta.js';
 import { abrirNuevo, prepararNuevo } from './nuevo.js';
+import { abrirDiseno, pintarDisenos, prepararDisenos } from './disenos.js';
 import { cerrarDialogos, pintarPlano, prepararPlano, seguir } from './plano.js';
 import { pintarPlanos } from './planos.js';
 
-const PANTALLAS = ['planos', 'nuevo', 'plano', 'disenos'];
+const PANTALLAS = ['planos', 'nuevo', 'plano', 'disenos', 'diseno'];
 
 let anterior = null;
 // Se llegó a un loteo que no estaba en la lista y se está trayendo: al pintarlo
@@ -22,12 +23,12 @@ let refrescarAlLlegar = false;
 
 function mostrar() {
   const destino = ruta(location.hash);
-  const clave = `${destino.pantalla}/${destino.slug ?? ''}`;
+  const clave = `${destino.pantalla}/${destino.slug ?? destino.id ?? ''}`;
   const llegando = clave !== anterior;
   anterior = clave;
 
   for (const nombre of PANTALLAS) $(`#pantalla-${nombre}`).hidden = nombre !== destino.pantalla;
-  const seccion = destino.pantalla === 'disenos' ? 'disenos' : 'planos';
+  const seccion = destino.pantalla.startsWith('diseno') ? 'disenos' : 'planos';
   for (const enlace of $$('.pestanas a')) {
     if (enlace.dataset.seccion === seccion) enlace.setAttribute('aria-current', 'page');
     else enlace.removeAttribute('aria-current');
@@ -53,14 +54,18 @@ function mostrar() {
     return;
   }
   document.title = {
-    planos: 'Mis planos', nuevo: 'Nuevo master', disenos: 'Mis diseños',
+    planos: 'Mis planos', nuevo: 'Nuevo master', disenos: 'Mis diseños', diseno: 'Diseño',
   }[destino.pantalla] + ' — Tu Masterplan';
   if (destino.pantalla === 'planos') pintarPlanos();
   if (destino.pantalla === 'nuevo' && llegando) abrirNuevo();
+  if (destino.pantalla === 'disenos') pintarDisenos();
+  // El editor se rellena al llegar: un refresco no pisa lo que se está escribiendo.
+  if (destino.pantalla === 'diseno' && llegando) abrirDiseno(destino.id);
 }
 
 async function refrescar() {
-  estado.proyectos = await pedir('/api/proyectos');
+  [estado.proyectos, estado.disenos] = await Promise.all([
+    pedir('/api/proyectos'), pedir('/api/disenos')]);
   // Un trabajo puede seguir corriendo de una recarga de página: retomarlo.
   for (const proyecto of estado.proyectos) {
     if (proyecto.trabajo && !estado.sondeos.has(proyecto.slug)) seguir(proyecto.slug, proyecto.trabajo.id);
@@ -79,6 +84,7 @@ async function arrancar() {
   prepararCuenta();
   prepararPlano({ refrescar });
   prepararBackOffice({ refrescar });
+  prepararDisenos({ refrescar });
   prepararNuevo({
     alCrear: async (slug) => {
       location.hash = `#/planos/${encodeURIComponent(slug)}`;

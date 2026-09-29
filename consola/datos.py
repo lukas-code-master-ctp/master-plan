@@ -1,6 +1,6 @@
 """La base de la consola: quién es cliente, quién entra y qué loteo es de quién.
 
-Son cuatro tablas y un puñado de consultas, así que se usa SQLAlchemy Core y no el
+Son cinco tablas y un puñado de consultas, así que se usa SQLAlchemy Core y no el
 ORM: no hace falta identidad de objetos ni carga perezosa, y el SQL queda a la vista.
 Corre igual sobre SQLite (este computador y las pruebas) y sobre Postgres (el
 servidor), que es lo único que se le pide.
@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from passlib.context import CryptContext
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Integer, MetaData, String, Table,
-    Text, UniqueConstraint, create_engine, delete, func, insert, select, update,
+    Text, UniqueConstraint, create_engine, delete, func, insert, inspect, select, text, update,
 )
 from sqlalchemy.exc import IntegrityError
 
@@ -65,6 +65,25 @@ usuarios = Table(
     Column("creado_en", DateTime(timezone=True), nullable=False),
 )
 
+# La marca con que una loteadora publica sus loteos. El color de los estados
+# (disponible, vendido…) no está acá a propósito: ese significa lo mismo en
+# todos los sitios.
+disenos = Table(
+    "disenos", metadatos,
+    Column("id", Integer, primary_key=True),
+    Column("cliente_id", Integer, ForeignKey("clientes.id"), nullable=False, index=True),
+    Column("nombre", String(120), nullable=False),
+    Column("color", String(7), nullable=False),
+    Column("tipografia", String(20), nullable=False),
+    # Nombre del archivo del logo dentro de la carpeta del diseño, o nada.
+    Column("logo", String(40), nullable=True),
+    # Los textos de los botones de la ficha. Vacío = el texto de siempre.
+    Column("texto_contacto", String(60), nullable=True),
+    Column("texto_pago", String(40), nullable=True),
+    Column("creado_en", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("cliente_id", "nombre", name="un_diseno_por_nombre"),
+)
+
 proyectos = Table(
     "proyectos", metadatos,
     Column("id", Integer, primary_key=True),
@@ -86,6 +105,8 @@ proyectos = Table(
     Column("pagado_en", DateTime(timezone=True), nullable=True),
     Column("nota_cobro", Text, nullable=True),
     Column("creado_en", DateTime(timezone=True), nullable=False),
+    # Con qué marca se publica. Vacío = la de Tu Masterplan.
+    Column("diseno_id", Integer, ForeignKey("disenos.id"), nullable=True),
     UniqueConstraint("cliente_id", "nombre", name="un_nombre_por_cliente"),
 )
 
@@ -110,6 +131,10 @@ class EmailYaExiste(Exception):
 
 class ProyectoYaExiste(Exception):
     """Este cliente ya tiene un loteo con ese nombre."""
+
+
+class DisenoYaExiste(Exception):
+    """Este cliente ya tiene un diseño con ese nombre."""
 
 
 class NoEncontrado(Exception):
@@ -164,10 +189,23 @@ class ProyectoGuardado:
     publicado_en: datetime | None
     pagado_en: datetime | None
     nota_cobro: str | None
+    diseno_id: int | None = None
 
     @property
     def pagado(self) -> bool:
         return self.pagado_en is not None
+
+
+@dataclass(frozen=True)
+class Diseno:
+    id: int
+    cliente_id: int
+    nombre: str
+    color: str
+    tipografia: str
+    logo: str | None
+    texto_contacto: str | None
+    texto_pago: str | None
 
 
 class Base:
@@ -179,6 +217,7 @@ class Base:
         opciones = {} if url.startswith("sqlite") else {"pool_size": 2, "max_overflow": 2}
         self.motor = create_engine(url, future=True, **opciones)
         metadatos.create_all(self.motor)
+        _migrar(self.motor)
 
     # --- clientes ---------------------------------------------------------------
 
@@ -367,6 +406,55 @@ class Base:
                 pagado_en=_ahora(), nota_cobro=nota_cobro))
         return cambio.rowcount == 1
 
+    def asignar_diseno(self, slug: str, diseno_id: int | None) -> None:
+        with self.motor.begin() as con:
+            con.execute(update(proyectos).where(proyectos.c.slug == slug)
+                        .values(diseno_id=diseno_id))
+
+    # --- diseños ---------------------------------------------------------------------
+
+    def disenos(self, cliente_id: int | None = None) -> list[Diseno]:
+        """Sin `cliente_id`, los de todas las loteadoras: solo para plataforma."""
+        consulta = select(disenos).order_by(disenos.c.nombre)
+        if cliente_id is not None:
+            consulta = consulta.where(disenos.c.cliente_id == cliente_id)
+        with self.motor.connect() as con:
+            return [_diseno(f) for f in con.execute(consulta)]
+
+    def diseno(self, diseno_id: int, cliente_id: int | None = None) -> Diseno:
+        consulta = select(disenos).where(disenos.c.id == diseno_id)
+        if cliente_id is not None:
+            consulta = consulta.where(disenos.c.cliente_id == cliente_id)
+        with self.motor.connect() as con:
+            fila = con.execute(consulta).first()
+        if fila is None:
+            raise NoEncontrado(f"no existe el diseño {diseno_id}")
+        return _diseno(fila)
+
+    def crear_diseno(self, cliente_id: int, campos: dict) -> Diseno:
+        with self.motor.begin() as con:
+            try:
+                resultado = con.execute(insert(disenos).values(
+                    cliente_id=cliente_id, creado_en=_ahora(), **campos))
+            except IntegrityError as error:
+                raise DisenoYaExiste(f"ya tienes un diseño llamado {campos.get('nombre')!r}") from error
+        return self.diseno(resultado.inserted_primary_key[0])
+
+    def actualizar_diseno(self, diseno_id: int, campos: dict) -> Diseno:
+        with self.motor.begin() as con:
+            try:
+                con.execute(update(disenos).where(disenos.c.id == diseno_id).values(**campos))
+            except IntegrityError as error:
+                raise DisenoYaExiste(f"ya tienes un diseño llamado {campos.get('nombre')!r}") from error
+        return self.diseno(diseno_id)
+
+    def borrar_diseno(self, diseno_id: int) -> None:
+        """Los loteos que lo usaban vuelven al diseño por defecto."""
+        with self.motor.begin() as con:
+            con.execute(update(proyectos).where(proyectos.c.diseno_id == diseno_id)
+                        .values(diseno_id=None))
+            con.execute(delete(disenos).where(disenos.c.id == diseno_id))
+
     def olvidar_proyecto(self, slug: str) -> None:
         with self.motor.begin() as con:
             con.execute(delete(proyectos).where(proyectos.c.slug == slug))
@@ -460,6 +548,26 @@ def _slug_libre(con, nombre: str) -> str:
     return f"{sugerido}-{siguiente}"
 
 
+def _migrar(motor) -> None:
+    """Lo que `create_all` no hace: agregar columnas a tablas que ya existían.
+
+    No hay Alembic —son cinco tablas— así que cada cambio de esquema se agrega
+    acá, idempotente: mira si la columna está y solo si falta la crea. Corre al
+    abrir la base, en SQLite y en Postgres por igual.
+    """
+    columnas = {c["name"] for c in inspect(motor).get_columns("proyectos")}
+    if "diseno_id" not in columnas:
+        with motor.begin() as con:
+            con.execute(text("ALTER TABLE proyectos ADD COLUMN diseno_id INTEGER "
+                             "REFERENCES disenos(id)"))
+
+
+def _diseno(fila) -> Diseno:
+    return Diseno(id=fila.id, cliente_id=fila.cliente_id, nombre=fila.nombre,
+                  color=fila.color, tipografia=fila.tipografia, logo=fila.logo,
+                  texto_contacto=fila.texto_contacto, texto_pago=fila.texto_pago)
+
+
 def _cliente(fila) -> Cliente:
     return Cliente(id=fila.id, slug=fila.slug, nombre=fila.nombre,
                    estado=fila.estado, creado_en=fila.creado_en)
@@ -477,4 +585,5 @@ def _proyecto(fila) -> ProyectoGuardado:
         id=fila.id, cliente_id=fila.cliente_id, slug=fila.slug, nombre=fila.nombre,
         carpeta=fila.carpeta,
         vercel_proyecto=fila.vercel_proyecto, url_publicada=fila.url_publicada,
-        publicado_en=fila.publicado_en, pagado_en=fila.pagado_en, nota_cobro=fila.nota_cobro)
+        publicado_en=fila.publicado_en, pagado_en=fila.pagado_en, nota_cobro=fila.nota_cobro,
+        diseno_id=fila.diseno_id)
