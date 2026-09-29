@@ -1,6 +1,6 @@
 """La base de la consola: quién es cliente, quién entra y qué loteo es de quién.
 
-Son cinco tablas y un puñado de consultas, así que se usa SQLAlchemy Core y no el
+Son siete tablas y un puñado de consultas, así que se usa SQLAlchemy Core y no el
 ORM: no hace falta identidad de objetos ni carga perezosa, y el SQL queda a la vista.
 Corre igual sobre SQLite (este computador y las pruebas) y sobre Postgres (el
 servidor), que es lo único que se le pide.
@@ -22,8 +22,25 @@ from datetime import datetime, timezone
 
 from passlib.context import CryptContext
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Integer, MetaData, String, Table,
-    Text, UniqueConstraint, create_engine, delete, func, insert, inspect, select, text, update,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    delete,
+    func,
+    insert,
+    inspect,
+    select,
+    text,
+    true,
+    update,
 )
 from sqlalchemy.exc import IntegrityError
 
@@ -63,6 +80,35 @@ usuarios = Table(
     # deja de valer. Cambiar la clave o desactivar al usuario la adelanta.
     Column("sesiones_validas_desde", DateTime(timezone=True), nullable=False),
     Column("creado_en", DateTime(timezone=True), nullable=False),
+    # Quien se registró solo tiene que probar que el correo es suyo antes de
+    # construir. Las cuentas que crea el equipo nacen verificadas.
+    Column("email_verificado", Boolean, nullable=False, server_default=true()),
+)
+
+# Enlaces de un solo uso que llegan por correo: verificar la cuenta o
+# restablecer la clave. Se guarda el hash del token, nunca el token: una copia
+# de la base no sirve para entrar a ninguna cuenta.
+tokens = Table(
+    "tokens", metadatos,
+    Column("id", Integer, primary_key=True),
+    Column("usuario_id", Integer, ForeignKey("usuarios.id"), nullable=False, index=True),
+    Column("tipo", String(20), nullable=False),
+    Column("hash", String(64), nullable=False, unique=True),
+    Column("vence_en", DateTime(timezone=True), nullable=False),
+    Column("usado_en", DateTime(timezone=True), nullable=True),
+    Column("creado_en", DateTime(timezone=True), nullable=False),
+)
+
+# Cuentas de afuera (Google) enlazadas a una cuenta de acá. `sujeto` es el id
+# que da el proveedor, que no cambia aunque la persona cambie de correo.
+identidades = Table(
+    "identidades", metadatos,
+    Column("id", Integer, primary_key=True),
+    Column("usuario_id", Integer, ForeignKey("usuarios.id"), nullable=False, index=True),
+    Column("proveedor", String(20), nullable=False),
+    Column("sujeto", String(255), nullable=False),
+    Column("creado_en", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("proveedor", "sujeto", name="una_identidad_por_sujeto"),
 )
 
 # La marca con que una loteadora publica sus loteos. El color de los estados
@@ -161,6 +207,7 @@ class Usuario:
     activo: bool
     debe_cambiar_clave: bool
     sesiones_validas_desde: datetime
+    email_verificado: bool = True
 
     @property
     def es_plataforma(self) -> bool:
@@ -324,6 +371,84 @@ class Base:
                         .where(func.lower(usuarios.c.email) == email.strip().lower())
                         .values(clave_hash=CLAVES.hash(nueva), debe_cambiar_clave=False,
                                 sesiones_validas_desde=_ahora()))
+
+    def crear_cuenta_propia(self, loteadora: str, email: str, nombre: str,
+                            clave: str | None, *, verificado: bool) -> Usuario:
+        """La loteadora y su dueño, creados por la propia persona (Regístrate o Google).
+
+        A diferencia de `crear_cliente`, la clave la elige quien se registra (o no
+        hay: entra con Google, y la clave es una al azar que nadie conoce), y el
+        nombre de la loteadora no tiene que ser único: el slug toma un sufijo.
+        Decir "ese nombre ya existe" contaría quiénes son clientes.
+        """
+        ahora = _ahora()
+        with self.motor.begin() as con:
+            if con.execute(select(usuarios.c.id)
+                           .where(func.lower(usuarios.c.email) == email.strip().lower())).first():
+                raise EmailYaExiste(f"{email} ya tiene cuenta")
+            cliente_id = con.execute(insert(clientes).values(
+                slug=_slug_de_cliente_libre(con, loteadora), nombre=loteadora.strip(),
+                estado="activo", creado_en=ahora)).inserted_primary_key[0]
+            con.execute(insert(usuarios).values(
+                cliente_id=cliente_id, email=email.strip().lower(), nombre=nombre.strip(),
+                clave_hash=CLAVES.hash(clave or secrets.token_urlsafe(32)),
+                rol="dueño", activo=True, debe_cambiar_clave=False,
+                sesiones_validas_desde=ahora, creado_en=ahora, email_verificado=verificado))
+        encontrado = self.usuario_por_email(email)
+        assert encontrado is not None
+        return encontrado
+
+    def anular_credenciales(self, usuario_id: int) -> None:
+        """La clave pasa a ser una al azar que nadie conoce y se cortan las sesiones.
+
+        Para cuando se descubre que quien puso la clave no era el dueño del
+        correo: una cuenta registrada sin confirmar que después reclama, con
+        Google, quien sí tiene ese buzón.
+        """
+        with self.motor.begin() as con:
+            con.execute(update(usuarios).where(usuarios.c.id == usuario_id).values(
+                clave_hash=CLAVES.hash(secrets.token_urlsafe(32)),
+                sesiones_validas_desde=_ahora()))
+
+    def marcar_verificado(self, usuario_id: int) -> None:
+        with self.motor.begin() as con:
+            con.execute(update(usuarios).where(usuarios.c.id == usuario_id)
+                        .values(email_verificado=True))
+
+    # --- enlaces de un solo uso y cuentas de afuera --------------------------------
+
+    def guardar_token(self, usuario_id: int, tipo: str, hash_token: str,
+                      vence_en: datetime) -> None:
+        with self.motor.begin() as con:
+            con.execute(insert(tokens).values(usuario_id=usuario_id, tipo=tipo, hash=hash_token,
+                                              vence_en=vence_en, creado_en=_ahora()))
+
+    def usar_token(self, tipo: str, hash_token: str) -> int | None:
+        """El usuario del token, gastándolo. None si no existe, venció o ya se usó.
+
+        Se gasta con un UPDATE condicionado: dos clics simultáneos en el mismo
+        enlace no pueden usarlo los dos.
+        """
+        ahora = _ahora()
+        with self.motor.begin() as con:
+            fila = con.execute(select(tokens).where(
+                tokens.c.hash == hash_token, tokens.c.tipo == tipo)).first()
+            if fila is None or fila.usado_en is not None or _utc(fila.vence_en) < ahora:
+                return None
+            gastado = con.execute(update(tokens).where(
+                tokens.c.id == fila.id, tokens.c.usado_en.is_(None)).values(usado_en=ahora))
+            return fila.usuario_id if gastado.rowcount == 1 else None
+
+    def usuario_por_identidad(self, proveedor: str, sujeto: str) -> Usuario | None:
+        with self.motor.connect() as con:
+            fila = con.execute(select(identidades.c.usuario_id).where(
+                identidades.c.proveedor == proveedor, identidades.c.sujeto == sujeto)).first()
+        return self.usuario(fila.usuario_id) if fila else None
+
+    def enlazar_identidad(self, usuario_id: int, proveedor: str, sujeto: str) -> None:
+        with self.motor.begin() as con:
+            con.execute(insert(identidades).values(usuario_id=usuario_id, proveedor=proveedor,
+                                                   sujeto=sujeto, creado_en=_ahora()))
 
     def ascender_a_plataforma(self, email: str) -> None:
         with self.motor.begin() as con:
@@ -560,12 +685,35 @@ def _migrar(motor) -> None:
         with motor.begin() as con:
             con.execute(text("ALTER TABLE proyectos ADD COLUMN diseno_id INTEGER "
                              "REFERENCES disenos(id)"))
+    # Las cuentas que ya existían las creó el equipo: nacen verificadas.
+    columnas = {c["name"] for c in inspect(motor).get_columns("usuarios")}
+    if "email_verificado" not in columnas:
+        with motor.begin() as con:
+            con.execute(text("ALTER TABLE usuarios ADD COLUMN email_verificado BOOLEAN "
+                             "NOT NULL DEFAULT TRUE"))
 
 
 def _diseno(fila) -> Diseno:
     return Diseno(id=fila.id, cliente_id=fila.cliente_id, nombre=fila.nombre,
                   color=fila.color, tipografia=fila.tipografia, logo=fila.logo,
                   texto_contacto=fila.texto_contacto, texto_pago=fila.texto_pago)
+
+
+def _slug_de_cliente_libre(con, nombre: str) -> str:
+    sugerido = _slug(nombre)
+    tomados = {f[0] for f in con.execute(
+        select(clientes.c.slug).where(clientes.c.slug.like(f"{sugerido}%")))}
+    if sugerido not in tomados:
+        return sugerido
+    siguiente = 2
+    while f"{sugerido}-{siguiente}" in tomados:
+        siguiente += 1
+    return f"{sugerido}-{siguiente}"
+
+
+def _utc(momento: datetime) -> datetime:
+    """SQLite devuelve las fechas sin zona, aunque se guardaron en UTC."""
+    return momento if momento.tzinfo else momento.replace(tzinfo=timezone.utc)
 
 
 def _cliente(fila) -> Cliente:
@@ -577,7 +725,8 @@ def _usuario(fila) -> Usuario:
     return Usuario(id=fila.id, cliente_id=fila.cliente_id, email=fila.email,
                    nombre=fila.nombre, clave_hash=fila.clave_hash, rol=fila.rol,
                    activo=fila.activo, debe_cambiar_clave=fila.debe_cambiar_clave,
-                   sesiones_validas_desde=fila.sesiones_validas_desde)
+                   sesiones_validas_desde=fila.sesiones_validas_desde,
+                   email_verificado=fila.email_verificado)
 
 
 def _proyecto(fila) -> ProyectoGuardado:
