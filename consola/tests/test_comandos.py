@@ -56,16 +56,30 @@ def test_publicar_recibe_el_nombre_del_proyecto_del_hosting(comandos, tmp_path):
 
     orden = comandos.publicar(proyecto, vercel_proyecto="masterplan-praderas-de-cauquenes")
 
-    assert str(proyecto.salida.web) in orden
-    assert "masterplan-praderas-de-cauquenes" in orden
-    assert "--crear" not in orden
+    subir = orden[2].split(" && ")[-1]
+    assert f"'{proyecto.salida.web}'" in subir
+    assert "'masterplan-praderas-de-cauquenes'" in subir
+    assert "--crear" not in subir
 
 
 def test_la_primera_publicacion_pide_crear_el_proyecto(comandos, tmp_path):
     orden = comandos.publicar(proyecto_de_prueba(tmp_path),
                               vercel_proyecto="masterplan-las-araucarias", crear=True)
 
-    assert "--crear" in orden
+    assert orden[2].endswith("'--crear'")
+
+
+def test_publicar_sube_siempre_el_visor_actual(comandos, tmp_path):
+    """Un loteo construido antes de un deploy y publicado después no puede salir
+    con el visor viejo: la huella que se anota al terminar es la del actual."""
+    proyecto = proyecto_de_prueba(tmp_path)
+
+    orden = comandos.publicar(proyecto, vercel_proyecto="masterplan-las-araucarias")
+
+    assert orden[:2] == ["/bin/sh", "-c"]
+    copiar, subir = orden[2].split(" && ")
+    assert "'pipeline.visor'" in copiar and f"'{proyecto.salida.web}'" in copiar
+    assert "publicar.sh" in subir
 
 
 def test_encadenar_corta_al_primer_error():
@@ -91,3 +105,16 @@ def test_un_loteo_con_export_propio_lo_pasa(comandos, tmp_path):
 
     assert orden[orden.index("--crm") + 1] == str(propio)
     assert "--sin-crm" not in orden
+
+
+def test_actualizar_el_visor_copia_y_sube_sin_crear(comandos, tmp_path):
+    """Solo pone al día loteos ya en línea: si el proyecto no existe, que falle."""
+    proyecto = proyecto_de_prueba(tmp_path)
+
+    orden = comandos.actualizar_visor(proyecto, "masterplan-las-araucarias")
+
+    assert orden[:2] == ["/bin/sh", "-c"]
+    copiar, subir = orden[2].split(" && ")
+    assert "'pipeline.visor'" in copiar and f"'{proyecto.salida.web}'" in copiar
+    assert "publicar.sh" in subir and "'masterplan-las-araucarias'" in subir
+    assert "--crear" not in orden[2]

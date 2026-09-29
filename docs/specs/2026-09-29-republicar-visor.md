@@ -31,7 +31,10 @@ mismos archivos que ignora la copia al construir (`datos`, `panoramas`, `*.test.
 
 **Lo que se guarda.** Columna nueva `proyectos.visor_publicado` (texto, nulo): la huella
 del visor con que quedó publicado cada loteo. Se agrega en `_migrar`, idempotente. La
-escribe tanto la publicación normal como la actualización automática.
+escribe tanto la publicación normal como la actualización automática. Para que la
+huella anotada diga la verdad, **publicar a mano también copia el visor actual** antes
+de subir: si no, un loteo construido antes de un deploy y publicado después saldría
+con el visor viejo marcado como nuevo, y nunca se pondría al día.
 
 **El gancho al arrancar.** Con `CONSOLA_REPUBLICAR_AL_ARRANCAR=1` (solo lo pone el
 `cloudbuild.yaml`; en el computador y en las pruebas no está), la consola, al arrancar,

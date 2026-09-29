@@ -125,3 +125,42 @@ def test_un_traceback_llega_sin_codigos_de_color(trabajos, monkeypatch):
 
     assert not any("\x1b[" in linea for linea in trabajo.lineas)
     assert any("ValueError: mal" in linea for linea in trabajo.lineas)
+
+
+def test_esperar_bloquea_hasta_que_termina(trabajos):
+    identificador = trabajos.lanzar("loteo", "construir", guion("print('hola')"))
+
+    trabajo = trabajos.esperar(identificador)
+
+    assert trabajo.terminado and trabajo.estado == "listo"
+    assert "hola" in trabajo.lineas
+
+
+def test_esperar_incluye_lo_que_se_guarda_al_terminar(trabajos):
+    guardados = []
+
+    def guardar(trabajo):
+        time.sleep(0.2)
+        guardados.append(trabajo.estado)
+
+    identificador = trabajos.lanzar("loteo", "publicar", guion("print('ok')"),
+                                    al_terminar=guardar)
+    trabajos.esperar(identificador)
+
+    assert guardados == ["listo"]
+
+
+def test_esperar_no_se_queda_pegado_si_el_comando_no_existe(trabajos):
+    identificador = trabajos.lanzar("loteo", "construir", ["/no/existe/este-comando"])
+
+    trabajo = trabajos.esperar(identificador, tope=10)
+
+    assert trabajo.estado == "falló"
+
+
+def test_esperar_con_tope_devuelve_el_trabajo_aunque_siga_corriendo(trabajos):
+    identificador = trabajos.lanzar("loteo", "construir", guion("import time; time.sleep(3)"))
+
+    trabajo = trabajos.esperar(identificador, tope=0.1)
+
+    assert not trabajo.terminado
