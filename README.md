@@ -300,6 +300,32 @@ alguien agrega una ruta sin decir qué pasa cuando la pide otro cliente**.
 consola pasa a mostrar `<slug>.tumasterplan.cl`; falta apuntar el dominio en Vercel,
 una vez por loteo.
 
+## Despliegue continuo
+
+Cada merge a `main` despliega la consola solo: un trigger de Cloud Build
+(`consola-main`, región `southamerica-east1`, proyecto `tumasterplan`) corre el mismo
+`cloudbuild.yaml`. El `gcloud builds submit` a mano sigue sirviendo.
+
+**Los loteos también se ponen al día.** Cada sitio publicado lleva su propia copia del
+visor, hecha al construirlo: un arreglo mergeado no llega a ningún loteo hasta que se
+vuelve a subir. Con `CONSOLA_REPUBLICAR_AL_ARRANCAR=1` (solo lo pone el cloudbuild), la
+consola calcula al arrancar la huella de `web/` y republica, de a uno y sin `--crear`,
+los loteos publicados, pagados y construidos cuyo `visor_publicado` no coincide: copia
+`web/` sobre el sitio ya construido, reescribe el diseño y corre `publicar.sh`
+(`consola/republicar.py`). Un arranque en frío sin cambios en el visor no hace nada.
+**No** reconstruye datos ni imágenes, y **no** publica un loteo que nunca se publicó.
+Publicar a mano también lleva el visor actual. Para copiarlo sobre un sitio sin
+publicar: `python -m pipeline.visor --sitio "salidas/<proyecto>/sitio"`.
+
+**Cómo verlo.** No hay pantalla: queda en Cloud Logging, en líneas que empiezan con
+`[republicar]`.
+
+```bash
+gcloud logging read 'resource.type="cloud_run_revision"
+  AND resource.labels.service_name="tumasterplan-consola"
+  AND textPayload:"[republicar]"' --project tumasterplan --limit 50 --freshness 1d
+```
+
 ## El diseño
 
 El sitio usa el sistema visual de Cierra, para que se sienta parte de la misma
@@ -443,6 +469,7 @@ tumasterplan/
 │   ├── panoramas.py   Pose de cada foto y resolución del rumbo
 │   ├── proyeccion.py  Proyección de polígonos a coordenadas angulares
 │   ├── imagenes.py    Niveles de imagen para la web
+│   ├── visor.py       Copia el visor (web/) sobre un sitio y calcula su huella
 │   ├── construir.py   Orquestador
 │   └── qa_overlay.py  Control de calce
 ├── consola.sh         Abre la consola en el navegador
@@ -452,6 +479,7 @@ tumasterplan/
 │   ├── proyectos.py   Qué loteos conoce y en qué estado están
 │   ├── trabajos.py    Corre el pipeline y muestra su avance en vivo
 │   ├── comandos.py    Qué le pide al pipeline
+│   ├── republicar.py  Al arrancar, republica los loteos con el visor atrasado
 │   └── web/           La página
 ├── web/               El sitio (html, css, js): la plantilla de la que se copia cada salida
 │   ├── js/            Visor WebGL, mapa, ficha, filtros
