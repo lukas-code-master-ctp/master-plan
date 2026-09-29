@@ -74,5 +74,8 @@ images:
   - '${_IMAGEN}:latest'
 
 options:
+  # _IMAGEN se arma con ${PROJECT_ID} y ${_REPO}: sin esto Cloud Build no expande
+  # sustituciones dentro de otras, y rechaza _REPO por "no usada en la plantilla".
+  dynamicSubstitutions: true
   logging: CLOUD_LOGGING_ONLY
   machineType: E2_HIGHCPU_8
