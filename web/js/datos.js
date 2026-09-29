@@ -3,8 +3,10 @@
 const RUTA_DATOS = 'datos';
 
 export class Catalogo {
-  constructor(parcelas, vistas) {
+  constructor(parcelas, vistas, diseno = null) {
     this.meta = parcelas;
+    /** La marca de la loteadora, o null para el diseño de Tu Masterplan. */
+    this.diseno = diseno;
     this.parcelas = parcelas.parcelas;
     this.estados = parcelas.estados;
     this.otrosPoligonos = parcelas.otros_poligonos ?? [];
@@ -19,11 +21,13 @@ export class Catalogo {
   }
 
   static async cargar() {
-    const [parcelas, vistas] = await Promise.all([
+    const [parcelas, vistas, diseno] = await Promise.all([
       pedirJson(`${RUTA_DATOS}/parcelas.json`),
       pedirJson(`${RUTA_DATOS}/vistas.json`),
+      // Opcional: sin diseño propio, el sitio se ve como siempre.
+      pedirJson(`${RUTA_DATOS}/diseno.json`).catch(() => null),
     ]);
-    return new Catalogo(parcelas, vistas);
+    return new Catalogo(parcelas, vistas, diseno);
   }
 
   /** Overlay de una vista. Se pide una sola vez y queda en memoria. */

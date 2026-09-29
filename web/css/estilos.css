@@ -185,6 +185,13 @@ button { cursor: pointer; }
   border-radius: var(--radio-md);
   color: #fff;
 }
+/* El logo de la loteadora, en lugar de la brújula. Alto fijo; ancho el que
+   pida el dibujo, con tope para que un logo apaisado no se coma la barra. */
+.marca__logo {
+  flex: none;
+  height: 2.25rem; width: auto; max-width: 9rem;
+  object-fit: contain; object-position: left center;
+}
 .marca__texto { margin: 0; display: grid; gap: 0.15rem; min-width: 0; }
 
 .marca__nombre {
@@ -987,6 +994,7 @@ button { cursor: pointer; }
 
   .cabecera { flex-wrap: wrap; align-content: center; gap: 0.5rem 0.75rem; padding: 0.6rem 0.9rem; }
   .marca__hito { width: 2rem; height: 2rem; padding: 0.35rem; }
+  .marca__logo { height: 2rem; max-width: 6rem; }
   .marca__nombre { font-size: 0.9375rem; }
   .cabecera__herramientas { width: 100%; margin-left: 0; }
   .buscador { width: auto; flex: 1; }

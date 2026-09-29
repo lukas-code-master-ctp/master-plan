@@ -266,3 +266,25 @@ def test_con_MASTERPLAN_BD_se_usa_esa(monkeypatch):
     monkeypatch.setenv("MASTERPLAN_BD", "postgresql+psycopg://x/y")
 
     assert url_por_defecto() == "postgresql+psycopg://x/y"
+
+
+def test_una_base_de_antes_de_los_disenos_se_pone_al_dia_sola(tmp_path):
+    """La base que ya está en uso no tiene la columna del diseño: abrirla la agrega
+    sin tocar lo que había."""
+    from sqlalchemy import create_engine, text
+    url = f"sqlite:///{tmp_path / 'vieja.db'}"
+    with create_engine(url).begin() as con:
+        con.execute(text(
+            "CREATE TABLE proyectos (id INTEGER PRIMARY KEY, cliente_id INTEGER NOT NULL, "
+            "slug VARCHAR(80) NOT NULL UNIQUE, nombre VARCHAR(160) NOT NULL, carpeta TEXT, "
+            "vercel_proyecto VARCHAR(120), url_publicada VARCHAR(300), publicado_en DATETIME, "
+            "pagado_en DATETIME, nota_cobro TEXT, creado_en DATETIME NOT NULL)"))
+        con.execute(text("INSERT INTO proyectos (cliente_id, slug, nombre, creado_en) "
+                         "VALUES (1, 'praderas', 'Praderas', '2026-09-24 10:00:00')"))
+
+    base = Base(url)
+    Base(url)                                   # y abrirla de nuevo no hace nada
+
+    proyecto = base.proyecto("praderas")
+    assert proyecto.nombre == "Praderas"
+    assert proyecto.diseno_id is None

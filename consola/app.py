@@ -24,7 +24,8 @@ from pipeline import config
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
 from .comandos import Comandos, encadenar
 from .datos import (
-    Base, ClienteYaExiste, EmailYaExiste, NoEncontrado, ProyectoYaExiste)
+    Base, ClienteYaExiste, DisenoYaExiste, EmailYaExiste, NoEncontrado, ProyectoYaExiste)
+from .disenos import Disenos, DisenoInvalido, VistaDisenos, como_json as diseno_json
 from .proyectos import LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
 from .trabajos import Trabajos
 
@@ -34,7 +35,13 @@ WEB = Path(__file__).resolve().parent / "web"
 # cualquier archivo de la carpeta: una ruta que arma rutas de disco con lo que
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
-           "cuenta.js", "backoffice.js")
+           "cuenta.js", "backoffice.js", "disenos.js")
+# Los que la página toma prestados del visor publicado: la vista previa de un
+# diseño se pinta con el mismo código que después lo aplica en el sitio.
+MODULOS_DEL_VISOR = ("marca.js",)
+
+TIPOS_LOGO = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp",
+              ".svg": "image/svg+xml"}
 
 # Cada loteo se publica como un proyecto propio en el hosting, llamado
 # `masterplan-<slug>`. Ese nombre y la URL resultante se GUARDAN al publicar por
@@ -61,9 +68,11 @@ LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2")
 
 
 def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None,
-              comandos=None, acceso: Acceso | None = None, base: Base | None = None) -> FastAPI:
+              comandos=None, acceso: Acceso | None = None, base: Base | None = None,
+              disenos: Disenos | None = None) -> FastAPI:
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
+    disenos = disenos or Disenos(base=base)
     registro = registro or Registro(base=base, crm_por_defecto=config.csv_del_crm(),
                                     limites=Limites.desde_el_entorno())
     trabajos = trabajos or Trabajos(directorio=config.RAIZ)
@@ -98,6 +107,10 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def vista(sesion: Sesion = Depends(quien)) -> Vista:
         """Los loteos de quien pide, y ningún otro."""
         return registro.para(sesion)
+
+    def mis_disenos(sesion: Sesion = Depends(quien)) -> VistaDisenos:
+        """Los diseños de quien pide, y ningún otro."""
+        return disenos.para(sesion)
 
     def solo_plataforma(sesion: Sesion = Depends(quien)) -> Sesion:
         """Lo que puede hacer el equipo de CTP y ninguna loteadora."""
@@ -166,6 +179,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
 
     @app.get("/js/{modulo}")
     def guion(modulo: str) -> FileResponse:
+        if modulo in MODULOS_DEL_VISOR:
+            return FileResponse(config.PLANTILLA_WEB / "js" / modulo, media_type="text/javascript")
         if modulo not in MODULOS:
             raise HTTPException(404, "no existe ese módulo")
         return FileResponse(WEB / "js" / modulo, media_type="text/javascript")
@@ -204,16 +219,21 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return [_como_json(p, trabajos) for p in mios.listar()]
 
     @app.post("/api/proyectos", status_code=201)
-    def crear(campos: dict = Body(...), mios: Vista = Depends(vista)) -> dict:
+    def crear(campos: dict = Body(...), mios: Vista = Depends(vista),
+              marcas: VistaDisenos = Depends(mis_disenos)) -> dict:
         """Un master nuevo, a nombre de quien lo pide. Nace sin pagar: se puede
         subir y construir, y publicar espera a que CTP anote el cobro."""
         nombre = str(campos.get("nombre") or "").strip()
         if not nombre:
             raise HTTPException(400, "ponle un nombre al loteo")
+        # El diseño se revisa antes de crear: si no sirve, no queda un loteo a medias.
+        diseno_id = _diseno_para(marcas, campos.get("diseno_id"), mios.duenio)
         try:
             proyecto = mios.crear(nombre)
         except (ProyectoYaExiste, LimiteAlcanzado) as error:
             raise HTTPException(409, str(error)) from error
+        if diseno_id is not None:
+            proyecto = mios.asignar_diseno(proyecto.slug, diseno_id)
         return _como_json(proyecto, trabajos)
 
     @app.get("/api/proyectos/{slug}/portada")
@@ -261,11 +281,22 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return _como_json(proyecto, trabajos)
 
     @app.patch("/api/proyectos/{slug}")
-    def ajustar(slug: str, campos: dict = Body(...), mios: Vista = Depends(vista)) -> dict:
+    def ajustar(slug: str, campos: dict = Body(...), mios: Vista = Depends(vista),
+                marcas: VistaDisenos = Depends(mis_disenos)) -> dict:
+        proyecto = mios.ver(slug)
+        # `diseno_id: null` es volver al diseño por defecto: por eso se mira si
+        # vino la clave, no si trae valor. Se revisa antes de escribir nada y se
+        # anota al final, para que un error en lo demás no lo deje cambiado.
+        cambia_diseno = "diseno_id" in campos
+        diseno_id = (_diseno_para(marcas, campos["diseno_id"], proyecto.cliente_id)
+                     if cambia_diseno else None)
         try:
-            return _como_json(mios.ajustar(slug, campos), trabajos)
+            proyecto = mios.ajustar(slug, campos)
         except ProyectoYaExiste as error:
             raise HTTPException(400, str(error)) from error
+        if cambia_diseno:
+            proyecto = mios.asignar_diseno(slug, diseno_id)
+        return _como_json(proyecto, trabajos)
 
     @app.delete("/api/proyectos/{slug}", status_code=204)
     def olvidar(slug: str, mios: Vista = Depends(vista)) -> None:
@@ -292,7 +323,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return lanzar(proyecto, "construir", encadenar(
             comandos.construir(proyecto, sin_imagenes=sin_imagenes),
             comandos.control_de_calce(proyecto),
-        ))
+        ), al_terminar=_aplicar_diseno(mios, disenos, slug))
 
     @app.post("/api/proyectos/{slug}/publicar", status_code=202)
     def publicar(slug: str, opciones: dict = Body(default={}),
@@ -308,6 +339,10 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         # precios y sus estados. Que no baste un clic ni un POST suelto.
         if not opciones.get("confirmado"):
             raise HTTPException(428, "hay que confirmar la publicación")
+
+        # El diseño se escribe recién ahora, con el que tenga el loteo en este
+        # momento: cambiar la marca no obliga a reconstruir.
+        disenos.escribir_en_sitio(proyecto.diseno_id, proyecto.salida.datos)
 
         # La primera vez hay que crear el proyecto en el hosting; después no, y
         # pedirlo de nuevo sería intentar pisar uno existente.
@@ -328,6 +363,54 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         # se pide como se pide el loteo.
         mios.ver(trabajo.proyecto)
         return trabajo.como_json(desde)
+
+    # --- mis diseños ------------------------------------------------------------
+
+    @app.get("/api/disenos")
+    def listar_disenos(marcas: VistaDisenos = Depends(mis_disenos)) -> list[dict]:
+        return [diseno_json(d) for d in marcas.listar()]
+
+    @app.post("/api/disenos", status_code=201)
+    def crear_diseno(campos: dict = Body(...),
+                     marcas: VistaDisenos = Depends(mis_disenos)) -> dict:
+        try:
+            return diseno_json(marcas.crear(campos))
+        except DisenoYaExiste as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.patch("/api/disenos/{diseno_id}")
+    def ajustar_diseno(diseno_id: int, campos: dict = Body(...),
+                       marcas: VistaDisenos = Depends(mis_disenos)) -> dict:
+        try:
+            return diseno_json(marcas.ajustar(diseno_id, campos))
+        except DisenoYaExiste as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.delete("/api/disenos/{diseno_id}", status_code=204)
+    def borrar_diseno(diseno_id: int, marcas: VistaDisenos = Depends(mis_disenos)) -> None:
+        marcas.borrar(diseno_id)
+
+    @app.post("/api/disenos/{diseno_id}/logo")
+    async def subir_logo(diseno_id: int, archivo: UploadFile = File(...),
+                         marcas: VistaDisenos = Depends(mis_disenos)) -> dict:
+        # El logo se lee entero: pesa como mucho medio mega, y se revisa antes
+        # de escribir. Se lee uno más para saber si se pasó sin leerlo todo.
+        contenido = await archivo.read(512 * 1024 + 1)
+        return diseno_json(marcas.subir_logo(diseno_id, archivo.filename or "", contenido))
+
+    @app.delete("/api/disenos/{diseno_id}/logo")
+    def quitar_logo(diseno_id: int, marcas: VistaDisenos = Depends(mis_disenos)) -> dict:
+        return diseno_json(marcas.quitar_logo(diseno_id))
+
+    @app.get("/api/disenos/{diseno_id}/logo")
+    def ver_logo(diseno_id: int, marcas: VistaDisenos = Depends(mis_disenos)) -> FileResponse:
+        archivo = disenos.logo_de(marcas.ver(diseno_id))
+        if archivo is None:
+            raise HTTPException(404, "este diseño no tiene logo")
+        # Un SVG abierto directo es un documento: que no pueda correr nada.
+        return FileResponse(archivo, media_type=TIPOS_LOGO[archivo.suffix], headers={
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-cache"})
 
     # --- back-office: solo el equipo de CTP ------------------------------------
     #
@@ -448,12 +531,41 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             raise HTTPException(404, "esa imagen de control no existe")
         return FileResponse(proyecto.salida.qa / archivo, media_type="image/jpeg")
 
+    @app.exception_handler(DisenoInvalido)
+    async def diseno_invalido(peticion: Request, error: DisenoInvalido):
+        return JSONResponse(status_code=400, content={"detail": str(error)})
+
     @app.exception_handler(NoEncontrado)
     async def no_encontrado(peticion: Request, error: NoEncontrado):
         """Lo que no existe y lo que es de otro se contestan igual."""
         return JSONResponse(status_code=404, content={"detail": str(error)})
 
     return app
+
+
+def _diseno_para(marcas: VistaDisenos, valor, cliente_del_loteo: int) -> int | None:
+    """El diseño pedido para un loteo, ya revisado. None = el por defecto."""
+    if valor in (None, ""):
+        return None
+    try:
+        diseno_id = int(valor)
+    except (TypeError, ValueError) as error:
+        raise DisenoInvalido("ese diseño no existe") from error
+    return marcas.para_el_loteo(diseno_id, cliente_del_loteo)
+
+
+def _aplicar_diseno(mios: Vista, disenos: Disenos, slug: str):
+    """Al terminar de construir, el sitio queda con su diseño: así lo que se
+    publique después, o se mire desde el disco, ya tiene la marca puesta."""
+
+    def aplicar(trabajo) -> None:
+        if trabajo.estado != "listo":
+            return
+        proyecto = mios.ver(slug)
+        if proyecto.construido:
+            disenos.escribir_en_sitio(proyecto.diseno_id, proyecto.salida.datos)
+
+    return aplicar
 
 
 def _anotar_publicacion(mios: Vista, proyecto: Proyecto, nombre: str):
@@ -512,6 +624,7 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "pagado": proyecto.pagado,
         # Quitar de la lista uno subido y sin pagar borra sus archivos.
         "subido": proyecto.subido,
+        "diseno_id": proyecto.diseno_id,
         "trabajo": ultimo.como_json() if ultimo and not ultimo.terminado else None,
     }
 

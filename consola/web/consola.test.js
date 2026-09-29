@@ -66,8 +66,12 @@ test('el servidor sirve todos los módulos, y solo esos', () => {
 
 test('cada módulo que se importa existe', () => {
   const importados = conjunto(guion, /from '\.\/([\w.-]+\.js)'/g);
+  // Los que la consola toma prestados del visor se sirven desde web/js.
+  const delVisor = conjunto(servidor.match(/MODULOS_DEL_VISOR = \(([^)]*)\)/s)[1], /"([\w.-]+\.js)"/g);
+  const visor = readdirSync(join(aqui, '..', '..', 'web', 'js'));
 
-  const faltan = [...importados].filter((m) => !modulos.includes(m));
+  const faltan = [...importados].filter((m) => !modulos.includes(m)
+    && !(delVisor.has(m) && visor.includes(m)));
 
   assert.deepEqual(faltan, []);
 });
