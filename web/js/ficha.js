@@ -64,10 +64,9 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
 
   const zona = contenedor.querySelector('.acciones');
 
-  if (parcela.mejor_vista) {
-    zona.append(boton('Ver desde el aire', 'boton boton--contorno', acciones.alVerDesdeAire));
-  }
-
+  // El orden es la jerarquía: primero lo que convierte una mirada en un contacto,
+  // después lo que ayuda a mirar mejor. Al revés —como estaba— la acción más
+  // vistosa de una parcela en venta era mover la cámara.
   if (vendible && parcela.link_pago) {
     const enlace = document.createElement('a');
     enlace.className = 'boton';
@@ -86,8 +85,12 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
     enlace.href = `https://wa.me/${catalogo.meta.whatsapp}?text=${mensaje}`;
     enlace.target = '_blank';
     enlace.rel = 'noopener';
-    enlace.textContent = 'Consultar por WhatsApp';
+    enlace.textContent = 'Me interesa esta parcela';
     zona.append(enlace);
+  }
+
+  if (parcela.mejor_vista) {
+    zona.append(boton('Ver desde el aire', 'boton boton--contorno', acciones.alVerDesdeAire));
   }
 
   zona.append(boton('Copiar enlace', 'boton boton--texto', async (evento) => {

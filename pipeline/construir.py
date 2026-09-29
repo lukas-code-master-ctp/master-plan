@@ -329,6 +329,14 @@ def _armar_parcelas(fichas: dict[str, FichaComercial],
                     geometrias: dict[str, ParcelaGeometrica],
                     apariciones: dict[str, list[tuple[str, float]]]) -> list[dict]:
     parcelas = []
+    # Con más de una etapa los números se repiten —Cauquenes tiene cuatro, así que
+    # del 1 al 12 cada número aparece cuatro veces— y hay que decir cuál es cuál.
+    varias_etapas = len({e for e in (
+        (g.etapa if g and g.etapa is not None else f.etapa if f else None)
+        for identificador in set(fichas) | set(geometrias)
+        for g, f in [(geometrias.get(identificador), fichas.get(identificador))]
+    ) if e is not None}) > 1
+
     for identificador in sorted(set(fichas) | set(geometrias), key=_orden_lote):
         ficha = fichas.get(identificador)
         geometria = geometrias.get(identificador)
@@ -336,7 +344,7 @@ def _armar_parcelas(fichas: dict[str, FichaComercial],
         mejor = max(vistas, key=lambda par: par[1])[0] if vistas else None
         etapa_conocida = (geometria.etapa if geometria and geometria.etapa is not None
                           else ficha.etapa if ficha else None)
-        etapa, numero, rotulo = _descomponer(identificador, etapa_conocida)
+        etapa, numero, rotulo = _descomponer(identificador, etapa_conocida, varias_etapas)
 
         parcelas.append({
             "id": identificador,
@@ -362,17 +370,23 @@ def _armar_parcelas(fichas: dict[str, FichaComercial],
     return parcelas
 
 
-def _descomponer(identificador: str, etapa: int | None) -> tuple[int | None, int, str]:
+def _descomponer(identificador: str, etapa: int | None,
+                 varias_etapas: bool = False) -> tuple[int | None, int, str]:
     """(etapa, número, rótulo) de un id.
 
-    El rótulo es lo que va en la pastilla sobre el terreno: el número a secas. Solo
-    un id "sector-lote" sin etapas conocidas se rotula entero, porque ahí el primer
+    El rótulo es lo que va en la pastilla sobre el terreno. Con una sola etapa es
+    el número a secas, que es lo que se lee mejor sobre la foto. Con varias, lleva
+    la etapa delante —"2-7"— porque si no el mismo número identifica a cuatro
+    parcelas distintas y el disco deja de nombrar nada. Ese "2-7" no es un invento:
+    es el mismo formato con que el CRM llama al lote.
+
+    Un id "sector-lote" sin etapas conocidas se rotula entero, porque ahí el primer
     número no es una etapa y quitarlo cambiaría el nombre del lote.
     """
     partes = identificador.split("-")
     numero = int(re.sub(r"\D", "", partes[-1]) or 0)
     if etapa is not None:
-        return etapa, numero, str(numero)
+        return etapa, numero, f"{etapa}-{numero}" if varias_etapas else str(numero)
     if len(partes) > 1:
         return None, numero, identificador
     return None, numero, str(numero)

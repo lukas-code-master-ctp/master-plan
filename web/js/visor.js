@@ -310,7 +310,10 @@ export class Visor {
 
     const pastilla = document.createElementNS(SVG_NS, 'g');
     pastilla.setAttribute('class', 'parcela__pastilla');
-    const disco = document.createElementNS(SVG_NS, 'circle');
+    // Rectángulo redondeado y no círculo: con varias etapas el rótulo es "4-35" y
+    // en un círculo de radio fijo el texto se sale por los lados. Con un solo
+    // dígito queda igual de redondo que antes.
+    const disco = document.createElementNS(SVG_NS, 'rect');
     disco.setAttribute('class', 'parcela__disco');
     const numero = document.createElementNS(SVG_NS, 'text');
     numero.setAttribute('class', 'parcela__numero');
@@ -326,6 +329,7 @@ export class Visor {
 
     nodo = { grupo, forma, pastilla, disco, numero };
     this.nodos.set(id, nodo);
+    dimensionarPastilla(nodo);
     return nodo;
   }
 
@@ -516,6 +520,30 @@ function cargarImagen(ruta) {
     imagen.onerror = () => rechazar(new Error(`No pude cargar ${ruta}`));
     imagen.src = ruta;
   });
+}
+
+/**
+ * Ajusta la pastilla al texto que lleva dentro.
+ *
+ * Se mide una vez, al crear el nodo: el rótulo no cambia después. Si el navegador
+ * todavía no puede medir —el SVG oculto, la tipografía sin cargar— se estima por
+ * cantidad de caracteres, que para "4-35" se equivoca en un par de píxeles.
+ */
+function dimensionarPastilla(nodo) {
+  const ALTO = 26;
+  const RESPIRO = 9;
+  let ancho = 0;
+  try {
+    ancho = nodo.numero.getComputedTextLength();
+  } catch { /* todavía sin layout */ }
+  if (!ancho) ancho = nodo.numero.textContent.length * 6.5;
+
+  const w = Math.max(ALTO, Math.round(ancho) + RESPIRO * 2);
+  nodo.disco.setAttribute('x', (-w / 2).toFixed(1));
+  nodo.disco.setAttribute('y', (-ALTO / 2).toFixed(1));
+  nodo.disco.setAttribute('width', w);
+  nodo.disco.setAttribute('height', ALTO);
+  nodo.disco.setAttribute('rx', ALTO / 2);
 }
 
 function aRuta(pixeles) {

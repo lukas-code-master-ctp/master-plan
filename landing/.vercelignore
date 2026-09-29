@@ -1,0 +1,3 @@
+# El CLI de Vercel deja esto dentro de la carpeta que despliega; .env.local trae un token.
+.env.local
+.vercel

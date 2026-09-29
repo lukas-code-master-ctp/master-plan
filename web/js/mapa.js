@@ -23,7 +23,7 @@ export class Mapa {
     this._dibujarParcelas();
     this._dibujarPuntosDeVuelo();
     this._crearCono();
-    this._encuadrar();
+    this.encuadrado = this._encuadrar();
   }
 
   _dibujarOtrosPoligonos() {
@@ -77,6 +77,15 @@ export class Mapa {
     }).addTo(this.mapa);
   }
 
+  /**
+   * Encuadra el loteo, y avisa si pudo.
+   *
+   * Leaflet calcula el zoom con el tamaño que tenga el contenedor en ese momento.
+   * En móvil el plano nace escondido detrás de la vista aérea: mide 0×0, no hay
+   * zoom que pueda contener nada, y el mapa se queda mirando el planeta entero.
+   * Por eso devuelve si el encuadre valió, y `refrescar` lo reintenta cuando el
+   * contenedor por fin tiene tamaño.
+   */
   _encuadrar() {
     const puntos = this.catalogo.parcelas
       .filter((p) => p.centroide)
@@ -85,6 +94,7 @@ export class Mapa {
     const todos = [...puntos, ...vuelos];
     if (todos.length) this.mapa.fitBounds(L.latLngBounds(todos).pad(0.06));
     else this.mapa.setView([-34.793, -72.0], 14);
+    return this.mapa.getSize().x > 0;
   }
 
   aplicarEstilos(estiloParcela) {
@@ -137,6 +147,10 @@ export class Mapa {
 
   refrescar() {
     this.mapa.invalidateSize();
+    // Recalcular el tamaño no rehace el encuadre: el zoom del planeta entero
+    // sigue puesto. Se vuelve a encuadrar la primera vez que el contenedor mide
+    // algo, y solo esa vez, para no deshacer el zoom que haya hecho la persona.
+    if (!this.encuadrado) this.encuadrado = this._encuadrar();
   }
 }
 
