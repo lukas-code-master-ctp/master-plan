@@ -153,7 +153,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     @app.get("/entrar", response_class=HTMLResponse)
     def formulario(mal: bool = False) -> HTMLResponse:
         return pagina_de_entrada("El correo o la contraseña no son esos." if mal else None,
-                                 con_google=google is not None, estado=401 if mal else 200)
+                                 con_google=google is not None,
+                                 con_registro=cuentas.registro_abierto, estado=401 if mal else 200)
 
     @app.post("/entrar")
     def entrar(peticion: Request, email: str = Form(default=""),
@@ -165,13 +166,14 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             cuentas.enviar_verificacion(usuario, url_base(peticion, acceso.local))
             return pagina_de_entrada(
                 aviso=f"Falta confirmar tu correo. Te mandamos el enlace a {usuario.email}.",
-                con_google=google is not None, estado=403)
+                con_google=google is not None, con_registro=cuentas.registro_abierto, estado=403)
         sesion = acceso.sesion_para(usuario)
         if sesion is None:
             # Un solo mensaje para clave mala, correo inexistente y cuenta
             # desactivada: distinguirlos convierte el formulario en un buscador.
             return pagina_de_entrada("El correo o la contraseña no son esos.",
-                                     con_google=google is not None, estado=401)
+                                     con_google=google is not None,
+                                     con_registro=cuentas.registro_abierto, estado=401)
         return poner_sesion(RedirectResponse("/", status_code=303), acceso, sesion, peticion)
 
     @app.post("/salir")
@@ -493,6 +495,22 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         base.anotar("alta de cuenta", cliente_id=cliente_id,
                     usuario_id=yo.usuario_id, detalle=email)
         return {"email": usuario.email, "clave_provisional": clave}
+
+    @app.post("/api/plataforma/usuarios/clave")
+    def nueva_clave(campos: dict = Body(...), yo: Sesion = Depends(solo_plataforma)) -> dict:
+        """Una clave provisional nueva para una cuenta que perdió la suya.
+
+        Sin correo configurado es la única forma de recuperar una cuenta. Se
+        muestra una sola vez, corta las sesiones de esa cuenta y queda anotado.
+        """
+        email = str(campos.get("email") or "").strip().lower()
+        if not email:
+            raise HTTPException(400, "falta el correo")
+        clave = base.nueva_clave_provisional(email)          # 404 si no existe
+        usuario = base.usuario_por_email(email)
+        base.anotar("clave provisional nueva", cliente_id=usuario.cliente_id,
+                    usuario_id=yo.usuario_id, detalle=email)
+        return {"email": email, "clave_provisional": clave}
 
     @app.post("/api/plataforma/clientes/{cliente_id}/estado")
     def cambiar_estado(cliente_id: int, campos: dict = Body(...),

@@ -267,9 +267,9 @@ tokens se guarda el hash. Registrarse y pedir enlaces tiene un tope de 5 por hor
 
 | Variable | Para qué | Sin ella |
 | --- | --- | --- |
-| `SENDGRID_API_KEY` | Enviar los correos (el mismo proveedor que los reportes de CTP) | En este computador el correo queda en el registro de la consola; desplegada, no sale y se avisa en el registro |
+| `SENDGRID_API_KEY` | Enviar los correos (el mismo proveedor que los reportes de CTP) | En este computador el correo queda en el registro de la consola. Desplegada, **Regístrate y "¿Olvidaste tu contraseña?" se cierran**: la entrada manda a escribirle al equipo, que crea las cuentas y da claves nuevas desde Loteadoras |
 | `EMAIL_FROM` | Remitente, verificado en SendGrid | `no-responder@tumasterplan.cl` |
-| `CONSOLA_URL` | La dirección pública de la consola, para los enlaces y la vuelta de Google | La de la petición (detrás de Cloud Run llega como `http`) |
+| `CONSOLA_URL` | La dirección pública de la consola, para los enlaces de los correos y la vuelta de Google (sin SendGrid ni Google no se usa) | La de la petición (detrás de Cloud Run llega como `http`) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | "Continuar con Google" (cliente OAuth web; URI de redirección `<CONSOLA_URL>/entrar/google/vuelta`) | El botón no aparece |
 
 Con Google, una cuenta existente se enlaza si Google dice que el correo está verificado;

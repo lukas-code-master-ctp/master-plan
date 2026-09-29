@@ -98,6 +98,21 @@ export function prepararBackOffice(opciones) {
     } catch (error) { avisar(error.message); }
   });
 
+  $('#clave-nueva-dar').addEventListener('click', async () => {
+    const email = $('#clave-nueva-email').value.trim();
+    if (!email) return avisar('Escribe el correo de la cuenta.');
+    if (!confirm(`¿Dar una contraseña nueva a ${email}?\n\nSe cierran sus sesiones abiertas.`)) return;
+    try {
+      const nueva = await pedir('/api/plataforma/usuarios/clave', json({ email }));
+      // La clave no se guarda en claro en ninguna parte: si se pierde acá, se pierde.
+      const caja = $('#clientes-clave');
+      caja.textContent = `${nueva.email}\nClave provisional: ${nueva.clave_provisional}\n\n`
+        + 'Cópiala ahora: no se vuelve a mostrar. Pásasela por un canal aparte.';
+      caja.hidden = false;
+      $('#clave-nueva-email').value = '';
+    } catch (error) { avisar(error.message); }
+  });
+
   $('#nuevo').addEventListener('click', async () => {
     try { await cargarLoteadoras(); } catch (error) { return avisar(error.message); }
     if (!loteadoras.length) return avisar('Primero da de alta una loteadora.');
