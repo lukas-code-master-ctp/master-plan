@@ -223,7 +223,12 @@ async function guardar(proyecto) {
 }
 
 async function olvidar(proyecto) {
-  if (!confirm(`¿Quitar "${proyecto.nombre}" de la lista? No se borra ningún archivo.`)) return;
+  // Uno subido y sin pagar se borra entero: si no, quitarlo sería la forma de
+  // saltarse el tope de masters sin pagar. Hay que decirlo antes.
+  const borra = proyecto.subido && !proyecto.pagado;
+  if (!confirm(borra
+    ? `¿Quitar "${proyecto.nombre}"? Se borran también el vuelo subido y lo construido. No se puede deshacer.`
+    : `¿Quitar "${proyecto.nombre}" de la lista? No se borra ningún archivo.`)) return;
   await pedir(`/api/proyectos/${proyecto.slug}`, { method: 'DELETE' });
   estado.registros.delete(proyecto.slug);
   location.hash = '#/planos';

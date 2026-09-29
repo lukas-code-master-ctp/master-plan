@@ -16,9 +16,12 @@ argumento que se pueda olvidar: es parte de quién creó la vista.
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import BinaryIO
 
 from pipeline import config
 
@@ -39,11 +42,73 @@ INVENTARIO_CSV = "inventario.csv"
 CAMPOS_DEL_PIPELINE = ("nombre", "etapa", "whatsapp", "parcelacion", "despegue", "referencias")
 
 
+MEGA = 1024 * 1024
+
+
+@dataclass(frozen=True)
+class Limites:
+    """Cuánto puede gastar una loteadora antes de pagar.
+
+    Crear un master ya no exige pago, así que sin topes cualquier cuenta podría
+    llenar el disco o tener el servidor construyendo para nada. No aplican al
+    equipo de CTP.
+    """
+    # Masters sin pagar que puede tener a la vez.
+    sin_pagar: int = 3
+    # Lo que puede ocupar un loteo subido. Un vuelo real pesa entre 200 MB y
+    # 1,5 GB (panorámicas de ~65 MB); 3 GB deja holgura sin dejar la puerta abierta.
+    megas_por_loteo: int = 3072
+    # Construcciones corriendo a la vez. El servidor tiene 2 CPU: una por
+    # cliente deja lugar a otro.
+    construcciones: int = 1
+
+    @classmethod
+    def desde_el_entorno(cls) -> Limites:
+        def entero(nombre: str, defecto: int) -> int:
+            valor = os.environ.get(nombre, "").strip()
+            return int(valor) if valor else defecto
+        return cls(
+            sin_pagar=entero("CONSOLA_MAX_SIN_PAGAR", cls.sin_pagar),
+            megas_por_loteo=entero("CONSOLA_MAX_MEGAS_POR_LOTEO", cls.megas_por_loteo),
+            construcciones=entero("CONSOLA_MAX_CONSTRUCCIONES", cls.construcciones),
+        )
+
+
+class LimiteAlcanzado(Exception):
+    """Lo que se pidió pasa un tope de `Limites`. El mensaje es para la persona."""
+
+
 @dataclass(frozen=True)
 class Subida:
-    """Un archivo que llega del navegador, con su ruta relativa dentro de la carpeta."""
+    """Un archivo que llega del navegador, con su ruta relativa dentro de la carpeta.
+
+    El contenido puede ser bytes o un archivo abierto: una panorámica pesa ~65 MB
+    y un vuelo entero cientos, así que en el servidor se copia del temporal al
+    destino sin cargarlo en memoria.
+    """
     ruta: str
-    contenido: bytes
+    contenido: bytes | BinaryIO
+    tamano: int | None = None
+
+    @property
+    def bytes(self) -> int:
+        if self.tamano is not None:
+            return self.tamano
+        if isinstance(self.contenido, bytes):
+            return len(self.contenido)
+        posicion = self.contenido.tell()
+        self.contenido.seek(0, os.SEEK_END)
+        total = self.contenido.tell()
+        self.contenido.seek(posicion)
+        return total
+
+    def guardar(self, destino: Path) -> None:
+        if isinstance(self.contenido, bytes):
+            destino.write_bytes(self.contenido)
+            return
+        self.contenido.seek(0)
+        with destino.open("wb") as salida:
+            shutil.copyfileobj(self.contenido, salida, length=4 * MEGA)
 
 
 @dataclass(frozen=True)
@@ -66,6 +131,9 @@ class Proyecto:
     url_publicada: str | None = None
     # Sin pago se puede subir y construir, pero no publicar.
     pagado: bool = True
+    # Subido desde el navegador (sus archivos son nuestros) o carpeta vinculada
+    # del disco (no lo son).
+    subido: bool = False
     # El nombre del loteo en el CRM tal como se escribió. Vacío es "el nombre en
     # mayúsculas", que es lo que asume el pipeline; no se rellena acá para que
     # renombrar el loteo no deje pegado el nombre viejo.
@@ -143,8 +211,10 @@ class Registro:
     """
 
     def __init__(self, base: Base, subidas: Path = CARPETA_SUBIDAS,
-                 salidas: Path = config.SALIDAS, crm_por_defecto: Path | None = None):
+                 salidas: Path = config.SALIDAS, crm_por_defecto: Path | None = None,
+                 limites: Limites | None = None):
         self.base = base
+        self.limites = limites or Limites()
         self.subidas = Path(subidas)
         self.salidas = Path(salidas)
         # Un export comercial para los loteos que no traen el suyo. Tiene sentido
@@ -202,6 +272,7 @@ class Registro:
             vercel_proyecto=guardado.vercel_proyecto,
             url_publicada=guardado.url_publicada,
             pagado=guardado.pagado,
+            subido=guardado.carpeta is None,
         )
 
     def _escribir_json(self, carpeta: Path, slug: str, campos: dict) -> None:
@@ -245,22 +316,38 @@ class Vista:
 
     # --- alta y archivos --------------------------------------------------------
 
+    @property
+    def es_equipo(self) -> bool:
+        """El equipo de CTP ve todo y no tiene topes."""
+        return self.filtro is None
+
     def crear(self, nombre: str) -> Proyecto:
         """Un loteo nuevo a nombre de quien lo crea, todavía sin pagar."""
+        tope = self.registro.limites.sin_pagar
+        if not self.es_equipo:
+            sin_pagar = [g for g in self.registro.base.proyectos(cliente_id=self.duenio)
+                         if not g.pagado]
+            if len(sin_pagar) >= tope:
+                raise LimiteAlcanzado(
+                    f"ya tienes {len(sin_pagar)} masters sin habilitar, que es el máximo. "
+                    "Quita uno que no uses o escríbenos para habilitar alguno")
         return self.registro.crear(self.duenio, nombre)
 
     def subir(self, slug: str, archivos: list[Subida]) -> Proyecto:
         """Guarda los archivos del vuelo dentro de un loteo que ya existe.
 
-        Se puede subir de nuevo para agregar lo que faltó.
+        Se puede subir de nuevo para agregar lo que faltó. El tope de tamaño se
+        mira antes de escribir nada: una subida que no cabe no deja medio vuelo.
         """
         proyecto = self.ver(slug)
         carpeta = proyecto.fuentes
+        destinos = [(archivo, _destino_seguro(carpeta, archivo.ruta)) for archivo in archivos]
+        if not self.es_equipo:
+            self._revisar_tamano(carpeta, destinos)
         carpeta.mkdir(parents=True, exist_ok=True)
-        for archivo in archivos:
-            destino = _destino_seguro(carpeta, archivo.ruta)
+        for archivo, destino in destinos:
             destino.parent.mkdir(parents=True, exist_ok=True)
-            destino.write_bytes(archivo.contenido)
+            archivo.guardar(destino)
         # El KMZ puede venir en esta tanda o de una anterior; lo que no puede es
         # faltar, porque sin él no hay nada que proyectar.
         if not any(carpeta.rglob("*.kmz")):
@@ -325,11 +412,33 @@ class Vista:
         return self.ver(slug)
 
     def olvidar(self, slug: str) -> None:
-        """Saca el loteo de la lista. No borra archivos: no son nuestros."""
-        self.ver(slug)
+        """Saca el loteo de la lista.
+
+        Una carpeta vinculada o un loteo pagado conservan sus archivos: la
+        carpeta no es nuestra, y lo pagado quizá está publicado. Un master subido
+        y sin pagar se borra entero; si no, quitarlo de la lista sería la forma
+        de saltarse el tope de masters sin pagar llenando el disco igual.
+        """
+        proyecto = self.ver(slug)
         self.registro.base.olvidar_proyecto(slug)
+        if proyecto.subido and not proyecto.pagado:
+            shutil.rmtree(proyecto.fuentes, ignore_errors=True)
+            shutil.rmtree(proyecto.salida.base, ignore_errors=True)
 
     # --- interno -------------------------------------------------------------
+
+    def _revisar_tamano(self, carpeta: Path, destinos: list[tuple[Subida, Path]]) -> None:
+        """Lo que queda en la carpeta después de subir, contando lo que se pisa una vez."""
+        tope = self.registro.limites.megas_por_loteo * MEGA
+        pisados = {destino for _, destino in destinos}
+        ya = sum(p.stat().st_size for p in carpeta.rglob("*")
+                 if p.is_file() and p not in pisados) if carpeta.is_dir() else 0
+        nuevo = sum(archivo.bytes for archivo, _ in destinos)
+        if ya + nuevo > tope:
+            raise LimiteAlcanzado(
+                f"el loteo quedaría en {round((ya + nuevo) / MEGA)} MB y el máximo es "
+                f"{self.registro.limites.megas_por_loteo} MB. Sube solo las panorámicas "
+                "del vuelo, sin videos ni fotos sueltas")
 
     def _por_carpeta(self, carpeta: Path) -> ProyectoGuardado | None:
         for guardado in self.registro.base.proyectos(cliente_id=self.filtro):
@@ -376,5 +485,5 @@ def fecha_legible(iso: str | None) -> str:
     return datetime.fromisoformat(iso).strftime("%d/%m/%Y %H:%M")
 
 
-__all__ = ["CARPETA_SUBIDAS", "INVENTARIO_CSV", "NoEncontrado", "Proyecto", "Registro", "Subida", "Vista",
+__all__ = ["CARPETA_SUBIDAS", "INVENTARIO_CSV", "LimiteAlcanzado", "Limites", "NoEncontrado", "Proyecto", "Registro", "Subida", "Vista",
            "fecha_legible", "precio_desde"]

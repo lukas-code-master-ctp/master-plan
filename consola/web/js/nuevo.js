@@ -98,6 +98,14 @@ function faltante() {
   if (!$('#nuevo-nombre').value.trim()) return ['Ponle un nombre al loteo.', '#nuevo-nombre'];
   if (!eleccion.kmz) return ['Falta el KMZ del loteo: es el plano que se dibuja sobre las fotos.', '#nuevo-kmz'];
   if (!eleccion.fotos.length) return ['Faltan las panorámicas del dron.', '#nuevo-fotos'];
+  // El servidor lo rechaza igual, pero después de recibir todo: mejor decirlo
+  // antes de mandar un giga.
+  const tope = estado.sesion?.limites?.megas_por_loteo;
+  const total = megas(archivosASubir());
+  if (tope && total > tope) {
+    return [`Son ${Math.round(total)} MB y el máximo por loteo es ${tope} MB. `
+      + 'Sube solo las panorámicas del vuelo, sin videos ni fotos sueltas.', '#nuevo-fotos'];
+  }
   return null;
 }
 

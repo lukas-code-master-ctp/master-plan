@@ -5,7 +5,7 @@ import pytest
 
 from consola.acceso import Sesion
 from consola.datos import Base, NoEncontrado, ProyectoYaExiste
-from consola.proyectos import Registro, Subida
+from consola.proyectos import Limites, Registro, Subida
 
 
 @pytest.fixture
@@ -394,3 +394,31 @@ def test_en_este_computador_se_puede_fijar_un_crm_por_defecto(base, tmp_path):
     vista = loteadora(base, propio, "Los Robles", "ana@losrobles.cl")
 
     assert vista.vincular(carpeta_de_loteo(tmp_path)).crm == global_csv
+
+
+# --- lo que llega del servidor, sin cargarlo en memoria --------------------------
+
+def test_una_subida_se_copia_desde_un_archivo_abierto(base, registro, ana, tmp_path):
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "X", nota_cobro="ok")
+    temporal = tmp_path / "temporal"
+    temporal.write_bytes(b"panoramica" * 1000)
+
+    with temporal.open("rb") as abierto:
+        abierto.read(5)                      # que no importe dónde quedó leyendo
+        ana.subir("x", [Subida("loteo.kmz", b"kmz"), Subida("fotos/a.JPG", abierto)])
+
+    assert (registro.subidas / "x" / "fotos" / "a.JPG").read_bytes() == b"panoramica" * 1000
+
+
+def test_el_tope_de_tamano_cuenta_lo_que_ya_estaba(base, tmp_path):
+    registro = Registro(base=base, subidas=tmp_path / "proyectos", salidas=tmp_path / "salidas",
+                        limites=Limites(megas_por_loteo=1))
+    ana = loteadora(base, registro, "Los Robles", "ana@losrobles.cl")
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "X", nota_cobro="ok")
+    medio = b"x" * (600 * 1024)
+    ana.subir("x", [Subida("loteo.kmz", b"kmz"), Subida("a.JPG", medio)])
+
+    # Volver a subir la misma foto la pisa: no cuenta dos veces.
+    ana.subir("x", [Subida("a.JPG", medio)])
+    with pytest.raises(Exception, match="máximo"):
+        ana.subir("x", [Subida("b.JPG", medio)])
