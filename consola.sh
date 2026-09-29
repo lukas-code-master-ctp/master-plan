@@ -18,5 +18,7 @@ PYTHON=.venv/bin/python
 "$PYTHON" -m consola.arranque
 
 echo "▶ Consola en http://localhost:$PUERTO"
-( sleep 1.2; open "http://localhost:$PUERTO" 2>/dev/null || true ) &
+# Corriendo como servicio no hay nadie mirando: abrir el navegador cada vez que
+# el Mac arranca sería una ventana que aparece sola.
+[ -z "${SIN_NAVEGADOR:-}" ] && ( sleep 1.2; open "http://localhost:$PUERTO" 2>/dev/null || true ) &
 exec "$PYTHON" -m uvicorn --factory consola.app:crear_app --host 127.0.0.1 --port "$PUERTO" --log-level warning
