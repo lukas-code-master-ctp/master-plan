@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from pipeline import config
@@ -24,7 +25,7 @@ from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
 from .comandos import Comandos, encadenar
 from .datos import (
     Base, ClienteYaExiste, EmailYaExiste, NoEncontrado, ProyectoYaExiste)
-from .proyectos import Proyecto, Registro, Subida, Vista
+from .proyectos import LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
 from .trabajos import Trabajos
 
 WEB = Path(__file__).resolve().parent / "web"
@@ -63,7 +64,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
               comandos=None, acceso: Acceso | None = None, base: Base | None = None) -> FastAPI:
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
-    registro = registro or Registro(base=base, crm_por_defecto=config.csv_del_crm())
+    registro = registro or Registro(base=base, crm_por_defecto=config.csv_del_crm(),
+                                    limites=Limites.desde_el_entorno())
     trabajos = trabajos or Trabajos(directorio=config.RAIZ)
     comandos = comandos or Comandos()
 
@@ -187,6 +189,12 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             "debe_cambiar_clave": quien_es.debe_cambiar_clave,
             # La carpeta del disco solo se puede vincular donde está el disco.
             "puede_vincular": acceso.local,
+            # Para avisar antes de subir, no después de mandar un giga. El equipo
+            # no tiene topes.
+            "limites": None if quien_es.es_plataforma else {
+                "megas_por_loteo": registro.limites.megas_por_loteo,
+                "sin_pagar": registro.limites.sin_pagar,
+            },
         }
 
     # --- proyectos -----------------------------------------------------------
@@ -204,7 +212,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             raise HTTPException(400, "ponle un nombre al loteo")
         try:
             proyecto = mios.crear(nombre)
-        except ProyectoYaExiste as error:
+        except (ProyectoYaExiste, LimiteAlcanzado) as error:
             raise HTTPException(409, str(error)) from error
         return _como_json(proyecto, trabajos)
 
@@ -221,9 +229,16 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                     mios: Vista = Depends(vista)) -> dict:
         """Sube el vuelo a un loteo que ya existe. Se puede repetir para agregar
         lo que faltó."""
-        subidas = [Subida(ruta=a.filename or "", contenido=await a.read()) for a in archivos]
+        # El archivo ya está en un temporal del servidor: se copia de ahí al
+        # destino, sin cargar cientos de megas en memoria.
+        subidas = [Subida(ruta=a.filename or "", contenido=a.file, tamano=a.size)
+                   for a in archivos]
         try:
-            proyecto = mios.subir(slug, subidas)
+            # Copiar un vuelo entero toma segundos: fuera del bucle de eventos,
+            # para no dejar la consola sorda mientras tanto.
+            proyecto = await run_in_threadpool(mios.subir, slug, subidas)
+        except LimiteAlcanzado as error:
+            raise HTTPException(413, str(error)) from error
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         return _como_json(proyecto, trabajos)
@@ -254,6 +269,10 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
 
     @app.delete("/api/proyectos/{slug}", status_code=204)
     def olvidar(slug: str, mios: Vista = Depends(vista)) -> None:
+        mios.ver(slug)
+        # Quitar uno sin pagar borra sus archivos: no mientras el pipeline los lee.
+        if trabajos.corriendo(slug):
+            raise HTTPException(409, "está construyendo o publicando; espera a que termine")
         mios.olvidar(slug)
 
     # --- acciones ------------------------------------------------------------
@@ -262,6 +281,11 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def construir(slug: str, opciones: dict = Body(default={}),
                   mios: Vista = Depends(vista)) -> dict:
         proyecto = mios.ver(slug)
+        if not mios.es_equipo:
+            otros = [p.slug for p in mios.listar() if p.slug != slug and trabajos.corriendo(p.slug)]
+            if len(otros) >= registro.limites.construcciones:
+                raise HTTPException(429, "ya tienes una construcción en curso; lanza esta "
+                                         "cuando termine esa")
         sin_imagenes = bool(opciones.get("sin_imagenes"))
         # El control de calce va pegado a la construcción: es lo que hay que mirar
         # antes de publicar, y pedirlo aparte se olvida.
@@ -486,6 +510,8 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "url": proyecto.url_publicada or url_propuesta(proyecto.slug),
         "publicado": proyecto.publicado,
         "pagado": proyecto.pagado,
+        # Quitar de la lista uno subido y sin pagar borra sus archivos.
+        "subido": proyecto.subido,
         "trabajo": ultimo.como_json() if ultimo and not ultimo.terminado else None,
     }
 

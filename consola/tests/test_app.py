@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from consola.acceso import Acceso
 from consola.app import crear_app
 from consola.datos import Base
-from consola.proyectos import Registro
+from consola.proyectos import Limites, Registro
 from consola.trabajos import Trabajos
 
 CLAVE = "la-clave-de-prueba"
@@ -46,7 +46,7 @@ class ComandosDePrueba:
         return self._guion(f"publicando {proyecto.slug}")
 
 
-def montar(tmp_path, local=True, crm_por_defecto=None):
+def montar(tmp_path, local=True, crm_por_defecto=None, limites=None):
     """La consola entera sobre una base de prueba, con dos loteadoras dentro."""
     base = Base(f"sqlite:///{tmp_path / 'consola.db'}")
     for nombre, email in (("CompraTuParcela", "ctp@ctp.cl"),
@@ -56,7 +56,7 @@ def montar(tmp_path, local=True, crm_por_defecto=None):
         base.cambiar_clave(email, CLAVE)
     base.ascender_a_plataforma("ctp@ctp.cl")
     registro = Registro(base=base, subidas=tmp_path / "proyectos", salidas=tmp_path / "salidas",
-                        crm_por_defecto=crm_por_defecto)
+                        crm_por_defecto=crm_por_defecto, limites=limites)
     comandos = ComandosDePrueba()
     app = crear_app(registro=registro, trabajos=Trabajos(), comandos=comandos,
                     acceso=Acceso(base=base, secreto="un-secreto", local=local), base=base)
@@ -899,3 +899,114 @@ def test_un_pago_anotado_no_se_pisa(ana_y_luis):
 
     assert respuesta.status_code == 409
     assert registro.base.proyecto(slug).nota_cobro == "transferencia 1"
+
+
+# --- lo que puede gastar una loteadora antes de pagar ------------------------------
+
+@pytest.fixture
+def con_topes(tmp_path):
+    limites = Limites(sin_pagar=2, megas_por_loteo=1, construcciones=1)
+    app, _, registro, comandos = montar(tmp_path, limites=limites)
+    return (entrar(app, "ctp@ctp.cl"), entrar(app, "ana@losrobles.cl"), registro, comandos)
+
+
+def test_no_se_pasa_del_tope_de_masters_sin_pagar(con_topes):
+    _, ana, _, _ = con_topes
+    crear(ana, "Uno")
+    crear(ana, "Dos")
+
+    respuesta = ana.post("/api/proyectos", json={"nombre": "Tres"})
+
+    assert respuesta.status_code == 409
+    assert "sin habilitar" in respuesta.json()["detail"]
+
+
+def test_un_master_pagado_libera_su_lugar(con_topes):
+    ctp, ana, _, _ = con_topes
+    uno = crear(ana, "Uno")["slug"]
+    crear(ana, "Dos")
+    ctp.post(f"/api/plataforma/proyectos/{uno}/pago", json={"nota_cobro": "transferencia"})
+
+    assert ana.post("/api/proyectos", json={"nombre": "Tres"}).status_code == 201
+
+
+def test_el_equipo_no_tiene_tope_de_masters(con_topes):
+    ctp, _, _, _ = con_topes
+
+    for nombre in ("Uno", "Dos", "Tres"):
+        assert ctp.post("/api/proyectos", json={"nombre": nombre}).status_code == 201
+
+
+def test_una_subida_que_no_cabe_no_deja_nada(con_topes):
+    _, ana, registro, _ = con_topes
+    slug = crear(ana)["slug"]
+
+    respuesta = ana.post(f"/api/proyectos/{slug}/archivos", files=[
+        ("archivos", ("loteo.kmz", b"kmz", "application/octet-stream")),
+        ("archivos", ("a.JPG", b"x" * (1024 * 1024 + 1), "image/jpeg")),
+    ])
+
+    assert respuesta.status_code == 413
+    assert "máximo" in respuesta.json()["detail"]
+    assert not (registro.subidas / slug / "loteo.kmz").exists()
+
+
+def test_la_sesion_dice_los_topes_a_la_loteadora_y_no_al_equipo(con_topes):
+    ctp, ana, _, _ = con_topes
+
+    assert ana.get("/api/sesion").json()["limites"] == {"megas_por_loteo": 1, "sin_pagar": 2}
+    assert ctp.get("/api/sesion").json()["limites"] is None
+
+
+def test_una_construccion_a_la_vez_por_loteadora(con_topes, monkeypatch):
+    _, ana, _, comandos = con_topes
+    slugs = []
+    for nombre in ("Uno", "Dos"):
+        slug = crear(ana, nombre)["slug"]
+        ana.post(f"/api/proyectos/{slug}/archivos",
+                 files=[("archivos", ("loteo.kmz", b"kmz", "application/octet-stream"))])
+        slugs.append(slug)
+    monkeypatch.setattr(comandos, "construir",
+                        lambda p, sin_imagenes=False: [sys.executable, "-c", "import time; time.sleep(2)"])
+    assert ana.post(f"/api/proyectos/{slugs[0]}/construir", json={}).status_code == 202
+
+    respuesta = ana.post(f"/api/proyectos/{slugs[1]}/construir", json={})
+
+    assert respuesta.status_code == 429
+
+
+def test_quitar_un_master_sin_pagar_borra_sus_archivos(con_topes):
+    _, ana, registro, _ = con_topes
+    slug = crear(ana)["slug"]
+    ana.post(f"/api/proyectos/{slug}/archivos",
+             files=[("archivos", ("loteo.kmz", b"kmz", "application/octet-stream"))])
+    construir_a_mano(registro, registro.salidas, slug)
+
+    assert ana.delete(f"/api/proyectos/{slug}").status_code == 204
+
+    assert not (registro.subidas / slug).exists()
+    assert not (registro.salidas / slug).exists()
+
+
+def test_quitar_un_loteo_pagado_no_borra_nada(con_topes):
+    ctp, ana, registro, _ = con_topes
+    slug = habilitar(ctp, id_de(registro, "ana@losrobles.cl"), "Pagado")
+    construir_a_mano(registro, registro.salidas, slug)
+
+    assert ana.delete(f"/api/proyectos/{slug}").status_code == 204
+
+    assert (registro.subidas / slug / "proyecto.json").exists()
+    assert (registro.salidas / slug / "sitio" / "datos" / "parcelas.json").exists()
+
+
+def test_no_se_quita_un_loteo_mientras_construye(con_topes, monkeypatch):
+    _, ana, registro, comandos = con_topes
+    slug = crear(ana)["slug"]
+    ana.post(f"/api/proyectos/{slug}/archivos",
+             files=[("archivos", ("loteo.kmz", b"kmz", "application/octet-stream"))])
+    monkeypatch.setattr(comandos, "construir",
+                        lambda p, sin_imagenes=False: [sys.executable, "-c", "import time; time.sleep(2)"])
+    ana.post(f"/api/proyectos/{slug}/construir", json={})
+
+    assert ana.delete(f"/api/proyectos/{slug}").status_code == 409
+    assert (registro.subidas / slug).exists()

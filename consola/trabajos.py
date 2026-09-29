@@ -76,6 +76,10 @@ class Trabajos:
         suyos = [t for t in self._trabajos.values() if t.proyecto == proyecto]
         return max(suyos, key=lambda t: t.comenzo) if suyos else None
 
+    def corriendo(self, proyecto: str) -> bool:
+        """¿Hay algo en curso para ese loteo?"""
+        return self._corriendo(proyecto)
+
     def _corriendo(self, proyecto: str) -> bool:
         return any(t.proyecto == proyecto and not t.terminado for t in self._trabajos.values())
 

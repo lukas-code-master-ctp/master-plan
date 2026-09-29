@@ -254,6 +254,19 @@ escribió. Concentrar el control en un punto es lo que evita repartirlo por cada
 que escribe algo, que es como se termina con un cliente trabajando gratis sin que
 nadie se entere.
 
+**Cuánto puede gastar una cuenta antes de pagar.** Como crear un master es gratis,
+una loteadora tiene topes (`Limites` en `consola/proyectos.py`); el equipo no:
+
+| Tope | Por defecto | Variable | Al pasarlo |
+| --- | --- | --- | --- |
+| Masters sin pagar a la vez | 3 | `CONSOLA_MAX_SIN_PAGAR` | 409 al crear |
+| Tamaño de un loteo subido | 3072 MB | `CONSOLA_MAX_MEGAS_POR_LOTEO` | 413 al subir; la página avisa antes |
+| Construcciones a la vez | 1 | `CONSOLA_MAX_CONSTRUCCIONES` | 429 al construir |
+
+Quitar de la lista un master **subido y sin pagar** borra también su vuelo y lo
+construido: si no, quitar y volver a crear sería la forma de llenar el disco igual.
+Una carpeta vinculada o un loteo pagado conservan sus archivos.
+
 **Cada cliente ve lo suyo.** Las rutas no reciben un `cliente_id` que se pueda olvidar
 de filtrar: reciben `registro.para(sesion)`, una vista que solo alcanza los loteos de
 esa loteadora (`consola/proyectos.py`). Pedir uno ajeno da **404, no 403**: contestar
