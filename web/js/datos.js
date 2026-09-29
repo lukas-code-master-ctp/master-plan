@@ -24,7 +24,8 @@ export class Catalogo {
     const [parcelas, vistas, diseno] = await Promise.all([
       pedirJson(`${RUTA_DATOS}/parcelas.json`),
       pedirJson(`${RUTA_DATOS}/vistas.json`),
-      // Opcional: sin diseño propio, el sitio se ve como siempre.
+      // `null` sin diseño propio, y el sitio se ve como siempre. Los sitios
+      // construidos antes de los diseños no lo traen: también da null.
       pedirJson(`${RUTA_DATOS}/diseno.json`).catch(() => null),
     ]);
     return new Catalogo(parcelas, vistas, diseno);

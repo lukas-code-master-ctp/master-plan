@@ -1257,7 +1257,7 @@ def test_publicar_deja_el_diseno_en_el_sitio(ana_y_luis):
     assert (datos / "logo.png").read_bytes() == PNG
 
 
-def test_publicar_sin_diseno_saca_el_que_habia(ana_y_luis):
+def test_publicar_sin_diseno_deja_el_diseno_vacio(ana_y_luis):
     ctp, ana, _, registro, _ = ana_y_luis
     diseno = un_diseno(ana)
     slug = ana.post("/api/proyectos", json={"nombre": "X", "diseno_id": diseno["id"]}).json()["slug"]
@@ -1269,7 +1269,10 @@ def test_publicar_sin_diseno_saca_el_que_habia(ana_y_luis):
 
     assert ana.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True}).status_code == 202
 
-    assert not (registro.salidas / slug / "sitio" / "datos" / "diseno.json").exists()
+    datos = registro.salidas / slug / "sitio" / "datos"
+    # Vacío y no borrado: el visor lo pide siempre, y un 404 ensucia su consola.
+    assert (datos / "diseno.json").read_text() == "null"
+    assert not list(datos.glob("logo.*"))
 
 
 def test_la_pagina_toma_prestada_la_marca_del_visor(entorno):

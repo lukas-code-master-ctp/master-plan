@@ -3,15 +3,13 @@
   "configurations": [
     {
       "name": "masterplan360",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "bash",
       "runtimeArgs": [
-        "-m",
-        "http.server",
-        "8765",
-        "--directory",
-        "salidas"
+        "-c",
+        "exec python3 -m http.server \"${PORT:-8765}\" --directory salidas"
       ],
-      "port": 8765
+      "port": 8765,
+      "autoPort": true
     },
     {
       "name": "consola",
