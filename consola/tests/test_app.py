@@ -1333,7 +1333,7 @@ def test_la_plantilla_del_loteo_sale_con_sus_parcelas(ana_y_luis):
     assert respuesta.status_code == 200
     assert f'filename="inventario-{slug}.xlsx"' in respuesta.headers["content-disposition"]
     hoja = openpyxl.load_workbook(io.BytesIO(respuesta.content)).active
-    assert [c.value for c in hoja[2]][:3] == ["7", "Disponible", 9_990_000]
+    assert [c.value for c in hoja[2]][:4] == ["PRADERAS DE CAUQUENES", "7", "Disponible", 9_990_000]
 
 
 def test_sin_construir_la_plantilla_del_loteo_es_la_de_ejemplo(ana_y_luis):
@@ -1345,4 +1345,4 @@ def test_sin_construir_la_plantilla_del_loteo_es_la_de_ejemplo(ana_y_luis):
 
     assert en_blanco.status_code == del_loteo.status_code == 200
     hoja = openpyxl.load_workbook(io.BytesIO(del_loteo.content)).active
-    assert hoja["A2"].value == "1"
+    assert (hoja["A2"].value, hoja["B2"].value) == ("MI LOTEO", "1")

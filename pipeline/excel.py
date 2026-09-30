@@ -23,7 +23,9 @@ from .kmz import normalizar_id
 
 ALIAS_COLUMNAS = {
     "id": ("parcela", "lote", "parcela/lote"),
-    "parcelacion": ("parcelacion", "proyecto", "etapa"),
+    "parcelacion": ("parcelacion", "proyecto", "nombre proyecto", "nombre del proyecto"),
+    # La etapa también puede venir en su propia columna: "2", "ET2" o "Etapa 2".
+    "etapa": ("etapa",),
     "estado": ("estado", "situacion"),
     "servidumbre": ("servidumbre", "servidumbre m", "servidumbre metros"),
     "servidumbre_m2": ("servidumbre m2", "servidumbre_m2", "superficie servidumbre",
@@ -48,6 +50,12 @@ ALIAS_ESTADOS = {
     "vendida": "vendido",
     "escritura": "vendido",
     "entrada cbr": "vendido",
+    "salida cbr": "vendido",
+    "promesa": "vendido",
+    # Cierra: una parcela EN_PROCESO tiene una venta andando; INSCRITA ya es de otro.
+    "en proceso": "reservado",
+    "enviado cliente": "reservado",
+    "inscrita": "vendido",
     "no disponible": "no_disponible",
     "no en venta": "no_en_venta",
 }
@@ -84,7 +92,14 @@ def leer_excel(ruta: Path, hoja: str | None = None) -> dict[str, FichaComercial]
 
 
 def fichas_desde_filas(filas: list, parcelacion: str | None = None,
-                       origen: str = "la planilla") -> dict[str, FichaComercial]:
+                       origen: str = "la planilla",
+                       permitir_repetidas: bool = False) -> dict[str, FichaComercial]:
+    """Las fichas de una tabla ya leída.
+
+    Una planilla que repite una parcela se rechaza. El export del CRM no: trae de
+    vez en cuando una fila duplicada y cortar la construcción por eso sería peor;
+    ahí queda la última, como siempre.
+    """
     if not filas:
         return {}
 
@@ -105,6 +120,8 @@ def fichas_desde_filas(filas: list, parcelacion: str | None = None,
         etapa = _etapa_de(nombre_parcelacion, base)
         if base is not None and etapa is None:
             continue   # otra parcelación
+        # Una columna Etapa, si la hay, manda sobre el sufijo del nombre.
+        etapa = _etapa_de(_texto(_valor(fila, indices.get("etapa"))), None) or etapa
         crudas.append((numero, etapa, nombre_parcelacion, fila))
 
     # Sin sufijo es la etapa 1, pero solo cuando alguna fila sí trae sufijo: en un
@@ -114,8 +131,11 @@ def fichas_desde_filas(filas: list, parcelacion: str | None = None,
     varias_etapas = len({etapa for _, etapa, _, _ in crudas}) > 1
 
     fichas: dict[str, FichaComercial] = {}
+    repetidas: list[str] = []
     for numero, etapa, nombre_parcelacion, fila in crudas:
         identificador = f"{etapa}-{numero}" if varias_etapas else numero
+        if identificador in fichas:
+            repetidas.append(identificador)
         precio = _numero(_valor(fila, indices.get("precio")))
         fichas[identificador] = FichaComercial(
             id=identificador,
@@ -132,11 +152,21 @@ def fichas_desde_filas(filas: list, parcelacion: str | None = None,
             moneda=_texto(_valor(fila, indices.get("moneda"))) or "CLP",
             link_pago=_texto(_valor(fila, indices.get("link_pago"))),
         )
+    # Una parcela dos veces es casi siempre dos etapas que numeran desde 1 sin decir
+    # cuál es cuál. Quedarse con la última publicaría el precio de otra parcela.
+    if repetidas and not permitir_repetidas:
+        unicas = sorted(set(repetidas), key=lambda i: (len(i), i))
+        raise ValueError(
+            f"{origen} repite {len(unicas)} parcela(s): {', '.join(unicas[:10])}"
+            f"{' y otras' if len(unicas) > 10 else ''}. Si son de etapas distintas, pon el nombre "
+            "del proyecto con su etapa (\"… ET2\") en la columna Proyecto, o usa la "
+            "plantilla del loteo, que ya viene así.")
     return fichas
 
 
 def normalizar_estado(valor) -> str:
-    clave = _sin_tildes(valor)
+    # "NO_DISPONIBLE", "EN_PROCESO": así los escribe Cierra.
+    clave = _sin_tildes(valor).replace("_", " ")
     if not clave:
         return ESTADO_POR_DEFECTO
     if clave in ALIAS_ESTADOS:
@@ -167,6 +197,8 @@ def _etapa_de(nombre_parcelacion: str | None, base: str | None) -> int | None:
     es devuelve None. Sin sufijo y con base, es la etapa 1.
     """
     limpio = _sin_tildes(nombre_parcelacion)
+    if base is None and limpio.isdigit():
+        return int(limpio)   # una columna Etapa con solo el número
     if base is not None:
         coincidencia = re.fullmatch(re.escape(base) + r"(?:\s*(?:et|etapa)\s*0*(\d+))?", limpio)
         if not coincidencia:

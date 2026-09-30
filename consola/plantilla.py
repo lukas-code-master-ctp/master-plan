@@ -17,17 +17,18 @@ from pipeline.config import ESTADOS
 
 MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-COLUMNAS = ("Parcela", "Estado", "Precio", "Moneda", "Superficie m2", "Link de pago")
-ANCHOS = (12, 16, 16, 10, 16, 44)
+COLUMNAS = ("Proyecto", "Parcela", "Estado", "Precio", "Moneda", "Superficie m2", "Link de pago")
+ANCHOS = (34, 12, 16, 16, 10, 16, 44)
 MONEDAS = ("CLP", "UF")
 # Hasta dónde llegan las listas desplegables y el formato de texto de "Parcela".
 FILAS_PREPARADAS = 2000
 
-# Sin loteo construido no se sabe qué parcelas hay: tres filas de muestra.
+# Sin loteo construido no se sabe qué parcelas hay: filas de muestra, con una
+# segunda etapa para que se vea cómo se dice.
 EJEMPLO = (
-    ("1", "Disponible", 9990000, "CLP", 5000, None),
-    ("2", "Reservado", 10490000, "CLP", 5200, None),
-    ("3", "Vendido", 395, "UF", 5000, None),
+    ("MI LOTEO", "1", "Disponible", 9990000, "CLP", 5000, None),
+    ("MI LOTEO", "2", "Reservado", 10490000, "CLP", 5200, None),
+    ("MI LOTEO ET2", "1", "Vendido", 395, "UF", 5000, None),
 )
 
 INSTRUCCIONES = (
@@ -35,9 +36,13 @@ INSTRUCCIONES = (
     ("Una fila por parcela. Guarda el archivo y súbelo en \"Inventario\".", None),
     (None, None),
     ("Columna", "Qué va"),
-    ("Parcela", ("El número del lote tal como está en el plano (KMZ). Con varias etapas, "
-                 "etapa-número: 2-7 es la parcela 7 de la etapa 2. Es la única obligatoria.")),
-    ("Estado", ("Disponible, Reservado, Vendido, No disponible o No en venta. "
+    ("Proyecto", ("El nombre del loteo. Si tiene etapas, cada una con su sufijo, como en "
+                  "Cierra: \"PRADERAS DE CAUQUENES\" es la etapa 1 y \"PRADERAS DE CAUQUENES "
+                  "ET2\" la etapa 2. Así la parcela 7 de una etapa no se confunde con la de otra.")),
+    ("Parcela", ("El número del lote tal como está en el plano (KMZ), sin la etapa. "
+                 "Es la única obligatoria.")),
+    ("Estado", ("Disponible, Reservado, Vendido, No disponible o No en venta. También "
+                "entiende los de Cierra (EN_PROCESO es reservado; INSCRITA, vendido). "
                 "Vacío cuenta como No disponible.")),
     ("Precio", "Solo el número, sin $ ni puntos. Vacío o 0: la ficha dice \"A consultar\"."),
     ("Moneda", "CLP o UF. Vacío es CLP."),
@@ -48,13 +53,13 @@ INSTRUCCIONES = (
 )
 
 
-def plantilla(parcelas: list[dict] | None = None) -> bytes:
+def plantilla(parcelas: list[dict] | None = None, nombre: str = "MI LOTEO") -> bytes:
     """El .xlsx listo para llenar; con `parcelas` (las de `parcelas.json`), prellenado."""
     libro = openpyxl.Workbook()
     hoja = libro.active
     hoja.title = "Inventario"
     _encabezado(hoja)
-    for fila in (_filas_de(parcelas) if parcelas else EJEMPLO):
+    for fila in (_filas_de(parcelas, nombre) if parcelas else EJEMPLO):
         hoja.append(fila)
     _preparar_columnas(hoja)
     _instrucciones(libro.create_sheet("Cómo llenarla"))
@@ -64,10 +69,21 @@ def plantilla(parcelas: list[dict] | None = None) -> bytes:
     return salida.getvalue()
 
 
-def _filas_de(parcelas: list[dict]) -> list[tuple]:
+def _filas_de(parcelas: list[dict], nombre: str) -> list[tuple]:
+    """Una fila por parcela. Con etapas, el proyecto lleva el sufijo y la parcela
+    solo su número: es como viene de Cierra, y se puede pegar encima tal cual."""
     etiquetas = {clave: datos["etiqueta"] for clave, datos in ESTADOS.items()}
+    proyecto = nombre.strip().upper()
+    varias = len({p.get("etapa") for p in parcelas if p.get("etapa") is not None}) > 1
+
+    def lugar(p: dict) -> tuple[str, str]:
+        if not varias or p.get("etapa") is None or p.get("numero") is None:
+            return proyecto, str(p["id"])
+        etapa = int(p["etapa"])
+        return (proyecto if etapa == 1 else f"{proyecto} ET{etapa}"), str(p["numero"])
+
     return [(
-        str(p["id"]),
+        *lugar(p),
         etiquetas.get(p.get("estado"), ""),
         p.get("precio"),
         p.get("moneda") or "CLP",
@@ -92,7 +108,7 @@ def _preparar_columnas(hoja) -> None:
         hoja.column_dimensions[openpyxl.utils.get_column_letter(posicion)].width = ancho
     # "2-7" escrito en una celda General, Excel lo convierte en fecha (2 de julio):
     # la columna Parcela va como texto desde antes que alguien escriba en ella.
-    for (celda,) in hoja.iter_rows(min_row=2, max_row=FILAS_PREPARADAS, max_col=1):
+    for (celda,) in hoja.iter_rows(min_row=2, max_row=FILAS_PREPARADAS, min_col=2, max_col=2):
         celda.number_format = "@"
 
     estados = DataValidation(type="list", allow_blank=True, showErrorMessage=True,
@@ -101,8 +117,8 @@ def _preparar_columnas(hoja) -> None:
     monedas = DataValidation(type="list", allow_blank=True, showErrorMessage=True,
                              formula1='"' + ",".join(MONEDAS) + '"',
                              errorTitle="Moneda", error="CLP o UF.")
-    estados.add(f"B2:B{FILAS_PREPARADAS}")
-    monedas.add(f"D2:D{FILAS_PREPARADAS}")
+    estados.add(f"C2:C{FILAS_PREPARADAS}")
+    monedas.add(f"E2:E{FILAS_PREPARADAS}")
     hoja.add_data_validation(estados)
     hoja.add_data_validation(monedas)
 
@@ -115,7 +131,7 @@ def _instrucciones(hoja) -> None:
         celda.font = Font(bold=True)
     hoja.column_dimensions["A"].width = 16
     hoja.column_dimensions["B"].width = 90
-    for (_, texto) in hoja.iter_rows(min_row=5, max_row=10):
+    for (_, texto) in hoja.iter_rows(min_row=5, max_row=11):
         texto.alignment = Alignment(wrap_text=True, vertical="top")
 
 

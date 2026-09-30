@@ -29,7 +29,8 @@ def leer_crm(ruta: Path, parcelacion: str) -> dict[str, FichaComercial]:
         return {}
     filas[0] = [COLUMNAS.get(celda.strip(), celda) for celda in filas[0]]
 
-    fichas = fichas_desde_filas(filas, parcelacion=parcelacion, origen=Path(ruta).name)
+    fichas = fichas_desde_filas(filas, parcelacion=parcelacion, origen=Path(ruta).name,
+                                permitir_repetidas=True)
     if not fichas:
         raise ValueError(f"no encontré la parcelación {parcelacion!r} en {Path(ruta).name}")
     return fichas

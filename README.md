@@ -453,14 +453,19 @@ distinguir tildes ni mayúsculas. Reconoce:
 | Columna | Obligatoria | Notas |
 |---|---|---|
 | `Parcela` | Sí | También se acepta `Lote`. Formatos: `A214`, `Lote A 420`, `LOTE 42`, `7-1` |
-| `Parcelación` | No | Con sufijo `ET2` / `ETAPA 2` separa las etapas |
-| `Estado` | No | `Disponible`, `Reservado`, `Vendido`, `No disponible`. Del CRM: `AGENDA`, `PRE-RESERVA` y `BORRADOR` cuentan como reservado; `ESCRITURA` y `ENTRADA CBR`, como vendido |
+| `Proyecto` (o `Parcelación`) | No | El nombre del loteo; con sufijo `ET2` / `ETAPA 2` separa las etapas, como en Cierra |
+| `Etapa` | No | La etapa en su propia columna (`2`, `ET2` o `Etapa 2`); manda sobre el sufijo |
+| `Estado` | No | `Disponible`, `Reservado`, `Vendido`, `No disponible`. Del CRM: `AGENDA`, `PRE-RESERVA` y `BORRADOR` cuentan como reservado; `ESCRITURA` y `ENTRADA CBR`, como vendido. De Cierra: `EN_PROCESO` es reservado; `INSCRITA` y `PROMESA`, vendido |
 | `Superficie` | No | En m². Entiende `13.124` como 13.124 m² |
 | `Servidumbre` | No | Ancho en metros |
 | `Servidumbre m2` | No | Superficie de la servidumbre (es lo que trae el CRM) |
 | `Precio` | No | Si falta o es 0, la ficha dice "A consultar" |
 | `Moneda` | No | `CLP` (por defecto) o `UF` |
 | `Link de pago` | No | Puede ser distinto por parcela |
+
+Una planilla que repite una parcela se rechaza con un mensaje: casi siempre son etapas que
+numeran desde 1 sin decir cuál es cuál, y quedarse con una fila publicaría el precio de otra
+parcela. El export del CRM sí trae duplicados de vez en cuando, y ahí se toma la última.
 
 Para agregar precios basta con sumar una columna `Precio` al xlsx. No hay que tocar
 código.
