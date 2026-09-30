@@ -126,3 +126,22 @@ def test_el_cli_copia_sobre_un_sitio_construido(plantilla, tmp_path, capsys):
     assert visor.main(["--sitio", str(sitio)]) == 0
     assert (sitio / "index.html").is_file()
     assert visor.huella(plantilla) in capsys.readouterr().out
+
+
+def test_copiar_funciona_donde_no_se_pueden_cambiar_permisos(plantilla, tmp_path, monkeypatch):
+    """En Cloud Run el sitio vive en un bucket montado (gcsfuse): cambiar permisos o
+    fechas da "Operation not permitted", y copytree lo hace siempre."""
+    import os
+    import shutil
+
+    def prohibido(*_argumentos, **_nombrados):
+        raise PermissionError(1, "Operation not permitted")
+
+    for modulo, nombre in ((os, "chmod"), (os, "utime"), (shutil, "copystat"), (shutil, "copymode")):
+        monkeypatch.setattr(modulo, nombre, prohibido)
+    sitio = tmp_path / "sitio"
+
+    visor.copiar(sitio)
+    visor.copiar(sitio)   # y encima de un sitio que ya lo tiene, como al republicar
+
+    assert (sitio / "js" / "visor.js").read_text(encoding="utf-8") == "export const a = 1;"

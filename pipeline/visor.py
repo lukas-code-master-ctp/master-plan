@@ -18,20 +18,33 @@ from pathlib import Path
 from . import config
 
 # Lo que no es del visor: los datos y las panorámicas de prueba de la plantilla,
-# las pruebas y la basura del Finder. Se aplica a cualquier nivel, como hace copytree.
+# las pruebas y la basura del Finder. Se aplica a cualquier nivel.
 IGNORAR = shutil.ignore_patterns("datos", "panoramas", "*.test.js", ".DS_Store")
 
 
 def copiar(sitio: Path) -> None:
     """Copia el visor sobre el sitio sin tocar sus datos: la carpeta queda
-    autocontenida y se sube tal cual."""
-    shutil.copytree(config.PLANTILLA_WEB, sitio, ignore=IGNORAR, dirs_exist_ok=True)
+    autocontenida y se sube tal cual.
+
+    Solo el contenido, no permisos ni fechas: en Cloud Run el sitio vive en un
+    bucket montado (gcsfuse), que no deja cambiarlos, y `shutil.copytree` los
+    copia siempre (copy2 y copystat) y falla con "Operation not permitted".
+    """
+    origen = config.PLANTILLA_WEB
+    for carpeta, subcarpetas, nombres in os.walk(origen, followlinks=True):
+        ignorados = IGNORAR(carpeta, subcarpetas + nombres)
+        subcarpetas[:] = [n for n in subcarpetas if n not in ignorados]
+        destino = Path(sitio) / Path(carpeta).relative_to(origen)
+        destino.mkdir(parents=True, exist_ok=True)
+        for nombre in nombres:
+            if nombre not in ignorados:
+                shutil.copyfile(Path(carpeta, nombre), destino / nombre)
 
 
 def huella(origen: Path | None = None) -> str:
     """SHA-256 de lo que `copiar` llevaría al sitio: rutas relativas y contenido.
 
-    Mira exactamente lo que copytree copia, así que tocar una prueba o los datos de
+    Mira exactamente lo que `copiar` copia, así que tocar una prueba o los datos de
     la plantilla no cambia la huella. Las rutas van en formato POSIX y ordenadas
     para que dé lo mismo en Windows que en el contenedor.
     """
