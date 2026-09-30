@@ -76,7 +76,7 @@ substitutions:
   _VERCEL_SCOPE: lrencoret-1882s-projects   # el equipo Pro: Hobby prohíbe el uso comercial
   _DOMINIO: ''                          # cuando exista: tumasterplan.cl
   _CONSOLA_URL: https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app   # cuando exista: https://app.tumasterplan.cl
-  _GOOGLE_CLIENT_ID: ''                 # vacío: sin "Continuar con Google"
+  _GOOGLE_CLIENT_ID: 910611168611-lc1d5fra9moaqoi69lbiiqll6a9tgvaf.apps.googleusercontent.com   # vacío: sin "Continuar con Google"
 
 images:
   - '${_IMAGEN}:$BUILD_ID'
