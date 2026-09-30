@@ -313,8 +313,16 @@ def test_un_csv_cualquiera_no_se_toma_por_planilla(tmp_path):
     assert descubrir_fuentes(tmp_path).excel is None
 
 
-def test_si_hay_xlsx_manda_sobre_el_csv(tmp_path):
-    armar(tmp_path, excel="inventario.csv")
-    (tmp_path / "precios.xlsx").write_bytes(b"xlsx")
+@pytest.mark.parametrize("inventario", ["inventario.csv", "inventario.xlsx"])
+def test_el_inventario_subido_manda_sobre_el_xlsx_del_vuelo(tmp_path, inventario):
+    # "aaa" va antes en el orden alfabético: sin la regla, ganaría el viejo.
+    armar(tmp_path, excel="aaa-precios-de-marzo.xlsx")
+    (tmp_path / inventario).write_bytes(b"inventario")
+
+    assert descubrir_fuentes(tmp_path).excel.name == inventario
+
+
+def test_sin_inventario_subido_vale_el_xlsx_del_vuelo(tmp_path):
+    armar(tmp_path, excel="precios.xlsx")
 
     assert descubrir_fuentes(tmp_path).excel.name == "precios.xlsx"

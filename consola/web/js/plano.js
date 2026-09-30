@@ -7,6 +7,7 @@ import {
   $, $$, abrirDialogo, avisar, estado, etapaDe, fecha, json, pastilla, pedir,
 } from './comun.js';
 import { opcionesDeDiseno } from './disenos.js';
+import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
 
 let refrescar = async () => {};
@@ -21,6 +22,19 @@ export function prepararPlano(opciones) {
   });
   prepararSubida();
   prepararPago();
+  prepararInventario({ alSubir: actualizarInventario });
+}
+
+/**
+ * Con el inventario nuevo arriba, lo construido se pone al día. Las fotos no
+ * cambiaron: se salta generarlas, que es lo que toma minutos.
+ */
+async function actualizarInventario(slug) {
+  await refrescar();
+  const proyecto = estado.proyectos.find((p) => p.slug === slug);
+  if (proyecto?.construido && !proyecto.trabajo) {
+    await lanzar(proyecto, 'construir', { sin_imagenes: true });
+  }
 }
 
 const proyectoActual = () => estado.proyectos.find((p) => p.slug === actual);
@@ -46,6 +60,7 @@ export function pintarPlano(slug, { nuevo = false, buscando = false } = {}) {
   pintarPortada(proyecto);
   pintarCifras(proyecto);
   pintarRegistro(slug);
+  pintarInventario(proyecto);
   pintarCalce(proyecto);
   pintarPublicar(proyecto);
   // Los datos se rellenan al llegar, no en cada refresco: pisarían lo que la
@@ -74,7 +89,7 @@ function meta(proyecto) {
   const fuentes = document.createElement('span');
   fuentes.className = 'ruta';
   fuentes.textContent = `${hallado.panoramicas} panorámicas · ${hallado.megas} MB`
-    + (hallado.planilla ? ` · planilla ${hallado.planilla}` : ' · sin planilla');
+    + (hallado.planilla ? ` · planilla ${hallado.planilla}` : proyecto.con_crm ? ' · precios del CRM' : ' · sin planilla');
   partes.push(fuentes);
   return partes;
 }
@@ -360,9 +375,12 @@ function prepararSubida() {
     const barra = $('#progreso');
     barra.hidden = false;
     $('#subir').disabled = true;
-    // Un CSV suelto solo se toma como inventario con el nombre que busca el pipeline.
-    const lista = elegidos.map(({ archivo, ruta }) => (
-      /\.csv$/i.test(ruta) ? { archivo, ruta: 'inventario.csv' } : { archivo, ruta }));
+    // La planilla de la carpeta pasa a ser el inventario: si no, uno subido antes
+    // le seguiría ganando. Un CSV solo cuenta si está en la raíz.
+    const planilla = elegidos.find(({ ruta }) => (
+      /\.xlsx$/i.test(ruta) || /^[^/]+\.csv$/i.test(ruta)) && !ruta.split('/').pop().startsWith('~$'));
+    const lista = elegidos.filter((e) => e !== planilla && !/\.csv$/i.test(e.ruta));
+    if (planilla) lista.push(comoInventario(planilla));
     try {
       await subir(actual, lista, (fraccion) => { $('i', barra).style.width = `${fraccion * 100}%`; });
       $('#alta').close();

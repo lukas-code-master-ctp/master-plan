@@ -47,6 +47,7 @@ from .datos import (
 )
 from .disenos import DisenoInvalido, Disenos, VistaDisenos
 from .disenos import como_json as diseno_json
+from .plantilla import MIME_XLSX, plantilla
 from .proyectos import LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
 from .republicar import republicar
 from .rutas_cuentas import (
@@ -64,7 +65,7 @@ WEB = Path(__file__).resolve().parent / "web"
 # cualquier archivo de la carpeta: una ruta que arma rutas de disco con lo que
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
-           "cuenta.js", "backoffice.js", "disenos.js")
+           "cuenta.js", "backoffice.js", "disenos.js", "inventario.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
 MODULOS_DEL_VISOR = ("marca.js",)
@@ -296,6 +297,16 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             raise HTTPException(404, "todavía no hay portada: falta construirlo")
         return FileResponse(archivo, media_type="image/jpeg",
                             headers={"Cache-Control": "private, no-cache"})
+
+    @app.get("/api/plantilla-inventario")
+    def plantilla_en_blanco(_: Sesion = Depends(quien)) -> Response:
+        return _descarga(plantilla(), "plantilla-inventario.xlsx")
+
+    @app.get("/api/proyectos/{slug}/plantilla")
+    def plantilla_del_loteo(slug: str, mios: Vista = Depends(vista)) -> Response:
+        """La plantilla con una fila por parcela del KMZ y lo que muestra hoy."""
+        proyecto = mios.ver(slug)
+        return _descarga(plantilla(proyecto.parcelas() or None), f"inventario-{proyecto.slug}.xlsx")
 
     @app.post("/api/proyectos/{slug}/archivos", status_code=201)
     async def subir(slug: str, archivos: list[UploadFile] = File(...),
@@ -679,6 +690,12 @@ def _anotar_publicacion(mios: Vista, proyecto: Proyecto, nombre: str):
     return guardar
 
 
+def _descarga(contenido: bytes, nombre: str) -> Response:
+    return Response(contenido, media_type=MIME_XLSX, headers={
+        "Content-Disposition": f'attachment; filename="{nombre}"',
+        "Cache-Control": "private, no-cache"})
+
+
 def _cliente_json(cliente, base: Base) -> dict:
     return {
         "id": cliente.id,
@@ -702,6 +719,8 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "referencias": list(proyecto.referencias),
         "fuentes": str(proyecto.fuentes),
         "fuentes_encontradas": proyecto.fuentes_encontradas(),
+        # Sin planilla, los estados y precios pueden salir del export del CRM.
+        "con_crm": proyecto.crm is not None,
         # Un loteo publicado sin teléfono deja al comprador mirando sin a quién
         # escribirle: el visor esconde el botón de contacto si no hay número.
         "sin_contacto": not proyecto.whatsapp,

@@ -87,12 +87,27 @@ def descubrir_fuentes(carpeta: Path, crm: Path | None = None,
     return Fuentes(
         kmz=_unico(carpeta, "*.kmz", "el KMZ del loteo"),
         panoramas=_carpeta_de_panoramas(carpeta),
-        # La planilla puede llegar como CSV cuando se sube sola por el campo
-        # "Inventario" de la consola; ese sí se busca por nombre, porque un CSV
-        # suelto en la carpeta puede ser cualquier cosa.
-        excel=_opcional(carpeta, "*.xlsx") or _opcional(carpeta, "inventario.csv"),
+        excel=planilla_en(carpeta),
         crm=csv_crm if csv_crm and Path(csv_crm).is_file() else None,
     )
+
+
+# Lo que llega por el campo "Inventario" de la consola se guarda con este nombre,
+# y le gana a cualquier otra planilla: es la última que subió la persona, y un
+# .xlsx viejo del vuelo no puede seguir mandando en silencio.
+INVENTARIOS = ("inventario.xlsx", "inventario.csv")
+
+
+def planilla_en(carpeta: Path) -> Path | None:
+    """La planilla que manda: el inventario subido, o si no el .xlsx del vuelo.
+
+    Un CSV solo cuenta con el nombre del inventario: uno suelto en la carpeta
+    puede ser cualquier cosa.
+    """
+    for nombre in INVENTARIOS:
+        if (Path(carpeta) / nombre).is_file():
+            return Path(carpeta) / nombre
+    return _opcional(Path(carpeta), "*.xlsx")
 
 
 def _es_nuestro(ruta: Path) -> bool:

@@ -1,8 +1,10 @@
 """La API de la consola."""
+import io
 import json
 import sys
 import time
 
+import openpyxl
 import pytest
 from fastapi.testclient import TestClient
 
@@ -448,6 +450,8 @@ RUTAS = {
     ("GET", "/api/proyectos"): SOLO_SUYO,
     ("POST", "/api/proyectos"): SOLO_SUYO,
     ("GET", "/api/proyectos/{slug}/portada"): AJENO_404,
+    ("GET", "/api/proyectos/{slug}/plantilla"): AJENO_404,
+    ("GET", "/api/plantilla-inventario"): SOLO_SUYO,
     ("PATCH", "/api/proyectos/{slug}"): AJENO_404,
     ("DELETE", "/api/proyectos/{slug}"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/archivos"): AJENO_404,
@@ -544,9 +548,10 @@ def de_ana(ctp, ana, registro, nombre="De Ana"):
     lambda web, slug: web.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True}),
     lambda web, slug: web.get(f"/calce/{slug}/p01-210.jpg"),
     lambda web, slug: web.get(f"/api/proyectos/{slug}/portada"),
+    lambda web, slug: web.get(f"/api/proyectos/{slug}/plantilla"),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/archivos",
                                files=[("archivos", ("x.kmz", b"kmz", "application/octet-stream"))]),
-], ids=["ajustar", "olvidar", "construir", "publicar", "calce", "portada", "subir"])
+], ids=["ajustar", "olvidar", "construir", "publicar", "calce", "portada", "plantilla", "subir"])
 def test_el_loteo_de_otra_contesta_404_en_todas_las_rutas(ana_y_luis, pedir):
     ctp, ana, luis, registro, comandos = ana_y_luis
     slug = de_ana(ctp, ana, registro)
@@ -1307,3 +1312,30 @@ def test_una_clave_nueva_para_un_correo_sin_cuenta_da_404(ana_y_luis):
     ctp, _, _, _, _ = ana_y_luis
 
     assert ctp.post("/api/plataforma/usuarios/clave", json={"email": "nadie@x.cl"}).status_code == 404
+
+
+def test_la_plantilla_del_loteo_sale_con_sus_parcelas(ana_y_luis):
+    _, ana, _, registro, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+    construir_con_precios(registro.salidas, slug, [
+        {"id": "7", "estado": "disponible", "precio": 9_990_000, "moneda": "CLP", "en_planilla": True},
+    ])
+
+    respuesta = ana.get(f"/api/proyectos/{slug}/plantilla")
+
+    assert respuesta.status_code == 200
+    assert f'filename="inventario-{slug}.xlsx"' in respuesta.headers["content-disposition"]
+    hoja = openpyxl.load_workbook(io.BytesIO(respuesta.content)).active
+    assert [c.value for c in hoja[2]][:3] == ["7", "Disponible", 9_990_000]
+
+
+def test_sin_construir_la_plantilla_del_loteo_es_la_de_ejemplo(ana_y_luis):
+    _, ana, _, _, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+
+    en_blanco = ana.get("/api/plantilla-inventario")
+    del_loteo = ana.get(f"/api/proyectos/{slug}/plantilla")
+
+    assert en_blanco.status_code == del_loteo.status_code == 200
+    hoja = openpyxl.load_workbook(io.BytesIO(del_loteo.content)).active
+    assert hoja["A2"].value == "1"
