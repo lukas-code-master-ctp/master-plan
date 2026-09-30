@@ -312,7 +312,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def plantilla_del_loteo(slug: str, mios: Vista = Depends(vista)) -> Response:
         """La plantilla con una fila por parcela del KMZ y lo que muestra hoy."""
         proyecto = mios.ver(slug)
-        return _descarga(plantilla(proyecto.parcelas() or None), f"inventario-{proyecto.slug}.xlsx")
+        return _descarga(plantilla(proyecto.parcelas() or None, proyecto.nombre),
+                         f"inventario-{proyecto.slug}.xlsx")
 
     @app.post("/api/proyectos/{slug}/archivos", status_code=201)
     async def subir(slug: str, archivos: list[UploadFile] = File(...),

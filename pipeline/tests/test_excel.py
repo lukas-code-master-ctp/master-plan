@@ -200,3 +200,34 @@ def test_una_servidumbre_en_cero_es_dato_ausente(tmp_path):
     ficha = leer_excel(ruta)["A1"]
 
     assert ficha.servidumbre_m is None and ficha.servidumbre_m2 is None
+
+
+@pytest.mark.parametrize("entrada,esperado", [
+    ("NO_DISPONIBLE", "no_disponible"),
+    ("EN_PROCESO", "reservado"),
+    ("INSCRITA", "vendido"),
+    ("PROMESA", "vendido"),
+    ("PRE_RESERVA", "reservado"),
+])
+def test_normaliza_los_estados_de_cierra(entrada, esperado):
+    assert normalizar_estado(entrada) == esperado
+
+
+def test_una_planilla_que_repite_parcelas_se_rechaza_con_una_explicacion(tmp_path):
+    """Lo que pasó con Praderas: 88 filas de 4 etapas sin decir la etapa, y quedaban
+    35 parcelas con el precio de la última fila que las repetía."""
+    ruta = planilla(tmp_path, [["Parcela", "Estado"], ["1", "DISPONIBLE"], ["2", "DISPONIBLE"],
+                               ["1", "VENDIDO"], ["2", "VENDIDO"]])
+
+    with pytest.raises(ValueError, match=r"repite 2 parcela\(s\): 1, 2.*Proyecto"):
+        leer_planilla(ruta)
+
+
+def test_la_etapa_puede_venir_en_su_propia_columna(tmp_path):
+    ruta = planilla(tmp_path, [["Proyecto", "Etapa", "Parcela", "Estado"],
+                               ["Praderas", 1, "7", "DISPONIBLE"],
+                               ["Praderas", "2", "7", "VENDIDO"],
+                               ["Praderas", "Etapa 3", "7", "RESERVADO"]])
+
+    assert {i: f.estado for i, f in leer_planilla(ruta).items()} == {
+        "1-7": "disponible", "2-7": "vendido", "3-7": "reservado"}
