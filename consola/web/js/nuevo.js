@@ -7,6 +7,7 @@
  */
 import { $, avisar, estado, json, pedir } from './comun.js';
 import { opcionesDeDiseno } from './disenos.js';
+import { comoInventario } from './inventario.js';
 import { desdeEntrada, esFoto, esKmz, esPlanilla, megas, soltadero, subir } from './subida.js';
 
 const eleccion = { kmz: null, fotos: [], inventario: null };
@@ -84,15 +85,11 @@ function pintar() {
     : 'Subir la planilla de precios (.xlsx o .csv)', Boolean(eleccion.inventario));
 }
 
-/** El inventario va en la raíz; un CSV, con el nombre que busca el pipeline. */
+/** El inventario va en la raíz, con el nombre que el pipeline pone primero. */
 function archivosASubir() {
   const lista = [eleccion.kmz, ...eleccion.fotos.map(({ archivo, ruta }) => ({
     archivo, ruta: `panoramicas/${ruta}` }))];
-  if (eleccion.inventario) {
-    const { archivo } = eleccion.inventario;
-    const csv = /\.csv$/i.test(archivo.name);
-    lista.push({ archivo, ruta: csv ? 'inventario.csv' : archivo.name });
-  }
+  if (eleccion.inventario) lista.push(comoInventario(eleccion.inventario));
   return lista;
 }
 

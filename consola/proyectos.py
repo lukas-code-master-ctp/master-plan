@@ -33,10 +33,6 @@ CARPETA_SUBIDAS = config.DATOS / "proyectos"
 
 EXTENSIONES_FOTO = (".jpg", ".jpeg")
 
-# La planilla de precios y estados, cuando llega por el campo "Inventario" y no
-# dentro de la carpeta del vuelo. El pipeline la busca por este nombre.
-INVENTARIO_CSV = "inventario.csv"
-
 # Lo que se guarda en `proyecto.json`, que es lo que lee el pipeline. El resto
 # —de quién es, dónde quedó publicado— vive en la base y no se duplica acá.
 CAMPOS_DEL_PIPELINE = ("nombre", "etapa", "whatsapp", "parcelacion", "despegue", "referencias")
@@ -152,6 +148,13 @@ class Proyecto:
     def construido(self) -> bool:
         return (self.salida.datos / "parcelas.json").is_file()
 
+    def parcelas(self) -> list[dict]:
+        """Las parcelas de la última construcción; ninguna si no se ha construido."""
+        archivo = self.salida.datos / "parcelas.json"
+        if not archivo.is_file():
+            return []
+        return json.loads(archivo.read_text(encoding="utf-8")).get("parcelas", [])
+
     def resumen(self) -> dict:
         """Lo que quedó de la última construcción, leído de su propia salida."""
         archivo = self.salida.datos / "parcelas.json"
@@ -193,9 +196,7 @@ class Proyecto:
         if not self.fuentes.is_dir():
             return {"kmz": None, "panoramicas": 0, "megas": 0, "planilla": None}
         kmz = sorted(p.name for p in self.fuentes.rglob("*.kmz"))
-        planillas = sorted(p.name for p in self.fuentes.rglob("*.xlsx") if not p.name.startswith("~$"))
-        if not planillas and (self.fuentes / INVENTARIO_CSV).is_file():
-            planillas = [INVENTARIO_CSV]
+        planilla = config.planilla_en(self.fuentes)
         fotos: dict[tuple[str, int], int] = {}
         for ruta in self.fuentes.rglob("*"):
             if ruta.suffix.lower() in EXTENSIONES_FOTO:
@@ -205,7 +206,7 @@ class Proyecto:
             "kmz": kmz[0] if kmz else None,
             "panoramicas": len(fotos),
             "megas": round(sum(fotos.values()) / 1048576),
-            "planilla": planillas[0] if planillas else None,
+            "planilla": planilla.name if planilla else None,
         }
 
 
@@ -365,6 +366,13 @@ class Vista:
         for archivo, destino in destinos:
             destino.parent.mkdir(parents=True, exist_ok=True)
             archivo.guardar(destino)
+        # Un inventario nuevo reemplaza al anterior aunque cambie de formato: si
+        # no, un inventario.xlsx viejo le seguiría ganando al .csv recién subido.
+        nuevos = {destino.name for _, destino in destinos if destino.parent == carpeta.resolve()}
+        llegados = set(config.INVENTARIOS) & nuevos
+        if len(llegados) == 1:
+            for otro in set(config.INVENTARIOS) - llegados:
+                (carpeta / otro).unlink(missing_ok=True)
         # El KMZ puede venir en esta tanda o de una anterior; lo que no puede es
         # faltar, porque sin él no hay nada que proyectar.
         if not any(carpeta.rglob("*.kmz")):
@@ -525,5 +533,5 @@ def fecha_legible(iso: str | None) -> str:
     return datetime.fromisoformat(iso).strftime("%d/%m/%Y %H:%M")
 
 
-__all__ = ["CARPETA_SUBIDAS", "INVENTARIO_CSV", "LimiteAlcanzado", "Limites", "NoEncontrado", "Proyecto", "Registro", "Subida", "Vista",
+__all__ = ["CARPETA_SUBIDAS", "LimiteAlcanzado", "Limites", "NoEncontrado", "Proyecto", "Registro", "Subida", "Vista",
            "fecha_legible", "precio_desde"]

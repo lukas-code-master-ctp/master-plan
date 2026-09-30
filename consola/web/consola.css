@@ -406,6 +406,16 @@ button { cursor: pointer; }
 .consola-log .aviso-linea { color: #fbbf24; }
 .consola-log .error-linea { color: #f87171; }
 
+/* --- Inventario ---------------------------------------------------------------- */
+
+.inventario {
+  display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; align-items: flex-end; justify-content: space-between;
+  padding-top: 1.25rem; border-top: 1px solid var(--zinc-200);
+}
+.inventario h2 { margin: 0 0 0.5rem; font: 600 0.75rem/1 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--zinc-500); }
+.inventario .nota { margin: 0.25rem 0 0; max-width: 34rem; }
+.inventario__acciones { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
 /* --- Control de calce ---------------------------------------------------------- */
 
 .calce { padding-top: 1.25rem; border-top: 1px solid var(--zinc-200); }

@@ -107,8 +107,10 @@
             <input id="nuevo-inventario" type="file" accept=".xlsx,.csv" aria-labelledby="rotulo-inventario">
             <span class="archivo__texto" id="texto-inventario">Subir la planilla de precios (.xlsx o .csv)</span>
           </label>
-          <p class="nota">Una fila por lote con su estado y precio. Sin planilla, las
-            parcelas quedan como no disponibles.</p>
+          <p class="nota">Una fila por parcela con su estado y precio. Usa la
+            <a class="enlace" href="/api/plantilla-inventario" download>plantilla</a>; después de
+            construir la puedes bajar con tus parcelas ya puestas. Sin planilla, las parcelas
+            quedan como no disponibles.</p>
         </div>
       </div>
 
@@ -177,6 +179,20 @@
           <button class="boton boton--texto boton--peligro" data-accion="olvidar" type="button">Quitar de la lista</button>
         </div>
       </form>
+
+      <section id="plano-inventario" class="inventario" aria-labelledby="inventario-titulo" hidden>
+        <div>
+          <h2 id="inventario-titulo">Inventario</h2>
+          <p id="inventario-estado" class="nota"></p>
+          <p class="nota">Descarga la plantilla, cambia estados y precios, y súbela: el loteo
+            se actualiza solo, sin volver a procesar las fotos.</p>
+        </div>
+        <div class="inventario__acciones">
+          <a id="inventario-plantilla" class="boton boton--contorno" download>Descargar plantilla</a>
+          <button id="inventario-subir" class="boton" type="button">Subir inventario</button>
+          <input id="inventario-archivo" type="file" accept=".xlsx,.csv" hidden>
+        </div>
+      </section>
 
       <section id="plano-calce" class="calce" hidden>
         <h2>Control de calce <small>los polígonos tienen que caer sobre los caminos</small></h2>

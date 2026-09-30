@@ -466,3 +466,27 @@ def test_el_tope_de_tamano_cuenta_lo_que_ya_estaba(base, tmp_path):
     ana.subir("x", [Subida("a.JPG", medio)])
     with pytest.raises(Exception, match="máximo"):
         ana.subir("x", [Subida("b.JPG", medio)])
+
+
+@pytest.mark.parametrize("viejo, nuevo", [("inventario.xlsx", "inventario.csv"),
+                                         ("inventario.csv", "inventario.xlsx")])
+def test_un_inventario_nuevo_reemplaza_al_anterior_aunque_cambie_de_formato(
+        base, registro, ana, viejo, nuevo):
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "X", nota_cobro="ok")
+    ana.subir("x", [Subida("loteo.kmz", b"kmz"), Subida(viejo, b"viejo")])
+
+    proyecto = ana.subir("x", [Subida(nuevo, b"nuevo")])
+
+    assert not (proyecto.fuentes / viejo).exists()
+    assert proyecto.fuentes_encontradas()["planilla"] == nuevo
+
+
+def test_el_inventario_subido_se_muestra_aunque_el_vuelo_traiga_otro_xlsx(base, registro, ana):
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "X", nota_cobro="ok")
+    ana.subir("x", [Subida("loteo.kmz", b"kmz"), Subida("aaa-viejo.xlsx", b"viejo")])
+
+    proyecto = ana.subir("x", [Subida("inventario.xlsx", b"nuevo")])
+
+    assert proyecto.fuentes_encontradas()["planilla"] == "inventario.xlsx"
+    # El del vuelo no se toca: es un archivo que subió la persona, no el inventario.
+    assert (proyecto.fuentes / "aaa-viejo.xlsx").exists()

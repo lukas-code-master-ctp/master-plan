@@ -432,7 +432,9 @@ pipeline con un aviso: es un dato que falta, no algo que se pueda adivinar.
 
 Los datos comerciales salen, en este orden, de:
 
-1. **Un .xlsx en la carpeta del proyecto**, si lo hay.
+1. **La planilla del proyecto.** Primero el inventario subido desde la consola
+   (`inventario.xlsx` o `inventario.csv`, que reemplaza al anterior aunque cambie de
+   formato); si no hay, el primer .xlsx de la carpeta del vuelo.
 2. **Un `crm.csv` en la carpeta del loteo**, o el que se pase con `--crm`, filtrado
    por la parcelación del proyecto: el nombre en mayúsculas o lo que diga
    `parcelacion` en `proyecto.json`. Las etapas del CRM (`PRADERAS DE CAUQUENES ET2`)
@@ -461,6 +463,13 @@ distinguir tildes ni mayúsculas. Reconoce:
 
 Para agregar precios basta con sumar una columna `Precio` al xlsx. No hay que tocar
 código.
+
+**La plantilla.** La consola entrega el .xlsx listo para llenar (`consola/plantilla.py`):
+en Nuevo master sale con tres filas de ejemplo, y en el detalle de un master construido,
+con una fila por parcela del KMZ y lo que muestra hoy, que es lo que evita escribir un lote
+distinto del dibujo. Trae listas para Estado y Moneda y la columna Parcela como texto, para
+que Excel no convierta `2-7` en una fecha. Subir el inventario desde el detalle reconstruye
+el loteo sin volver a generar las imágenes.
 
 ## Estructura
 
