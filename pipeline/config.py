@@ -32,6 +32,10 @@ PLANTILLA_WEB = RAIZ / "web"
 # Cada proyecto construido queda en salidas/<proyecto>/sitio, listo para subir.
 SALIDAS = DATOS / "salidas"
 
+# Lo que se sube por la consola: una carpeta por proyecto. Sin MASTERPLAN_DATOS
+# queda dentro del repo, y aun así son fuentes, no algo que generó el pipeline.
+SUBIDAS = DATOS / "proyectos"
+
 # Teselas del modelo de elevación y coordenadas ya geocodificadas, compartidas
 # entre proyectos y corridas.
 _CACHE = DATOS / ".cache" if DATOS == RAIZ else DATOS / "cache"
@@ -96,9 +100,19 @@ def descubrir_fuentes(carpeta: Path, crm: Path | None = None,
 
 
 def _es_nuestro(ruta: Path) -> bool:
-    """¿La ruta está dentro de masterplan360? Ahí vive lo que genera el propio
-    pipeline, y si no se excluye se confunde con las fuentes."""
-    return RAIZ == ruta or RAIZ in ruta.parents
+    """¿La ruta la escribió el propio pipeline? Si no se excluye se confunde con
+    las fuentes: una carpeta del disco que contiene al repo traería sus salidas.
+
+    Lo que vive dentro del repo es nuestro, salvo las subidas de la consola, que
+    en este computador caen en <repo>/proyectos pero son fuentes del cliente.
+    """
+    if any(_dentro(ruta, generado) for generado in (SALIDAS, _CACHE)):
+        return True
+    return _dentro(ruta, RAIZ) and not _dentro(ruta, SUBIDAS)
+
+
+def _dentro(ruta: Path, carpeta: Path) -> bool:
+    return ruta == carpeta or carpeta in ruta.parents
 
 
 def _candidatos(carpeta: Path, patron: str) -> list[Path]:
