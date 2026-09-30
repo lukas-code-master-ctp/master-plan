@@ -270,6 +270,7 @@ tokens se guarda el hash. Registrarse y pedir enlaces tiene un tope de 5 por hor
 | `SENDGRID_API_KEY` | Enviar los correos (el mismo proveedor que los reportes de CTP) | En este computador el correo queda en el registro de la consola. Desplegada, **Regístrate y "¿Olvidaste tu contraseña?" se cierran**: la entrada manda a escribirle al equipo, que crea las cuentas y da claves nuevas desde Loteadoras |
 | `EMAIL_FROM` | Remitente, verificado en SendGrid | `no-responder@tumasterplan.cl` |
 | `CONSOLA_URL` | La dirección pública de la consola, para los enlaces de los correos y la vuelta de Google (sin SendGrid ni Google no se usa) | La de la petición (detrás de Cloud Run llega como `http`) |
+| `CIERRA_API_URL` | "Conectar con Cierra" en el inventario de cada loteo (ver [La planilla](#la-planilla)) | No se ofrece |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | "Continuar con Google" (cliente OAuth web; URI de redirección `<CONSOLA_URL>/entrar/google/vuelta`) | El botón no aparece |
 
 Con Google, una cuenta existente se enlaza si Google dice que el correo está verificado;
@@ -463,6 +464,20 @@ distinguir tildes ni mayúsculas. Reconoce:
 
 Para agregar precios basta con sumar una columna `Precio` al xlsx. No hay que tocar
 código.
+
+**Conectar con Cierra.** Si la loteadora lleva sus parcelas en Cierra, no llena
+planillas: crea en Cierra una clave de API con permiso `parcelas:read` (Admin →
+Integraciones), la pega una vez en la consola, y en cada loteo elige los proyectos de
+Cierra que lo alimentan —en Cierra cada etapa es un proyecto aparte, así que dice qué
+etapa del plano es cada uno—. La consola trae las parcelas (`GET
+/integrations/proyectos` y `GET /integrations/parcelas` de la API de Cierra) y las
+escribe como `inventario.csv` en la carpeta del loteo: el pipeline no sabe que Cierra
+existe. Construir un loteo conectado trae lo último antes de lanzar; si Cierra no
+contesta, se construye igual con el último inventario y se avisa. "Actualizar desde
+Cierra" lo trae sin generar las imágenes de nuevo. La clave se guarda cifrada con una
+llave derivada de `CONSOLA_SECRETO` (cambiar ese secreto obliga a pegarla de nuevo) y
+es siempre la de la loteadora dueña del loteo, aunque quien conecte sea el equipo.
+Todo esto aparece solo con `CIERRA_API_URL` (en producción, `https://api.cierra.cl`).
 
 **La plantilla.** La consola entrega el .xlsx listo para llenar (`consola/plantilla.py`):
 en Nuevo master sale con tres filas de ejemplo, y en el detalle de un master construido,

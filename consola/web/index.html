@@ -192,6 +192,14 @@
           <button id="inventario-subir" class="boton" type="button">Subir inventario</button>
           <input id="inventario-archivo" type="file" accept=".xlsx,.csv" hidden>
         </div>
+        <div id="inventario-cierra" class="inventario__cierra" hidden>
+          <p id="cierra-estado" class="nota"></p>
+          <div class="inventario__acciones">
+            <button class="boton boton--contorno" data-accion="cierra-conectar" type="button">Conectar con Cierra</button>
+            <button class="boton" data-accion="cierra-actualizar" type="button" hidden>Actualizar desde Cierra</button>
+            <button class="boton boton--texto" data-accion="cierra-desconectar" type="button" hidden>Desconectar</button>
+          </div>
+        </div>
       </section>
 
       <section id="plano-calce" class="calce" hidden>
@@ -354,6 +362,34 @@
 </dialog>
 
 <!-- Anotar el pago de un master que el cliente se creó solo (CTP) -->
+<!-- Conectar el inventario de un loteo con Cierra -->
+<dialog id="cierra" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2>Conectar con Cierra</h2>
+  <div id="cierra-paso-clave">
+    <p class="ayuda">Crea una clave en Cierra → Admin → Integraciones, con el permiso
+      <b>parcelas:read</b>, y pégala acá. Se guarda cifrada y sirve para todos tus loteos.</p>
+    <label class="campo">
+      <span>Clave de API de Cierra</span>
+      <input id="cierra-clave" type="password" autocomplete="new-password" spellcheck="false">
+    </label>
+    <div class="modal__pie">
+      <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
+      <button id="cierra-guardar-clave" class="boton" type="button">Seguir</button>
+    </div>
+  </div>
+  <div id="cierra-paso-proyectos" hidden>
+    <p class="ayuda">Elige los proyectos de Cierra que son este loteo. En Cierra cada
+      etapa es un proyecto: marca todos y di qué etapa del plano es cada uno.</p>
+    <ul id="cierra-lista" class="cierra-lista"></ul>
+    <p class="ayuda" id="cierra-pista"></p>
+    <div class="modal__pie">
+      <button id="cierra-otra-clave" class="boton boton--texto" type="button">Usar otra clave</button>
+      <button id="cierra-listo" class="boton" type="button">Conectar</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="pago" class="modal">
   <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
   <h2>Anotar pago</h2>

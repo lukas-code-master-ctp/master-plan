@@ -1,6 +1,6 @@
 """La base de la consola: quién es cliente, quién entra y qué loteo es de quién.
 
-Son siete tablas y un puñado de consultas, así que se usa SQLAlchemy Core y no el
+Son nueve tablas y un puñado de consultas, así que se usa SQLAlchemy Core y no el
 ORM: no hace falta identidad de objetos ni carga perezosa, y el SQL queda a la vista.
 Corre igual sobre SQLite (este computador y las pruebas) y sobre Postgres (el
 servidor), que es lo único que se le pide.
@@ -157,6 +157,26 @@ proyectos = Table(
     # es la del visor de hoy, el loteo está en línea con un visor viejo.
     Column("visor_publicado", String(64), nullable=True),
     UniqueConstraint("cliente_id", "nombre", name="un_nombre_por_cliente"),
+)
+
+# La clave de API que la loteadora creó en Cierra, cifrada: con ella se leen sus
+# parcelas. Una por loteadora; `pista` son los últimos caracteres, para mostrarla.
+cierra_claves = Table(
+    "cierra_claves", metadatos,
+    Column("cliente_id", Integer, ForeignKey("clientes.id"), primary_key=True),
+    Column("cifrada", Text, nullable=False),
+    Column("pista", String(8), nullable=False),
+    Column("creado_en", DateTime(timezone=True), nullable=False),
+)
+
+# Qué proyectos de Cierra alimentan cada loteo, y a qué etapa corresponde cada uno
+# (en Cierra una etapa es un proyecto aparte). JSON: [{"id", "nombre", "etapa"}].
+cierra_loteos = Table(
+    "cierra_loteos", metadatos,
+    Column("proyecto_id", Integer, ForeignKey("proyectos.id"), primary_key=True),
+    Column("proyectos", Text, nullable=False),
+    Column("sincronizado_en", DateTime(timezone=True), nullable=True),
+    Column("creado_en", DateTime(timezone=True), nullable=False),
 )
 
 eventos = Table(
@@ -609,6 +629,8 @@ class Base:
 
     def olvidar_proyecto(self, slug: str) -> None:
         with self.motor.begin() as con:
+            ids = select(proyectos.c.id).where(proyectos.c.slug == slug).scalar_subquery()
+            con.execute(delete(cierra_loteos).where(cierra_loteos.c.proyecto_id.in_(ids)))
             con.execute(delete(proyectos).where(proyectos.c.slug == slug))
 
     # --- registro de lo que pasó ------------------------------------------------------

@@ -6,6 +6,7 @@
 import {
   $, $$, abrirDialogo, avisar, estado, etapaDe, fecha, json, pastilla, pedir,
 } from './comun.js';
+import { manejarCierra, pintarCierra, prepararCierra } from './cierra.js';
 import { opcionesDeDiseno } from './disenos.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
@@ -23,6 +24,7 @@ export function prepararPlano(opciones) {
   prepararSubida();
   prepararPago();
   prepararInventario({ alSubir: actualizarInventario });
+  prepararCierra({ traido: actualizarInventario });
 }
 
 /**
@@ -61,6 +63,7 @@ export function pintarPlano(slug, { nuevo = false, buscando = false } = {}) {
   pintarCifras(proyecto);
   pintarRegistro(slug);
   pintarInventario(proyecto);
+  pintarCierra(proyecto);
   pintarCalce(proyecto);
   pintarPublicar(proyecto);
   // Los datos se rellenan al llegar, no en cada refresco: pisarían lo que la
@@ -264,6 +267,7 @@ async function olvidar(proyecto) {
 async function manejar(accion, proyecto) {
   try {
     avisar(null);
+    if (accion.startsWith('cierra-')) return await manejarCierra(accion, proyecto);
     if (accion === 'archivos') return abrirSubida(proyecto);
     if (accion === 'guardar') return await guardar(proyecto);
     if (accion === 'olvidar') return await olvidar(proyecto);
@@ -289,7 +293,9 @@ async function manejar(accion, proyecto) {
 
 async function lanzar(proyecto, accion, cuerpo) {
   estado.registros.set(proyecto.slug, []);
-  const { id } = await pedir(`/api/proyectos/${proyecto.slug}/${accion}`, json(cuerpo));
+  const { id, aviso } = await pedir(`/api/proyectos/${proyecto.slug}/${accion}`, json(cuerpo));
+  // P. ej. Cierra no contestó: se construye igual, con el último inventario.
+  if (aviso) avisar(aviso);
   await refrescar();
   seguir(proyecto.slug, id);
 }

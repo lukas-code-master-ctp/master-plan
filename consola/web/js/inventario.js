@@ -65,4 +65,6 @@ export function pintarInventario(proyecto) {
   plantilla.textContent = total ? `Descargar plantilla con tus ${total} parcelas` : 'Descargar plantilla';
   // Mientras construye, un inventario nuevo llegaría a medias a esa construcción.
   $('#inventario-subir').disabled = Boolean(proyecto.trabajo);
+  // Lo vuelve a esconder cierra.js si el loteo está conectado con Cierra.
+  $('#inventario-subir').hidden = false;
 }
