@@ -575,3 +575,46 @@ def test_el_correo_en_el_registro_abre_el_registro_solo_en_este_computador():
 
     assert CorreoEnElRegistro(local=True).puede_enviar is True
     assert CorreoEnElRegistro(local=False).puede_enviar is False
+
+
+def sin_correo_con_google(tmp_path):
+    """Como en producción hoy: sin SendGrid, con Google."""
+    web, base, correo = montar(tmp_path, http=HttpDeGoogle(), local=False)
+    correo.puede_enviar = False
+    return web, base, correo
+
+
+def test_sin_correo_y_con_google_la_entrada_ofrece_crear_la_cuenta_con_google(tmp_path, monkeypatch):
+    monkeypatch.setenv("CONSOLA_URL", "https://consola.test")
+    web, _, _ = sin_correo_con_google(tmp_path)
+
+    pagina = web.get("/entrar").text
+
+    assert 'href="/registro"' not in pagina
+    assert "Créala con Google" in pagina
+    assert "¿Olvidaste tu contraseña? Escríbenos" in pagina
+
+
+@pytest.mark.parametrize("ruta", ["/registro", "/olvide"])
+def test_sin_correo_y_con_google_registrarse_y_recuperar_mandan_a_google(tmp_path, monkeypatch, ruta):
+    monkeypatch.setenv("CONSOLA_URL", "https://consola.test")
+    web, _, _ = sin_correo_con_google(tmp_path)
+
+    pagina = web.get(ruta).text
+
+    assert 'href="/entrar/google"' in pagina
+    assert "las cuentas las crea el equipo" not in pagina
+
+
+def test_sin_correo_alguien_nuevo_igual_se_crea_la_cuenta_con_google(tmp_path, monkeypatch):
+    monkeypatch.setenv("CONSOLA_URL", "https://consola.test")
+    web, base, _ = sin_correo_con_google(tmp_path)
+
+    ida = web.get("/entrar/google")
+    consulta = parse_qs(urlparse(ida.headers["location"]).query)
+    web.get(f"/entrar/google/vuelta?code=bueno&state={consulta['state'][0]}")
+    alta = web.post("/registro/google", data={"loteadora": "Bosques del Sur"})
+
+    assert consulta["redirect_uri"] == ["https://consola.test/entrar/google/vuelta"]
+    assert alta.status_code == 303
+    assert base.usuario_por_email("pia@bosques.cl").email_verificado is True

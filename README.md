@@ -274,6 +274,16 @@ tokens se guarda el hash. Registrarse y pedir enlaces tiene un tope de 5 por hor
 
 Con Google, una cuenta existente se enlaza si Google dice que el correo está verificado;
 alguien nuevo elige el nombre de su loteadora y entra.
+Sin SendGrid, Google sigue abriendo cuentas nuevas (el correo ya viene verificado): la
+entrada ofrece "¿No tienes cuenta? Créala con Google", y Regístrate y "¿Olvidaste tu
+contraseña?" mandan a Google o a escribirle al equipo.
+
+En Cloud Run, `CONSOLA_URL` y `GOOGLE_CLIENT_ID` salen de las sustituciones
+`_CONSOLA_URL` y `_GOOGLE_CLIENT_ID` del cloudbuild, y `GOOGLE_CLIENT_SECRET` del secreto
+`google-client-secret`. **Ese secreto tiene que existir antes del despliegue** (aunque
+sea con un valor cualquiera): si falta, `gcloud run deploy` falla. Al cambiar de
+dirección (por ejemplo a `app.tumasterplan.cl`), la nueva URI de redirección se agrega
+también en el cliente OAuth de Google.
 
 **Cuánto puede gastar una cuenta antes de pagar.** Como crear un master es gratis,
 una loteadora tiene topes (`Limites` en `consola/proyectos.py`); el equipo no:

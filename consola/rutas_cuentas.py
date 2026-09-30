@@ -68,9 +68,15 @@ def pagina_de_entrada(error: str | None = None, *, con_google: bool, con_registr
               'Continuar con Google</a><p class="separador">o</p>') if con_google else ""
     # Sin correo que llegue, registrarse y recuperar la clave no se pueden
     # terminar: no se ofrecen, y se manda a pedirle la cuenta al equipo.
-    enlaces = ('<a href="/olvide">¿Olvidaste tu contraseña?</a>'
-               '<a href="/registro">¿No tienes cuenta? Regístrate</a>') if con_registro else (
-               f'<a href="{CONTACTO}">¿No tienes cuenta u olvidaste la contraseña? Escríbenos</a>')
+    # Con Google, la cuenta nueva se crea igual: el correo ya viene verificado.
+    if con_registro:
+        enlaces = ('<a href="/olvide">¿Olvidaste tu contraseña?</a>'
+                   '<a href="/registro">¿No tienes cuenta? Regístrate</a>')
+    elif con_google:
+        enlaces = ('<a href="/entrar/google">¿No tienes cuenta? Créala con Google</a>'
+                   f'<a href="{CONTACTO}">¿Olvidaste tu contraseña? Escríbenos</a>')
+    else:
+        enlaces = f'<a href="{CONTACTO}">¿No tienes cuenta u olvidaste la contraseña? Escríbenos</a>'
     return pagina("Entrar", f"""
   {_aviso(error)}{_aviso(aviso, "ok")}
   {google}
@@ -212,6 +218,15 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
         """La página de "por ahora no", si no hay correo que llegue."""
         if cuentas.registro_abierto:
             return None
+        if con_google:
+            # Sin correo, Google es la puerta para quien no tiene cuenta.
+            return pagina(que, f"""
+  <h1>{escape(que)}</h1>
+  <p>Por ahora las cuentas nuevas se crean con Google: no necesitas contraseña. Si ya
+    tienes una y la olvidaste, entra con Google con ese mismo correo o escríbenos.</p>
+  <a class="boton boton--google" href="/entrar/google">{LOGO_GOOGLE}Continuar con Google</a>
+  <nav class="entrada__enlaces"><a href="{CONTACTO}">Escribir un correo</a>
+    <a href="/entrar">Volver a entrar</a></nav>""")
         return pagina(que, f"""
   <h1>{escape(que)}</h1>
   <p>Por ahora las cuentas las crea el equipo de Tu Masterplan, y también te da una
