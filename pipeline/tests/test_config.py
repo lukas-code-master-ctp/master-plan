@@ -326,3 +326,45 @@ def test_sin_inventario_subido_vale_el_xlsx_del_vuelo(tmp_path):
     armar(tmp_path, excel="precios.xlsx")
 
     assert descubrir_fuentes(tmp_path).excel.name == "precios.xlsx"
+
+
+# --- lo que genera el pipeline no es fuente, lo que se sube sí ---------------------
+
+def _repo_falso(tmp_path, monkeypatch):
+    """Un repo de mentira con los datos adentro, como corre la consola en local."""
+    from pipeline import config as modulo
+
+    raiz = tmp_path / "master-plan"
+    monkeypatch.setattr(modulo, "RAIZ", raiz)
+    monkeypatch.setattr(modulo, "SALIDAS", raiz / "salidas")
+    monkeypatch.setattr(modulo, "SUBIDAS", raiz / "proyectos")
+    return raiz
+
+
+def test_encuentra_las_fuentes_de_un_master_subido_por_la_consola(tmp_path, monkeypatch):
+    """Sin MASTERPLAN_DATOS las subidas quedan dentro del repo, en proyectos/<slug>."""
+    raiz = _repo_falso(tmp_path, monkeypatch)
+    carpeta = raiz / "proyectos" / "mi-loteo"
+    carpeta.mkdir(parents=True)
+    armar(carpeta, excel=None, fotos=("fotos/DJI_0001.JPG",))
+
+    fuentes = descubrir_fuentes(carpeta, sin_crm=True)
+
+    assert fuentes.kmz == carpeta / "loteo.kmz"
+    assert fuentes.panoramas == carpeta / "fotos"
+
+
+def test_una_carpeta_que_contiene_el_repo_no_toma_lo_generado(tmp_path, monkeypatch):
+    """Si se apunta a una carpeta del disco que contiene al repo, las salidas del
+    pipeline no deben confundirse con las fuentes."""
+    raiz = _repo_falso(tmp_path, monkeypatch)
+    armar(tmp_path, kmz="z-loteo.kmz", fotos=("vuelo/a.JPG",))
+    sitio = raiz / "salidas" / "otro" / "sitio"
+    (sitio / "panoramas").mkdir(parents=True)
+    (sitio / "panoramas" / "p.jpg").write_bytes(b"jpg")
+    (raiz / "a.kmz").write_bytes(b"kmz")
+
+    fuentes = descubrir_fuentes(tmp_path, sin_crm=True)
+
+    assert fuentes.kmz == tmp_path / "z-loteo.kmz"
+    assert fuentes.panoramas == tmp_path / "vuelo"

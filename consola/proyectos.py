@@ -29,7 +29,7 @@ from .acceso import Sesion
 from .datos import Base, NoEncontrado, ProyectoGuardado
 from .portada import portada
 
-CARPETA_SUBIDAS = config.DATOS / "proyectos"
+CARPETA_SUBIDAS = config.SUBIDAS
 
 EXTENSIONES_FOTO = (".jpg", ".jpeg")
 
