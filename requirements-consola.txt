@@ -9,5 +9,7 @@ sqlalchemy>=2.0
 passlib[bcrypt]>=1.7
 # passlib 1.7 no habla con bcrypt 4; mismo pin que usa Cierra.
 bcrypt<4
+# Cifrar la clave de API de Cierra que guarda cada loteadora.
+cryptography>=43
 # En el servidor la base es Postgres; en este computador, SQLite.
 psycopg[binary]>=3.1

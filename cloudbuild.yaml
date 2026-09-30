@@ -64,7 +64,7 @@ steps:
       # cabecera Host de la petición, que la escribe quien pide.
       # CONSOLA_REPUBLICAR_AL_ARRANCAR: al arrancar, la consola republica los loteos
       # publicados cuyo visor quedó atrás (ver "Despliegue continuo" en el README).
-      - '--set-env-vars=^|^CONSOLA_ENTORNO=produccion|MASTERPLAN_DATOS=/datos|VERCEL_SCOPE=${_VERCEL_SCOPE}|MASTERPLAN_DOMINIO=${_DOMINIO}|CONSOLA_REPUBLICAR_AL_ARRANCAR=1|CONSOLA_URL=${_CONSOLA_URL}|GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID}'
+      - '--set-env-vars=^|^CONSOLA_ENTORNO=produccion|MASTERPLAN_DATOS=/datos|VERCEL_SCOPE=${_VERCEL_SCOPE}|MASTERPLAN_DOMINIO=${_DOMINIO}|CONSOLA_REPUBLICAR_AL_ARRANCAR=1|CONSOLA_URL=${_CONSOLA_URL}|GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID}|CIERRA_API_URL=${_CIERRA_API_URL}'
 
 substitutions:
   _REGION: southamerica-east1
@@ -77,6 +77,7 @@ substitutions:
   _DOMINIO: ''                          # cuando exista: tumasterplan.cl
   _CONSOLA_URL: https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app   # cuando exista: https://app.tumasterplan.cl
   _GOOGLE_CLIENT_ID: 910611168611-lc1d5fra9moaqoi69lbiiqll6a9tgvaf.apps.googleusercontent.com   # vacío: sin "Continuar con Google"
+  _CIERRA_API_URL: ''                   # vacío: sin "Conectar con Cierra"; cuando Cierra tenga /integrations/parcelas: https://api.cierra.cl
 
 images:
   - '${_IMAGEN}:$BUILD_ID'

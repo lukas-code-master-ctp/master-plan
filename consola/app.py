@@ -35,6 +35,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from pipeline import config, visor
 
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
+from .cierra import Cierra, Cifrador, Conexiones, cierra_del_entorno
 from .comandos import Comandos, encadenar
 from .cuentas import Cuentas, Google, correo_del_entorno, google_del_entorno
 from .datos import (
@@ -50,6 +51,7 @@ from .disenos import como_json as diseno_json
 from .plantilla import MIME_XLSX, plantilla
 from .proyectos import LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
 from .republicar import republicar
+from .rutas_cierra import rutas_de_cierra, sincronizar_antes_de_construir
 from .rutas_cuentas import (
     LIBRES_DE_CUENTAS,
     pagina_de_entrada,
@@ -65,7 +67,7 @@ WEB = Path(__file__).resolve().parent / "web"
 # cualquier archivo de la carpeta: una ruta que arma rutas de disco con lo que
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
-           "cuenta.js", "backoffice.js", "disenos.js", "inventario.js")
+           "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
 MODULOS_DEL_VISOR = ("marca.js",)
@@ -101,7 +103,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
               comandos=None, acceso: Acceso | None = None, base: Base | None = None,
               disenos: Disenos | None = None, cuentas: Cuentas | None = None,
               google: Google | None | bool = True,
-              republicar_al_arrancar: bool | None = None) -> FastAPI:
+              republicar_al_arrancar: bool | None = None,
+              cierra: Cierra | None | bool = True, conexiones: Conexiones | None = None) -> FastAPI:
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
     cuentas = cuentas or Cuentas(base=base, correo=correo_del_entorno(acceso.local),
@@ -109,6 +112,9 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     # `True` = lo que diga el entorno; las pruebas pasan uno propio o `None`.
     google = google_del_entorno() if google is True else (google or None)
     disenos = disenos or Disenos(base=base)
+    cierra = cierra_del_entorno() if cierra is True else (cierra or None)
+    if cierra is not None and conexiones is None:
+        conexiones = Conexiones(base=base, cifrador=Cifrador(acceso.secreto))
     registro = registro or Registro(base=base, crm_por_defecto=config.csv_del_crm(),
                                     limites=Limites.desde_el_entorno())
     trabajos = trabajos or Trabajos(directorio=config.RAIZ)
@@ -382,12 +388,17 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                 raise HTTPException(429, "ya tienes una construcción en curso; lanza esta "
                                          "cuando termine esa")
         sin_imagenes = bool(opciones.get("sin_imagenes"))
+        # Con una construcción en curso, `lanzar` contesta 409: no se le cambia el
+        # inventario por debajo a la que está leyendo.
+        aviso = (None if trabajos.corriendo(slug)
+                 else sincronizar_antes_de_construir(cierra, conexiones, proyecto))
         # El control de calce va pegado a la construcción: es lo que hay que mirar
         # antes de publicar, y pedirlo aparte se olvida.
-        return lanzar(proyecto, "construir", encadenar(
+        lanzado = lanzar(proyecto, "construir", encadenar(
             comandos.construir(proyecto, sin_imagenes=sin_imagenes),
             comandos.control_de_calce(proyecto),
         ), al_terminar=_aplicar_diseno(mios, disenos, slug))
+        return {**lanzado, "aviso": aviso} if aviso else lanzado
 
     @app.post("/api/proyectos/{slug}/publicar", status_code=202)
     def publicar(slug: str, opciones: dict = Body(default={}),
@@ -612,6 +623,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return FileResponse(proyecto.salida.qa / archivo, media_type="image/jpeg")
 
     app.include_router(rutas_de_cuentas(acceso, cuentas, google))
+    app.include_router(rutas_de_cierra(cierra, conexiones, vista, ocupado=trabajos.corriendo))
 
     @app.exception_handler(DisenoInvalido)
     async def diseno_invalido(peticion: Request, error: DisenoInvalido):
