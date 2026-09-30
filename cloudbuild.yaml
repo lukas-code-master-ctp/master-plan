@@ -18,6 +18,9 @@
 #   printf '%s' "postgresql+psycopg://<usuario>:<clave>@/<base>?host=/cloudsql/<proyecto>:southamerica-east1:tumasterplan-bd" \
 #     | gcloud secrets create masterplan-bd --data-file=-
 #   printf '%s' "<token de vercel>"      | gcloud secrets create vercel-token --data-file=-
+#   # Entrar con Google: el secreto del cliente OAuth web (su ID va en _GOOGLE_CLIENT_ID,
+#   # que no es secreto). URI de redirección: <_CONSOLA_URL>/entrar/google/vuelta
+#   printf '%s' "<secreto del cliente>" | gcloud secrets create google-client-secret --data-file=-
 steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', '${_IMAGEN}:$BUILD_ID', '-t', '${_IMAGEN}:latest', '.']
@@ -54,12 +57,14 @@ steps:
       - '--add-volume=name=datos,type=cloud-storage,bucket=${_BUCKET}'
       - '--add-volume-mount=volume=datos,mount-path=/datos'
       - '--add-cloudsql-instances=${PROJECT_ID}:${_REGION}:${_INSTANCIA_BD}'
-      - '--set-secrets=CONSOLA_SECRETO=consola-secreto:latest,MASTERPLAN_BD=masterplan-bd:latest,VERCEL_TOKEN=vercel-token:latest'
+      - '--set-secrets=CONSOLA_SECRETO=consola-secreto:latest,MASTERPLAN_BD=masterplan-bd:latest,VERCEL_TOKEN=vercel-token:latest,GOOGLE_CLIENT_SECRET=google-client-secret:latest'
       # _DOMINIO vacío deja los loteos en masterplan-<slug>.vercel.app; con
       # tumasterplan.cl pasan a <slug>.tumasterplan.cl.
+      # CONSOLA_URL: de ahí sale la vuelta de Google; desplegada no se arma con la
+      # cabecera Host de la petición, que la escribe quien pide.
       # CONSOLA_REPUBLICAR_AL_ARRANCAR: al arrancar, la consola republica los loteos
       # publicados cuyo visor quedó atrás (ver "Despliegue continuo" en el README).
-      - '--set-env-vars=^|^CONSOLA_ENTORNO=produccion|MASTERPLAN_DATOS=/datos|VERCEL_SCOPE=${_VERCEL_SCOPE}|MASTERPLAN_DOMINIO=${_DOMINIO}|CONSOLA_REPUBLICAR_AL_ARRANCAR=1'
+      - '--set-env-vars=^|^CONSOLA_ENTORNO=produccion|MASTERPLAN_DATOS=/datos|VERCEL_SCOPE=${_VERCEL_SCOPE}|MASTERPLAN_DOMINIO=${_DOMINIO}|CONSOLA_REPUBLICAR_AL_ARRANCAR=1|CONSOLA_URL=${_CONSOLA_URL}|GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID}'
 
 substitutions:
   _REGION: southamerica-east1
@@ -70,6 +75,8 @@ substitutions:
   _IMAGEN: southamerica-east1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/tumasterplan-consola
   _VERCEL_SCOPE: lrencoret-1882s-projects   # el equipo Pro: Hobby prohíbe el uso comercial
   _DOMINIO: ''                          # cuando exista: tumasterplan.cl
+  _CONSOLA_URL: https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app   # cuando exista: https://app.tumasterplan.cl
+  _GOOGLE_CLIENT_ID: ''                 # vacío: sin "Continuar con Google"
 
 images:
   - '${_IMAGEN}:$BUILD_ID'
