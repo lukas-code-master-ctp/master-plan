@@ -8,8 +8,8 @@ renderiza a 200 dpi.
 Hay dos sistemas de píxeles:
 - los de **página**: la imagen extraída y ya rotada a la lectura que eligió la
   loteadora. Ahí se marcan el rectángulo, las máscaras, las esquinas y las semillas.
-- los de **trabajo**: el recorte del dibujo remuestreado a ≥ 6 px por mm de papel o,
-  si es una foto, la hoja rectificada. Ahí se digitaliza.
+- los de **trabajo**: el recorte del dibujo remuestreado a entre 6 y 8 px por mm de
+  papel o, si es una foto, la hoja rectificada. Ahí se digitaliza.
 
 Una homografía 3×3 lleva de página a trabajo; con el recorte es una escala y una
 traslación, con la foto una perspectiva. Los polígonos vuelven a la página con su
@@ -32,6 +32,10 @@ Image.MAX_IMAGE_PIXELS = None
 # huecos del trazo). Por debajo de esta resolución el trazo es demasiado delgado
 # para separarlo del papel, y la imagen de trabajo se remuestrea hasta aquí.
 PPMM_TRABAJO_MINIMO = 6.0
+# Y por encima de esta se reduce: un A0 a 300 dpi (11,8 px/mm, ~140 Mpx) pasaría de
+# 4 GiB, y el set de regresión no mejora con más resolución (ver
+# docs/specs/2026-10-01-crea-tu-kmz-regresion.md).
+PPMM_TRABAJO_MAXIMO = 8.0
 
 # Sin una imagen embebida que cubra la página, se renderiza a esta resolución.
 DPI_RENDER = 200
@@ -166,7 +170,8 @@ def tapar(imagen: np.ndarray, mascaras, papel: np.ndarray) -> np.ndarray:
 
 def encuadrar(imagen: np.ndarray, ppmm_pagina: float, rectangulo, esquinas=None,
               marco_mm=None, papel=None) -> Encuadre:
-    """La imagen de trabajo: el rectángulo del dibujo a ≥ PPMM_TRABAJO_MINIMO px/mm.
+    """La imagen de trabajo: el rectángulo del dibujo a entre PPMM_TRABAJO_MINIMO y
+    PPMM_TRABAJO_MAXIMO px/mm.
 
     Con `esquinas` (las 4 del marco impreso, en orden sup-izq, sup-der, inf-der,
     inf-izq) se corrige la perspectiva de una foto: el marco pasa a ser un rectángulo
@@ -178,13 +183,18 @@ def encuadrar(imagen: np.ndarray, ppmm_pagina: float, rectangulo, esquinas=None,
     x0, y0, x1, y1 = _rect_entero(rectangulo, imagen.shape)
     if x1 <= x0 or y1 <= y0:
         raise ValueError(f"el rectángulo del dibujo está vacío: {list(rectangulo)}")
-    s = max(1.0, PPMM_TRABAJO_MINIMO / ppmm_pagina)
+    s = _escala(ppmm_pagina)
     trabajo = imagen[y0:y1, x0:x1]
     if s != 1.0:
-        trabajo = cv2.resize(trabajo, None, fx=s, fy=s, interpolation=cv2.INTER_CUBIC)
+        trabajo = cv2.resize(trabajo, None, fx=s, fy=s, interpolation=cv2.INTER_CUBIC if s > 1 else cv2.INTER_AREA)
     # Centro de píxel en el entero: u = (x - x0 + 0,5)·s - 0,5.
     h = np.array([[s, 0, s * (0.5 - x0) - 0.5], [0, s, s * (0.5 - y0) - 0.5], [0, 0, 1]], float)
     return Encuadre(np.ascontiguousarray(trabajo), ppmm_pagina * s, h, "recorte")
+
+
+def _escala(ppmm_pagina: float) -> float:
+    """Factor página → trabajo: lleva la resolución a [PPMM_TRABAJO_MINIMO, PPMM_TRABAJO_MAXIMO]."""
+    return min(max(ppmm_pagina, PPMM_TRABAJO_MINIMO), PPMM_TRABAJO_MAXIMO) / ppmm_pagina
 
 
 def _rectificar(imagen, ppmm_pagina, rectangulo, esquinas, marco_mm, papel) -> Encuadre:
@@ -206,7 +216,7 @@ def _rectificar(imagen, ppmm_pagina, rectangulo, esquinas, marco_mm, papel) -> E
     else:
         ancho_mm = (lados[0] + lados[2]) / 2 / ppmm_pagina
         alto_mm = (lados[1] + lados[3]) / 2 / ppmm_pagina
-        ppmm = max(PPMM_TRABAJO_MINIMO, ppmm_pagina)
+        ppmm = ppmm_pagina * _escala(ppmm_pagina)
     destino = np.float32([[0, 0], [ancho_mm * ppmm, 0], [ancho_mm * ppmm, alto_mm * ppmm], [0, alto_mm * ppmm]])
     h = cv2.getPerspectiveTransform(origen, destino).astype(float)
     x0, y0, x1, y1 = rectangulo

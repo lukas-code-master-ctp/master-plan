@@ -86,6 +86,18 @@ def test_recorte_remuestrea_y_vuelve_a_la_pagina():
     assert np.allclose(e.a_trabajo([[100, 50]]), [[0.5, 0.5]])
 
 
+def test_un_escaneo_muy_fino_se_reduce_al_tope():
+    # Un A0 a 300 dpi (11,8 px/mm) se digitaliza a PPMM_TRABAJO_MAXIMO: si no, no cabe en memoria.
+    img = np.zeros((1200, 1000, 3), np.uint8)
+    e = pag.encuadrar(img, 12.0, [100, 100, 700, 1000])
+    assert e.ppmm == pytest.approx(pag.PPMM_TRABAJO_MAXIMO)
+    assert e.imagen.shape[:2] == (600, 400)
+    puntos = np.array([[100, 100], [699, 999], [321.5, 456.25]])
+    assert np.allclose(e.a_pagina(e.a_trabajo(puntos)), puntos)
+    # Entre el mínimo y el tope, la imagen queda tal cual.
+    assert pag.encuadrar(img, 7.0, [0, 0, 1000, 1200]).imagen.shape[:2] == (1200, 1000)
+
+
 def test_tapar_pinta_del_color_del_papel():
     img = np.full((50, 50, 3), 240, np.uint8)
     img[10:20, 10:20] = 0

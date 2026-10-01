@@ -26,6 +26,7 @@ INK_T = 40             # oscurecimiento mínimo (niveles de gris, canal más osc
 INK_T_BAJO = 20        # umbral bajo de la histéresis: lo débil pegado a lo fuerte también es tinta
 CHROMA_FRAC = 0.35     # margen relativo para declarar una tinta verde, azul o roja
 DARK_MAX = 105         # tinta "firme" (un límite está dibujado): canal mínimo ≤ esto, o tinta roja
+ROJO_FIRME_FRAC = 0.15  # tinta roja "firme": basta este margen (el rosado tenue de un escaneo no llega a CHROMA_FRAC)
 
 # Cuadrícula UTM impresa.
 GRID_MM = 0.5          # semiancho de la franja que se borra sobre cada línea de la cuadrícula
@@ -78,7 +79,7 @@ def mascara(imagen: np.ndarray, ppmm: float, banda_cuadricula: np.ndarray | None
     if banda_cuadricula is not None:
         # La cuadrícula es tenue: se borra su trazo y queda lo oscuro que la cruza.
         tinta &= ~(banda_cuadricula & (dmax < 2 * INK_T))
-    rojo = (np.minimum(dg, db) - dr) > CHROMA_FRAC * dmax
+    rojo = (np.minimum(dg, db) - dr) > ROJO_FIRME_FRAC * dmax
     firme = tinta & ((imagen.min(-1) <= DARK_MAX) | rojo)
     del d, dr, dg, db, rojo, dmax
     lineas = _lineas(tinta, ppmm)

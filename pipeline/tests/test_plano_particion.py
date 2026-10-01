@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import pytest
+from shapely import affinity as shapely_affinity
 from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
@@ -68,6 +69,64 @@ def test_la_divisoria_doble_angosta_se_reparte_entre_los_vecinos():
         contacto = r.lotes[a].intersection(r.lotes[b])
         assert contacto.length > 0.9 * (y1 - y0)
         assert abs(contacto.centroid.x - x1) < 6
+
+
+def test_un_rotulo_subrayado_que_toca_los_deslindes_no_parte_el_lote():
+    # Un lote angosto (12 mm) con el rótulo en negrita y subrayado de lado a lado: el
+    # texto pasa por línea y toca los dos deslindes, pero el lote sale entero.
+    ancho_mm, alto_mm, m = 12.0, 30.0, 20.0
+    px = lambda v: int(round(v * PPMM))
+    img = np.full((px(alto_mm + 2 * m), px(3 * ancho_mm + 2 * m), 3), 245, np.uint8)
+    xs = [px(m + i * ancho_mm) for i in range(4)]
+    y0, y1 = px(m), px(m + alto_mm)
+    for x in xs:
+        cv2.line(img, (x, y0), (x, y1), ROJO, 2)
+    for y in (y0, y1):
+        cv2.line(img, (xs[0], y), (xs[-1], y), ROJO, 2)
+    semillas = []
+    for i in range(3):
+        cx, cy = (xs[i] + xs[i + 1]) / 2, (y0 + y1) / 2
+        cv2.putText(img, "LOTE", (xs[i] + 4, int(cy) - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, NEGRO, 2)
+        cv2.line(img, (xs[i] + 1, int(cy) + 4), (xs[i + 1] - 1, int(cy) + 4), NEGRO, 2)   # subrayado
+        semillas.append((str(i + 1), cx, cy))
+    alto, ancho = img.shape[:2]
+    r = digitalizar_imagen(img, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+    for i in range(3):
+        celda = Polygon([(xs[i], y0), (xs[i + 1], y0), (xs[i + 1], y1), (xs[i], y1)])
+        assert iou(r.lotes[str(i + 1)], celda) > 0.9
+
+
+def test_un_lote_chico_aislado_no_se_borra_como_texto_del_rotulo():
+    # Un enclave de 14 mm dibujado suelto dentro de otro lote: cabe entero en el cuadrado
+    # de ±ROTULO_MM de su rótulo, pero lo encierra, así que es deslinde y no texto.
+    px = lambda v: int(round(v * PPMM))
+    img = np.full((px(80), px(100), 3), 245, np.uint8)
+    cv2.rectangle(img, (px(10), px(10)), (px(90), px(70)), ROJO, 2)
+    a, b, c, d = px(43), px(57), px(33), px(47)
+    cv2.rectangle(img, (a, c), (b, d), ROJO, 2)
+    cv2.putText(img, "7", (px(50) - 5, px(40) + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, NEGRO, 1)
+    semillas = [("1", px(20), px(20)), ("7", px(50), px(40))]
+    r = digitalizar_imagen(img, PPMM, semillas, [0, 0, img.shape[1], img.shape[0]], avance=lambda _: None)
+    assert iou(r.lotes["7"], Polygon([(a, c), (b, c), (b, d), (a, d)])) > 0.95
+
+
+def test_un_escaneo_muy_fino_se_digitaliza_reducido_y_vuelve_en_px_de_pagina():
+    # El mismo plano escaneado al doble (12 px/mm > PPMM_TRABAJO_MAXIMO): se trabaja
+    # reducido, pero los lotes vuelven en px de la página de 12 px/mm.
+    plano = dibujar()
+    base = _digitalizar(plano)
+    grande = cv2.resize(plano.imagen, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    alto, ancho = grande.shape[:2]
+    semillas = [(n, 2 * x + 0.5, 2 * y + 0.5) for n, x, y in plano.semillas]
+    r = digitalizar_imagen(grande, 2 * PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+    assert r.encuadre.ppmm == pytest.approx(8.0)
+    assert set(r.lotes) == set(base.lotes)
+    for n, p in r.lotes.items():
+        # Centro de píxel: x_grande = 2·x + 0,5.
+        de_vuelta = shapely_affinity.affine_transform(p, [0.5, 0, 0, 0.5, -0.25, -0.25])
+        assert iou(de_vuelta, base.lotes[n]) > 0.95, n
+        # Igual de cerca del lote ideal que sin reducir: no hay corrimiento de coordenadas.
+        assert iou(de_vuelta, plano.celdas[n]) > iou(base.lotes[n], plano.celdas[n]) - 0.01, n
 
 
 def test_semillas_repetidas():

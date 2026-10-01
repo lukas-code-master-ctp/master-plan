@@ -36,3 +36,5 @@ publicacion.json
 
 # Recortes y resultados de la prueba de rotulos (contenido de planos con nombres y RUT).
 trabajo_crea_kmz/rotulos/datos/
+# Set de regresión de Crea tu KMZ: planos y KMZ reales con nombres y RUT de propietarios.
+regresion/
