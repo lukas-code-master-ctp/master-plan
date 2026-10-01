@@ -392,7 +392,11 @@ class Plano:
                 banderas.append("sin_numero")
             elif ids.count(id_) > 1:
                 banderas.append("duplicado")
-            propiedades = dict(numero=numero, area_px=lote.get("area_px"), banderas=banderas)
+            propiedades = dict(numero=numero, area_px=lote.get("area_px"), banderas=banderas,
+                               # De dónde salió el número: la pantalla pinta distinto lo
+                               # que leyó el lector (y cuán seguro) de lo que marcó ella.
+                               origen=lote.get("origen") or "usuario", confianza=lote.get("confianza"),
+                               apoyo=lote.get("apoyo"), semilla=lote.get("semilla"))
             if numero in areas:
                 propiedades["area_m2"] = round(areas[numero].area, 1)
                 oficial = lote.get("area_oficial")

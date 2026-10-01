@@ -87,6 +87,7 @@ export function ruta(hash) {
   if (partes[0] === 'disenos' && partes[1]) return { pantalla: 'diseno', id: partes[1] };
   if (partes[0] === 'disenos') return { pantalla: 'disenos' };
   if (partes[0] === 'planos' && partes[1] === 'nuevo') return { pantalla: 'nuevo' };
+  if (partes[0] === 'planos' && partes[1] && partes[2] === 'kmz') return { pantalla: 'kmz', slug: partes[1] };
   if (partes[0] === 'planos' && partes[1]) return { pantalla: 'plano', slug: partes[1] };
   return { pantalla: 'planos' };
 }
@@ -126,11 +127,12 @@ export function pastilla(texto, tono) {
 /** El estado de un loteo en una palabra, para la lista y el detalle. */
 export function etapaDe(proyecto) {
   if (proyecto.trabajo) {
-    return proyecto.trabajo.accion === 'publicar'
-      ? pastilla('Publicando…', 'curso') : pastilla('Construyendo…', 'curso');
+    const texto = { publicar: 'Publicando…', 'digitalizar-plano': 'Digitalizando el plano…' };
+    return pastilla(texto[proyecto.trabajo.accion] ?? 'Construyendo…', 'curso');
   }
   if (proyecto.publicado) return pastilla('Publicado', 'ok');
   if (proyecto.construido) return pastilla('Construido', 'ok');
+  if (!proyecto.fuentes_encontradas.kmz && proyecto.plano) return pastilla('Creando el KMZ', 'aviso');
   if (!proyecto.fuentes_encontradas.kmz) return pastilla('Falta el vuelo', 'aviso');
   return pastilla('Sin construir', 'aviso');
 }

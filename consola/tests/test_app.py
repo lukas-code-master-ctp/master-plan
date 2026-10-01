@@ -332,6 +332,8 @@ def test_un_proyecto_construido_muestra_su_resumen(entorno, tmp_path):
     ("/js/app.js", "text/javascript"),
     ("/js/plano.js", "text/javascript"),
     ("/fuente.woff2", "font/woff2"),
+    ("/vendor/leaflet.js", "text/javascript"),
+    ("/vendor/leaflet.css", "text/css"),
 ])
 def test_la_pagina_trae_sus_propios_archivos(entorno, ruta, tipo):
     cliente, _, _ = entorno
@@ -450,6 +452,7 @@ RUTAS = {
     ("GET", "/fuente.woff2"): SIN_SESION,
     ("GET", "/"): SOLO_SUYO,
     ("GET", "/js/{modulo}"): SOLO_SUYO,
+    ("GET", "/vendor/{archivo}"): SOLO_SUYO,
     ("GET", "/api/sesion"): SOLO_SUYO,
     ("POST", "/api/clave"): SOLO_SUYO,
     ("GET", "/api/proyectos"): SOLO_SUYO,
@@ -969,6 +972,8 @@ def test_la_pagina_no_sirve_modulos_que_no_son_suyos(entorno):
 
     assert cliente.get("/js/..%2Fapp.py").status_code == 404
     assert cliente.get("/js/otro.js").status_code == 404
+    assert cliente.get("/vendor/..%2F..%2Fconsola%2Fapp.py").status_code == 404
+    assert cliente.get("/vendor/fuentes").status_code == 404
 
 
 def test_un_pago_anotado_no_se_pisa(ana_y_luis):

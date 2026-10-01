@@ -476,6 +476,25 @@ def test_lotes_en_pixeles_antes_de_ubicar(ana):
     assert web.get(f"/api/proyectos/{slug}/plano/lotes", params={"en": "utm"}).status_code == 400
 
 
+def test_lotes_dicen_de_donde_salio_su_numero(ana):
+    """La pantalla pinta distinto el número que leyó el lector (con su confianza) del
+    que marcó la loteadora, y pone el rótulo en la semilla."""
+    web, slug, registro, _ = ana
+    listo_para_ubicar(web, slug, registro)
+    lotes = [dict(numero="1", poligono=_cuadro(0, 0, 400, 300), huecos=[], semilla=[200, 150],
+                  origen="lector", confianza=0.82, apoyo=3),
+             dict(numero="2", poligono=_cuadro(400, 0, 800, 300), huecos=[], semilla=[600, 150],
+                  origen="usuario", confianza=None, apoyo=None),
+             dict(numero="3", poligono=_cuadro(0, 300, 800, 700), huecos=[])]
+    digitalizado_a_mano(carpeta_del_plano(registro, slug), lotes)
+
+    uno, dos, tres, _ = (r["properties"] for r in web.get(f"/api/proyectos/{slug}/plano/lotes").json()["features"])
+
+    assert (uno["origen"], uno["confianza"], uno["apoyo"], uno["semilla"]) == ("lector", 0.82, 3, [200, 150])
+    assert (dos["origen"], dos["confianza"], dos["semilla"]) == ("usuario", None, [600, 150])
+    assert tres["origen"] == "usuario" and tres["semilla"] is None
+
+
 def test_lotes_ubicados_con_area_y_error_contra_el_cuadro(ana):
     web, slug, registro, _ = ana
     listo_para_ubicar(web, slug, registro)

@@ -68,10 +68,14 @@ WEB = Path(__file__).resolve().parent / "web"
 # cualquier archivo de la carpeta: una ruta que arma rutas de disco con lo que
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
-           "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js")
+           "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
+           "kmz.js", "kmz_geometria.js", "lienzo_plano.js", "mapa_kmz.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
 MODULOS_DEL_VISOR = ("marca.js",)
+# Y las librerías del visor que usa Crea tu KMZ (el mapa para ubicar el plano). Igual
+# que los módulos: por nombre, de una lista cerrada.
+VENDOR_DEL_VISOR = {"leaflet.js": "text/javascript", "leaflet.css": "text/css"}
 
 TIPOS_LOGO = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp",
               ".svg": "image/svg+xml"}
@@ -253,6 +257,12 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         if modulo not in MODULOS:
             raise HTTPException(404, "no existe ese módulo")
         return FileResponse(WEB / "js" / modulo, media_type="text/javascript")
+
+    @app.get("/vendor/{archivo}")
+    def libreria(archivo: str) -> FileResponse:
+        if archivo not in VENDOR_DEL_VISOR:
+            raise HTTPException(404, "no existe ese archivo")
+        return FileResponse(config.PLANTILLA_WEB / "vendor" / archivo, media_type=VENDOR_DEL_VISOR[archivo])
 
     @app.get("/fuente.woff2")
     def fuente() -> FileResponse:

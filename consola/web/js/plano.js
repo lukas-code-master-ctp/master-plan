@@ -12,6 +12,12 @@ import { comoInventario, pintarInventario, prepararInventario } from './inventar
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
 
 let refrescar = async () => {};
+
+// Crea tu KMZ: en qué va el plano del master (`plano.paso` del servidor).
+const PASO_DEL_PLANO = {
+  marcar: 'falta marcar el dibujo', digitalizar: 'falta digitalizar', ubicar: 'falta ubicarlo',
+  crear: 'falta crear el KMZ', listo: 'KMZ creado',
+};
 let actual = null;          // el slug que se está mirando
 
 export function prepararPlano(opciones) {
@@ -78,6 +84,7 @@ function meta(proyecto) {
   // Sin teléfono el visor esconde el botón de contacto: el comprador mira, se
   // decide y no tiene a quién escribirle. Se avisa antes de publicar, no después.
   if (proyecto.sin_contacto) partes.push(pastilla('Sin contacto', 'aviso'));
+  if (proyecto.plano) partes.push(pastilla(`Plano: ${PASO_DEL_PLANO[proyecto.plano.paso] ?? proyecto.plano.paso}`));
   partes.push(etapaDe(proyecto));
   if (proyecto.publicado) {
     const enlace = document.createElement('a');
@@ -109,6 +116,12 @@ function pintarAcciones(proyecto) {
   archivos.textContent = conFuentes ? 'Subir archivos' : 'Subir el vuelo';
   archivos.className = conFuentes ? 'boton boton--contorno' : 'boton';
   archivos.disabled = enCurso;
+  // Crea tu KMZ: sin KMZ es el camino principal; con KMZ, una alternativa.
+  const kmz = $('#plano-kmz');
+  kmz.href = `#/planos/${encodeURIComponent(proyecto.slug)}/kmz`;
+  kmz.className = conFuentes ? 'boton boton--contorno' : 'boton';
+  kmz.textContent = proyecto.plano ? 'Seguir con el KMZ desde el plano' : 'Crear el KMZ desde el plano';
+  if (proyecto.plano && !conFuentes) archivos.className = 'boton boton--contorno';
 }
 
 function pintarPortada(proyecto) {
@@ -119,7 +132,7 @@ function pintarPortada(proyecto) {
     const texto = document.createElement('figcaption');
     texto.textContent = proyecto.fuentes_encontradas.kmz
       ? 'Todavía no está construido. Aprieta Construir para ver el loteo sobre las fotos.'
-      : 'Sube el KMZ y las panorámicas del dron para empezar.';
+      : 'Sube el KMZ y las panorámicas del dron para empezar. ¿No tienes el KMZ? Créalo desde el plano aprobado.';
     figura.append(texto);
     return;
   }
@@ -300,6 +313,13 @@ async function lanzar(proyecto, accion, cuerpo) {
   seguir(proyecto.slug, id);
 }
 
+/**
+ * Quién más quiere enterarse del avance de un trabajo, por loteo: la pantalla de
+ * Crea tu KMZ muestra en vivo la digitalización. Se le avisa con cada tanda de
+ * líneas y al terminar.
+ */
+export const oyentes = new Map();
+
 /** Sondea un trabajo y va volcando sus líneas hasta que termina. */
 export function seguir(slug, identificador) {
   clearTimeout(estado.sondeos.get(slug));
@@ -314,9 +334,11 @@ export function seguir(slug, identificador) {
         estado.registros.set(slug, registro);
         desde = trabajo.total;
         if (slug === actual) pintarRegistro(slug);
+        if (!trabajo.terminado) oyentes.get(slug)?.(trabajo);
       }
       if (trabajo.terminado) {
         estado.sondeos.delete(slug);
+        oyentes.get(slug)?.(trabajo);
         await refrescar();
         if (trabajo.estado === 'falló') {
           avisar(`El ${trabajo.accion} de ${slug} falló. El detalle está en el registro.`);

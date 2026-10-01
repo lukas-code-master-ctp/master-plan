@@ -11,10 +11,11 @@ import { pintarBackOffice, prepararBackOffice } from './backoffice.js';
 import { pintarCuenta, prepararCuenta, recordarClaveProvisional } from './cuenta.js';
 import { abrirNuevo, prepararNuevo } from './nuevo.js';
 import { abrirDiseno, pintarDisenos, prepararDisenos } from './disenos.js';
+import { pintarKmz, prepararKmz } from './kmz.js';
 import { cerrarDialogos, pintarPlano, prepararPlano, seguir } from './plano.js';
 import { pintarPlanos } from './planos.js';
 
-const PANTALLAS = ['planos', 'nuevo', 'plano', 'disenos', 'diseno'];
+const PANTALLAS = ['planos', 'nuevo', 'plano', 'kmz', 'disenos', 'diseno'];
 
 let anterior = null;
 // Se llegó a un loteo que no estaba en la lista y se está trayendo: al pintarlo
@@ -28,6 +29,8 @@ function mostrar() {
   anterior = clave;
 
   for (const nombre of PANTALLAS) $(`#pantalla-${nombre}`).hidden = nombre !== destino.pantalla;
+  // Crea tu KMZ pone el plano y el mapa lado a lado: usa todo el ancho.
+  document.body.classList.toggle('pantalla-ancha', destino.pantalla === 'kmz');
   const seccion = destino.pantalla.startsWith('diseno') ? 'disenos' : 'planos';
   for (const enlace of $$('.pestanas a')) {
     if (enlace.dataset.seccion === seccion) enlace.setAttribute('aria-current', 'page');
@@ -38,6 +41,10 @@ function mostrar() {
     avisar(null);
     cerrarDialogos();
     window.scrollTo(0, 0);
+  }
+  if (destino.pantalla === 'kmz') {
+    pintarKmz(destino.slug, { nuevo: llegando });
+    return;
   }
   if (destino.pantalla === 'plano') {
     const conocido = estado.proyectos.some((p) => p.slug === destino.slug);
@@ -85,10 +92,15 @@ async function arrancar() {
   prepararPlano({ refrescar });
   prepararBackOffice({ refrescar });
   prepararDisenos({ refrescar });
+  prepararKmz({ refrescar });
   prepararNuevo({
     alCrear: async (slug) => {
       location.hash = `#/planos/${encodeURIComponent(slug)}`;
       await refrescar();
+    },
+    alCrearDesdePlano: async (slug) => {
+      await refrescar();
+      location.hash = `#/planos/${encodeURIComponent(slug)}/kmz`;
     },
   });
   window.addEventListener('hashchange', mostrar);
