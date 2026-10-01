@@ -145,6 +145,13 @@ export class Mapa {
     if (forma) this.mapa.fitBounds(forma.getBounds().pad(2.5), { animate: true });
   }
 
+  /** El punto de vuelo que se está mirando, con su cono, sin perder el loteo de vista. */
+  enfocarVista(vista) {
+    const cono = this.cono.getLatLngs()[0] ?? [];
+    const puntos = [[vista.lat, vista.lon], ...cono];
+    this.mapa.fitBounds(L.latLngBounds(puntos).pad(0.15), { animate: true, maxZoom: 17 });
+  }
+
   refrescar() {
     this.mapa.invalidateSize();
     // Recalcular el tamaño no rehace el encuadre: el zoom del planeta entero

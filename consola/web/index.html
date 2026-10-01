@@ -163,7 +163,66 @@
 
       <dl id="plano-cifras" class="cifras" hidden></dl>
 
-      <pre id="plano-registro" class="consola-log" hidden></pre>
+      <section id="plano-vuelo" class="vuelo" aria-live="polite" hidden>
+        <svg class="vuelo__escena" viewBox="0 0 360 172" aria-hidden="true">
+          <defs>
+            <linearGradient id="vuelo-haz" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="currentColor" stop-opacity="0.28"/>
+              <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <!-- El loteo, en isométrico: tres filas de parcelas y un camino. -->
+          <g transform="translate(180 116) matrix(0.866 0.5 -0.866 0.5 0 0)">
+            <rect class="vuelo__suelo" x="-92" y="-60" width="184" height="120" rx="6"/>
+            <rect class="vuelo__camino" x="-92" y="-17" width="184" height="6"/>
+              <rect class="vuelo__lote" x="-80" y="-48" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="-48" y="-48" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="-16" y="-48" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="16" y="-48" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="48" y="-48" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="-80" y="-8" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="-48" y="-8" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="-16" y="-8" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="16" y="-8" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="48" y="-8" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="-80" y="24" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="-48" y="24" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="-16" y="24" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="16" y="24" width="28" height="28" rx="2"/>
+              <rect class="vuelo__lote" x="48" y="24" width="28" height="28" rx="2"/>
+          </g>
+          <!-- La sombra va por el suelo con el dron; el dron, más arriba. -->
+          <g class="vuelo__ruta">
+            <ellipse class="vuelo__sombra" cx="180" cy="128" rx="30" ry="6"/>
+            <g class="vuelo__dron">
+              <polygon class="vuelo__haz" points="180,52 140,124 220,124"/>
+              <g transform="translate(180 40) scale(1.45) translate(-180 -40)">
+              <g class="vuelo__cuerpo">
+                <path class="vuelo__brazo" d="M150 36h60M162 30h36"/>
+                <ellipse class="vuelo__helice" cx="150" cy="32" rx="12" ry="2.2"/>
+                <ellipse class="vuelo__helice" cx="210" cy="32" rx="12" ry="2.2"/>
+                <ellipse class="vuelo__helice vuelo__helice--atras" cx="162" cy="27" rx="10" ry="1.8"/>
+                <ellipse class="vuelo__helice vuelo__helice--atras" cx="198" cy="27" rx="10" ry="1.8"/>
+                <rect class="vuelo__fuselaje" x="166" y="32" width="28" height="12" rx="5"/>
+                <path class="vuelo__brazo" d="M170 44l-4 7M190 44l4 7"/>
+                <circle class="vuelo__camara" cx="180" cy="47" r="3.4"/>
+              </g>
+              </g>
+            </g>
+          </g>
+        </svg>
+        <div class="vuelo__texto">
+          <p id="vuelo-titulo" class="vuelo__titulo"></p>
+          <p id="vuelo-paso" class="vuelo__paso"></p>
+          <div class="vuelo__progreso" role="progressbar" aria-label="Avance" aria-valuemin="0" aria-valuemax="100">
+            <i id="vuelo-barra"></i>
+          </div>
+          <details id="vuelo-detalle" class="vuelo__detalle">
+            <summary>Ver el registro</summary>
+            <pre id="plano-registro" class="consola-log"></pre>
+          </details>
+        </div>
+      </section>
 
       <form id="plano-ajustes" class="ajustes">
         <label class="campo"><span>Nombre</span><input name="nombre" type="text" autocomplete="off"></label>

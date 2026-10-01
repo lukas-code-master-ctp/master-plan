@@ -216,11 +216,8 @@ function construirControles() {
     return boton;
   }));
 
-  $('#ampliar-mapa').addEventListener('click', (evento) => {
-    const amplia = $('#carta').classList.toggle('carta--amplia');
-    evento.currentTarget.setAttribute('aria-pressed', String(amplia));
-    // Leaflet necesita saber que cambió de tamaño, y la transición dura 420 ms.
-    setTimeout(() => estado.mapa?.refrescar(), 460);
+  $('#ampliar-mapa').addEventListener('click', () => {
+    ampliarPlano(!$('#carta').classList.contains('carta--amplia'));
   });
 
   $('#acercar').addEventListener('click', () => estado.visor.acercar(0.78));
@@ -229,8 +226,16 @@ function construirControles() {
 
 function conectarAccionesRapidas() {
   $('#accion-plano').addEventListener('click', () => {
+    // En el teléfono el plano es otra pestaña. En escritorio ya está a la vista,
+    // chico en una esquina: apretar "Plano" y que solo cambie la pestaña oculta
+    // era no hacer nada. Ahí se agranda, o se achica si ya estaba grande.
+    if (ESCRITORIO.matches) {
+      const amplia = !$('#carta').classList.contains('carta--amplia');
+      ampliarPlano(amplia, { alTerminar: () => amplia && enfocarEnElPlano() });
+      return;
+    }
     mostrarPanel('mapa');
-    if (estado.seleccionada) estado.mapa.enfocarParcela(estado.seleccionada);
+    enfocarEnElPlano();
   });
 
   const compartir = $('#accion-compartir');
@@ -443,6 +448,27 @@ function conectarPestanas() {
   const pista = $('#pista');
   $('#visor').addEventListener('pointerdown', () => pista.classList.add('pista--oculta'),
                                { once: true });
+}
+
+// El mismo corte que estilos.css: debajo, plano y vista aérea son pestañas.
+const ESCRITORIO = window.matchMedia('(min-width: 62.0625rem)');
+
+/** Agranda o achica el plano de la esquina, con los dos botones de acuerdo. */
+function ampliarPlano(amplia, { alTerminar } = {}) {
+  $('#carta').classList.toggle('carta--amplia', amplia);
+  $('#ampliar-mapa').setAttribute('aria-pressed', String(amplia));
+  $('#accion-plano').setAttribute('aria-pressed', String(amplia));
+  // Leaflet necesita saber que cambió de tamaño, y la transición dura 420 ms.
+  setTimeout(() => {
+    estado.mapa?.refrescar();
+    alTerminar?.();
+  }, 460);
+}
+
+/** En el plano, lo que se está mirando: la parcela elegida o el punto de vuelo. */
+function enfocarEnElPlano() {
+  if (estado.seleccionada) estado.mapa.enfocarParcela(estado.seleccionada);
+  else if (estado.vista) estado.mapa.enfocarVista(estado.vista);
 }
 
 function mostrarPanel(nombre) {
