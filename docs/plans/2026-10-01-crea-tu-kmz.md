@@ -80,6 +80,11 @@ sesión que las hizo, y se citan para portarlas, no para importarlas:
 - Cuando no está la carpeta, las pruebas de pytest la saltan.
 - La línea base son los números de la ronda 3 y de El Arrayán v2. Si la versión portada da
   distinto, se investiga antes de aceptar la diferencia.
+- Pendientes que dejó la tarea 2:
+  - El método general pierde las líneas rosadas finas del recuadro de El Arrayán (180/183
+    lotes). Se ajusta en forma global, sin empeorar a los otros.
+  - Un A0 a 300 dpi (~140 Mpx) pasaría de 4 GiB: se decide aquí entre un tope o un remuestreo
+    a ~8 px/mm, midiéndolo contra el set.
 
 ## Tarea 5: lector de rótulos (según la decisión de la tarea 1)
 
@@ -112,6 +117,8 @@ sesión que las hizo, y se citan para portarlas, no para importarlas:
 - Escrituras en `/datos` sin `copystat` (gcsfuse).
 - Un master se puede crear sin KMZ cuando va por el plano. `Vista.subir` exige KMZ: se
   relaja solo para el flujo de plano y construir sigue exigiéndolo.
+- Al lanzar el subproceso, fijar `PYTHONIOENCODING=utf-8`, y validar que
+  `entradas["pdf"]` sea un nombre dentro de la carpeta (sin `..` ni rutas absolutas).
 - Pruebas: de rutas, con `ComandosDePrueba` (que suma el método nuevo), y de permisos (un
   plano ajeno da 404).
 
