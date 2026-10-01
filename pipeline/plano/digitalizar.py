@@ -26,7 +26,14 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
                                        datum y huso de los valores; sin él, WGS84 en el huso
                                        de las anclas, o PSAD56 si las anclas lo indican)
                                        son para georreferenciar
-      "semillas": [{"numero": "12", "x": 1234.5, "y": 678.0}],
+      "semillas": [{"numero": "12", "x": 1234.5, "y": 678.0}],   los números que marcó
+                                       la loteadora: mandan sobre el lector
+      "lector": true,                  leer los rótulos con el lector (`rotulos.py`);
+                                       sin Tesseract instalado se sigue sin él
+      "lector_apoyo_min": 2,           cuántas pasadas deben leer un número para
+                                       que sea semilla
+      "cuadro": null,                  [x0, y0, x1, y1] del cuadro de superficies; sin
+                                       él se prueba cada máscara
       "anclas": [{"nombre": "roja", "x": 2533, "y": 8037,       punto del plano ↔ su lon/lat
                   "lon": -70.8240, "lat": -34.7240}],           WGS84 en grados decimales
       "ajuste": {"de": 0.0, "dn": 0.0}  traslación fina en metros (este, norte)
@@ -42,20 +49,40 @@ entero. Si cambia la rotación, cambian las coordenadas.
       "pagina": {"numero", "rotacion", "ancho", "alto", "ppmm", "fuente"},
       "trabajo": {"ancho", "alto", "ppmm", "modo", "homografia"},   página -> trabajo (3×3)
       "lotes": [{"numero", "semilla": [x, y], "poligono": [[x, y], ...],
-                 "huecos": [[[x, y], ...]], "area_px", "vertices"}],     en px de página
+                 "huecos": [[[x, y], ...]], "area_px", "vertices",
+                 "origen": "usuario" | "lector",   de dónde salió el número
+                 "confianza", "apoyo",             del lector (null si lo marcó ella)
+                 "area_oficial"}],                 m² del cuadro de superficies (o null)
+                                                   todo en px de página
       "sin_numero": [{"poligono", "area_px"}],     caras dentro del contorno sin lote
-      "faltantes": ["13"],                         semillas que no dieron polígono
+      "faltantes": ["13"],                         semillas de la loteadora sin polígono
       "cuadricula": {"verticales": [{"valor", "p": [x, y], "q": [x, y], "valida"}],
                      "horizontales": [...]},       las rectas detectadas (o null)
+      "lector": {"activo", "disponible", "motivo",   motivo: por qué no hubo lector
+                 "huella",                          con qué página, rectángulo y máscaras
+                                                    se leyó: si no cambian, se reusa
+                 "rotulos": [{"numero", "x", "y", "confianza", "apoyo", "alto"}],
+                                                    todo lo leído (px de página)
+                 "apoyo_min", "semillas",           cuántos rótulos fueron semilla
+                 "sin_poligono": ["7"],             semillas del lector sin polígono
+                 "cuadricula": {...} | null,        la cuadrícula leída, en el formato
+                                                    de entradas: la consola la propone
+                 "cuadro": {"12": 50000.0},         áreas oficiales leídas, m²
+                 "segundos"},
       "estadisticas": {...}
     }
+
+Semillas: las de la loteadora y, donde ella no marcó, los rótulos leídos con apoyo ≥
+`lector_apoyo_min` (ver `rotulos.combinar`). La primera digitalización puede no tener
+ninguna semilla suya: los números salen todos del lector.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import cv2
@@ -64,10 +91,13 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
 from . import pagina as pag
-from . import particion, tinta
+from . import particion, rotulos, tinta
 
 ENTRADAS = "entradas.json"
 SALIDA = "digitalizado.json"
+
+# Un rótulo leído a menos de esto de una semilla de la loteadora es el que ella corrigió.
+RADIO_CORRECCION_MM = 6.0
 
 
 @dataclass
@@ -177,28 +207,123 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     avance(f"Página {numero} de {hoja.paginas}: {imagen.shape[1]}×{imagen.shape[0]} px,"
            f" {hoja.ppmm:.2f} px/mm ({'imagen embebida' if hoja.fuente == 'embebida' else 'renderizada'}),"
            f" rotación {rotacion}°")
-    semillas = [(s["numero"], s["x"], s["y"]) for s in entradas["semillas"]]
+    previo = _previo(carpeta, numero, rotacion)
+    usuario = [(s["numero"], s["x"], s["y"]) for s in entradas["semillas"]]
+    lector = None
+    if entradas["lector"]:
+        lector = _leer_rotulos(carpeta, entradas, imagen, hoja.ppmm, previo, avance)
+        poligonos = ([l["poligono"] for l in previo.get("lotes") or []]
+                     + [c["poligono"] for c in previo.get("sin_numero") or []]) if previo else []
+        combinadas = rotulos.combinar(usuario, lector["rotulos"], RADIO_CORRECCION_MM * hoja.ppmm,
+                                      entradas["lector_apoyo_min"], poligonos, lector.get("cuadro") or {})
+    else:
+        combinadas = rotulos.combinar(usuario, [], 0.0)
+    del previo
+    de_lector = sum(s["origen"] == "lector" for s in combinadas)
+    avance(f"Semillas: {len(combinadas) - de_lector} de la loteadora y {de_lector} del lector"
+           + (f" (apoyo ≥ {entradas['lector_apoyo_min']})" if lector else " (lector apagado)"))
+    semillas = [(s["numero"], s["x"], s["y"]) for s in combinadas]
     r = digitalizar_imagen(imagen, hoja.ppmm, semillas, entradas.get("rectangulo"),
                            entradas.get("mascaras") or [], entradas.get("esquinas"),
                            entradas.get("marco_mm"), entradas.get("cuadricula"), avance)
-    posicion = {n: (x, y) for n, x, y in semillas}
+    posicion = {s["numero"]: s for s in combinadas}
+    cuadro = (lector or {}).get("cuadro") or {}
+    # Faltantes son las semillas de la loteadora: un rótulo leído sin polígono suele
+    # ser ruido (una cota, un número fuera del loteo) y va aparte.
+    faltantes = [n for n in r.estadisticas["faltantes"] if posicion[n]["origen"] == "usuario"]
+    sin_poligono = [n for n in r.estadisticas["faltantes"] if posicion[n]["origen"] == "lector"]
+    r.estadisticas.update(faltantes=faltantes, semillas_lector=de_lector)
     datos = dict(
         pagina=dict(numero=numero, rotacion=rotacion, ancho=int(imagen.shape[1]), alto=int(imagen.shape[0]),
                     ppmm=hoja.ppmm, fuente=hoja.fuente),
         trabajo=dict(ancho=int(r.encuadre.imagen.shape[1]), alto=int(r.encuadre.imagen.shape[0]),
                      ppmm=r.encuadre.ppmm, modo=r.encuadre.modo, homografia=r.encuadre.homografia.tolist()),
-        lotes=[dict(numero=n, semilla=list(posicion[n]), poligono=_anillo(g.exterior),
+        lotes=[dict(numero=n, semilla=[posicion[n]["x"], posicion[n]["y"]], poligono=_anillo(g.exterior),
                     huecos=[_anillo(h) for h in g.interiors], area_px=round(g.area, 1),
-                    vertices=len(g.exterior.coords) - 1)
+                    vertices=len(g.exterior.coords) - 1, origen=posicion[n]["origen"],
+                    confianza=posicion[n]["confianza"], apoyo=posicion[n]["apoyo"],
+                    area_oficial=cuadro.get(n))
                for n, g in r.lotes.items()],
         sin_numero=[dict(poligono=_anillo(g.exterior), area_px=round(g.area, 1)) for g in r.sin_numero],
-        faltantes=r.estadisticas["faltantes"],
+        faltantes=faltantes,
         cuadricula=r.cuadricula,
+        lector=_resumen_lector(lector, entradas, de_lector, sin_poligono),
         estadisticas=r.estadisticas,
     )
     escribir_json(carpeta / SALIDA, datos)
     avance(f"Listo: {carpeta / SALIDA}")
     return datos
+
+
+def _previo(carpeta: Path, numero: int, rotacion: int) -> dict | None:
+    """La digitalización anterior, si es de la misma página y rotación (sus lotes dicen
+    dónde corrigió la loteadora; sus lecturas se reusan)."""
+    try:
+        d = json.loads((Path(carpeta) / SALIDA).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    p = d.get("pagina") or {}
+    return d if (p.get("numero"), p.get("rotacion")) == (numero, rotacion) else None
+
+
+def huella_lector(carpeta: Path, entradas: dict) -> str:
+    """Lo que cambia lo que lee el lector: el PDF, la página, el dibujo y sus máscaras."""
+    resumen = hashlib.sha1()
+    with open(Path(carpeta) / entradas["pdf"], "rb") as f:
+        for trozo in iter(lambda: f.read(1 << 20), b""):
+            resumen.update(trozo)
+    datos = dict(pdf=resumen.hexdigest(), version=rotulos.VERSION,
+                 **{k: entradas.get(k) for k in ("pagina", "rotacion", "rectangulo", "mascaras", "cuadro")})
+    texto = json.dumps(datos, sort_keys=True, default=str)
+    return hashlib.sha1(texto.encode("utf-8")).hexdigest()[:16]
+
+
+def _leer_rotulos(carpeta: Path, entradas: dict, imagen: np.ndarray, ppmm: float, previo: dict | None,
+                  avance) -> dict:
+    """Rótulos, cuadrícula y cuadro de la página, en px de página. Si la digitalización
+    anterior leyó la misma página con el mismo dibujo, se reusa: corregir un número y
+    digitalizar de nuevo no vuelve a pasar por Tesseract."""
+    huella = huella_lector(carpeta, entradas)
+    anterior = (previo or {}).get("lector") or {}
+    if anterior.get("disponible") and anterior.get("huella") == huella:
+        avance("Lector: se reusan las lecturas de la digitalización anterior")
+        return dict(anterior, rotulos=[rotulos.Rotulo(**r) for r in anterior.get("rotulos") or []])
+    motivo = rotulos.motivo_no_disponible()
+    if motivo:
+        avance(motivo)
+        return dict(disponible=False, motivo=motivo, huella=None, rotulos=[], cuadricula=None, cuadro={},
+                    segundos=0.0)
+    inicio = time.time()
+    rect = entradas.get("rectangulo") or [0, 0, imagen.shape[1], imagen.shape[0]]
+    x0, y0, x1, y1 = pag._rect_entero(rect, imagen.shape)
+    # El dibujo con las máscaras tapadas (los cuadros y el cajetín traen números que no
+    # son lotes), en la resolución de la página: el texto chico no aguanta remuestreo.
+    dibujo = pag.tapar(imagen[y0:y1, x0:x1], [[m[0] - x0, m[1] - y0, m[2] - x0, m[3] - y0]
+                                             for m in entradas.get("mascaras") or []],
+                       pag.color_papel(imagen, rect))
+    leidos = [replace(r, x=r.x + x0, y=r.y + y0) for r in rotulos.leer(dibujo, ppmm, avance)]
+    del dibujo
+    # Siempre, aunque la loteadora ya haya dado la cuadrícula: así aceptar la propuesta
+    # (que cambia las entradas) no obliga a leer todo de nuevo. Son solo franjas.
+    cuadricula = rotulos.leer_cuadricula(imagen, ppmm, avance, rectangulo=[x0, y0, x1, y1])
+    cuadro = rotulos.leer_cuadro(imagen, [entradas["cuadro"]] if entradas.get("cuadro")
+                                 else entradas.get("mascaras") or [], avance)
+    # Sin ningún rótulo no se guarda la huella: lo más probable es que el lector haya
+    # fallado (memoria, tiempo) y `leer` devuelve vacío en vez de caerse. Si se
+    # guardara, digitalizar de nuevo reusaría ese vacío para siempre.
+    return dict(disponible=True, motivo=None, huella=huella if leidos else None, rotulos=leidos,
+                cuadricula=cuadricula,
+                cuadro=cuadro, segundos=round(time.time() - inicio, 1))
+
+
+def _resumen_lector(lector: dict | None, entradas: dict, semillas: int, sin_poligono: list[str]) -> dict:
+    if lector is None:
+        return dict(activo=False)
+    return dict(activo=True, disponible=lector["disponible"], motivo=lector.get("motivo"),
+                huella=lector.get("huella"), rotulos=[r.como_dict() for r in lector["rotulos"]],
+                apoyo_min=entradas["lector_apoyo_min"], semillas=semillas, sin_poligono=sin_poligono,
+                cuadricula=lector.get("cuadricula"), cuadro=lector.get("cuadro") or {},
+                segundos=lector.get("segundos"))
 
 
 def leer_entradas(carpeta: Path) -> dict:
@@ -249,6 +374,17 @@ def leer_entradas(carpeta: Path) -> dict:
     if repetidos:
         raise ValueError(f"números de lote repetidos en las semillas: {', '.join(repetidos)}")
     salida["semillas"] = semillas
+    lector = e.get("lector", True)
+    if not isinstance(lector, bool):
+        raise ValueError(f"«lector» es true o false, no {lector!r}")
+    salida["lector"] = lector
+    salida["lector_apoyo_min"] = entero("lector_apoyo_min", rotulos.APOYO_MIN)
+    if salida["lector_apoyo_min"] < 1:
+        raise ValueError(f"«lector_apoyo_min» es 1 o más, no {salida['lector_apoyo_min']}")
+    if e.get("cuadro") is not None:
+        x0, y0, x1, y1 = salida["cuadro"] = numeros(e["cuadro"], 4, "cuadro")
+        if x1 <= x0 or y1 <= y0:
+            raise ValueError(f"el rectángulo del cuadro de superficies está vacío: {e['cuadro']}")
 
     if e.get("cuadricula") is not None:
         c = e["cuadricula"]

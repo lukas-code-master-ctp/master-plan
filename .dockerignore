@@ -14,3 +14,6 @@ docs/
 web/datos/
 web/panoramas/
 control-calce/
+# Planos de prueba y de regresión: traen nombres y RUT de propietarios.
+regresion/
+trabajo_crea_kmz/

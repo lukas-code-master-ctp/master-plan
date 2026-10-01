@@ -17,8 +17,10 @@ El KMZ que sale de acá va a `<fuentes>/subdivision.kmz`, donde lo busca constru
 Escrituras: aparte y `os.replace` al final, sin copystat ni chmod (`/datos` puede ser
 un bucket montado con gcsfuse).
 
-Los números de lote, por ahora, son los clics de la loteadora (`semillas`). Cuando
-haya lector de rótulos (tarea 5) lo llama `digitalizar` y estas rutas no cambian.
+Los números de lote salen del lector de rótulos (`pipeline/plano/rotulos.py`, lo
+llama `digitalizar`) y de los clics de la loteadora (`semillas`), que mandan. Con
+lector se puede digitalizar sin ningún clic; sin él (no hay Tesseract en el servidor,
+o la loteadora lo apagó) hace falta al menos un número marcado.
 """
 from __future__ import annotations
 
@@ -44,6 +46,7 @@ from shapely.geometry.polygon import orient
 from pipeline import config
 from pipeline.kmz import normalizar_id
 from pipeline.plano import pagina as pag
+from pipeline.plano import rotulos
 from pipeline.plano.digitalizar import ENTRADAS, SALIDA as DIGITALIZADO, escribir_json, leer_entradas
 from pipeline.plano.georreferencia import GEOJSON, SALIDA as GEORREFERENCIA, Transformacion, georreferenciar
 from pipeline.plano.salida import escribir_kmz, lotes_utm
@@ -66,7 +69,7 @@ CALIDAD = 90
 # Lo que cambia los lotes en píxeles. De la cuadrícula, solo dónde están las
 # líneas: su valor impreso se puede corregir sin volver a digitalizar.
 CLAVES_DIGITALIZAR = ("pdf", "pagina", "rotacion", "rectangulo", "mascaras", "esquinas", "marco_mm",
-                      "semillas")
+                      "semillas", "lector", "lector_apoyo_min", "cuadro")
 CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula")
 
 # Topes de lo que se marca a mano: muy por sobre un loteo real, y lejos de lo que
@@ -259,9 +262,10 @@ class Plano:
         if not self.hay():
             raise PlanoNoListo("primero sube el PDF del plano")
         entradas = self._entradas_o_409()
-        # Hasta que haya lector de rótulos, los números son los clics de la loteadora.
-        if not entradas["semillas"]:
-            raise PlanoNoListo("marca el número de al menos un lote antes de digitalizar")
+        if not entradas["semillas"] and not _con_lector(entradas):
+            raise PlanoNoListo("marca el número de al menos un lote antes de digitalizar"
+                               + ("" if not entradas["lector"] else
+                                  " (no hay lector de rótulos en este servidor)"))
         return huella_digitalizar(entradas)
 
     @_a_solas
@@ -337,12 +341,14 @@ class Plano:
                 sin_numero=len(d.get("sin_numero") or []), pagina=d.get("pagina"),
                 cuadricula=d.get("cuadricula") is not None,
                 segundos=(d.get("estadisticas") or {}).get("segundos"),
+                lector=_resumen_lector(d.get("lector")),
                 vigente=entradas is not None and self._digitalizado_vigente(entradas))
         if (self.carpeta / GEORREFERENCIA).is_file():
             georreferencia = dict(resumen_georreferencia(self._leer(GEORREFERENCIA)),
                                   vigente=entradas is not None and self._georreferencia_vigente(entradas))
         return dict(paso=self.paso(), pdf=self.hay(), paginas=self.paginas(), entradas=entradas,
                     error_entradas=error, digitalizado=digitalizado, georreferencia=georreferencia,
+                    lector=rotulos.disponible(),
                     kmz=[p.relative_to(self.fuentes).as_posix() for p in config.kmz_en(self.fuentes)])
 
     def paso(self) -> str:
@@ -353,7 +359,7 @@ class Plano:
             entradas = self.entradas()
         except ValueError:
             entradas = None
-        if not entradas or not entradas["semillas"]:
+        if not entradas or (not entradas["semillas"] and not _con_lector(entradas)):
             return "marcar"
         if not (self.carpeta / DIGITALIZADO).is_file() or not self._digitalizado_vigente(entradas):
             return "digitalizar"
@@ -434,6 +440,21 @@ class Plano:
             return False
         anotada = self._huellas().get("georreferencia")
         return anotada is None or anotada == huella_ubicar(entradas, self._huella_digitalizado(entradas))
+
+
+def _con_lector(entradas: dict) -> bool:
+    """¿Digitalizar va a leer los números solo? (lector encendido y Tesseract instalado)."""
+    return bool(entradas.get("lector", True)) and rotulos.disponible()
+
+
+def _resumen_lector(lector: dict | None) -> dict | None:
+    """Lo que la pantalla muestra del lector: cuánto leyó y qué propone."""
+    if not lector or not lector.get("activo"):
+        return None
+    return dict(disponible=lector.get("disponible"), motivo=lector.get("motivo"),
+                rotulos=len(lector.get("rotulos") or []), semillas=lector.get("semillas"),
+                apoyo_min=lector.get("apoyo_min"), sin_poligono=lector.get("sin_poligono") or [],
+                cuadricula=lector.get("cuadricula"), areas=len(lector.get("cuadro") or {}))
 
 
 def huella_digitalizar(entradas: dict) -> str:

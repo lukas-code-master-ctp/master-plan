@@ -72,6 +72,7 @@ def test_sin_semillas_no_hay_lotes_y_no_falla(tmp_path):
     _carpeta(tmp_path)
     entradas = json.loads((tmp_path / "entradas.json").read_text(encoding="utf-8"))
     entradas["semillas"] = []
+    entradas["lector"] = False             # sin lector: con Tesseract leería los rótulos
     (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
 
     assert main(["digitalizar", str(tmp_path)]) == 0

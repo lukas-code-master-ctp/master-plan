@@ -14,6 +14,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
 
+# Tesseract para el lector de rótulos de Crea tu KMZ (`pipeline/plano/rotulos.py`).
+# Basta el inglés que trae `tesseract-ocr`: el lector usa una lista blanca de
+# caracteres, no el diccionario. Sin Tesseract, digitalizar sigue con los números
+# que marca la loteadora.
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY requirements.txt requirements-consola.txt ./
@@ -26,8 +33,11 @@ COPY web/ web/
 COPY publicar.sh ./
 
 # El volumen con los datos se monta acá: proyectos, salidas y cachés.
+# OMP_THREAD_LIMIT=1: una hebra por proceso de Tesseract. El lector ya corre las
+# pasadas en paralelo; sin esto se estorban y un plano tarda 10 veces más.
 ENV MASTERPLAN_DATOS=/datos \
     CONSOLA_ENTORNO=produccion \
+    OMP_THREAD_LIMIT=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8080
 

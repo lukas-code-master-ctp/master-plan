@@ -316,10 +316,41 @@ def test_digitalizar_lanza_el_trabajo_y_anota_con_que_entradas(ana):
     assert web.get(f"/api/proyectos/{slug}/plano").json()["trabajo"]["id"] == respuesta.json()["id"]
 
 
-def test_digitalizar_pide_al_menos_un_numero(ana):
+def test_sin_lector_digitalizar_pide_al_menos_un_numero(ana, monkeypatch):
+    monkeypatch.setattr("consola.plano.rotulos.disponible", lambda: False)
     web, slug, _, comandos = ana
     subir(web, slug)
     web.put(f"/api/proyectos/{slug}/plano/entradas", json=dict(ENTRADAS, semillas=[]))
+
+    respuesta = web.post(f"/api/proyectos/{slug}/plano/digitalizar")
+
+    assert respuesta.status_code == 409
+    assert "lector de rótulos" in respuesta.json()["detail"]
+    assert web.get(f"/api/proyectos/{slug}/plano").json()["paso"] == "marcar"
+    assert comandos.pedidos == []
+
+
+def test_con_lector_se_digitaliza_sin_ningun_numero(ana, monkeypatch):
+    """La primera digitalización suele no tener clics: los números los lee el lector."""
+    monkeypatch.setattr("consola.plano.rotulos.disponible", lambda: True)
+    web, slug, _, comandos = ana
+    subir(web, slug)
+    web.put(f"/api/proyectos/{slug}/plano/entradas", json=dict(ENTRADAS, semillas=[]))
+    estado = web.get(f"/api/proyectos/{slug}/plano").json()
+    assert estado["paso"] == "digitalizar" and estado["lector"] is True
+
+    respuesta = web.post(f"/api/proyectos/{slug}/plano/digitalizar")
+
+    assert respuesta.status_code == 202, respuesta.text
+    esperar_trabajo(web, respuesta.json()["id"])
+    assert comandos.pedidos == [("digitalizar-plano", slug, None)]
+
+
+def test_con_el_lector_apagado_hace_falta_un_numero(ana, monkeypatch):
+    monkeypatch.setattr("consola.plano.rotulos.disponible", lambda: True)
+    web, slug, _, comandos = ana
+    subir(web, slug)
+    web.put(f"/api/proyectos/{slug}/plano/entradas", json=dict(ENTRADAS, semillas=[], lector=False))
 
     respuesta = web.post(f"/api/proyectos/{slug}/plano/digitalizar")
 

@@ -2,6 +2,7 @@
 contra sus KMZ reales.
 
     python -m pipeline.plano.regresion [--plano X] [--carpeta regresion] [--actualizar-linea-base]
+    python -m pipeline.plano.regresion --con-lector [--salida resultados_con_lector.json]
 
 `<carpeta>/planos/<id>/` trae `plano.pdf`, `entradas.json` y, si hay, `real.kmz`. Fuera
 de git: los planos traen nombres y RUT de propietarios (ver `regresion/README.md`).
@@ -15,7 +16,17 @@ real que no son deslindes (bordes de camino, el polígono de caminos).
 
 La tabla se compara con `<carpeta>/linea_base.json` y la salida es 1 si algún plano
 empeora más que la tolerancia (`TOLERANCIAS`). `--actualizar-linea-base` guarda los
-números de esta corrida (solo los planos corridos).
+números de esta corrida (solo los planos corridos). Esta corrida es con las semillas
+a mano y el lector apagado: no depende de que haya Tesseract.
+
+`--con-lector` simula a la loteadora que todavía no marcó nada: se borran las semillas
+y se enciende el lector de rótulos (`rotulos.py`; necesita Tesseract, o sea, correr en
+la imagen de Docker). Las semillas borradas son la verdad de la numeración: un lote
+está bien numerado si contiene la semilla real de su número. Además del recall de la
+numeración se informan las mismas métricas de geometría (pareadas por número: un
+número errado empareja mal y, si queda lejos, desarma la similitud del what-if; el
+"tal cual", con la georreferencia de las anclas o la cuadrícula, no se contamina), las áreas del cuadro contra el KMZ real y la cuadrícula
+leída contra la de `entradas.json`. Es informativa: no se compara con la línea base.
 """
 from __future__ import annotations
 
@@ -27,6 +38,9 @@ import tempfile
 import time
 from pathlib import Path
 
+import numpy as np
+from shapely.geometry import Point, Polygon
+
 from .digitalizar import ENTRADAS, digitalizar, leer_entradas
 from .georreferencia import georreferenciar
 from .metricas import comparar, epsg_de_kmz, lotes_kmz
@@ -34,6 +48,7 @@ from .salida import kmz
 
 LINEA_BASE = "linea_base.json"
 RESULTADOS = "resultados.json"
+RESULTADOS_CON_LECTOR = "resultados_con_lector.json"
 
 # Cuánto puede empeorar un plano contra la línea base.
 TOLERANCIAS = dict(
@@ -43,18 +58,25 @@ TOLERANCIAS = dict(
 )
 
 
-def correr_plano(carpeta: Path, avance=lambda texto: None) -> dict:
-    """El método completo sobre `carpeta` (sin escribir en ella) y sus métricas."""
+def correr_plano(carpeta: Path, avance=lambda texto: None, con_lector: bool = False) -> dict:
+    """El método completo sobre `carpeta` (sin escribir en ella) y sus métricas. Con
+    `con_lector`, sin las semillas a mano y con el lector de rótulos."""
     carpeta = Path(carpeta)
     entradas = leer_entradas(carpeta)
     fila = dict(plano=carpeta.name, semillas=len(entradas["semillas"]))
     with tempfile.TemporaryDirectory(prefix="regresion_") as tmp:
         trabajo = Path(tmp)
-        shutil.copyfile(carpeta / ENTRADAS, trabajo / ENTRADAS)
+        crudas = json.loads((carpeta / ENTRADAS).read_text(encoding="utf-8"))
+        crudas.update(semillas=[], lector=True) if con_lector else crudas.update(lector=False)
+        (trabajo / ENTRADAS).write_text(json.dumps(crudas, ensure_ascii=False), encoding="utf-8")
         shutil.copyfile(carpeta / entradas["pdf"], trabajo / entradas["pdf"])
         inicio = time.time()
         digitalizado = digitalizar(trabajo, avance=avance)
         fila["segundos_digitalizar"] = round(time.time() - inicio, 1)
+        if con_lector:
+            fila["numeracion"] = numeracion(digitalizado, entradas["semillas"])
+            fila["cuadricula_leida"] = cuadricula_leida((digitalizado.get("lector") or {}).get("cuadricula"),
+                                                        entradas.get("cuadricula"))
         fila["lotes"] = len(digitalizado["lotes"])
         fila["faltantes"] = digitalizado["faltantes"]
         fila["sin_numero"] = len(digitalizado["sin_numero"])
@@ -78,7 +100,62 @@ def correr_plano(carpeta: Path, avance=lambda texto: None) -> dict:
     m = comparar(lotes_candidato, lotes_real)
     m.pop("por_lote", None)
     fila.update(m, epsg_medicion=epsg, real=informe_real)
+    if con_lector:
+        fila["cuadro"] = cuadro_contra_real(digitalizado, lotes_real)
     return fila
+
+
+def numeracion(digitalizado: dict, verdad: list[dict]) -> dict:
+    """Qué tan bien numeró el lector: cada semilla real (número y posición, px de
+    página) cae en un lote con su número (correcto), con otro (errado) o en ninguno."""
+    lotes = [(l["numero"], Polygon(l["poligono"], l.get("huecos") or [])) for l in digitalizado["lotes"]]
+    correctos = errados = sin_lote = 0
+    for s in verdad:
+        punto = Point(s["x"], s["y"])
+        dentro = [n for n, g in lotes if g.contains(punto)]
+        if str(s["numero"]) in dentro:
+            correctos += 1
+        elif dentro:
+            errados += 1
+        else:
+            sin_lote += 1
+    reales = {str(s["numero"]) for s in verdad}
+    lector = digitalizado.get("lector") or {}
+    return dict(verdad=len(verdad), correctos=correctos, errados=errados, sin_lote=sin_lote,
+                recall=correctos / len(verdad) if verdad else None,
+                lotes_numero_ajeno=sum(1 for n, _ in lotes if n not in reales),
+                rotulos_leidos=len(lector.get("rotulos") or []), semillas_lector=lector.get("semillas"),
+                segundos_lector=lector.get("segundos"), areas_leidas=len(lector.get("cuadro") or {}),
+                motivo=lector.get("motivo"))
+
+
+def cuadricula_leida(leida: dict | None, verdad: dict | None) -> dict | None:
+    """La cuadrícula que propone el lector contra la de entradas.json: valores que
+    coinciden y distancia (px) a la línea marcada."""
+    if not leida:
+        return dict(leidas=0)
+    salida = dict(leidas=len(leida.get("verticales") or []) + len(leida.get("horizontales") or []))
+    if verdad:
+        bien, distancias, total = 0, [], 0
+        for familia, eje in (("verticales", "x"), ("horizontales", "y")):
+            reales = {m.get("valor"): m[eje] for m in verdad.get(familia) or [] if m.get("valor") is not None}
+            total += len(reales)
+            for m in leida.get(familia) or []:
+                if m["valor"] in reales:
+                    bien += 1
+                    distancias.append(abs(m[eje] - reales[m["valor"]]))
+        salida.update(reales=total, coinciden=bien,
+                      distancia_mediana_px=round(float(np.median(distancias)), 1) if distancias else None)
+    return salida
+
+
+def cuadro_contra_real(digitalizado: dict, lotes_real: dict) -> dict:
+    """Las áreas leídas del cuadro contra las del KMZ real (por número)."""
+    cuadro = (digitalizado.get("lector") or {}).get("cuadro") or {}
+    errores = [abs(a / lotes_real[n].area - 1) for n, a in cuadro.items() if n in lotes_real and lotes_real[n].area]
+    return dict(leidas=len(cuadro), comparadas=len(errores),
+                dentro_2pct=sum(e <= 0.02 for e in errores),
+                error_mediano_pct=round(100 * float(np.median(errores)), 2) if errores else None)
 
 
 def resumen_base(fila: dict) -> dict:
@@ -138,6 +215,34 @@ def tabla(filas: list[dict]) -> str:
     return "\n".join(lineas)
 
 
+def tabla_con_lector(filas: list[dict]) -> str:
+    n = lambda v, f="{:.3f}": "—" if v is None else f.format(v)
+    lineas = ["| Plano | Rótulos leídos / semillas del lector | Lotes | Numeración correcta (recall)"
+              " | Errados / sin lote | Lotes con número ajeno | Pareados / real | IoU tal cual → what-if (mediana)"
+              " | Centroide tal cual → what-if (m) | Cuadro: áreas (±2 % del real) | Cuadrícula: coinciden / reales"
+              " | Segundos (lector) |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for f in filas:
+        u = f.get("numeracion")
+        if not u:
+            lineas.append(f"| {f['plano']} | {f.get('medicion', '—')} |" + " |" * 10)
+            continue
+        w, c = f.get("what_if") or {}, f.get("tal_cual") or {}
+        cuadro = f.get("cuadro") or {}
+        cuad = f.get("cuadricula_leida") or {}
+        lineas.append(
+            f"| {f['plano']} | {u['rotulos_leidos']} / {u['semillas_lector']} | {f.get('lotes')}"
+            f" | {u['correctos']} / {u['verdad']} ({n(u['recall'], '{:.0%}')})"
+            f" | {u['errados']} / {u['sin_lote']} | {u['lotes_numero_ajeno']}"
+            f" | {f.get('pareados', '—')} / {f.get('lotes_real', '—')}"
+            f" | {n(c.get('iou_mediana'))} → {n(w.get('iou_mediana'))}"
+            f" | {n(c.get('centroide_mediana_m'), '{:.2f}')} → {n(w.get('centroide_mediana_m'), '{:.2f}')}"
+            f" | {cuadro.get('leidas', u['areas_leidas'])} ({cuadro.get('dentro_2pct', '—')})"
+            f" | {cuad.get('coinciden', '—')} / {cuad.get('reales', '—')}"
+            f" | {f['segundos_digitalizar']} ({u['segundos_lector']}) |")
+    return "\n".join(lineas)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="python -m pipeline.plano.regresion",
                                      description="Corre el set de regresión y lo compara con la línea base.")
@@ -145,6 +250,9 @@ def main(argv=None) -> int:
     parser.add_argument("--carpeta", type=Path, default=Path("regresion"))
     parser.add_argument("--actualizar-linea-base", action="store_true")
     parser.add_argument("--detalle", action="store_true", help="imprime el avance de cada etapa")
+    parser.add_argument("--con-lector", action="store_true",
+                        help="sin semillas a mano y con el lector de rótulos (necesita Tesseract)")
+    parser.add_argument("--salida", type=Path, help="dónde escribir los resultados (por omisión, en la carpeta)")
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         # La consola de Windows (cp1252) no tiene «→»: mejor un «?» que una traza.
@@ -166,14 +274,16 @@ def main(argv=None) -> int:
     for p in planos:
         print(f"{p.name}…", flush=True)
         try:
-            filas.append(correr_plano(p, avance))
+            filas.append(correr_plano(p, avance, con_lector=args.con_lector))
         except (ValueError, KeyError, FileNotFoundError) as e:
             print(f"  Error: {e}", file=sys.stderr)
             filas.append(dict(plano=p.name, semillas=0, medicion=f"error: {e}"))
     print()
-    print(tabla(filas))
-    (args.carpeta / RESULTADOS).write_text(json.dumps(filas, ensure_ascii=False, indent=1, default=str),
-                                           encoding="utf-8")
+    print(tabla_con_lector(filas) if args.con_lector else tabla(filas))
+    salida = args.salida or args.carpeta / (RESULTADOS_CON_LECTOR if args.con_lector else RESULTADOS)
+    salida.write_text(json.dumps(filas, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    if args.con_lector:
+        return 0
 
     ruta_base = args.carpeta / LINEA_BASE
     base = json.loads(ruta_base.read_text(encoding="utf-8")) if ruta_base.is_file() else {}

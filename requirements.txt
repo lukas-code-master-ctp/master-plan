@@ -9,6 +9,9 @@ scikit-image>=0.22
 scipy>=1.11
 # Crea tu KMZ: ubicar los lotes en UTM (huso, WGS84 y PSAD56)
 pyproj>=3.6
+# Crea tu KMZ: leer rótulos, cuadrícula y cuadro de superficies (necesita el
+# ejecutable `tesseract`; sin él, digitalizar sigue con las semillas a mano)
+pytesseract>=0.3.10
 
 # Solo para correr las pruebas
 pytest>=8.0
