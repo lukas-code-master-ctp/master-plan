@@ -812,6 +812,7 @@ button { cursor: pointer; }
 .carta__accion svg { width: 0.75rem; height: 0.75rem; }
 .carta__accion:hover { background: var(--zinc-100); color: var(--tinta); }
 .carta__accion[aria-pressed="true"] { background: var(--marca-50); color: var(--marca-700); }
+.accion[aria-pressed="true"] { background: var(--zinc-900); color: #fff; }
 
 .mapa { height: 11rem; background: var(--zinc-100); transition: height 420ms var(--curva); }
 .carta--amplia { width: min(32rem, 44vw); }

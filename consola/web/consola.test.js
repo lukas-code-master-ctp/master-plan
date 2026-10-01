@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { dinero, iniciales, ruta } from './js/comun.js';
+import { avance } from './js/vuelo.js';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(aqui, 'index.html'), 'utf8');
@@ -99,4 +100,54 @@ test('el precio se escribe como en el visor', () => {
   assert.equal(dinero(9990000, 'CLP'), '$9.990.000');
   assert.equal(dinero(1250, 'UF'), 'UF 1.250');
   assert.equal(dinero(null, 'CLP'), null);
+});
+
+
+// --- El vuelo: en qué paso va un trabajo ------------------------------------------
+
+const CONSTRUIR = [
+  'Proyecto: Praderas de Cauquenes', 'Leyendo el KMZ...', '  88 parcelas con nombre',
+  'Leyendo la planilla...', '  88 parcelas con datos comerciales', 'Leyendo las panorámicas...',
+  'Resolviendo el rumbo de cada panorámica con la posición del sol...',
+  'Cargando el modelo de terreno...', 'Calibrando la pose de cada vista contra la foto...',
+  'Proyectando parcelas sobre cada vista...',
+];
+
+test('el paso sale de la última línea conocida del pipeline', () => {
+  const progreso = avance(CONSTRUIR, 'construir');
+  assert.equal(progreso.titulo, 'Dibujando las parcelas');
+  assert.equal(progreso.paso, 7);
+  assert.equal(progreso.total, 9);
+  assert.ok(progreso.fraccion > 0.6 && progreso.fraccion < 0.8);
+});
+
+test('sin líneas reconocibles todavía, va en el primer paso', () => {
+  assert.equal(avance(['Proyecto: X'], 'construir').paso, 1);
+  assert.equal(avance([], 'publicar').titulo, 'Preparando el sitio');
+});
+
+test('terminado bien dice el resultado y llena la barra', () => {
+  const progreso = avance([...CONSTRUIR, '', 'Listo. 88 parcelas (88 con geometría) en 3 vistas.'],
+    'construir', true);
+  assert.equal(progreso.fraccion, 1);
+  assert.equal(progreso.resumen, 'Listo: 88 parcelas en 3 vistas');
+});
+
+test('publicado dice dónde quedó', () => {
+  const progreso = avance(['Visor copiado en /datos/x', '▶ Publicando /datos/x como m',
+    '▶ URL publicada: https://masterplan-x.vercel.app'], 'publicar', true);
+  assert.equal(progreso.resumen, 'En línea: https://masterplan-x.vercel.app');
+});
+
+test('si falla, la causa es la línea del error y no el traceback', () => {
+  const progreso = avance(['Leyendo la planilla...', 'Traceback (most recent call last):',
+    '  File "x.py", line 3', 'ValueError: inventario.xlsx repite 20 parcela(s): 3-1'],
+  'construir', true, true);
+  assert.equal(progreso.causa, 'inventario.xlsx repite 20 parcela(s): 3-1');
+  assert.ok(progreso.fraccion < 1);
+});
+
+test('una sola vista va en singular', () => {
+  assert.equal(avance(['Listo. 88 parcelas (88 con geometría) en 1 vistas.'], 'construir', true).resumen,
+    'Listo: 88 parcelas en 1 vista');
 });
