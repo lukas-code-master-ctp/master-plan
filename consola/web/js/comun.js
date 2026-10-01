@@ -14,6 +14,8 @@ export const estado = {
   // Las líneas del último trabajo de cada loteo, y el temporizador que las sondea.
   registros: new Map(),
   sondeos: new Map(),
+  // De cada loteo, el último trabajo: {accion, estado, terminado}.
+  trabajos: new Map(),
 };
 
 // --- API ---------------------------------------------------------------------

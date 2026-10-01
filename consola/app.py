@@ -69,7 +69,7 @@ WEB = Path(__file__).resolve().parent / "web"
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
-           "kmz.js", "kmz_geometria.js", "lienzo_plano.js", "mapa_kmz.js")
+           "vuelo.js", "kmz.js", "kmz_geometria.js", "lienzo_plano.js", "mapa_kmz.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
 MODULOS_DEL_VISOR = ("marca.js",)

@@ -8,6 +8,7 @@ import {
 } from './comun.js';
 import { manejarCierra, pintarCierra, prepararCierra } from './cierra.js';
 import { opcionesDeDiseno } from './disenos.js';
+import { pintarVuelo } from './vuelo.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
 
@@ -306,6 +307,7 @@ async function manejar(accion, proyecto) {
 
 async function lanzar(proyecto, accion, cuerpo) {
   estado.registros.set(proyecto.slug, []);
+  estado.trabajos.set(proyecto.slug, { accion, estado: 'corriendo', terminado: false });
   const { id, aviso } = await pedir(`/api/proyectos/${proyecto.slug}/${accion}`, json(cuerpo));
   // P. ej. Cierra no contestó: se construye igual, con el último inventario.
   if (aviso) avisar(aviso);
@@ -328,7 +330,9 @@ export function seguir(slug, identificador) {
   const tic = async () => {
     try {
       const trabajo = await pedir(`/api/trabajos/${identificador}?desde=${desde}`);
-      if (trabajo.lineas.length) {
+      estado.trabajos.set(slug, {
+        accion: trabajo.accion, estado: trabajo.estado, terminado: trabajo.terminado });
+      if (trabajo.lineas.length || trabajo.terminado) {
         const registro = estado.registros.get(slug) ?? [];
         registro.push(...trabajo.lineas);
         estado.registros.set(slug, registro);
@@ -358,7 +362,7 @@ export function seguir(slug, identificador) {
 function pintarRegistro(slug) {
   const caja = $('#plano-registro');
   const registro = estado.registros.get(slug);
-  caja.hidden = !registro?.length;
+  pintarVuelo(registro, estado.trabajos.get(slug));
   if (!registro?.length) return;
   caja.replaceChildren(...registro.map(linea));
   caja.scrollTop = caja.scrollHeight;
