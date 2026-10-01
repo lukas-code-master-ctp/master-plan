@@ -429,6 +429,158 @@ Mapper). El id de cada lote queda como `etapa-número` (`2-7`) y el sitio lo mue
 como "Parcela 7 · Etapa 2". Sin leyenda, dos lotes con el mismo nombre cortan el
 pipeline con un aviso: es un dato que falta, no algo que se pueda adivinar.
 
+## Crea tu KMZ
+
+Muchas loteadoras no tienen el KMZ de la subdivisión, y pedirle el DWG al topógrafo no
+es una opción. Lo que sí tienen siempre es el **plano aprobado por el SAG y archivado en
+el CBR**: un PDF escaneado (o una foto del papel), sin vectores ni coordenadas. Crea tu
+KMZ convierte ese plano en el KMZ del master, desde la consola y sin tocar archivos.
+
+Está en el detalle de cada master (`#/planos/<slug>/kmz`) y en **Nuevo master**, como
+"No tengo el KMZ: créalo desde el plano": eso crea el master sin KMZ y lleva a la
+pantalla. Construir sigue exigiendo el KMZ; lo que se relaja es solo crear el master.
+
+Spec: [`docs/specs/2026-10-01-crea-tu-kmz.md`](docs/specs/2026-10-01-crea-tu-kmz.md).
+Resultados: [lectura de rótulos](docs/specs/2026-10-01-crea-tu-kmz-rotulos.md) y
+[set de regresión](docs/specs/2026-10-01-crea-tu-kmz-regresion.md).
+
+### El flujo
+
+1. **Subir el plano** (PDF). De cada página se saca la imagen embebida **sin
+   rerasterizar**; si no hay, se renderiza a 200 dpi. Se elige la página y la rotación.
+2. **Marcar el dibujo**: un rectángulo alrededor de la situación propuesta, y máscaras
+   sobre lo que no es dibujo (cuadros, cajetín, timbres, croquis). Si es una foto, las 4
+   esquinas del marco impreso, para enderezar la perspectiva.
+3. **Digitalizar**, en un trabajo de fondo con avance en vivo: la tinta de los deslindes
+   (roja o negra; se descartan verde, azul, achurados y cuadrícula), regiones cerradas
+   separadas con los rótulos, una red de deslindes compartida entre vecinos, aristas
+   enderezadas y los polígonos desde las caras. Sin traslapes ni huecos por
+   construcción, y el deslinde va por el eje del camino: no hay polígonos de camino.
+4. **Numerar**: el lector propone los números; la loteadora corrige o completa con un
+   clic sobre el lote, y sus clics mandan. Se destacan los lotes sin número y los
+   repetidos.
+5. **Ubicar en el mapa**, plano y mapa Esri lado a lado. Ver abajo.
+6. **Revisar**: los lotes sobre la imagen satelital, coloreados por error de área contra
+   el cuadro de superficies del plano, si se pudo leer: verde ±2 %, ámbar ±5 %, rojo
+   más.
+7. **Crear el KMZ.**
+
+Todo se puede retomar y rehacer: cambiar una entrada vuelve a calcular solo lo que
+depende de ella (`huellas.json` dice qué quedó atrasado). Si un lote sale mal se
+corrige con las entradas (una máscara, un número), no moviendo vértices.
+
+### Ubicar: cuadrícula o anclas
+
+La forma sale bien; **lo que mete error es la ubicación**. En las pruebas, con
+cuadrícula impresa el centroide quedó a 1,7 m del real; con anclas de Google Earth,
+a 5–10 m.
+
+- **Cuadrícula impresa (preferida).** Si el plano trae marcas UTM (E-…, N-…), se leen,
+  se descartan las que no siguen la progresión y se ajusta con las intersecciones.
+  WGS84/SIRGAS UTM por defecto; PSAD56 si las anclas lo indican.
+- **Anclas.** Pares de puntos plano ↔ mapa, con zoom grande sobre el plano: esquinas
+  del predio y cruces de caminos. Se ajusta una similitud (escala, giro y traslación)
+  por mínimos cuadrados, con el residuo de cada ancla. **Conviene marcar 4**: con 2 no
+  hay cómo saber cuál está mala, y con 3 o más un ancla atípica (sin ella, su residuo
+  pasa de 3× la mediana de las demás y de 4 m) queda marcada para quitarla o volver a
+  marcarla. Cada ancla de Google Earth se desvía 1–19 m.
+- **Ajuste fino**: un arrastre de los lotes sobre la imagen satelital, para calzar los
+  caminos con los deslindes.
+
+El huso UTM sale de las anclas o de la cuadrícula: no queda fijo en 19S.
+
+### El lector de rótulos
+
+Tesseract (`tesseract-ocr` en la imagen, `pipeline/plano/rotulos.py`), con parámetros
+globales: 24 ángulos × 2 escalas × gris/Otsu, 96 pasadas por plano. Lee también las
+marcas de la cuadrícula y el cuadro de superficies.
+
+**Rinde bien con rótulos grandes** (`LOTE 12`, también rotados o en diagonal: 97–98 %
+de los lotes en Puente Negro e Hidango) y **mal con texto chico en cursiva o en foto**
+(36 % en El Arrayán, 11 % en Curicó). Por eso el camino normal es leer y corregir: en un
+plano así, la loteadora numera a clic. Sin Tesseract en el servidor, digitalizar sigue
+con los números marcados a mano. Un número que solo una pasada leyó no cuenta
+(`lector_apoyo_min`, 2 por defecto).
+
+### Lo que se guarda
+
+En `<fuentes>/plano/`, junto a lo demás que subió la loteadora:
+
+| Archivo | Qué es |
+|---|---|
+| `plano.pdf` | El PDF tal como llegó |
+| `paginas/<n>.jpg`, `<n>_mini.jpg` | Cada página sin rotar, y su miniatura |
+| `entradas.json` | Lo que marca la loteadora: página, rotación, rectángulos, esquinas, números, anclas, cuadrícula, ajuste fino |
+| `digitalizado.json` | Los lotes en píxeles, los rótulos leídos, la cuadrícula y las áreas oficiales |
+| `georreferencia.json` | La transformación, el residuo de cada ancla y el datum |
+| `lotes.geojson` | Los lotes en lon/lat, para el mapa |
+| `huellas.json` | Con qué entradas se hizo cada paso |
+
+El KMZ queda en `<fuentes>/subdivision.kmz`, donde lo busca construir: un Polygon por
+lote, con nombre `LOTE <n>`, KML 2.2 y sin líneas, así que `pipeline/kmz.py` lo lee en
+modo polígonos. Si ya había un KMZ, la consola pide confirmar y el anterior queda como
+`<nombre>.kmz.anterior`.
+
+### Límites
+
+- Hasta **12 páginas** por PDF y **200 megapíxeles** por página.
+- La imagen de trabajo se reduce a **8 px/mm** (entre 6 y 8). Un A0 a 300 dpi son
+  ~140 MP: sin el tope pasaba de 4 GiB; con él, el pico queda en ~2 GiB de RAM. La
+  exactitud casi no cambia con la resolución.
+- En Cloud Run (4 GiB, 2 vCPU) digitalizar corre como subproceso en un trabajo de
+  fondo, igual que construir, y una sola a la vez por loteadora. La geometría toma
+  menos de un minuto; el lector es lo que pesa: corre tantas pasadas a la vez como
+  núcleos tenga el contenedor (`LECTOR_HEBRAS` lo acota) y las que quepan en la
+  memoria libre. Medido en la imagen con `--cpus=2 --memory=4g`: Puente Negro con
+  lector toma 3,6 min (3 de ellos, el lector) y el proceso llega a ~2,1 GiB.
+  `--no-cpu-throttling` del cloudbuild es lo que deja avanzar el trabajo con la
+  pestaña cerrada; `--timeout` no aplica, porque no hay petición abierta.
+
+### El set de regresión
+
+Los planos de prueba con sus KMZ reales viven en `regresion/planos/<plano>/`
+(`plano.pdf`, `real.kmz`, `entradas.json`), **fuera de git**: traen nombres y RUT de
+propietarios. Hay que pedirlos aparte; sin la carpeta, las pruebas que la usan se saltan.
+
+```bash
+python -m pipeline.plano.regresion                 # los 5 planos, ~1 min
+python -m pipeline.plano.regresion --plano curico
+python -m pipeline.plano.regresion --actualizar-linea-base
+```
+
+Corre digitalizar → georreferenciar → kmz y mide contra el KMZ real: IoU por lote,
+centroide y Hausdorff, tal cual y con la similitud óptima ("what-if", que separa la
+forma de la ubicación), error de área, traslapes y huecos. Compara con
+`regresion/linea_base.json` y **sale con 1** si un plano empeora más que la tolerancia
+(IoU what-if −0,01, centroide what-if +0,25 m, o menos lotes). La línea base solo
+cambia con `--actualizar-linea-base`. Esta corrida usa los números marcados a mano y
+el lector apagado, así que no necesita Tesseract.
+
+`--con-lector` borra los números a mano y enciende el lector: mide cuánto numera solo.
+Es informativa (no se compara con la línea base) y necesita Tesseract, o sea, la imagen
+de Docker:
+
+```bash
+docker build -t masterplan360 .
+docker run --rm -v "$PWD/regresion:/app/regresion" masterplan360 \
+  python -m pipeline.plano.regresion --con-lector
+```
+
+Ojo: El Arrayán se ajustó mirando su KMZ real, así que el set ya es de desarrollo. Lo
+que dice cómo le irá al método con un plano nuevo es la primera corrida de ese plano:
+conviene sumar al set cada plano nuevo con KMZ real y anotar esa corrida antes de
+ajustar nada con él.
+
+### A mano
+
+```bash
+python -m pipeline.plano digitalizar <carpeta-del-plano>       # entradas.json → digitalizado.json
+python -m pipeline.plano georreferenciar <carpeta-del-plano>   # → georreferencia.json, lotes.geojson
+python -m pipeline.plano kmz <carpeta-del-plano> <destino.kmz>
+```
+
+El formato de `entradas.json` está en `pipeline/plano/digitalizar.py`.
+
 ## La planilla
 
 Los datos comerciales salen, en este orden, de:
@@ -510,7 +662,18 @@ tumasterplan/
 │   ├── imagenes.py    Niveles de imagen para la web
 │   ├── visor.py       Copia el visor (web/) sobre un sitio y calcula su huella
 │   ├── construir.py   Orquestador
-│   └── qa_overlay.py  Control de calce
+│   ├── qa_overlay.py  Control de calce
+│   └── plano/         Crea tu KMZ: del plano escaneado a los lotes
+│       ├── __main__.py      CLI: digitalizar, georreferenciar, kmz
+│       ├── pagina.py        Imagen de cada página, rotación, recorte, perspectiva, 8 px/mm
+│       ├── tinta.py         Máscara de deslindes (roja o negra)
+│       ├── particion.py     Regiones, red de deslindes y polígonos sin traslapes
+│       ├── rotulos.py       Lector de rótulos, cuadrícula y cuadro (Tesseract)
+│       ├── digitalizar.py   entradas.json → digitalizado.json
+│       ├── georreferencia.py  Cuadrícula o anclas → UTM, con residuo por ancla
+│       ├── salida.py        El KMZ: un Polygon por lote
+│       ├── metricas.py      IoU, centroide y Hausdorff contra un KMZ real
+│       └── regresion.py     El set de regresión
 ├── consola.sh         Abre la consola en el navegador
 ├── publicar.sh        Sube a Vercel el sitio de un proyecto
 ├── consola/           La consola: subir, construir, revisar y publicar
@@ -518,8 +681,10 @@ tumasterplan/
 │   ├── proyectos.py   Qué loteos conoce y en qué estado están
 │   ├── trabajos.py    Corre el pipeline y muestra su avance en vivo
 │   ├── comandos.py    Qué le pide al pipeline
+│   ├── plano.py       Crea tu KMZ: el plano de un master y lo que sale de él
 │   ├── republicar.py  Al arrancar, republica los loteos con el visor atrasado
 │   └── web/           La página
+│       └── js/kmz.js, kmz_geometria.js, lienzo_plano.js, mapa_kmz.js   La pantalla de Crea tu KMZ
 ├── web/               El sitio (html, css, js): la plantilla de la que se copia cada salida
 │   ├── js/            Visor WebGL, mapa, ficha, filtros
 │   ├── vercel.json    Cabeceras (caché, CSP) que viajan con cada sitio
@@ -528,6 +693,7 @@ tumasterplan/
 │   └── <proyecto>/
 │       ├── sitio/         Se sube tal cual (html + datos/ + panoramas/)
 │       └── control-calce/ Generado por qa_overlay (no se sube)
+├── regresion/         Planos y KMZ reales de Crea tu KMZ (fuera de git: nombres y RUT)
 └── docs/diseno.md     Por qué está hecho así
 ```
 
@@ -536,6 +702,15 @@ tumasterplan/
 ```bash
 python -m pytest -q                      # pipeline + consola
 node --test web/js/*.test.js consola/web/*.test.js
+python -m pipeline.plano.regresion       # Crea tu KMZ, si tienes la carpeta regresion/
+```
+
+Las pruebas del lector de rótulos necesitan Tesseract y se saltan sin él (en Windows,
+por ejemplo). Se corren en la imagen; `httpx2` es solo para el cliente de prueba de
+Starlette, que la imagen no trae:
+
+```bash
+docker run --rm -u root masterplan360 sh -c "pip install -q httpx2 && python -m pytest -q pipeline/tests/test_plano_*.py consola/tests/test_plano.py"
 ```
 
 Y las de navegador, con el servidor levantado: http://localhost:8000/pruebas.html
