@@ -4,8 +4,8 @@
 
 Imprime una línea por etapa: la consola muestra la salida en vivo.
 
-`<carpeta>/entradas.json` (lo que aporta la loteadora; otras claves, como las anclas,
-son de otros pasos y aquí se ignoran):
+`<carpeta>/entradas.json` (lo que aporta la loteadora; `anclas` y `ajuste` son de
+`georreferenciar` y aquí solo se revisan):
 
     {
       "pdf": "plano.pdf",              ruta relativa a la carpeta
@@ -19,9 +19,17 @@ son de otros pasos y aquí se ignoran):
                                        sin él se supone la escala de la hoja del PDF
       "cuadricula": null,              cuadrícula UTM impresa, posición aproximada de
                                        cada línea: {"verticales": [{"x": 680, "valor": 6306750}],
-                                       "horizontales": [{"y": 288, "valor": 255750}]}
-                                       ("valor" es para georreferenciar; aquí se borra la línea)
-      "semillas": [{"numero": "12", "x": 1234.5, "y": 678.0}]
+                                       "horizontales": [{"y": 288, "valor": 255750}],
+                                       "epsg": null}
+                                       aquí se borra la línea; "valor" (E o N impreso, se
+                                       deduce cuál por la magnitud) y "epsg" (opcional: el
+                                       datum y huso de los valores; sin él, WGS84 en el huso
+                                       de las anclas, o PSAD56 si las anclas lo indican)
+                                       son para georreferenciar
+      "semillas": [{"numero": "12", "x": 1234.5, "y": 678.0}],
+      "anclas": [{"nombre": "roja", "x": 2533, "y": 8037,       punto del plano ↔ su lon/lat
+                  "lon": -70.8240, "lat": -34.7240}],           WGS84 en grados decimales
+      "ajuste": {"de": 0.0, "dn": 0.0}  traslación fina en metros (este, norte)
     }
 
 Todas las coordenadas van en **píxeles de página**: la imagen que trae el PDF, ya
@@ -37,6 +45,8 @@ entero. Si cambia la rotación, cambian las coordenadas.
                  "huecos": [[[x, y], ...]], "area_px", "vertices"}],     en px de página
       "sin_numero": [{"poligono", "area_px"}],     caras dentro del contorno sin lote
       "faltantes": ["13"],                         semillas que no dieron polígono
+      "cuadricula": {"verticales": [{"valor", "p": [x, y], "q": [x, y], "valida"}],
+                     "horizontales": [...]},       las rectas detectadas (o null)
       "estadisticas": {...}
     }
 """
@@ -67,6 +77,7 @@ class Resultado:
     sin_numero: list[Polygon]          # px de página
     lotes_trabajo: dict[str, Polygon]  # px de trabajo
     estadisticas: dict = field(default_factory=dict)
+    cuadricula: dict | None = None     # líneas detectadas, en px de página
 
 
 def digitalizar_imagen(imagen: np.ndarray, ppmm: float, semillas, rectangulo=None, mascaras=(),
@@ -81,13 +92,21 @@ def digitalizar_imagen(imagen: np.ndarray, ppmm: float, semillas, rectangulo=Non
     rectangulo = rectangulo if rectangulo is not None else [0, 0, ancho, alto]
 
     segmentos = []
+    detectada = None
     if cuadricula:
         gris = cv2.cvtColor(imagen, cv2.COLOR_RGB2GRAY)
-        xs = [float(v["x"]) for v in cuadricula.get("verticales", [])]
-        ys = [float(v["y"]) for v in cuadricula.get("horizontales", [])]
+        verticales, horizontales = cuadricula.get("verticales") or [], cuadricula.get("horizontales") or []
+        xs = [float(v["x"]) for v in verticales]
+        ys = [float(v["y"]) for v in horizontales]
         lineas = tinta.lineas_cuadricula(gris, ppmm, xs, ys)
         del gris
         segmentos = [(p, q) for p, q, _ in lineas]
+        # Las rectas detectadas (no la posición aproximada) son las que georreferencian.
+        punto = lambda p: [round(float(p[0]), 3), round(float(p[1]), 3)]
+        detectada = {familia: [dict(valor=m.get("valor"), p=punto(p), q=punto(q), valida=bool(v))
+                               for m, (p, q, v) in zip(marcas, trozo)]
+                     for familia, marcas, trozo in (("verticales", verticales, lineas[:len(xs)]),
+                                                    ("horizontales", horizontales, lineas[len(xs):]))}
         avance(f"Cuadrícula: {sum(v for *_, v in lineas)} de {len(lineas)} líneas bien ubicadas")
 
     papel = pag.color_papel(imagen, rectangulo)
@@ -139,7 +158,7 @@ def digitalizar_imagen(imagen: np.ndarray, ppmm: float, semillas, rectangulo=Non
     avance(f"Lotes: {len(lotes)} de {len(semillas)}"
            + (f"; sin polígono: {', '.join(faltantes)}" if faltantes else "")
            + (f"; {len(sin_numero)} caras sin número" if sin_numero else ""))
-    return Resultado(encuadre, lotes, sin_numero, red.lotes, estadisticas)
+    return Resultado(encuadre, lotes, sin_numero, red.lotes, estadisticas, detectada)
 
 
 def _transformar(g: Polygon, encuadre: pag.Encuadre) -> Polygon:
@@ -174,6 +193,7 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
                for n, g in r.lotes.items()],
         sin_numero=[dict(poligono=_anillo(g.exterior), area_px=round(g.area, 1)) for g in r.sin_numero],
         faltantes=r.estadisticas["faltantes"],
+        cuadricula=r.cuadricula,
         estadisticas=r.estadisticas,
     )
     escribir_json(carpeta / SALIDA, datos)
@@ -229,6 +249,34 @@ def leer_entradas(carpeta: Path) -> dict:
     if repetidos:
         raise ValueError(f"números de lote repetidos en las semillas: {', '.join(repetidos)}")
     salida["semillas"] = semillas
+
+    if e.get("cuadricula") is not None:
+        c = e["cuadricula"]
+        if not isinstance(c, dict):
+            raise ValueError("«cuadricula» es {\"verticales\": [...], \"horizontales\": [...]}")
+        for familia, eje in (("verticales", "x"), ("horizontales", "y")):
+            for m in c.get(familia) or []:
+                if not isinstance(m, dict):
+                    raise ValueError(f"cada línea de «cuadricula.{familia}» lleva «{eje}» y «valor»: {m!r}")
+                numeros([m.get(eje)] + ([m["valor"]] if m.get("valor") is not None else []),
+                        2 if m.get("valor") is not None else 1, f"cuadricula.{familia}: {eje}, valor")
+        if c.get("epsg") is not None and (not isinstance(c["epsg"], int) or isinstance(c["epsg"], bool)):
+            raise ValueError(f"«cuadricula.epsg» debe ser un número entero, no {c['epsg']!r}")
+    anclas = []
+    for i, a in enumerate(e.get("anclas") or []):
+        if not isinstance(a, dict):
+            raise ValueError(f"cada ancla lleva «x», «y», «lon» y «lat»: {a!r}")
+        nombre = str(a.get("nombre") or f"ancla {i + 1}")
+        x, y, lon, lat = numeros([a.get(k) for k in ("x", "y", "lon", "lat")], 4, f"{nombre}: x, y, lon, lat")
+        if not (-180 <= lon <= 180 and -90 <= lat <= 90):
+            raise ValueError(f"{nombre}: lon/lat fuera de rango ({lon}, {lat})")
+        anclas.append(dict(a, nombre=nombre, x=x, y=y, lon=lon, lat=lat))
+    salida["anclas"] = anclas
+    ajuste = e.get("ajuste") or {}
+    if not isinstance(ajuste, dict):
+        raise ValueError(f"«ajuste» es {{\"de\": metros, \"dn\": metros}}, no {ajuste!r}")
+    de, dn = numeros([ajuste.get("de", 0.0), ajuste.get("dn", 0.0)], 2, "ajuste: de, dn")
+    salida["ajuste"] = dict(de=de, dn=dn)
     return salida
 
 

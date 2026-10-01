@@ -7,6 +7,8 @@ pymupdf>=1.24
 opencv-python-headless>=4.9
 scikit-image>=0.22
 scipy>=1.11
+# Crea tu KMZ: ubicar los lotes en UTM (huso, WGS84 y PSAD56)
+pyproj>=3.6
 
 # Solo para correr las pruebas
 pytest>=8.0
