@@ -368,3 +368,59 @@ def test_una_carpeta_que_contiene_el_repo_no_toma_lo_generado(tmp_path, monkeypa
 
     assert fuentes.kmz == tmp_path / "z-loteo.kmz"
     assert fuentes.panoramas == tmp_path / "vuelo"
+
+
+# --- Crea tu KMZ: la carpeta plano/ ----------------------------------------------
+
+from pipeline.config import kmz_en
+
+
+def _plano_de_crea_tu_kmz(carpeta):
+    """Lo que deja la consola: el PDF, sus páginas en JPEG y, a medio crear, el KMZ."""
+    plano = carpeta / "plano"
+    (plano / "paginas").mkdir(parents=True)
+    (plano / "plano.pdf").write_bytes(b"%PDF-1.7")
+    (plano / "paginas" / "1.jpg").write_bytes(b"jpg")
+    (plano / "paginas" / "1_mini.jpg").write_bytes(b"jpg")
+    (plano / "subdivision.kmz").write_bytes(b"kmz")
+
+
+def test_lo_de_crea_tu_kmz_no_es_fuente(tmp_path):
+    armar(tmp_path, kmz="z-loteo.kmz", fotos=("vuelo/a.JPG",))
+    _plano_de_crea_tu_kmz(tmp_path)
+
+    fuentes = descubrir_fuentes(tmp_path, sin_crm=True)
+
+    assert fuentes.kmz == tmp_path / "z-loteo.kmz"
+    assert fuentes.panoramas == tmp_path / "vuelo"
+    assert kmz_en(tmp_path) == [tmp_path / "z-loteo.kmz"]
+
+
+@pytest.mark.parametrize("carpeta", ["plano", "planos", "Plano"])
+def test_una_carpeta_plano_del_vuelo_sigue_siendo_fuente(tmp_path, carpeta):
+    """Sin el PDF ni las páginas de Crea tu KMZ, "plano/" es del topógrafo o del piloto."""
+    (tmp_path / carpeta).mkdir()
+    armar(tmp_path, kmz=f"{carpeta}/loteo.kmz", excel=f"{carpeta}/parcelas.xlsx",
+          fotos=(f"{carpeta}/fotos/a.JPG",))
+
+    fuentes = descubrir_fuentes(tmp_path, sin_crm=True)
+
+    assert fuentes.kmz == tmp_path / carpeta / "loteo.kmz"
+    assert fuentes.excel == tmp_path / carpeta / "parcelas.xlsx"
+    assert fuentes.panoramas == tmp_path / carpeta / "fotos"
+
+
+def test_crea_tu_kmz_en_una_carpeta_vinculada_dentro_del_repo(tmp_path, monkeypatch):
+    """El modo local: las subidas viven en <repo>/proyectos y el plano adentro."""
+    raiz = _repo_falso(tmp_path, monkeypatch)
+    carpeta = raiz / "proyectos" / "mi-loteo"
+    carpeta.mkdir(parents=True)
+    armar(carpeta, excel=None, fotos=("DJI_0001.JPG",))
+    _plano_de_crea_tu_kmz(carpeta)
+
+    fuentes = descubrir_fuentes(carpeta, sin_crm=True)
+
+    assert fuentes.kmz == carpeta / "loteo.kmz"
+    # Las fotos están en la raíz: sin excluir el plano, el ancestro común no cambia,
+    # pero las páginas tampoco se cuentan como panorámicas (ver test_panoramas).
+    assert fuentes.panoramas == carpeta

@@ -241,3 +241,20 @@ def test_ignora_las_copias_de_una_misma_panoramica(tmp_path):
 
     assert len(panoramas) == 1
     assert panoramas[0].ruta.parent.name == "360"
+
+
+def test_las_paginas_de_crea_tu_kmz_no_son_panoramas(tmp_path):
+    escribir_panorama(tmp_path / "100 METROS.JPG", relativa=100.0)
+    plano = tmp_path / "plano"
+    (plano / "paginas").mkdir(parents=True)
+    (plano / "plano.pdf").write_bytes(b"%PDF-1.7")
+    # Aunque la página tuviera XMP de dron, no es del vuelo.
+    escribir_panorama(plano / "paginas" / "1.jpg", relativa=300.0)
+
+    assert [p.id for p in buscar_panoramas(tmp_path)] == ["p01-100"]
+
+
+def test_una_posicion_llamada_plano_sigue_siendo_del_vuelo(tmp_path):
+    escribir_panorama(tmp_path / "plano" / "100 METROS.JPG", relativa=100.0)
+
+    assert len(buscar_panoramas(tmp_path)) == 1

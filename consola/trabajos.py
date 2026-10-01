@@ -21,7 +21,7 @@ LIMITE_LINEAS = 2000
 class Trabajo:
     id: str
     proyecto: str
-    accion: str                       # "construir" | "publicar"
+    accion: str                       # "construir" | "publicar" | "digitalizar-plano"
     estado: str = "corriendo"         # "corriendo" | "listo" | "falló"
     codigo: int | None = None
     lineas: list[str] = field(default_factory=list)
@@ -107,6 +107,9 @@ class Trabajos:
             proceso = subprocess.Popen(
                 comando, cwd=self.directorio, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT, text=True, bufsize=1,
+                # El pipeline escribe en UTF-8 (ver `_entorno_sin_bufer`): se lee igual,
+                # no con la codificación del sistema (cp1252 en Windows).
+                encoding="utf-8", errors="replace",
                 # Sin esto Python almacena su salida en un búfer al no ver una
                 # terminal, y el avance aparecería recién al terminar.
                 env=_entorno_sin_bufer(),
@@ -139,6 +142,10 @@ def _entorno_sin_bufer() -> dict:
     Sin `PYTHON_COLORS=0`, un Python 3.13+ lanzado desde una terminal con color
     forzado pinta los tracebacks con códigos ANSI, que en la página salen como
     basura del tipo `[35m`.
+
+    `PYTHONIOENCODING=utf-8`: sin él, un `print` con "°" o "×" (el avance de Crea tu
+    KMZ) revienta con UnicodeEncodeError donde la consola del sistema no es UTF-8.
     """
     import os
-    return {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHON_COLORS": "0", "NO_COLOR": "1"}
+    return {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHON_COLORS": "0", "NO_COLOR": "1",
+            "PYTHONIOENCODING": "utf-8"}

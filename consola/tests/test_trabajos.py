@@ -164,3 +164,16 @@ def test_esperar_con_tope_devuelve_el_trabajo_aunque_siga_corriendo(trabajos):
     trabajo = trabajos.esperar(identificador, tope=0.1)
 
     assert not trabajo.terminado
+
+
+def test_tildes_y_bytes_que_no_son_utf8_no_rompen_el_trabajo(trabajos):
+    """El pipeline escribe en UTF-8; lo de otros (la CLI de Vercel) puede no serlo."""
+    identificador = trabajos.lanzar("loteo", "publicar", guion(
+        "import sys; print('rotación 90°, 1.200×900 px', flush=True);"
+        r" sys.stdout.buffer.write(b'latin1: \xe9xito\n'); sys.stdout.flush()"))
+
+    trabajo = esperar(trabajos, identificador)
+
+    assert trabajo.estado == "listo"
+    assert "rotación 90°, 1.200×900 px" in trabajo.lineas
+    assert trabajo.lineas[-1] == "latin1: \N{REPLACEMENT CHARACTER}xito"
