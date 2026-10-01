@@ -12,8 +12,9 @@
 # falla y el script **muere**: ese error es justamente la colisión que antes se
 # tragaba un `|| true` y terminaba desplegando encima del sitio de otro.
 #
-# Al terminar deja <sitio>/../publicacion.json con la URL real del despliegue,
-# para que la consola la guarde en vez de adivinarla.
+# Al terminar deja <sitio>/../publicacion.json con la URL fija del loteo (el
+# alias de producción que dio el hosting), para que la consola la guarde en vez
+# de adivinarla.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -49,8 +50,22 @@ vercel link --yes --project "$proyecto" --scope "$scope" ${token[@]+"${token[@]}
 salida=$(vercel deploy --prod --yes --scope "$scope" ${token[@]+"${token[@]}"} --cwd "$sitio")
 echo "$salida"
 
-# La URL del despliegue, para que la consola la persista. `vercel deploy` imprime
-# un JSON cuando el CLI no está en una terminal; si no, la última línea con https.
-url=$(printf '%s\n' "$salida" | grep -oE 'https://[^"[:space:]]+' | tail -1)
-printf '{"proyecto": "%s", "url": "%s"}\n' "$proyecto" "$url" > "$sitio/../publicacion.json"
+# La URL de ESTE despliegue (`…-5huo5t5m5.vercel.app`): cambia en cada
+# publicación. `vercel deploy` imprime un JSON cuando el CLI no está en una
+# terminal; si no, la última línea con https.
+despliegue=$(printf '%s\n' "$salida" | grep -oE 'https://[^"[:space:]]+' | tail -1)
+
+# La que hay que guardar es la fija del loteo: uno de los alias de producción.
+# Primero un dominio propio (<slug>.tumasterplan.cl) si lo tiene; si no, el
+# alias .vercel.app más corto, que es el nombre del proyecto (el otro lleva
+# pegado el nombre del equipo). Sin alias, queda la del despliegue.
+alias_=$(vercel inspect "$despliegue" --scope "$scope" ${token[@]+"${token[@]}"} 2>&1 \
+  | awk '/^ *Aliases/ {dentro=1; next} dentro && /https:\/\// {print $NF; next} dentro && /^ *[A-Z]/ {exit}' \
+  || true)
+propio=$(printf '%s\n' "$alias_" | grep -v '\.vercel\.app$' | grep '^https://' | head -1 || true)
+corto=$(printf '%s\n' "$alias_" | grep '\.vercel\.app$' | awk '{print length, $0}' | sort -n | head -1 | cut -d' ' -f2- || true)
+url="${propio:-${corto:-$despliegue}}"
+
+printf '{"proyecto": "%s", "url": "%s", "despliegue": "%s"}\n' "$proyecto" "$url" "$despliegue" \
+  > "$sitio/../publicacion.json"
 echo "▶ URL publicada: $url"
