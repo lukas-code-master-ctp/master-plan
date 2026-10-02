@@ -20,6 +20,7 @@ import { abrirNombre, abrirUsarKmz, cuantosLotes, descargaDe } from './kmzs.js';
 import { cargarLeaflet, COLORES, MapaKmz } from './mapa_kmz.js';
 import { oyentes, seguir } from './plano.js';
 import { soltadero } from './subida.js';
+import { pintarEscaner } from './vuelo.js';
 
 const VACIAS = () => ({
   pagina: 1, rotacion: 0, rectangulo: null, mascaras: [], esquinas: null, semillas: [], anclas: [],
@@ -173,7 +174,7 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
   cerrarNumero();
   $('#kmz-guardado').textContent = '';
   $('#kmz-registro').replaceChildren();
-  $('#kmz-registro').hidden = true;
+  $('#kmz-escaner').hidden = true;
   $('#kmz-listo').hidden = true;
   $('#kmz-listo-texto').textContent = '';
   cargarTodo(true).catch((error) => {
@@ -426,9 +427,19 @@ async function digitalizar() {
     && !confirm('No encerraste el dibujo: se va a digitalizar la página entera, con cuadros y cajetín. ¿Seguir?')) return;
   await guardar();
   estado.registros.set(clave(), []);
+  // La tarjeta aparece al tiro, en "Abriendo el plano", sin esperar la primera línea.
+  estado.trabajos.set(clave(), { accion: 'digitalizar-plano', estado: 'corriendo', terminado: false });
   pintarRegistro();
   escuchar();
-  const { id } = await pedir(`${api()}/digitalizar`, json({}));
+  let id;
+  try {
+    ({ id } = await pedir(`${api()}/digitalizar`, json({})));
+  } catch (error) {
+    // No se lanzó (otro trabajo corriendo, p. ej.): la tarjeta no puede quedar escaneando.
+    estado.trabajos.delete(clave());
+    pintarRegistro();
+    throw error;
+  }
   paso = 'digitalizar';
   plano = { ...plano, trabajo: { id, terminado: false } };
   pintarPaso();
@@ -445,10 +456,20 @@ async function terminoDigitalizar(trabajo) {
   }
 }
 
+/**
+ * La tarjeta del escáner y, plegado adentro, el registro técnico. Las líneas son las
+ * que se van sondeando; si no hay (se volvió a abrir el KMZ), las que trae el último
+ * trabajo del servidor.
+ */
 function pintarRegistro() {
   const caja = $('#kmz-registro');
-  const lineas = estado.registros.get(clave()) ?? [];
-  caja.hidden = !lineas.length;
+  const sondeadas = estado.registros.get(clave()) ?? [];
+  const lineas = sondeadas.length ? sondeadas : plano?.trabajo?.lineas ?? [];
+  const trabajo = estado.trabajos.get(clave()) ?? plano?.trabajo ?? null;
+  // Un trabajo que terminó bien pero cuyo resultado ya no está (se subió otro PDF)
+  // no tiene nada que contar.
+  const vigente = trabajo && !(trabajo.terminado && trabajo.estado === 'listo' && !plano?.digitalizado);
+  pintarEscaner(lineas, vigente ? trabajo : null);
   caja.replaceChildren(...lineas.map((texto) => {
     const span = document.createElement('span');
     const bajo = texto.toLowerCase();

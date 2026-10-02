@@ -411,7 +411,96 @@
         <p class="ayuda">Se busca la tinta de los deslindes, se arma la red de lotes y se leen los
           números. Toma de unos segundos a un par de minutos.</p>
         <button class="boton" data-accion="kmz-digitalizar" type="button">Digitalizar</button>
-        <pre id="kmz-registro" class="consola-log" hidden aria-live="polite"></pre>
+        <section id="kmz-escaner" class="vuelo escaner" aria-label="Digitalizando el plano" hidden>
+          <svg class="vuelo__escena escaner__escena" viewBox="0 0 360 172" aria-hidden="true">
+            <defs>
+              <linearGradient id="escaner-estela" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="currentColor" stop-opacity="0"/>
+                <stop offset="1" stop-color="currentColor" stop-opacity="0.22"/>
+              </linearGradient>
+            </defs>
+            <!-- La hoja del plano: el loteo impreso en gris, un camino al medio y el cajetín.
+                 Encima, lo que va armando la digitalización: números, deslindes y lotes. -->
+            <g class="escaner__hoja">
+              <rect class="escaner__papel" x="42" y="6" width="276" height="156" rx="3"/>
+              <g class="escaner__cajetin">
+                <rect x="266" y="118" width="42" height="34"/>
+                <path d="M266 130h42M266 141h42M287 130v22"/>
+              </g>
+              <g class="escaner__tinta">
+                <polygon points="56,18 90,18 86,71 56,70"/>
+                <polygon points="90,18 120,18 124,69 86,71"/>
+                <polygon points="120,18 154,18 150,71 124,69"/>
+                <polygon points="154,18 186,18 190,70 150,71"/>
+                <polygon points="186,18 222,18 218,69 190,70"/>
+                <polygon points="222,18 256,18 256,70 218,69"/>
+                <polygon points="56,82 96,83 92,150 56,150"/>
+                <polygon points="96,83 132,82 138,150 92,150"/>
+                <polygon points="132,82 170,84 166,150 138,150"/>
+                <polygon points="170,84 212,83 216,150 166,150"/>
+                <polygon points="212,83 256,82 256,130 240,150 216,150"/>
+              </g>
+              <g class="escaner__lotes">
+                <polygon class="escaner__lote" style="--i: 0" points="56,18 90,18 86,71 56,70"/>
+                <polygon class="escaner__lote" style="--i: 1" points="90,18 120,18 124,69 86,71"/>
+                <polygon class="escaner__lote" style="--i: 2" points="120,18 154,18 150,71 124,69"/>
+                <polygon class="escaner__lote" style="--i: 3" points="154,18 186,18 190,70 150,71"/>
+                <polygon class="escaner__lote" style="--i: 4" points="186,18 222,18 218,69 190,70"/>
+                <polygon class="escaner__lote" style="--i: 5" points="222,18 256,18 256,70 218,69"/>
+                <polygon class="escaner__lote" style="--i: 6" points="56,82 96,83 92,150 56,150"/>
+                <polygon class="escaner__lote" style="--i: 7" points="96,83 132,82 138,150 92,150"/>
+                <polygon class="escaner__lote" style="--i: 8" points="132,82 170,84 166,150 138,150"/>
+                <polygon class="escaner__lote" style="--i: 9" points="170,84 212,83 216,150 166,150"/>
+                <polygon class="escaner__lote" style="--i: 10" points="212,83 256,82 256,130 240,150 216,150"/>
+              </g>
+              <g class="escaner__deslindes">
+                <polygon class="escaner__deslinde" style="--i: 0" pathLength="1" points="56,18 90,18 86,71 56,70"/>
+                <polygon class="escaner__deslinde" style="--i: 1" pathLength="1" points="90,18 120,18 124,69 86,71"/>
+                <polygon class="escaner__deslinde" style="--i: 2" pathLength="1" points="120,18 154,18 150,71 124,69"/>
+                <polygon class="escaner__deslinde" style="--i: 3" pathLength="1" points="154,18 186,18 190,70 150,71"/>
+                <polygon class="escaner__deslinde" style="--i: 4" pathLength="1" points="186,18 222,18 218,69 190,70"/>
+                <polygon class="escaner__deslinde" style="--i: 5" pathLength="1" points="222,18 256,18 256,70 218,69"/>
+                <polygon class="escaner__deslinde" style="--i: 6" pathLength="1" points="56,82 96,83 92,150 56,150"/>
+                <polygon class="escaner__deslinde" style="--i: 7" pathLength="1" points="96,83 132,82 138,150 92,150"/>
+                <polygon class="escaner__deslinde" style="--i: 8" pathLength="1" points="132,82 170,84 166,150 138,150"/>
+                <polygon class="escaner__deslinde" style="--i: 9" pathLength="1" points="170,84 212,83 216,150 166,150"/>
+                <polygon class="escaner__deslinde" style="--i: 10" pathLength="1" points="212,83 256,82 256,130 240,150 216,150"/>
+              </g>
+              <g class="escaner__numeros">
+                <text class="escaner__numero" x="72" y="47">1</text>
+                <text class="escaner__numero" x="105" y="47">2</text>
+                <text class="escaner__numero" x="137" y="47">3</text>
+                <text class="escaner__numero" x="170" y="47">4</text>
+                <text class="escaner__numero" x="204" y="47">5</text>
+                <text class="escaner__numero" x="238" y="47">6</text>
+                <text class="escaner__numero" x="75" y="119">7</text>
+                <text class="escaner__numero" x="115" y="119">8</text>
+                <text class="escaner__numero" x="152" y="120">9</text>
+                <text class="escaner__numero" x="191" y="120">10</text>
+                <text class="escaner__numero" x="236" y="122">11</text>
+              </g>
+            </g>
+            <!-- El escáner: una línea de luz que barre la hoja de arriba abajo. -->
+            <g class="escaner__barrido">
+              <rect class="escaner__estela" x="34" y="-28" width="292" height="28"/>
+              <rect class="escaner__linea" x="30" y="-1.5" width="300" height="3" rx="1.5"/>
+            </g>
+          </svg>
+          <div class="vuelo__texto">
+            <!-- Solo el texto se anuncia: ni el dibujo ni cada línea del registro. -->
+            <div role="status" aria-live="polite" aria-atomic="true">
+              <p id="kmz-escaner-titulo" class="vuelo__titulo"></p>
+              <p id="kmz-escaner-paso" class="vuelo__paso"></p>
+            </div>
+            <div class="vuelo__progreso" role="progressbar" aria-label="Avance" aria-valuemin="0" aria-valuemax="100">
+              <i id="kmz-escaner-barra"></i>
+            </div>
+            <details id="kmz-escaner-detalle" class="vuelo__detalle">
+              <summary>Ver el detalle técnico</summary>
+              <pre id="kmz-registro" class="consola-log"></pre>
+            </details>
+          </div>
+        </section>
         <dl id="kmz-cifras" class="kmz-cifras" hidden></dl>
         <div class="kmz-panel__pie">
           <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: numerar</button>

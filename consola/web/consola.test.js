@@ -223,11 +223,100 @@ test('una sola vista va en singular', () => {
 });
 
 test('digitalizar el plano tiene sus propios pasos, no los de construir', () => {
+  // En el orden real: "Semillas" sale después del lector y antes de la imagen de trabajo.
   const lineas = ['Página 1 de 1: 6596×9600 px, 150 dpi', 'Rótulos: texto típico de 24 px; 96 pasadas',
-    'Imagen de trabajo: 5000×7000 px a 7.87 px/mm', 'Semillas: 3 de la loteadora y 62 del lector'];
+    'Semillas: 3 de la loteadora y 62 del lector', 'Imagen de trabajo: 5000×7000 px a 7.87 px/mm',
+    'Regiones: 70 núcleos, 65 semillas, 2 bolsillos unidos a su lote'];
   const progreso = avance(lineas, 'digitalizar-plano');
   assert.equal(progreso.titulo, 'Separando los lotes');
   assert.equal(progreso.total, 5);
   assert.equal(avance([...lineas, 'Lotes: 65 de 65', 'Listo: /datos/x/plano/digitalizado.json'],
     'digitalizar-plano', true).resumen, 'Plano digitalizado: 65 lotes');
+});
+
+// Las líneas de un plano real (Algarrobo, con lector), en el orden en que salen.
+const DIGITALIZAR = [
+  'Página 1 de 1: 5008×7038 px, 5.91 px/mm (imagen embebida), rotación 0°',
+  'Rótulos: texto típico de 15 px; 96 pasadas de Tesseract en 2 hebras',
+  'Rótulos: 2 de 96 pasadas (3 s)',
+  'Rótulos: 32 de 96 pasadas (40 s)',
+  'Rótulos: 64 de 96 pasadas (81 s)',
+  'Rótulos: 96 de 96 pasadas (118 s)',
+  'Rótulos: 71 números leídos (64 con apoyo ≥ 2)',
+  'Cuadrícula: 8 de 16 pasadas (2 s)',
+  'Cuadrícula: 16 de 16 pasadas (4 s)',
+  'Cuadrícula: 40 marcas leídas, 6 líneas confiables (4 s)',
+  'Cuadro de superficies: 65 áreas oficiales (6 s)',
+  'Semillas: 3 de la loteadora y 62 del lector (apoyo ≥ 2)',
+  'Imagen de trabajo: 4100×5900 px a 5.91 px/mm (rectangulo)',
+  'Tinta: 1830442 px de línea, 3 tramos de pliegue borrados',
+  'Regiones: 70 núcleos, 65 semillas, 2 bolsillos unidos a su lote',
+  'Red de deslindes: 412 aristas (380 rectas), 290 nodos',
+  'Lotes: 65 de 65',
+  'Listo: /datos/kmz/x/plano/digitalizado.json',
+];
+
+test('digitalizar avanza dentro del paso de lectura con las pasadas del lector', () => {
+  const avances = DIGITALIZAR.map((_, i) => avance(DIGITALIZAR.slice(0, i + 1), 'digitalizar-plano'));
+  // El paso y la barra nunca retroceden, y cada pasada nueva mueve la barra.
+  for (let i = 1; i < avances.length; i++) {
+    assert.ok(avances[i].paso >= avances[i - 1].paso, `el paso retrocede en "${DIGITALIZAR[i]}"`);
+    assert.ok(avances[i].fraccion >= avances[i - 1].fraccion, `la barra retrocede en "${DIGITALIZAR[i]}"`);
+  }
+  assert.deepEqual(avances.map((a) => a.paso), [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 4, 5, 5, 5]);
+  for (const i of [2, 3, 4, 5, 7]) assert.ok(avances[i].fraccion > avances[i - 1].fraccion);
+  // A media lectura, la barra va a media lectura: (1 + 0,85 × 32/96) / 5.
+  assert.equal(avances[3].titulo, 'Leyendo los números de lote');
+  assert.ok(Math.abs(avances[3].fraccion - (1 + 0.85 * 32 / 96) / 5) < 1e-9);
+  // Con todas las pasadas el paso no se da por terminado: falta la línea del siguiente.
+  assert.ok(avances[11].dentro < 1 && avances[11].fraccion < 2 / 5);
+  assert.equal(avance(DIGITALIZAR, 'digitalizar-plano', true).resumen, 'Plano digitalizado: 65 lotes');
+});
+
+test('las pasadas que llegan desordenadas no hacen retroceder la barra', () => {
+  const lineas = DIGITALIZAR.slice(0, 2);
+  const adelante = avance([...lineas, 'Rótulos: 64 de 96 pasadas (81 s)'], 'digitalizar-plano');
+  const despues = avance([...lineas, 'Rótulos: 64 de 96 pasadas (81 s)', 'Rótulos: 32 de 96 pasadas (82 s)'],
+    'digitalizar-plano');
+  assert.equal(despues.fraccion, adelante.fraccion);
+});
+
+test('sin lector (Windows, sin Tesseract) el paso de lectura no se queda pegado', () => {
+  const lineas = ['Página 1 de 1: 1200×900 px, 3.00 px/mm (renderizada), rotación 0°',
+    'sin lector de rótulos: falta pytesseract', 'Semillas: 12 de la loteadora y 0 del lector'];
+  const progreso = avance(lineas, 'digitalizar-plano');
+  assert.equal(progreso.paso, 2);
+  assert.ok(progreso.fraccion > avance(lineas.slice(0, 1), 'digitalizar-plano').fraccion);
+});
+
+test('los tramos dentro del paso son solo de digitalizar: construir sigue igual', () => {
+  // "X de Y" en otras líneas no reparte nada: la mitad del paso, como antes.
+  const lineas = ['Leyendo el KMZ...', 'Lotes: 3 de 10'];
+  assert.equal(avance(lineas, 'construir').fraccion, 0.5 / 9);
+  assert.equal(avance(['Página 1 de 1', 'Red de deslindes: 1', 'Lotes: 3 de 10'], 'digitalizar-plano').fraccion,
+    4.5 / 5);
+});
+
+test('la tarjeta del escáner tiene un número por lote del dibujo', () => {
+  const tarjeta = html.slice(html.indexOf('id="kmz-escaner"'), html.indexOf('</section>', html.indexOf('id="kmz-escaner"')));
+  const lotes = (tarjeta.match(/class="escaner__lote"/g) ?? []).length;
+  assert.ok(lotes >= 10 && lotes <= 12, `${lotes} lotes`);
+  assert.equal((tarjeta.match(/class="escaner__deslinde"/g) ?? []).length, lotes);
+  assert.equal((tarjeta.match(/class="escaner__numero"/g) ?? []).length, lotes);
+  // El registro técnico quedó plegado dentro de la tarjeta.
+  assert.match(tarjeta, /<details id="kmz-escaner-detalle"[^>]*>\s*<summary>Ver el detalle técnico<\/summary>\s*<pre id="kmz-registro"/);
+});
+
+test('la tarjeta del escáner anuncia solo el texto y se ve aunque la animación no corra', () => {
+  const desde = html.indexOf('id="kmz-escaner"');
+  const tarjeta = html.slice(desde, html.indexOf('</section>', desde));
+  // El aviso va en el título y el paso, no en el dibujo ni en el registro técnico.
+  assert.doesNotMatch(html.slice(html.lastIndexOf('<section', desde), desde + 80), /aria-live/);
+  assert.match(tarjeta, /<svg[^>]*aria-hidden="true"/);
+  assert.match(tarjeta, /aria-live="polite"[^>]*>\s*<p id="kmz-escaner-titulo"/);
+  assert.equal((tarjeta.match(/aria-live/g) ?? []).length, 1);
+  // La hoja entra moviéndose, nunca desde transparente (pestaña oculta, sin movimiento).
+  const css = readFileSync(join(aqui, 'consola.css'), 'utf8');
+  const entrada = css.match(/@keyframes escaner-hoja \{[^\n]*\}/)[0];
+  assert.doesNotMatch(entrada, /opacity/);
 });
