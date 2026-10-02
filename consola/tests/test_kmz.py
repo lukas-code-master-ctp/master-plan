@@ -448,3 +448,230 @@ def test_un_master_adoptado_no_puede_llamarse_como_la_clave_de_un_kmz(tmp_path):
     with pytest.raises(ValueError):
         base.crear_proyecto(cliente.id, "Robado", slug="kmz:de-ana")
     assert base.crear_proyecto(cliente.id, "Bien", slug="bien").slug == "bien"
+
+
+# --- usar un KMZ en un master ------------------------------------------------------------
+#
+# "Solo KMZ propios": los que alcanza la `VistaKmz` de quien pide. Para una loteadora,
+# los suyos; para el equipo, todos (los ve todos, igual que los masters).
+
+def kmz_terminado(web, carpeta, nombre="Mi KMZ"):
+    slug = web.post("/api/kmz", json={"nombre": nombre}).json()["slug"]
+    listo_para_ubicar(web, slug, carpeta)
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
+    assert web.post(f"/api/kmz/{slug}/crear").status_code == 201
+    return slug
+
+
+def master_vacio(web, nombre="Los Robles"):
+    respuesta = web.post("/api/proyectos", json={"nombre": nombre})
+    assert respuesta.status_code == 201, respuesta.text
+    return respuesta.json()["slug"]
+
+
+def usar(web, master, kmz, confirmar=False):
+    return web.post(f"/api/proyectos/{master}/kmz", json={"kmz": kmz, "confirmar_reemplazo": confirmar})
+
+
+def test_usar_un_kmz_propio_lo_copia_a_las_fuentes_del_master(consola):
+    app, carpeta, registro, _ = consola
+    ana = entrar(app, "ana@losrobles.cl")
+    kmz = kmz_terminado(ana, carpeta)
+    master = master_vacio(ana)
+    respuesta = ana.post(f"/api/proyectos/{master}/construir", json={})
+    assert respuesta.status_code == 409
+    assert respuesta.json()["detail"] == "falta el KMZ: súbelo o elige uno de Mis KMZ"
+
+    respuesta = usar(ana, master, kmz)
+
+    assert respuesta.status_code == 201, respuesta.text
+    assert respuesta.json() == {"kmz": "subdivision.kmz", "origen": kmz, "lotes": 3, "anteriores": []}
+    fuentes = registro.subidas / master
+    copiado = fuentes / "subdivision.kmz"
+    assert copiado.read_bytes() == (carpeta / kmz / f"{kmz}.kmz").read_bytes()
+    assert sorted(p.id for p in leer_kmz(copiado)) == ["1", "2", "A3"]
+    assert not [p.name for p in fuentes.iterdir() if p.name.startswith(".")]      # sin temporales
+    del_master = ana.get("/api/proyectos").json()[0]
+    assert del_master["fuentes_encontradas"]["kmz"] == "subdivision.kmz"
+    assert "plano" not in del_master
+    assert ana.post(f"/api/proyectos/{master}/construir", json={}).status_code == 202
+
+
+def test_un_kmz_que_ya_estaba_pide_confirmar_y_queda_como_anterior(consola):
+    app, carpeta, registro, _ = consola
+    ana = entrar(app, "ana@losrobles.cl")
+    kmz = kmz_terminado(ana, carpeta)
+    master = master_vacio(ana)
+    ana.post(f"/api/proyectos/{master}/archivos",
+             files=[("archivos", ("vuelo/Loteo Final.kmz", b"el del topografo", "application/octet-stream"))])
+    fuentes = registro.subidas / master
+
+    sin_confirmar = usar(ana, master, kmz)
+
+    assert sin_confirmar.status_code == 409
+    assert sin_confirmar.json()["existentes"] == ["vuelo/Loteo Final.kmz"]
+    assert "vuelo/Loteo Final.kmz" in sin_confirmar.json()["detail"]
+    assert not (fuentes / "subdivision.kmz").exists()
+
+    confirmado = usar(ana, master, kmz, confirmar=True)
+
+    assert confirmado.status_code == 201, confirmado.text
+    assert confirmado.json()["anteriores"] == ["vuelo/Loteo Final.kmz.anterior"]
+    assert (fuentes / "vuelo" / "Loteo Final.kmz.anterior").read_bytes() == b"el del topografo"
+    assert not (fuentes / "vuelo" / "Loteo Final.kmz").exists()
+    # Construir encuentra uno solo: el nuevo.
+    assert ana.get("/api/proyectos").json()[0]["fuentes_encontradas"]["kmz"] == "subdivision.kmz"
+
+    # Volver a usarlo también pide confirmar: el que hay ahora es el de Mis KMZ.
+    assert usar(ana, master, kmz).status_code == 409
+    otra = usar(ana, master, kmz, confirmar=True)
+    assert otra.json()["anteriores"] == ["subdivision.kmz.anterior"]
+    assert (fuentes / "subdivision.kmz").is_file() and (fuentes / "subdivision.kmz.anterior").is_file()
+
+
+def test_un_kmz_sin_terminar_no_se_usa(consola):
+    app, carpeta, registro, _ = consola
+    ana = entrar(app, "ana@losrobles.cl")
+    kmz = ana.post("/api/kmz", json={"nombre": "A medias"}).json()["slug"]
+    listo_para_ubicar(ana, kmz, carpeta)
+    master = master_vacio(ana)
+
+    respuesta = usar(ana, master, kmz, confirmar=True)
+
+    assert respuesta.status_code == 409
+    assert respuesta.json()["detail"] == "ese KMZ todavía no está creado"
+    assert not list((registro.subidas / master).glob("*.kmz*"))
+
+
+@pytest.mark.parametrize("kmz", [None, "", "no-existe", "../kmz"])
+def test_un_kmz_que_no_existe_da_404(consola, kmz):
+    app, _, _, _ = consola
+    ana = entrar(app, "ana@losrobles.cl")
+    master = master_vacio(ana)
+
+    assert usar(ana, master, kmz).status_code == 404
+
+
+def test_el_kmz_de_otra_no_se_usa_ni_sabiendo_su_slug(consola):
+    app, carpeta, registro, _ = consola
+    ana, luis = entrar(app, "ana@losrobles.cl"), entrar(app, "luis@delvalle.cl")
+    de_luis = kmz_terminado(luis, carpeta, "De Luis")
+    master = master_vacio(ana)
+
+    respuesta = usar(ana, master, de_luis, confirmar=True)
+
+    assert respuesta.status_code == 404
+    assert not list((registro.subidas / master).glob("*.kmz*"))
+
+
+def test_en_el_master_de_otra_da_404(consola):
+    app, carpeta, registro, _ = consola
+    ana, luis = entrar(app, "ana@losrobles.cl"), entrar(app, "luis@delvalle.cl")
+    master = master_vacio(ana)
+    de_luis = kmz_terminado(luis, carpeta, "De Luis")
+
+    assert usar(luis, master, de_luis, confirmar=True).status_code == 404
+    assert not list((registro.subidas / master).glob("*.kmz*"))
+
+
+def test_el_equipo_usa_el_kmz_de_cualquiera(consola):
+    app, carpeta, _, _ = consola
+    ctp, ana = entrar(app, "ctp@ctp.cl"), entrar(app, "ana@losrobles.cl")
+    de_ana = kmz_terminado(ana, carpeta, "De Ana")
+    master = master_vacio(ctp, "Del equipo")
+
+    respuesta = usar(ctp, master, de_ana)
+
+    assert respuesta.status_code == 201, respuesta.text
+    assert respuesta.json()["origen"] == de_ana
+
+
+def test_no_se_cambia_el_kmz_mientras_construye(consola, monkeypatch):
+    app, carpeta, registro, comandos = consola
+    ana = entrar(app, "ana@losrobles.cl")
+    kmz = kmz_terminado(ana, carpeta)
+    master = master_con_kmz(ana, "Uno")
+    monkeypatch.setattr(comandos, "construir",
+                        lambda p, sin_imagenes=False: [sys.executable, "-c", "import time; time.sleep(2)"])
+    # Sin /bin/sh (Windows): la construcción sola, sin el control de calce encadenado.
+    monkeypatch.setattr("consola.app.encadenar", lambda *comandos: comandos[0])
+    identificador = ana.post(f"/api/proyectos/{master}/construir", json={}).json()["id"]
+
+    respuesta = usar(ana, master, kmz, confirmar=True)
+
+    assert respuesta.status_code == 409
+    assert (registro.subidas / master / "loteo.kmz").read_bytes() == b"kmz"
+    esperar_trabajo(ana, identificador)
+    assert usar(ana, master, kmz, confirmar=True).status_code == 201
+
+
+def test_usar_un_kmz_cuenta_para_el_tope_del_master(tmp_path):
+    app, _, registro, _ = montar(tmp_path, limites=Limites(megas_por_loteo=1))
+    ana = entrar(app, "ana@losrobles.cl")
+    kmz = kmz_terminado(ana, tmp_path / "kmz")
+    master = master_vacio(ana)
+    (registro.subidas / master).mkdir(parents=True, exist_ok=True)
+    (registro.subidas / master / "relleno.bin").write_bytes(b"x" * 1024 * 1024)
+
+    respuesta = usar(ana, master, kmz)
+
+    assert respuesta.status_code == 413
+    assert not (registro.subidas / master / "subdivision.kmz").exists()
+
+
+def test_una_carpeta_plano_vieja_no_libra_de_subir_el_kmz(consola):
+    """Subir el vuelo vuelve a exigir el KMZ, aunque haya un plano de Crea tu KMZ."""
+    app, _, registro, _ = consola
+    ana = entrar(app, "ana@losrobles.cl")
+    master = master_vacio(ana)
+    (registro.subidas / master / "plano").mkdir(parents=True)
+    (registro.subidas / master / "plano" / "plano.pdf").write_bytes(b"%PDF-1.7")
+
+    respuesta = ana.post(f"/api/proyectos/{master}/archivos",
+                         files=[("archivos", ("POSICION 01/a.JPG", b"jpg", "image/jpeg"))])
+
+    assert respuesta.status_code == 400
+    assert "KMZ" in respuesta.json()["detail"]
+
+
+def test_poner_kmz_deja_uno_solo_aunque_el_viejo_este_en_una_subcarpeta(tmp_path):
+    from consola.proyectos import poner_kmz
+    from pipeline import config
+    fuentes = tmp_path / "subidas" / "los-robles"
+    (fuentes / "topografia").mkdir(parents=True)
+    (fuentes / "topografia" / "a.kmz").write_bytes(b"viejo")
+    (fuentes / "topografia" / "a.kmz.anterior").write_bytes(b"mas viejo")
+
+    apartados = poner_kmz(fuentes, b"nuevo", confirmar_reemplazo=True)
+
+    assert apartados == ["topografia/a.kmz.anterior"]
+    assert config.kmz_en(fuentes) == [fuentes / "subdivision.kmz"]
+    assert (fuentes / "subdivision.kmz").read_bytes() == b"nuevo"
+    # Se guarda solo el último reemplazado.
+    assert (fuentes / "topografia" / "a.kmz.anterior").read_bytes() == b"viejo"
+    assert [p.name for p in fuentes.iterdir() if p.name.startswith(".")] == []
+
+
+def test_poner_kmz_si_falla_al_final_devuelve_los_apartados(tmp_path, monkeypatch):
+    import os
+
+    from consola import proyectos
+    fuentes = tmp_path / "los-robles"
+    fuentes.mkdir()
+    (fuentes / "subdivision.kmz").write_bytes(b"viejo")
+    (fuentes / "b.kmz").write_bytes(b"otro")
+    original = os.replace
+
+    def falla_al_poner(origen, destino):
+        if str(origen).endswith(f"{os.getpid()}.{proyectos.threading.get_ident()}"):
+            raise OSError("disco lleno")
+        original(origen, destino)
+
+    monkeypatch.setattr(proyectos.os, "replace", falla_al_poner)
+
+    with pytest.raises(OSError):
+        proyectos.poner_kmz(fuentes, b"nuevo", confirmar_reemplazo=True)
+
+    assert (fuentes / "subdivision.kmz").read_bytes() == b"viejo"
+    assert (fuentes / "b.kmz").read_bytes() == b"otro"
+    assert sorted(p.name for p in fuentes.iterdir()) == ["b.kmz", "subdivision.kmz"]

@@ -31,10 +31,6 @@ class Comandos:
                 "--proyecto", str(proyecto.fuentes),
                 "--salida", str(proyecto.salida.base)]
 
-    def digitalizar_plano(self, proyecto) -> list[str]:
-        """Crea tu KMZ dentro de un master: el plano en `<fuentes>/plano/`."""
-        return self.digitalizar_carpeta(proyecto.fuentes / config.CARPETA_PLANO)
-
     def digitalizar_carpeta(self, carpeta) -> list[str]:
         """Crea tu KMZ: de `entradas.json` a los lotes en píxeles del plano."""
         return [sys.executable, "-m", "pipeline.plano", "digitalizar", str(carpeta)]

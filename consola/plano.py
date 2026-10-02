@@ -1,7 +1,6 @@
 """Crea tu KMZ en la consola: el plano aprobado y lo que sale de él.
 
-Un plano vive en una carpeta: la de un KMZ propio (Mis KMZ, `kmz/<slug>/`) o, en un
-master, `<fuentes>/plano/`, junto al resto de lo que subió la loteadora:
+Un plano vive en la carpeta de un KMZ de Mis KMZ (`kmz/<slug>/`):
 
     plano.pdf            el PDF tal como llegó
     paginas/<n>.jpg      la imagen de cada página, sin rotar: sus píxeles son los
@@ -13,9 +12,9 @@ master, `<fuentes>/plano/`, junto al resto de lo que subió la loteadora:
     lotes.geojson        los lotes en lon/lat
     huellas.json         con qué entradas se hizo cada paso: dice qué quedó atrasado
 
-El KMZ que sale de acá va a `destino_kmz` (un KMZ propio: `kmz/<slug>/<slug>.kmz`,
-que se rehace sin preguntar porque es su propio archivo) o, en un master, a
-`<fuentes>/subdivision.kmz`, donde lo busca construir.
+El KMZ que sale de acá va a `destino_kmz` (`kmz/<slug>/<slug>.kmz`), que se rehace
+sin preguntar porque es su propio archivo. Llevarlo a un master es otra cosa:
+`proyectos.poner_kmz`.
 
 Escrituras: aparte y `os.replace` al final, sin copystat ni chmod (`/datos` puede ser
 un bucket montado con gcsfuse).
@@ -46,7 +45,6 @@ from PIL import Image
 from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
 
-from pipeline import config
 from pipeline.kmz import normalizar_id
 from pipeline.plano import pagina as pag
 from pipeline.plano import rotulos
@@ -57,8 +55,6 @@ from pipeline.plano.salida import escribir_kmz, lotes_utm
 PDF = "plano.pdf"
 PAGINAS = "paginas"
 HUELLAS = "huellas.json"
-KMZ = "subdivision.kmz"
-ANTERIOR = ".anterior"
 
 # Un plano del CBR trae una o dos láminas; más es otro documento.
 MAX_PAGINAS = 12
@@ -108,37 +104,18 @@ class PlanoNoListo(Exception):
     """Falta un paso anterior (409)."""
 
 
-class KmzExistente(Exception):
-    """Ya hay un KMZ en las fuentes y no se confirmó reemplazarlo (409)."""
-
-    def __init__(self, existentes: list[str]):
-        self.existentes = existentes
-        super().__init__(f"ya hay un KMZ ({', '.join(existentes)}): confirma que lo reemplazas;"
-                         f" el anterior queda como {existentes[0]}{ANTERIOR}")
-
-
 @dataclass(frozen=True)
 class Plano:
-    """Sin `destino_kmz`, `fuentes` es un master: el plano en `plano/` y el KMZ en las
-    fuentes, con confirmación si ya hay uno. Con `destino_kmz`, `fuentes` es la propia
-    carpeta del plano (un KMZ de Mis KMZ) y el KMZ es ese archivo."""
-    fuentes: Path
-    destino_kmz: Path | None = None
+    """El plano en `carpeta` y el KMZ que sale de él en `destino_kmz`."""
+    carpeta: Path
+    destino_kmz: Path
     # El nombre que lleva el KMZ por dentro. Vacío = el de la carpeta.
     nombre: str | None = None
 
     @property
-    def propio(self) -> bool:
-        return self.destino_kmz is not None
-
-    @property
-    def carpeta(self) -> Path:
-        return self.fuentes if self.propio else self.fuentes / config.CARPETA_PLANO
-
-    @property
     def kmz(self) -> Path:
         """Dónde queda el KMZ que sale de este plano."""
-        return self.destino_kmz if self.propio else self.fuentes / KMZ
+        return self.destino_kmz
 
     def terminado(self) -> bool:
         return self.kmz.is_file()
@@ -316,46 +293,23 @@ class Plano:
         return dict(resumen_georreferencia(self._leer(GEORREFERENCIA)), vigente=True, lineas=lineas)
 
     @_a_solas
-    def crear_kmz(self, confirmar_reemplazo: bool = False) -> dict:
-        """Escribe el KMZ. Uno propio se rehace sin preguntar. En un master va a
-        `<fuentes>/subdivision.kmz`: si ya hay un KMZ (cualquiera), pide confirmar, y
-        el anterior queda como `<nombre>.kmz.anterior`: así construir encuentra uno solo."""
+    def crear_kmz(self) -> dict:
+        """Escribe el KMZ. Es su propio archivo: se rehace sin preguntar."""
         entradas = self._entradas_o_409()
         if not (self.carpeta / GEORREFERENCIA).is_file():
             raise PlanoNoListo("primero hay que ubicar el plano en el mapa")
         if not self._georreferencia_vigente(entradas):
             raise PlanoNoListo("cambiaron las entradas desde que se ubicó el plano: digitaliza o ubica de nuevo")
-        if self.propio:
-            digitalizado = self._leer(DIGITALIZADO)
-            t = Transformacion.desde_dict(self._leer(GEORREFERENCIA))
-            try:
-                # Aparte y `os.replace` al final: un error no se lleva el anterior.
-                n = escribir_kmz(self.kmz, digitalizado, t, nombre=self.nombre or self.carpeta.name)
-            except ValueError as error:
-                raise PlanoInvalido(str(error)) from error
-            self.anotar("kmz", self._huellas().get("georreferencia") or huella_ubicar(
-                entradas, self._huella_digitalizado(entradas)))
-            return dict(kmz=self.kmz.name, lotes=n)
-        existentes = config.kmz_en(self.fuentes)
-        if existentes and not confirmar_reemplazo:
-            raise KmzExistente([str(p.relative_to(self.fuentes).as_posix()) for p in existentes])
         digitalizado = self._leer(DIGITALIZADO)
         t = Transformacion.desde_dict(self._leer(GEORREFERENCIA))
-        # Primero se arma entero al lado (revisa los números de lote); recién
-        # entonces se aparta el anterior. Un error no deja el loteo sin KMZ.
-        armado = self.carpeta / KMZ
         try:
-            n = escribir_kmz(armado, digitalizado, t, nombre=self.nombre or self.fuentes.name)
+            # Aparte y `os.replace` al final: un error no se lleva el anterior.
+            n = escribir_kmz(self.kmz, digitalizado, t, nombre=self.nombre or self.carpeta.name)
         except ValueError as error:
             raise PlanoInvalido(str(error)) from error
-        apartados = []
-        for viejo in existentes:
-            os.replace(viejo, viejo.with_name(viejo.name + ANTERIOR))
-            apartados.append(viejo.relative_to(self.fuentes).as_posix() + ANTERIOR)
-        os.replace(armado, self.fuentes / KMZ)
         self.anotar("kmz", self._huellas().get("georreferencia") or huella_ubicar(
             entradas, self._huella_digitalizado(entradas)))
-        return dict(kmz=KMZ, lotes=n, anteriores=apartados)
+        return dict(kmz=self.kmz.name, lotes=n)
 
     # --- lectura ----------------------------------------------------------------------
 
@@ -380,7 +334,7 @@ class Plano:
                                   vigente=entradas is not None and self._georreferencia_vigente(entradas))
         return dict(paso=self.paso(), pdf=self.hay(), paginas=self.paginas(), entradas=entradas,
                     error_entradas=error, digitalizado=digitalizado, georreferencia=georreferencia,
-                    lector=rotulos.disponible(), kmz=self._kmz_hechos())
+                    lector=rotulos.disponible(), kmz=[self.kmz.name] if self.terminado() else [])
 
     def paso(self) -> str:
         """El paso que sigue: subir, marcar, digitalizar, ubicar, crear o listo."""
@@ -446,11 +400,6 @@ class Plano:
         return dict(type="FeatureCollection", en=en, features=rasgos)
 
     # --- interno ----------------------------------------------------------------------
-
-    def _kmz_hechos(self) -> list[str]:
-        if self.propio:
-            return [self.kmz.name] if self.kmz.is_file() else []
-        return [p.relative_to(self.fuentes).as_posix() for p in config.kmz_en(self.fuentes)]
 
     def _leer(self, nombre: str) -> dict:
         return json.loads((self.carpeta / nombre).read_text(encoding="utf-8"))
