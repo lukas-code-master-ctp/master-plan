@@ -11,7 +11,10 @@ export const estado = {
   sesion: null,
   proyectos: [],
   disenos: [],
+  kmzs: [],
   // Las líneas del último trabajo de cada loteo, y el temporizador que las sondea.
+  // La clave es el slug del master, o `kmz:<slug>` para un KMZ de Mis KMZ (la misma
+  // clave que usa el servidor): un slug nunca lleva ":", así que no chocan.
   registros: new Map(),
   sondeos: new Map(),
   // De cada loteo, el último trabajo: {accion, estado, terminado}.
@@ -43,13 +46,16 @@ export const json = (datos, method = 'POST') => ({
  * descubre un mensaje rojo sin saber de qué era. Por eso el aviso va adentro del
  * diálogo cuando hay uno abierto.
  */
-export function avisar(mensaje) {
+export function avisar(mensaje, tono = null) {
   const dialogo = document.querySelector('dialog[open]');
   const general = $('#aviso');
 
   if (!dialogo) {
     general.textContent = mensaje ?? '';
     general.hidden = !mensaje;
+    // `ok`: algo que salió bien y conviene decir (p. ej. el KMZ quedó en el master).
+    general.classList.toggle('aviso--ok', tono === 'ok');
+    general.setAttribute('role', tono === 'ok' ? 'status' : 'alert');
     if (mensaje) general.scrollIntoView({ block: 'nearest' });
     return;
   }
@@ -60,6 +66,7 @@ export function avisar(mensaje) {
   const dentro = avisoDe(dialogo);
   dentro.textContent = mensaje ?? '';
   dentro.hidden = !mensaje;
+  dentro.classList.toggle('aviso--ok', tono === 'ok');
 }
 
 /** El hueco para avisos de un diálogo, creado la primera vez que hace falta. */
@@ -83,13 +90,23 @@ export function abrirDialogo(dialogo) {
 
 // --- Rutas -------------------------------------------------------------------
 
-/** Qué pantalla pide el hash, y de qué loteo si es el detalle. */
+/**
+ * Qué pantalla pide el hash, y de qué loteo o KMZ si es un detalle.
+ *
+ * `#/planos/nuevo?kmz=<slug>` abre Nuevo master con ese KMZ de Mis KMZ ya elegido
+ * (viene de "Usar en un master" → "Nuevo master con este KMZ").
+ */
 export function ruta(hash) {
-  const partes = hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
+  const [camino, consulta = ''] = hash.replace(/^#\/?/, '').split('?');
+  const partes = camino.split('/').filter(Boolean).map(decodeURIComponent);
   if (partes[0] === 'disenos' && partes[1]) return { pantalla: 'diseno', id: partes[1] };
   if (partes[0] === 'disenos') return { pantalla: 'disenos' };
-  if (partes[0] === 'planos' && partes[1] === 'nuevo') return { pantalla: 'nuevo' };
-  if (partes[0] === 'planos' && partes[1] && partes[2] === 'kmz') return { pantalla: 'kmz', slug: partes[1] };
+  if (partes[0] === 'kmz' && partes[1]) return { pantalla: 'kmz', slug: partes[1] };
+  if (partes[0] === 'kmz') return { pantalla: 'kmzs' };
+  if (partes[0] === 'planos' && partes[1] === 'nuevo') {
+    const kmz = new URLSearchParams(consulta).get('kmz');
+    return kmz ? { pantalla: 'nuevo', kmz } : { pantalla: 'nuevo' };
+  }
   if (partes[0] === 'planos' && partes[1]) return { pantalla: 'plano', slug: partes[1] };
   return { pantalla: 'planos' };
 }
@@ -129,12 +146,10 @@ export function pastilla(texto, tono) {
 /** El estado de un loteo en una palabra, para la lista y el detalle. */
 export function etapaDe(proyecto) {
   if (proyecto.trabajo) {
-    const texto = { publicar: 'Publicando…', 'digitalizar-plano': 'Digitalizando el plano…' };
-    return pastilla(texto[proyecto.trabajo.accion] ?? 'Construyendo…', 'curso');
+    return pastilla(proyecto.trabajo.accion === 'publicar' ? 'Publicando…' : 'Construyendo…', 'curso');
   }
   if (proyecto.publicado) return pastilla('Publicado', 'ok');
   if (proyecto.construido) return pastilla('Construido', 'ok');
-  if (!proyecto.fuentes_encontradas.kmz && proyecto.plano) return pastilla('Creando el KMZ', 'aviso');
   if (!proyecto.fuentes_encontradas.kmz) return pastilla('Falta el vuelo', 'aviso');
   return pastilla('Sin construir', 'aviso');
 }

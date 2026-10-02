@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import {
   aPagina, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, loteEn,
-  matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero,
+  matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, siguienteNombre,
   tamanoRotado, vistaAjustada, zoomEn,
 } from './js/kmz_geometria.js';
@@ -211,6 +211,15 @@ test('los pasos se abren según lo que ya hay', () => {
   assert.equal(pasosHabilitados({ ...digitalizado, georreferencia: { vigente: false } }).revisar, false);
 });
 
+test('"Seguir: numerar" pide una digitalización vigente y que no corra otra', () => {
+  assert.equal(puedeSeguirANumerar(null), false);
+  assert.equal(puedeSeguirANumerar({ pdf: true, entradas: {}, digitalizado: null }), false);
+  assert.equal(puedeSeguirANumerar({ digitalizado: { vigente: false } }), false);
+  assert.equal(puedeSeguirANumerar({ digitalizado: { vigente: true } }), true);
+  assert.equal(puedeSeguirANumerar({ digitalizado: { vigente: true }, trabajo: { id: 'x', terminado: false } }), false);
+  assert.equal(puedeSeguirANumerar({ digitalizado: { vigente: true }, trabajo: { id: 'x', terminado: true } }), true);
+});
+
 test('al llegar se abre el paso que sigue', () => {
   assert.equal(pasoSugerido({ paso: 'subir' }), 'subir');
   assert.equal(pasoSugerido({ paso: 'digitalizar', digitalizado: null }), 'digitalizar');
@@ -222,7 +231,11 @@ test('al llegar se abre el paso que sigue', () => {
   assert.equal(pasoSugerido({ paso: 'listo' }), 'crear');
 });
 
-test('el hash lleva a Crea tu KMZ de un master', () => {
-  assert.deepEqual(ruta('#/planos/los-robles/kmz'), { pantalla: 'kmz', slug: 'los-robles' });
+test('el hash lleva a Mis KMZ y a un KMZ, que ya no cuelga de un master', () => {
+  assert.deepEqual(ruta('#/kmz'), { pantalla: 'kmzs' });
+  assert.deepEqual(ruta('#/kmz/'), { pantalla: 'kmzs' });
+  assert.deepEqual(ruta('#/kmz/los-robles'), { pantalla: 'kmz', slug: 'los-robles' });
   assert.deepEqual(ruta('#/planos/los-robles'), { pantalla: 'plano', slug: 'los-robles' });
+  // La ruta vieja dentro del master ya no existe: cae en el master.
+  assert.deepEqual(ruta('#/planos/los-robles/kmz'), { pantalla: 'plano', slug: 'los-robles' });
 });

@@ -8,17 +8,12 @@ import {
 } from './comun.js';
 import { manejarCierra, pintarCierra, prepararCierra } from './cierra.js';
 import { opcionesDeDiseno } from './disenos.js';
+import { abrirElegirKmz } from './kmzs.js';
 import { pintarVuelo } from './vuelo.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
 
 let refrescar = async () => {};
-
-// Crea tu KMZ: en qué va el plano del master (`plano.paso` del servidor).
-const PASO_DEL_PLANO = {
-  marcar: 'falta marcar el dibujo', digitalizar: 'falta digitalizar', ubicar: 'falta ubicarlo',
-  crear: 'falta crear el KMZ', listo: 'KMZ creado',
-};
 let actual = null;          // el slug que se está mirando
 
 export function prepararPlano(opciones) {
@@ -85,7 +80,6 @@ function meta(proyecto) {
   // Sin teléfono el visor esconde el botón de contacto: el comprador mira, se
   // decide y no tiene a quién escribirle. Se avisa antes de publicar, no después.
   if (proyecto.sin_contacto) partes.push(pastilla('Sin contacto', 'aviso'));
-  if (proyecto.plano) partes.push(pastilla(`Plano: ${PASO_DEL_PLANO[proyecto.plano.paso] ?? proyecto.plano.paso}`));
   partes.push(etapaDe(proyecto));
   if (proyecto.publicado) {
     const enlace = document.createElement('a');
@@ -117,12 +111,9 @@ function pintarAcciones(proyecto) {
   archivos.textContent = conFuentes ? 'Subir archivos' : 'Subir el vuelo';
   archivos.className = conFuentes ? 'boton boton--contorno' : 'boton';
   archivos.disabled = enCurso;
-  // Crea tu KMZ: sin KMZ es el camino principal; con KMZ, una alternativa.
-  const kmz = $('#plano-kmz');
-  kmz.href = `#/planos/${encodeURIComponent(proyecto.slug)}/kmz`;
-  kmz.className = conFuentes ? 'boton boton--contorno' : 'boton';
-  kmz.textContent = proyecto.plano ? 'Seguir con el KMZ desde el plano' : 'Crear el KMZ desde el plano';
-  if (proyecto.plano && !conFuentes) archivos.className = 'boton boton--contorno';
+  // Un KMZ de Mis KMZ en vez de subir el archivo. No mientras construye: el servidor
+  // no le cambia el KMZ por debajo a una construcción.
+  $('[data-accion="usar-kmz"]').disabled = enCurso;
 }
 
 function pintarPortada(proyecto) {
@@ -133,7 +124,7 @@ function pintarPortada(proyecto) {
     const texto = document.createElement('figcaption');
     texto.textContent = proyecto.fuentes_encontradas.kmz
       ? 'Todavía no está construido. Aprieta Construir para ver el loteo sobre las fotos.'
-      : 'Sube el KMZ y las panorámicas del dron para empezar. ¿No tienes el KMZ? Créalo desde el plano aprobado.';
+      : 'Sube el KMZ y las panorámicas del dron para empezar. ¿No tienes el KMZ? Créalo desde el plano aprobado en Mis KMZ y úsalo acá.';
     figura.append(texto);
     return;
   }
@@ -283,6 +274,7 @@ async function manejar(accion, proyecto) {
     avisar(null);
     if (accion.startsWith('cierra-')) return await manejarCierra(accion, proyecto);
     if (accion === 'archivos') return abrirSubida(proyecto);
+    if (accion === 'usar-kmz') return abrirElegirKmz(proyecto);
     if (accion === 'guardar') return await guardar(proyecto);
     if (accion === 'olvidar') return await olvidar(proyecto);
     if (accion === 'pago') return abrirPago(proyecto);
@@ -316,13 +308,16 @@ async function lanzar(proyecto, accion, cuerpo) {
 }
 
 /**
- * Quién más quiere enterarse del avance de un trabajo, por loteo: la pantalla de
- * Crea tu KMZ muestra en vivo la digitalización. Se le avisa con cada tanda de
- * líneas y al terminar.
+ * Quién más quiere enterarse del avance de un trabajo, por clave (`estado.sondeos`):
+ * la pantalla de un KMZ muestra en vivo su digitalización (`kmz:<slug>`). Se le
+ * avisa con cada tanda de líneas y al terminar.
  */
 export const oyentes = new Map();
 
-/** Sondea un trabajo y va volcando sus líneas hasta que termina. */
+/**
+ * Sondea un trabajo y va volcando sus líneas hasta que termina. `slug` es la clave
+ * del trabajo: el slug de un master o `kmz:<slug>` para un KMZ.
+ */
 export function seguir(slug, identificador) {
   clearTimeout(estado.sondeos.get(slug));
   let desde = (estado.registros.get(slug) ?? []).length;
@@ -345,7 +340,9 @@ export function seguir(slug, identificador) {
         oyentes.get(slug)?.(trabajo);
         await refrescar();
         if (trabajo.estado === 'falló') {
-          avisar(`El ${trabajo.accion} de ${slug} falló. El detalle está en el registro.`);
+          avisar(slug.startsWith('kmz:')
+            ? 'La digitalización del plano falló. El detalle está en el registro del paso 3.'
+            : `El ${trabajo.accion} de ${slug} falló. El detalle está en el registro.`);
         }
         return;
       }
