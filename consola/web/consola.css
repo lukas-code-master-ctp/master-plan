@@ -822,12 +822,18 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .visor-plano__herramientas button:hover, .visor-plano__zoom button:hover { background: var(--zinc-100); }
 .visor-plano__herramientas button[aria-pressed="true"] { background: var(--marca-800); color: #fff; }
 .visor-plano:not([data-modo="marcar"]) .visor-plano__herramientas { display: none; }
+/* La columna es minmax(0, 1fr) y el campo parte de ancho 0: así el ancho intrínseco del
+   <input> (unos 20 caracteres) no estira la grilla y el campo y el OK quedan dentro. */
 .kmz-numero {
-  position: absolute; z-index: 5; display: grid; gap: 0.35rem; width: 12rem; padding: 0.625rem;
+  position: absolute; z-index: 5; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.35rem;
+  width: 13rem; max-width: calc(100% - 1rem); padding: 0.625rem;
   background: #fff; border: 1px solid var(--zinc-300); border-radius: var(--radio-md); box-shadow: var(--sombra-alta);
   font-size: 0.75rem; font-weight: 600; color: var(--zinc-700);
 }
-.kmz-numero input { flex: 1; min-width: 0; height: 2rem; padding: 0 0.5rem; border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); font: 600 0.9375rem var(--sans); }
+.kmz-numero label { overflow-wrap: anywhere; }
+.kmz-numero .fila { min-width: 0; }
+.kmz-numero input { flex: 1 1 0; width: 0; min-width: 0; height: 2rem; padding: 0 0.5rem; border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); font: 600 0.9375rem var(--sans); }
+.kmz-numero .boton { flex-shrink: 0; }
 .kmz-numero input:focus { border-color: var(--marca-700); box-shadow: 0 0 0 3px var(--marca-anillo); outline: none; }
 #kmz-mapa { position: absolute; inset: 0; }
 .kmz-etiqueta { padding: 0 0.35rem; font: 700 0.75rem/1.4 var(--sans); color: #1d4ed8; }

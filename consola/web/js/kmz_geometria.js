@@ -169,6 +169,126 @@ export function metrosDe(lat, dlat, dlon) {
   return { de: dlon * METROS_POR_GRADO * Math.cos(lat * Math.PI / 180), dn: dlat * METROS_POR_GRADO };
 }
 
+// --- coordenadas escritas -------------------------------------------------------------
+
+/**
+ * El ancla completa: el punto marcado en el plano ({nombre, x, y}) con su lugar en el
+ * mapa, sea un clic o unas coordenadas escritas. Lon/lat a 7 decimales (~1 cm).
+ */
+export function anclaDesde(pendiente, lat, lon) {
+  return { ...pendiente, lon: Number(lon.toFixed(7)), lat: Number(lat.toFixed(7)) };
+}
+
+/** Lleva los símbolos que copian Google Earth, Word o el teclado a ° ' ". */
+function normalizarCoordenadas(texto) {
+  let t = String(texto ?? '').trim().toUpperCase()
+    .replace(/[º˚]/g, '°')
+    .replace(/[′’‘´`]/g, "'")
+    .replace(/[″”“]/g, '"')
+    .replace(/''/g, '"');
+  // Coma decimal pegada a un símbolo (37,50") no es la coma que separa el par.
+  t = t.replace(/(\d),(\d+)(?=\s*[°'"])/g, '$1.$2');
+  // Dos decimales con coma separados por espacio o punto y coma: "-34,98 -71,24".
+  const par = !t.includes('.') && t.match(/^([+-]?\d+),(\d+)(?:\s*;\s*|\s+)([+-]?\d+),(\d+)$/);
+  if (par) t = `${par[1]}.${par[2]} ${par[3]}.${par[4]}`;
+  return t;
+}
+
+/** Los pedazos del texto: número (con su símbolo), hemisferio o separador. */
+function piezasDeCoordenadas(t) {
+  const piezas = [];
+  const patron = /\s*(?:([+-]?\d+(?:\.\d+)?)\s*([°'"])?|([NSEWO])|([,;])|(\S))/gy;
+  for (const m of t.matchAll(patron)) {
+    if (m[5] !== undefined) return null;            // algo que no es coordenada
+    if (m[1] !== undefined) piezas.push({ numero: m[1], unidad: m[2] ?? '' });
+    else if (m[3]) piezas.push({ hemisferio: m[3] });
+    else if (m[4]) piezas.push({ coma: true });
+  }
+  return piezas;
+}
+
+const ORDEN_UNIDAD = { '°': 0, "'": 1, '"': 2 };
+
+/** Una coordenada en grados decimales con su eje según la letra (lat, lon o null). */
+function valorDeCoordenada({ numeros, hemisferio }) {
+  if (!numeros.length) return null;
+  // Sin símbolo solo puede ir sola (grados decimales) o como grados antes de ' o ".
+  const unidades = numeros.map((n, i) => n.unidad || (i === 0 ? '°' : null));
+  if (unidades.includes(null)) return null;
+  const orden = unidades.map((u) => ORDEN_UNIDAD[u]);
+  if (orden.some((o, i) => i > 0 && o <= orden[i - 1])) return null;
+  let total = 0;
+  let signo = 1;
+  for (const [i, n] of numeros.entries()) {
+    if (i > 0 && /^[+-]/.test(n.numero)) return null;    // el signo va en los grados
+    const valor = Number(n.numero);
+    if (i === 0 && n.numero.startsWith('-')) signo = -1;
+    const abs = Math.abs(valor);
+    // Solo la última parte puede tener decimales (34°10.625' sí; 34.5°10' no).
+    if (i < numeros.length - 1 && !Number.isInteger(abs)) return null;
+    if (orden[i] > 0 && abs >= 60) return null;
+    total += abs / 60 ** orden[i];
+  }
+  let eje = null;
+  if (hemisferio) {
+    eje = 'NS'.includes(hemisferio) ? 'lat' : 'lon';
+    const sur = 'SWO'.includes(hemisferio);
+    if (signo < 0 && !sur) return null;                 // "-34° N" se contradice
+    signo = sur ? -1 : 1;
+  }
+  return { valor: signo * total, eje };
+}
+
+/**
+ * Latitud y longitud desde lo que se escribe o se pega en el "ir a": decimales
+ * ("-34.98, -71.24") o grados, minutos y segundos con hemisferio
+ * (34°10'37.50"S 71°32'53.89"W, también S 34°10'37.5" O 71°32'53.9", 34°10.625'S …).
+ * Las letras dicen cuál es cuál; sin letras va latitud y después longitud.
+ * Devuelve { lat, lon } o null si no se entiende o se sale de rango.
+ */
+export function leerCoordenadas(texto) {
+  const piezas = piezasDeCoordenadas(normalizarCoordenadas(texto));
+  if (!piezas) return null;
+  const coordenadas = [];
+  let actual = { numeros: [], hemisferio: null };
+  const cerrar = () => {
+    if (actual.numeros.length) coordenadas.push(actual);
+    else if (actual.hemisferio) coordenadas.push(actual);  // una letra suelta: inválida después
+    actual = { numeros: [], hemisferio: null };
+  };
+  for (const p of piezas) {
+    if (p.coma) {
+      if (actual.numeros.length) cerrar();
+    } else if (p.hemisferio) {
+      if (actual.numeros.length && !actual.hemisferio) {
+        actual.hemisferio = p.hemisferio;               // va detrás: 34°10'S
+        cerrar();
+      } else {
+        if (actual.numeros.length || actual.hemisferio) cerrar();
+        actual.hemisferio = p.hemisferio;               // va delante: S 34°10'
+      }
+    } else {
+      const previo = actual.numeros.at(-1);
+      // Unos grados (o un número sin símbolo) después de otro número empiezan otra coordenada.
+      if (previo && (p.unidad === '°' || p.unidad === '' || ORDEN_UNIDAD[p.unidad] <= ORDEN_UNIDAD[previo.unidad || '°'])) cerrar();
+      actual.numeros.push(p);
+    }
+  }
+  cerrar();
+  if (coordenadas.length !== 2) return null;
+  const [a, b] = coordenadas.map(valorDeCoordenada);
+  if (!a || !b) return null;
+  let lat;
+  let lon;
+  if (a.eje && b.eje && a.eje === b.eje) return null;  // dos latitudes o dos longitudes
+  if (a.eje === 'lon' || b.eje === 'lat') [lat, lon] = [b.valor, a.valor];
+  else [lat, lon] = [a.valor, b.valor];
+  // Sin letras, si el primero no puede ser latitud y el segundo sí, vienen al revés.
+  if (!a.eje && !b.eje && Math.abs(lat) > 90 && Math.abs(lon) <= 90) [lat, lon] = [lon, lat];
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon };
+}
+
 // --- lotes --------------------------------------------------------------------------
 
 /** ¿(x, y) cae dentro del polígono (exterior y huecos, regla par-impar)? */
