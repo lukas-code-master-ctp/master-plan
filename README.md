@@ -540,7 +540,8 @@ tabla `kmzs`, y su carpeta en `/datos/kmz/<slug>/`:
 | `huellas.json` | Con qué entradas se hizo cada paso |
 | `<slug>.kmz` | El resultado. Que exista es lo que dice que el KMZ está terminado |
 
-El KMZ es un Polygon por lote, con nombre `LOTE <n>`, KML 2.2 y sin líneas, así que
+El KMZ es un Polygon por lote, con nombre `LOTE <n>` (el número como está en el plano o como
+lo escribió la loteadora: `LOTE 8-01`; "8-01" y "8-1" se comparan como el mismo lote), KML 2.2 y sin líneas, así que
 `pipeline/kmz.py` lo lee en modo polígonos. Borrar un KMZ borra su carpeta.
 
 ### Las rutas
@@ -594,7 +595,7 @@ Los planos de prueba con sus KMZ reales viven en `regresion/planos/<plano>/`
 propietarios. Hay que pedirlos aparte; sin la carpeta, las pruebas que la usan se saltan.
 
 ```bash
-python -m pipeline.plano.regresion                 # los 5 planos, ~1 min
+python -m pipeline.plano.regresion                 # los 6 planos, ~1 min
 python -m pipeline.plano.regresion --plano curico
 python -m pipeline.plano.regresion --actualizar-linea-base
 ```

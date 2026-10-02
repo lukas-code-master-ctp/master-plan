@@ -68,7 +68,8 @@ class _Dibujo:
 
 
 def normalizar_id(texto: str | None) -> str | None:
-    """"LOTE A 420" → "A420".  "LOTE 42" → "42".  "7-1" → "7-1".  Basura → None.
+    """"LOTE A 420" → "A420".  "LOTE 42" → "42".  "7-1", "LOTE 8-01" → "7-1", "8-1".
+    "LOTE-12" → "12".  Basura → None.
 
     Conviven tres formas de numerar: con letra de sector ("A214"), solo con el
     número ("LOTE 42") y como par sector-lote ("7-1"). Un loteo usa una sola, pero
@@ -85,8 +86,9 @@ def normalizar_id(texto: str | None) -> str | None:
         return f"{con_letra.group(1)}{int(con_letra.group(2))}"
 
     # Sin letra solo se acepta un número limpio: cualquier otra cosa con dígitos
-    # sueltos (una fecha, un rol, una superficie) no es el nombre de un lote.
-    solo_numeros = re.fullmatch(r"[\s.]*(\d+(?:\s*-\s*\d+)*)[\s.]*", limpio)
+    # sueltos (una fecha, un rol, una superficie) no es el nombre de un lote. El guion
+    # o el # pegado a LOTE ("LOTE-12", "LOTE #12") es separador, no parte del número.
+    solo_numeros = re.fullmatch(r"[\s.]*(?:(?<=\s)[-#][\s]*)?(\d+(?:\s*-\s*\d+)*)[\s.]*", limpio)
     if solo_numeros:
         partes = solo_numeros.group(1).replace(" ", "").split("-")
         return "-".join(str(int(p)) for p in partes)

@@ -11,7 +11,7 @@
  */
 import { $, $$, avisar, estado, json, pedir } from './comun.js';
 import {
-  anclaDesde, dudosos, duplicados, empujar, girarEntradas, leerCoordenadas, loteEn, nombreDelSistema, ordenarEsquinas, PASOS,
+  anclaDesde, claveLote, dudosos, duplicados, empujar, girarEntradas, leerCoordenadas, loteEn, nombreDelSistema, ordenarEsquinas, PASOS,
   pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono,
   resumenRevision, siguienteNombre,
 } from './kmz_geometria.js';
@@ -518,7 +518,7 @@ function cerrarNumero() {
 function escribirNumero(valor) {
   if (!numerando) return;
   const limpio = valor.trim().replace(/^lote\s*/i, '');
-  const otra = entradas.semillas.find((s) => s.numero === limpio
+  const otra = entradas.semillas.find((s) => claveLote(s.numero) === claveLote(limpio)
     && !(numerando.anillos && puntoEnPoligono(s.x, s.y, numerando.anillos)));
   if (limpio && otra && !confirm(`El ${limpio} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
   cambiar({ ...entradas, semillas: ponerNumero(entradas.semillas, limpio, [numerando.x, numerando.y], numerando.anillos) });

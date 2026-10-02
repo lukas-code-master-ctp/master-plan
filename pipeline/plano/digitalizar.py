@@ -91,6 +91,7 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
 from . import pagina as pag
+from . import numeros as numeros_lote
 from . import particion, rotulos, tinta
 
 ENTRADAS = "entradas.json"
@@ -242,7 +243,7 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
                     huecos=[_anillo(h) for h in g.interiors], area_px=round(g.area, 1),
                     vertices=len(g.exterior.coords) - 1, origen=posicion[n]["origen"],
                     confianza=posicion[n]["confianza"], apoyo=posicion[n]["apoyo"],
-                    area_oficial=cuadro.get(n))
+                    area_oficial=numeros_lote.buscar(cuadro, n))
                for n, g in r.lotes.items()],
         sin_numero=[dict(poligono=_anillo(g.exterior), area_px=round(g.area, 1)) for g in r.sin_numero],
         faltantes=faltantes,
@@ -370,7 +371,8 @@ def leer_entradas(carpeta: Path) -> dict:
         x, y = numeros([s.get("x"), s.get("y")], 2, f"semilla {s['numero']}: x, y")
         semillas.append(dict(s, numero=str(s["numero"]), x=x, y=y))
     # Antes de extraer la página: así el error llega en un segundo y no al final.
-    repetidos = sorted({s["numero"] for s in semillas if sum(t["numero"] == s["numero"] for t in semillas) > 1})
+    # Repetidos por número normalizado: "8-01" y "8-1" son el mismo lote.
+    repetidos = numeros_lote.repetidos(s["numero"] for s in semillas)
     if repetidos:
         raise ValueError(f"números de lote repetidos en las semillas: {', '.join(repetidos)}")
     salida["semillas"] = semillas

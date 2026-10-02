@@ -36,6 +36,7 @@ from shapely.ops import polygonize, unary_union
 from skimage.morphology import skeletonize
 from skimage.segmentation import watershed
 
+from . import numeros as numeros_lote
 from .tinta import Tinta, impar
 
 # Parámetros globales en mm de papel, de la ronda 3 de pruebas (ver `tinta`). Los del
@@ -89,7 +90,7 @@ def _linea_kernel(largo: int, angulo: float) -> np.ndarray:
 def particionar(tinta: Tinta, ppmm: float, semillas) -> Particion:
     """`semillas`: [(numero, x, y)] en píxeles de trabajo. Los números no se repiten."""
     numeros = [str(n) for n, _, _ in semillas]
-    repetidos = sorted(n for n, c in Counter(numeros).items() if c > 1)
+    repetidos = numeros_lote.repetidos(numeros)
     if repetidos:
         raise ValueError(f"números de lote repetidos en las semillas: {', '.join(repetidos)}")
     rotulos = {i: (float(x), float(y)) for i, (_, x, y) in enumerate(semillas)}

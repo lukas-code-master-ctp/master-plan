@@ -2,7 +2,8 @@
 
     python -m pipeline.plano kmz <carpeta-del-plano> <destino.kmz>
 
-Un Placemark por lote, con nombre `LOTE <n>` y un Polygon (con sus huecos, si los
+Un Placemark por lote, con nombre `LOTE <n>` (el número como vino del plano o de la
+loteadora: "LOTE 8-01", con sus ceros) y un Polygon (con sus huecos, si los
 tiene), en KML 2.2. Sin LineStrings ni Points: así `pipeline/kmz.py` lo lee en modo
 polígonos y saca el id del nombre. El área va en m² medidos en UTM, en la
 descripción y en ExtendedData. Las caras sin número no salen.
@@ -20,6 +21,7 @@ from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
 
 from ..kmz import normalizar_id
+from . import numeros as numeros_lote
 from .georreferencia import SALIDA as GEORREFERENCIA, Transformacion
 
 KML_NS = "http://www.opengis.net/kml/2.2"
@@ -50,7 +52,9 @@ def _revisar_ids(digitalizado: dict) -> None:
     malos = [str(l["numero"]) for l, i in zip(digitalizado["lotes"], ids) if i is None]
     if malos:
         raise ValueError(f"números de lote que el lector de KMZ no reconoce: {', '.join(malos)}")
-    repetidos = sorted({i for i in ids if ids.count(i) > 1})
+    # Repetidos por número normalizado ("8-01" y "8-1" son el mismo lote para quien lea
+    # el KMZ), nombrados como vinieron.
+    repetidos = numeros_lote.repetidos(l["numero"] for l in digitalizado["lotes"])
     if repetidos:
         raise ValueError(f"números de lote repetidos: {', '.join(repetidos)}")
 

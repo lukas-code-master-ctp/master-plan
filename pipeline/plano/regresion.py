@@ -44,6 +44,7 @@ from shapely.geometry import Point, Polygon
 from .digitalizar import ENTRADAS, digitalizar, leer_entradas
 from .georreferencia import georreferenciar
 from .metricas import comparar, epsg_de_kmz, lotes_kmz
+from .numeros import buscar, mismo_lote
 from .salida import kmz
 
 LINEA_BASE = "linea_base.json"
@@ -107,23 +108,25 @@ def correr_plano(carpeta: Path, avance=lambda texto: None, con_lector: bool = Fa
 
 def numeracion(digitalizado: dict, verdad: list[dict]) -> dict:
     """Qué tan bien numeró el lector: cada semilla real (número y posición, px de
-    página) cae en un lote con su número (correcto), con otro (errado) o en ninguno."""
+    página) cae en un lote con su número (correcto), con otro (errado) o en ninguno.
+    El número se compara con `numeros.mismo_lote`: "8-01" = "8-1", y "10-6" = "6"
+    (las semillas de Hidango se leyeron sin el sector)."""
     lotes = [(l["numero"], Polygon(l["poligono"], l.get("huecos") or [])) for l in digitalizado["lotes"]]
     correctos = errados = sin_lote = 0
     for s in verdad:
         punto = Point(s["x"], s["y"])
         dentro = [n for n, g in lotes if g.contains(punto)]
-        if str(s["numero"]) in dentro:
+        if any(mismo_lote(n, s["numero"]) for n in dentro):
             correctos += 1
         elif dentro:
             errados += 1
         else:
             sin_lote += 1
-    reales = {str(s["numero"]) for s in verdad}
+    reales = [str(s["numero"]) for s in verdad]
     lector = digitalizado.get("lector") or {}
     return dict(verdad=len(verdad), correctos=correctos, errados=errados, sin_lote=sin_lote,
                 recall=correctos / len(verdad) if verdad else None,
-                lotes_numero_ajeno=sum(1 for n, _ in lotes if n not in reales),
+                lotes_numero_ajeno=sum(1 for n, _ in lotes if not any(mismo_lote(n, r) for r in reales)),
                 rotulos_leidos=len(lector.get("rotulos") or []), semillas_lector=lector.get("semillas"),
                 segundos_lector=lector.get("segundos"), areas_leidas=len(lector.get("cuadro") or {}),
                 motivo=lector.get("motivo"))
@@ -150,9 +153,10 @@ def cuadricula_leida(leida: dict | None, verdad: dict | None) -> dict | None:
 
 
 def cuadro_contra_real(digitalizado: dict, lotes_real: dict) -> dict:
-    """Las áreas leídas del cuadro contra las del KMZ real (por número)."""
+    """Las áreas leídas del cuadro contra las del KMZ real (por número normalizado)."""
     cuadro = (digitalizado.get("lector") or {}).get("cuadro") or {}
-    errores = [abs(a / lotes_real[n].area - 1) for n, a in cuadro.items() if n in lotes_real and lotes_real[n].area]
+    pares = [(a, buscar(lotes_real, n)) for n, a in cuadro.items()]
+    errores = [abs(a / p.area - 1) for a, p in pares if p is not None and p.area]
     return dict(leidas=len(cuadro), comparadas=len(errores),
                 dentro_2pct=sum(e <= 0.02 for e in errores),
                 error_mediano_pct=round(100 * float(np.median(errores)), 2) if errores else None)

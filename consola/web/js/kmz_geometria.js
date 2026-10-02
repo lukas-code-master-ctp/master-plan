@@ -343,17 +343,32 @@ export function loteEn(rasgos, x, y) {
 }
 
 /**
+ * El número de lote para comparar, como `pipeline.plano.numeros.clave`: "8-01", "8-1" y
+ * "LOTE 8-01" son el mismo lote ("8-1"); "A03" → "A3". Se guarda como lo escribió ella.
+ */
+export function claveLote(numero) {
+  const t = String(numero ?? '').trim().toUpperCase()
+    .replace(/^(?:LOTES?(?=\d)|LOTES?\b\s*[-#]?\s*|[-#]\s*)/, '');
+  const pares = t.match(/^(\d+(?:\s*-\s*\d+)*)[\s.]*$/);
+  if (pares) return pares[1].replace(/\s/g, '').split('-').map((p) => String(Number(p))).join('-');
+  const letra = t.match(/^([A-Z])\s*(\d+)$/);
+  if (letra) return `${letra[1]}${Number(letra[2])}`;
+  return t.replace(/\s+/g, '');
+}
+
+/**
  * Le pone `numero` al lote que contiene el clic. Devuelve las semillas nuevas:
  * - la semilla de la loteadora que ya estaba dentro de ese lote cambia de número
  *   (o se quita si el número viene vacío);
  * - si no había, se agrega una en `punto`;
- * - si otra semilla tenía ese número, se quita (un número va en un solo lote).
+ * - si otra semilla tenía ese número, se quita (un número va en un solo lote; "8-1" y
+ *   "8-01" son el mismo). El número va tal como lo escribió.
  */
 export function ponerNumero(semillas, numero, punto, anillos) {
   const limpio = String(numero ?? '').trim();
   const dentro = anillos ? (s) => puntoEnPoligono(s.x, s.y, anillos) : () => false;
   const propia = semillas.find(dentro);
-  let salida = semillas.filter((s) => s !== propia && (!limpio || s.numero !== limpio));
+  let salida = semillas.filter((s) => s !== propia && (!limpio || claveLote(s.numero) !== claveLote(limpio)));
   if (limpio) {
     const [x, y] = propia ? [propia.x, propia.y] : punto;
     salida = [...salida, { numero: limpio, x: redondo(x), y: redondo(y) }];

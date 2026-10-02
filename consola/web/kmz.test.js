@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  anclaDesde, aPagina, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
+  anclaDesde, aPagina, claveLote, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, siguienteNombre,
   tamanoRotado, vistaAjustada, zoomEn,
@@ -173,6 +173,26 @@ test('clic en un lote: se escribe, se corrige, se mueve y se borra su número', 
   assert.deepEqual(ponerNumero(semillas, '', [15, 5], b), []);
   // Sin lote (antes de digitalizar), se agrega donde se hizo clic.
   assert.deepEqual(ponerNumero([], '7', [1.234, 2.345], null), [{ numero: '7', x: 1.23, y: 2.35 }]);
+});
+
+test('el número va tal cual y se compara normalizado', () => {
+  assert.equal(claveLote('8-01'), '8-1');
+  assert.equal(claveLote('LOTE 8-01'), '8-1');
+  assert.equal(claveLote('lote-12'), '12');
+  assert.equal(claveLote('A03'), 'A3');
+  assert.equal(claveLote('10-6'), '10-6');
+  // Igual que `pipeline.plano.numeros.clave`.
+  assert.equal(claveLote('LOTE12'), '12');
+  assert.equal(claveLote('#12'), '12');
+  assert.equal(claveLote('12 .'), '12');
+  assert.equal(claveLote('3A'), '3A');
+  const a = [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]];
+  const b = [[[10, 0], [20, 0], [20, 10], [10, 10], [10, 0]]];
+  // Escribe "8-01" en a (con el cero: se guarda así) y luego "8-1" en b: es el mismo lote, pasa a b.
+  let semillas = ponerNumero([], '8-01', [5, 5], a);
+  assert.deepEqual(semillas, [{ numero: '8-01', x: 5, y: 5 }]);
+  semillas = ponerNumero(semillas, '8-1', [15, 5], b);
+  assert.deepEqual(semillas, [{ numero: '8-1', x: 15, y: 5 }]);
 });
 
 test('el lote bajo el clic', () => {

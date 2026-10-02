@@ -29,6 +29,9 @@ def test_numero_de_lote():
     assert numero("LOTES 3") == "3"
     assert numero("ANCLA") is None
     assert numero(None) is None
+    # Par sector-lote (Caminos de Rapel), normalizado como en el master.
+    assert numero("Lote 8-01") == numero("8-01") == numero("8-1") == "8-1"
+    assert numero("ROL 409-37 ETAPA 1") is None and numero("A12") is None
 
 
 def test_iguales():
@@ -127,6 +130,25 @@ def test_kmz_de_poligonos_con_nombre_o_con_punto_adentro(tmp_path):
     assert lotes["2"].symmetric_difference(g["2"]).area < 0.01
 
 
+def test_kmz_de_poligonos_sin_nombre_y_puntos_sector_lote(tmp_path):
+    # El real de Caminos de Rapel: polígonos sin nombre, puntos "Lote 8-NN" y las líneas
+    # de los caminos. Se rotula por punto en polígono y el número va normalizado.
+    g = _grilla(2, 1)
+    marcas = [_marca(None, "0", "A", g[n].exterior.coords) for n in g]
+    marcas += [_marca(f"Lote 8-0{n}", "C-PROP-TEXT", "P", [g[n].centroid.coords[0]]) for n in g]
+    marcas.append(_marca(None, "0 - CAMINOS", "L", [ORIGEN, (ORIGEN[0] + 100, ORIGEN[1])]))
+    lotes, informe = lotes_kmz(_kmz(tmp_path / "r.kmz", marcas), EPSG)
+    assert informe["modo"] == "poligonos" and sorted(lotes) == ["8-1", "8-2"]
+    assert lotes["8-2"].symmetric_difference(g["2"]).area < 0.01
+
+
+def test_comparar_empareja_por_numero_normalizado():
+    g = _grilla(2, 1)
+    candidato = {"8-1": g["1"], "8-2": g["2"]}          # lotes_kmz del candidato "LOTE 8-01"
+    m = comparar(candidato, {"8-1": g["1"], "8-2": g["2"]})
+    assert m["pareados"] == 2 and m["what_if"]["iou_mediana"] > 0.999
+
+
 def test_kmz_de_lineas_se_cierra_y_se_rotula(tmp_path):
     # Un CAD: el perímetro como polígono, las divisorias como líneas sueltas (una
     # queda a 0,5 m del perímetro), los bordes de camino en otra capa y un punto por lote.
@@ -183,7 +205,7 @@ SET = Path(__file__).resolve().parents[2] / "regresion" / "planos"
 
 @pytest.mark.skipif(not SET.is_dir(), reason="el set de regresión vive fuera de git")
 def test_los_kmz_reales_del_set_dan_sus_lotes():
-    esperados = {"el_arrayan": 183, "puente_negro": 58, "algarrobo": 76, "curico": 49}
+    esperados = {"el_arrayan": 183, "puente_negro": 58, "algarrobo": 76, "curico": 49, "caminos_de_rapel": 16}
     for plano, n in esperados.items():
         carpeta = SET / plano
         if not (carpeta / "real.kmz").is_file():

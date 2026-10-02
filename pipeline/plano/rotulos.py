@@ -32,18 +32,22 @@ import shutil
 import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import Counter
 from dataclasses import asdict, dataclass
 from math import gcd, hypot
 
 import cv2
 import numpy as np
 
+from .numeros import mismo_lote, ultimo
+
 # Una hebra por proceso de Tesseract: las pasadas ya corren en paralelo. Antes de
 # lanzar el primer subproceso (lo heredan).
 os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
 # Cambia si cambia el método: invalida las lecturas guardadas en digitalizado.json.
-VERSION = 1
+# 2: el número es el rótulo completo ("8-01"), no el último número.
+VERSION = 2
 
 SIN_LECTOR = "sin lector de rótulos: tesseract no está instalado"
 
@@ -242,19 +246,20 @@ def _correr(tareas, hebras: int, avance, etiqueta: str) -> list:
 
 
 # ------------------------------------------------------------------------- números de lote
-RE_NUMERO = re.compile(r"^(?:LOTE)?-*(?:\d{1,3}-)?(\d{1,3})-*$")
+RE_NUMERO = re.compile(r"^(?:LOTE)?-*(?:(\d{1,3})-)?(\d{1,3})-*$")
 
 
-def numero(texto: str) -> int | None:
-    """'LOTE-12' / '12' / '10-6' (prefijo) → 12 / 12 / 6. Las cotas y áreas (con , o .) no."""
+def numero(texto: str) -> str | None:
+    """El rótulo como está en el plano: 'LOTE-12' / '12' / '10-6' / 'LOTE 8-01' (el par
+    sector-lote) → '12' / '12' / '10-6' / '8-01', con los ceros tal cual. Las cotas y
+    áreas (con , o .) no; el lote 0 tampoco."""
     t = (texto or "").strip().upper().replace("—", "-")
     if not t or "," in t or "." in t:
         return None
     m = RE_NUMERO.match(t)
-    if not m:
+    if not m or int(m.group(2)) == 0:
         return None
-    n = int(m.group(1))
-    return n if n > 0 else None
+    return f"{m.group(1)}-{m.group(2)}" if m.group(1) else m.group(2)
 
 
 def interpretar(datos: dict, inversa: np.ndarray, escala: float, angulo: float, variante: str) -> list[dict]:
@@ -300,6 +305,9 @@ def seleccionar(lecturas: list[dict], alto_modal: float, pasadas: int, radio: fl
     1. Si el plano rotula con "LOTE" (≥ MIN_LECTURAS_LOTE lecturas), solo cuentan esas.
        Si no, solo los números sueltos de alto ≥ ALTO_SUELTO × el texto modal.
     2. Mismo número a menos de `radio` → un candidato; su apoyo es cuántas pasadas lo leyeron.
+       "Mismo" es `numeros.mismo_lote`: "8-01", "8-1" y "1" (la pasada que no vio el
+       sector) se juntan. El candidato se queda con la forma más leída de las que traen
+       el sector, si alguna lo trae ("LOTE 8-01" → "8-01").
     3. Un número por lugar (candidatos a < radio/2) y un lugar por número: gana el de más apoyo.
 
     `radio` por omisión: RADIO_ALTOS × el alto mediano de las lecturas que cuentan.
@@ -313,20 +321,26 @@ def seleccionar(lecturas: list[dict], alto_modal: float, pasadas: int, radio: fl
         radio = RADIO_ALTOS * float(np.median([d["alto"] for d in det]))
     grupos: list[dict] = []
     for d in sorted(det, key=lambda d: -d["conf"]):
+        n = str(d["numero"])
         for g in grupos:
-            if g["numero"] == d["numero"] and hypot(g["x"] - d["x"], g["y"] - d["y"]) < radio:
+            if mismo_lote(g["numero"], n) and hypot(g["x"] - d["x"], g["y"] - d["y"]) < radio:
                 g["pasadas"].add((d["escala"], d["ang"], d["var"]))
                 g["alto"] = max(g["alto"], d["alto"])
+                g["formas"][n] += 1
                 break
         else:
-            grupos.append(dict(numero=d["numero"], x=d["x"], y=d["y"], conf=d["conf"], alto=d["alto"],
-                               pasadas={(d["escala"], d["ang"], d["var"])}))
+            grupos.append(dict(numero=n, x=d["x"], y=d["y"], conf=d["conf"], alto=d["alto"],
+                               pasadas={(d["escala"], d["ang"], d["var"])}, formas=Counter([n])))
+    for g in grupos:
+        formas = g["formas"]
+        con_sector = [f for f in formas if "-" in f]
+        g["numero"] = max(con_sector or formas, key=lambda f: (formas[f], len(f)))
     grupos.sort(key=lambda g: (-len(g["pasadas"]), -g["conf"]))
     elegidos: list[dict] = []
     for g in grupos:
         if any(hypot(o["x"] - g["x"], o["y"] - g["y"]) < radio / 2 for o in elegidos):
             continue
-        if any(o["numero"] == g["numero"] for o in elegidos):
+        if any(mismo_lote(o["numero"], g["numero"]) for o in elegidos):
             continue
         elegidos.append(g)
     total = max(1, pasadas)
@@ -378,7 +392,7 @@ def combinar(usuario, lector: list[Rotulo], radio: float, apoyo_min: int = APOYO
     sistema de píxeles. Gana siempre la loteadora: un rótulo leído se descarta si
 
     - tiene apoyo < `apoyo_min`,
-    - su número ya lo marcó ella (lo corrigió o lo movió),
+    - su número ya lo marcó ella (lo corrigió o lo movió; `numeros.mismo_lote`),
     - cae a menos de `radio` de una semilla suya (ella corrigió ese rótulo), o
     - cae dentro del mismo lote que una semilla suya (`poligonos`: los lotes de la
       digitalización anterior; ella hace clic en el lote, no en el rótulo), o
@@ -394,16 +408,18 @@ def combinar(usuario, lector: list[Rotulo], radio: float, apoyo_min: int = APOYO
     for s in usuario:
         n, x, y = (s["numero"], s["x"], s["y"]) if isinstance(s, dict) else s
         salida.append(dict(numero=str(n), x=float(x), y=float(y), origen="usuario", confianza=None, apoyo=None))
-    numeros = {s["numero"] for s in salida}
+    numeros = [s["numero"] for s in salida]
     puntos = [(s["x"], s["y"]) for s in salida]
     tomados = []
     if poligonos and puntos:
         from shapely.geometry import Point, Polygon
         figuras = [p if isinstance(p, Polygon) else Polygon(p) for p in poligonos]
         tomados = [f for f in figuras if f.is_valid and any(f.contains(Point(p)) for p in puntos)]
-    oficiales = {str(n) for n in oficiales}
-    tope = max((int(n) for n in oficiales if n.isdigit()), default=None)
-    fuera = lambda r: r.numero not in oficiales and (not r.numero.isdigit() or int(r.numero) > tope)
+    # Contra el cuadro se compara el número dentro del sector ("8-01" → 1): el cuadro
+    # puede listar "1" o "8-01".
+    oficiales = {ultimo(n) for n in oficiales} - {None}
+    tope = max(oficiales, default=None)
+    fuera = lambda r: ultimo(r.numero) is None or (ultimo(r.numero) not in oficiales and ultimo(r.numero) > tope)
     candidatos = [r for r in lector if r.apoyo >= apoyo_min]
     if tope is not None and 2 * sum(fuera(r) for r in candidatos) > len(candidatos):
         # El cuadro dejaría fuera a la mayoría de lo leído: lo más probable es que no sea
@@ -411,7 +427,7 @@ def combinar(usuario, lector: list[Rotulo], radio: float, apoyo_min: int = APOYO
         # Algarrobo saca 42 de 117.
         tope = None
     for r in sorted(lector, key=lambda r: (-r.apoyo, -r.confianza)):
-        if r.apoyo < apoyo_min or r.numero in numeros:
+        if r.apoyo < apoyo_min or any(mismo_lote(r.numero, n) for n in numeros):
             continue
         if tope is not None and fuera(r):
             continue
@@ -423,7 +439,7 @@ def combinar(usuario, lector: list[Rotulo], radio: float, apoyo_min: int = APOYO
                 continue
         salida.append(dict(numero=r.numero, x=float(r.x), y=float(r.y), origen="lector",
                            confianza=round(r.confianza, 4), apoyo=r.apoyo))
-        numeros.add(r.numero)
+        numeros.append(r.numero)
     return salida
 
 
