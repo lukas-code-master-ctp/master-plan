@@ -231,6 +231,36 @@ def test_las_entradas_malas_dicen_que_esta_mal(ana, cambio, mensaje):
     assert mensaje in respuesta.json()["detail"]
 
 
+def test_el_cuadro_de_superficies_puede_estar_fuera_del_dibujo(ana):
+    web, slug, raiz, _ = ana
+    subir(web, slug)
+
+    respuesta = web.put(f"/api/kmz/{slug}/entradas",
+                        json=dict(ENTRADAS, rectangulo=[100, 100, 300, 300], cuadro=[2, 2, 60, 80]))
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["cuadro"] == [2.0, 2.0, 60.0, 80.0]
+    guardadas = json.loads((carpeta_del_plano(raiz, slug) / "entradas.json").read_text(encoding="utf-8"))
+    assert guardadas["cuadro"] == [2.0, 2.0, 60.0, 80.0]
+
+
+@pytest.mark.parametrize("cuadro,mensaje", [
+    ([10, 10, 5, 5], "cuadro de superficies está vacío"),
+    ([1, 2, 3], "«cuadro» debe ser una lista de 4 números"),
+    ([10**6, 10**6, 10**6 + 50, 10**6 + 50], "fuera de la página"),
+    ([-90, -90, -10, -10], "fuera de la página"),
+])
+def test_un_cuadro_malo_dice_que_esta_mal(ana, cuadro, mensaje):
+    web, slug, raiz, _ = ana
+    subir(web, slug)
+
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, cuadro=cuadro))
+
+    assert respuesta.status_code == 400
+    assert mensaje in respuesta.json()["detail"]
+    assert not (carpeta_del_plano(raiz, slug) / "entradas.json").exists()
+
+
 def test_las_entradas_tienen_tope(ana):
     """Miles de semillas atorarían la revisión (los repetidos se buscan de a pares)."""
     web, slug, raiz, _ = ana

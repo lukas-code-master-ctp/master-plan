@@ -81,6 +81,17 @@ def _como(plantilla: str, n: int) -> str:
     return plantilla[:m.start(1)] + (str(n).zfill(len(digitos)) if digitos.startswith("0") else str(n))
 
 
+def esperados(cuadro) -> list[str]:
+    """Los números del cuadro de superficies que deben ser lotes del dibujo: todos menos
+    el resto de la propiedad. El resto es la fila cuyo número es el sector de las demás
+    ("8 o resto de la propiedad, 760.000 m²" en un cuadro de "8-01" a "8-16"): es el
+    predio que queda, no un lote de la situación propuesta, y no se avisa como faltante.
+    Su área sigue en el cuadro: si una cara lleva ese número, la tiene."""
+    numeros = [str(n) for n in cuadro]
+    sectores = {s[0].rstrip("-") for s in map(_serie, numeros) if s and s[0]}
+    return [n for n in numeros if "-" in clave(n) or clave(n) not in sectores]
+
+
 def huecos(numeros, esperados=(), junto=None) -> list[str]:
     """Los números que faltan en la numeración, escritos como su serie.
 

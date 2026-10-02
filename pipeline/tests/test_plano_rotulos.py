@@ -173,6 +173,30 @@ def test_areas_de_filas_usa_la_ultima_columna_y_decide_la_unidad_por_columna():
     assert rotulos.areas_de_filas([["1", "5.000"], ["2", "5.230,5"]]) == {"1": 5000.0, "2": 5230.5}
 
 
+def test_cuadro_como_el_de_caminos_de_rapel():
+    """LOTE | SUP. SERVIDUMBRE | TOTAL, con el número como está impreso ("8-01") y la unidad
+    pegada. El total es la columna de más a la derecha; la del medio no cuenta. El resto
+    de la propiedad no empieza con un número de lote en la línea que trae las áreas (el
+    "8" va solo en la línea de arriba): no es fila. Sin la "m" en la lista blanca,
+    Tesseract leía "5.0002": eso no tiene forma de área y no es fila."""
+    texto = (".0\n8-01 1.342m2 5.000m2\n8-02 435 m2 5.000 m2\n8-02 4352 5.0002\n8-03 456m2 5.000m2\n"
+             "8\ns 0.000m2 760.000m2\n0sa 0.000m2 760.000m2\n")
+    filas = rotulos.filas_cuadro(texto)
+    assert filas == [["8-01", "1.342m2", "5.000m2"], ["8-02", "435 m2", "5.000 m2"], ["8-03", "456m2", "5.000m2"]]
+    assert rotulos.areas_de_filas(filas) == {"8-01": 5000.0, "8-02": 5000.0, "8-03": 5000.0}
+    # Si una pasada lee el resto en una sola línea, queda en el cuadro con su número.
+    assert rotulos.areas_de_filas(rotulos.filas_cuadro("8 o resto 0.000 m2 760.000 m2")) == {"8": 760000.0}
+    # La unidad de la celda manda sobre la de la columna: "5,00hás" son 5 ha aunque las
+    # demás estén en m².
+    assert rotulos.areas_de_filas([["1", "5.000"], ["2", "5.100"], ["3", "5,00hás"]]) \
+        == {"1": 5000.0, "2": 5100.0, "3": 50000.0}
+
+
+def test_areas_de_filas_gana_el_valor_mas_leido():
+    filas = [["8-01", "5.000m2"], ["8-1", "6.000m2"], ["8-01", "5.000m2"], ["2", "5.100"], ["02", "5.100"]]
+    assert rotulos.areas_de_filas(filas) == {"8-01": 5000.0, "2": 5100.0}
+
+
 # --- cuadrícula --------------------------------------------------------------------------
 
 def test_progresion_saca_la_lectura_que_rompe_el_paso():
@@ -264,6 +288,72 @@ def test_digitalizar_con_las_semillas_del_lector(tmp_path, monkeypatch, capsys):
     datos = json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))
     numeros = {l["numero"]: l["origen"] for l in datos["lotes"]}
     assert "1" not in numeros and numeros["101"] == "usuario" and len(numeros) == len(plano.semillas)
+
+
+def _lector_falso(monkeypatch, cuadro, leidos=None):
+    """El lector sin Tesseract: guarda lo que recibe y devuelve `leidos` y `cuadro`."""
+    visto = {}
+    monkeypatch.setattr(rotulos, "motivo_no_disponible", lambda: None)
+    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance: visto.update(dibujo=imagen) or (leidos or []))
+    monkeypatch.setattr(rotulos, "leer_cuadricula", lambda imagen, ppmm, avance, rectangulo: None)
+    monkeypatch.setattr(rotulos, "leer_cuadro",
+                        lambda imagen, rects, avance: visto.update(pagina=imagen.shape, rects=rects) or cuadro)
+    return visto
+
+
+def test_el_cuadro_marcado_fuera_del_dibujo_se_lee_y_da_los_faltantes(tmp_path, monkeypatch):
+    """El cuadro de Caminos de Rapel está fuera del rectángulo del dibujo: se lee igual
+    (de la página entera), no tapa nada del dibujo, y sus números dan los faltantes (el
+    13, que el lector nunca leyó) y el área oficial de cada lote."""
+    plano, entradas = _carpeta_sin_semillas(tmp_path)
+    x0, y0 = entradas["rectangulo"][:2]
+    leidos = [Rotulo(n, x - x0, y - y0, 0.4, 40, 12.0) for n, x, y in plano.semillas]
+    cuadro = {str(n): 5000.0 + n for n in range(1, 14)}
+    entradas["cuadro"] = [2, 2, x0 - 10, y0 - 10]                      # fuera del dibujo
+    (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+    visto = _lector_falso(monkeypatch, cuadro, leidos)
+
+    assert main(["digitalizar", str(tmp_path)]) == 0
+
+    datos = json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))
+    assert visto["rects"] == [[2.0, 2.0, x0 - 10.0, y0 - 10.0]]
+    assert visto["pagina"][:2] == (plano.imagen.shape[0], plano.imagen.shape[1])    # la página entera
+    assert datos["huecos"] == ["13"]
+    assert datos["lector"]["cuadro"] == cuadro
+    assert {l["numero"]: l["area_oficial"] for l in datos["lotes"]} == {str(n): 5000.0 + n for n in range(1, 13)}
+    # Fuera del dibujo no tapa nada: lo que lee el lector es el dibujo tal cual.
+    assert not (visto["dibujo"] == visto["dibujo"][0, 0]).all()
+
+
+def test_el_resto_de_la_propiedad_no_es_un_faltante(tmp_path, monkeypatch):
+    plano, entradas = _carpeta_sin_semillas(tmp_path)
+    x0, y0 = entradas["rectangulo"][:2]
+    # Como Rapel: lotes "8-01"… y el resto, "8", con su área.
+    leidos = [Rotulo(f"8-{int(n):02d}", x - x0, y - y0, 0.4, 40, 12.0) for n, x, y in plano.semillas]
+    cuadro = {f"8-{n:02d}": 5000.0 for n in range(1, 14)} | {"8": 760000.0}
+    entradas["cuadro"] = [2, 2, x0 - 10, y0 - 10]
+    (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+    _lector_falso(monkeypatch, cuadro, leidos)
+
+    assert main(["digitalizar", str(tmp_path)]) == 0
+
+    datos = json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))
+    assert datos["huecos"] == ["8-13"]
+    assert {l["area_oficial"] for l in datos["lotes"]} == {5000.0}
+
+
+def test_el_cuadro_dentro_del_dibujo_lo_tapa(tmp_path, monkeypatch):
+    plano, entradas = _carpeta_sin_semillas(tmp_path)
+    x0, y0 = entradas["rectangulo"][:2]
+    entradas["cuadro"] = [x0 + 10, y0 + 10, x0 + 200, y0 + 150]
+    (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+    visto = _lector_falso(monkeypatch, {})
+
+    assert main(["digitalizar", str(tmp_path)]) == 0
+
+    tapado = visto["dibujo"][12:148, 12:198]                     # en px del recorte del dibujo
+    assert (tapado == tapado[0, 0]).all()
+    assert visto["rects"] == [entradas["cuadro"]]
 
 
 def test_una_lectura_vacia_no_se_reusa(tmp_path, monkeypatch):

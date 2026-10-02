@@ -94,6 +94,21 @@ def test_un_hueco_se_dice_solo_junto_a_un_lote_sin_numero():
         == ["8-03", "8-05", "8-11", "8-16"]
 
 
+def test_esperados_del_cuadro_sin_el_resto_de_la_propiedad():
+    """En Caminos de Rapel el cuadro trae "8 o resto de la propiedad" (760.000 m²) junto a
+    8-01…8-16: es el predio que queda, no un lote del dibujo."""
+    cuadro = {f"8-{n:02d}": 5000.0 for n in range(1, 17)} | {"8": 760000.0}
+    assert numeros.esperados(cuadro) == [f"8-{n:02d}" for n in range(1, 17)]
+    # Sin sectores, un "8" es un lote más.
+    assert numeros.esperados({"1": 5000.0, "8": 5000.0}) == ["1", "8"]
+    assert numeros.esperados({}) == []
+    # Con el resto fuera, falta el 8-16 (nunca leído) y el 8-08, no un "8-08" por el resto.
+    leidos = [f"8-{n:02d}" for n in range(1, 16) if n != 8]
+    assert numeros.huecos(leidos, numeros.esperados(cuadro), junto=[]) == ["8-08", "8-16"]
+    sin_el_8 = [n for n in leidos if n != "8-07"]
+    assert numeros.huecos(sin_el_8 + ["8-08"], numeros.esperados(cuadro), junto=[]) == ["8-07", "8-16"]
+
+
 def test_huecos_con_el_cuadro_de_superficies():
     # El cuadro trae el último (el 16), que la serie sola no ve; "16" sin sector va con la serie.
     cuadro = [str(n) for n in range(1, 17)]

@@ -101,6 +101,23 @@ export function girarEntradas(entradas, de, a, ancho, alto) {
   return salida;
 }
 
+/**
+ * Lo marcado tras dibujar `rect` (px de página) con una herramienta del paso Marcar:
+ * "dibujo" encierra el dibujo, "mascara" suma un tapado y "cuadro" encierra el cuadro de
+ * superficies (uno solo: dibujarlo de nuevo lo reemplaza; puede quedar fuera del
+ * dibujo). Un rectángulo de menos de 3 px por lado es un clic, no se marca.
+ */
+export function marcarRectangulo(entradas, herramienta, rect) {
+  if (rect[2] - rect[0] < 3 || rect[3] - rect[1] < 3) return entradas;
+  if (herramienta === 'dibujo') return { ...entradas, rectangulo: rect };
+  if (herramienta === 'mascara') return { ...entradas, mascaras: [...(entradas.mascaras ?? []), rect] };
+  if (herramienta === 'cuadro') return { ...entradas, cuadro: rect };
+  return entradas;
+}
+
+/** Las herramientas del paso Marcar que dibujan un rectángulo. */
+export const HERRAMIENTAS_RECTANGULO = ['dibujo', 'mascara', 'cuadro'];
+
 /** [x0, y0, x1, y1] con x0 < x1 e y0 < y1, de dos esquinas cualesquiera. */
 export function rectanguloDe(p, q) {
   return [Math.min(p[0], q[0]), Math.min(p[1], q[1]), Math.max(p[0], q[0]), Math.max(p[1], q[1])];

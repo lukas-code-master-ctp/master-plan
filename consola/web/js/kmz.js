@@ -11,7 +11,8 @@
  */
 import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
-  anclaDesde, claveLote, dudosos, duplicados, empujar, girarEntradas, leerCoordenadas, loteEn, nombreDelSistema, ordenarEsquinas, PASOS,
+  anclaDesde, claveLote, dudosos, duplicados, empujar, girarEntradas, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo,
+  nombreDelSistema, ordenarEsquinas, PASOS,
   pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono,
   resumenRevision, siguienteNombre, sinNumero, sugerencias, textoHuecos,
 } from './kmz_geometria.js';
@@ -23,7 +24,7 @@ import { soltadero } from './subida.js';
 import { pintarEscaner } from './vuelo.js';
 
 const VACIAS = () => ({
-  pagina: 1, rotacion: 0, rectangulo: null, mascaras: [], esquinas: null, semillas: [], anclas: [],
+  pagina: 1, rotacion: 0, rectangulo: null, mascaras: [], cuadro: null, esquinas: null, semillas: [], anclas: [],
   ajuste: { de: 0, dn: 0 },
 });
 
@@ -98,7 +99,8 @@ export function prepararKmz(opciones) {
   const pantalla = $('#pantalla-kmz');
   pantalla.addEventListener('click', (evento) => {
     const nodo = evento.target.closest('[data-accion], [data-paso], [data-pagina], [data-herramienta],'
-      + ' [data-quitar-mascara], [data-quitar-semilla], [data-ancla-quitar], [data-ancla-rehacer], [data-centrar],'
+      + ' [data-quitar-mascara], [data-quitar-cuadro], [data-quitar-semilla], [data-ancla-quitar], [data-ancla-rehacer],'
+      + ' [data-centrar],'
       + ' [data-confirmar]');
     if (!nodo || nodo.disabled) return;
     manejar(nodo).catch((error) => avisar(error.message));
@@ -258,6 +260,7 @@ async function manejar(nodo) {
   if (dataset.quitarMascara) {
     return cambiar({ ...entradas, mascaras: entradas.mascaras.filter((_, i) => i !== Number(dataset.quitarMascara)) });
   }
+  if (dataset.quitarCuadro) return cambiar({ ...entradas, cuadro: null });
   if (dataset.quitarSemilla) {
     return cambiar({ ...entradas, semillas: entradas.semillas.filter((s) => s.numero !== dataset.quitarSemilla) });
   }
@@ -361,7 +364,7 @@ function subirPdf(archivo) {
   });
 }
 
-const hayMarcas = () => Boolean(entradas.rectangulo || entradas.mascaras.length || entradas.esquinas
+const hayMarcas = () => Boolean(entradas.rectangulo || entradas.mascaras.length || entradas.cuadro || entradas.esquinas
   || entradas.semillas.length || entradas.anclas.length);
 
 async function elegirPagina(n) {
@@ -387,7 +390,7 @@ async function girar(grados) {
 
 function elegirHerramienta(nombre) {
   herramienta = nombre;
-  lienzo.herramienta = ['dibujo', 'mascara'].includes(nombre) ? 'rectangulo' : 'mover';
+  lienzo.herramienta = HERRAMIENTAS_RECTANGULO.includes(nombre) ? 'rectangulo' : 'mover';
   for (const boton of $$('[data-herramienta]')) {
     boton.setAttribute('aria-pressed', String(boton.dataset.herramienta === nombre));
   }
@@ -397,9 +400,8 @@ function elegirHerramienta(nombre) {
 
 function rectangulo(rect) {
   if (paso !== 'marcar') return;
-  if (rect[2] - rect[0] < 3 || rect[3] - rect[1] < 3) return;
-  if (herramienta === 'dibujo') cambiar({ ...entradas, rectangulo: rect });
-  if (herramienta === 'mascara') cambiar({ ...entradas, mascaras: [...entradas.mascaras, rect] });
+  const nuevas = marcarRectangulo(entradas, herramienta, rect);
+  if (nuevas !== entradas) cambiar(nuevas);
 }
 
 function tocarPlano(x, y) {
@@ -806,6 +808,7 @@ function pintarMarcar() {
   filas.push(fila(entradas.rectangulo ? 'Dibujo encerrado' : 'Falta encerrar el dibujo', null,
     entradas.rectangulo ? 'ok' : 'falta'));
   entradas.mascaras.forEach((_, i) => filas.push(fila(`Tapado ${i + 1}`, { quitarMascara: String(i) })));
+  if (entradas.cuadro) filas.push(fila('Cuadro de superficies', { quitarCuadro: '1' }));
   for (const s of entradas.semillas) filas.push(fila(`Lote ${s.numero}`, { quitarSemilla: s.numero }));
   lista.replaceChildren(...filas);
   const listo = Boolean(entradas.rectangulo) && (!sinLector || entradas.semillas.length > 0);
@@ -1038,7 +1041,9 @@ function pintarRevisar() {
         : `${cuenta.sin_numero} partes quedan sin número (rayadas en rojo) y no van al KMZ.`)
         + ' Si es un lote, vuelve a Numerar.'
       : cuenta.lotes === cuenta.gris
-      ? 'No se leyó el cuadro de superficies: revisa a ojo que los lotes calcen con los caminos.'
+      ? (entradas.cuadro ? 'No se leyó el cuadro de superficies: revisa a ojo que los lotes calcen con los caminos.'
+        : 'Sin cuadro de superficies no hay áreas oficiales: si el plano lo trae, enciérralo en Marcar'
+          + ' con "Cuadro de superficies". Si no, revisa a ojo que los lotes calcen con los caminos.')
       : 'Los rojos tienen un área muy distinta a la oficial: suelen ser lotes mal separados.';
   $('#kmz-panel-revisar [data-accion="kmz-siguiente"]').disabled = Boolean(problemas);
 }
@@ -1137,6 +1142,18 @@ function dibujar(ctx, P) {
       ctx.strokeRect(a, b, c - a, d - b);
       etiqueta(ctx, `Tapado ${i + 1}`, a + 4, b + 4, '#dc2626', 'left');
     });
+    if (entradas.cuadro) {
+      // Puede estar fuera del dibujo: se lee igual (los lotes y sus áreas oficiales).
+      const [x0, y0, x1, y1] = entradas.cuadro;
+      const [a, b] = P(x0, y0);
+      const [c, d] = P(x1, y1);
+      ctx.fillStyle = 'rgb(217 119 6 / 0.14)';
+      ctx.fillRect(a, b, c - a, d - b);
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(a, b, c - a, d - b);
+      etiqueta(ctx, 'Cuadro de superficies', a + 4, b + 4, '#b45309', 'left');
+    }
     const esquinas = esquinasMarcando.length ? esquinasMarcando : entradas.esquinas ?? [];
     if (esquinas.length) {
       ctx.strokeStyle = '#7c3aed';

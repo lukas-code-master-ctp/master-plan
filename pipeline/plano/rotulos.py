@@ -32,7 +32,7 @@ import shutil
 import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from math import gcd, hypot
 
@@ -47,7 +47,8 @@ os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
 # Cambia si cambia el método: invalida las lecturas guardadas en digitalizado.json.
 # 2: el número es el rótulo completo ("8-01"), no el último número.
-VERSION = 2
+# 3: el cuadro de superficies lee "8-01" y la unidad ("5.000 m2").
+VERSION = 3
 
 SIN_LECTOR = "sin lector de rótulos: tesseract no está instalado"
 
@@ -74,6 +75,9 @@ PASO_MINIMO_M = 50               # la progresión de la cuadrícula va de a 50 m
 MIN_VALORES_CUADRICULA = 3
 ALTO_TABLA_PX = 22.0             # el texto del cuadro se lleva a este alto (×2 en Algarrobo)
 MIN_FILAS_CUADRO = 3
+# Las cifras, el guion de "8-01" y las letras de la unidad ("m2", "hás"): sin la "m",
+# Tesseract lee "5.000 m2" como "5.0002" (Caminos de Rapel no daba ninguna fila).
+CFG_CUADRO = "--oem 1 --psm {} -c tessedit_char_whitelist=0123456789,.-mhas"
 
 
 @dataclass(frozen=True)
@@ -668,39 +672,57 @@ def area_m2(texto: str, unidad: str | None = None) -> float | None:
 
 
 RE_AREA = re.compile(r"\d{1,3}(?:\.\d{3})*,\d{1,2}|\d{1,3}(?:\.\d{3})+|\d{4,7}")
+# El número del lote al comienzo de la fila, como está impreso: "12", "8-01".
+RE_LOTE_FILA = re.compile(r"^\D*?(\d{1,3}(?:-\d{1,3})?)(?![\d.,])")
+# Una celda numérica y, si viene pegada o a un espacio, su unidad ("5.000m2", "5,00 hás").
+RE_CELDA = re.compile(r"(\d+(?:[.,]\d+)*)(\s?(?:m2|m²|mts?2|h[aá]s?\b|hect\w*))?", re.I)
 
 
 def filas_cuadro(texto: str) -> list[list[str]]:
-    """Filas del cuadro: las líneas que empiezan con un número de lote (1–3 cifras) y
-    terminan en algo con forma de área ('5,00', '5.000', '5.000,50', '5000'; no '222')."""
+    """Filas del cuadro: [lote, celda, ..., total]. Las líneas que empiezan con un
+    número de lote ("12" o "8-01", como está impreso; no 0) seguido de al menos una
+    celda, la última con forma de área ('5,00', '5.000', '5.000,50', '5000', con o sin
+    unidad: '5.000 m2'; no '222'). Las celdas llevan su unidad si la trae."""
     salida = []
     for linea in (texto or "").splitlines():
-        v = RE_VALOR.findall(linea)
-        if (len(v) > 1 and re.fullmatch(r"\d{1,3}", v[0]) and int(v[0]) > 0
-                and RE_AREA.fullmatch(v[-1])):
-            salida.append(v)
+        m = RE_LOTE_FILA.match(linea)
+        if not m or not any(int(d) for d in re.findall(r"\d+", m.group(1))[-1:]):
+            continue
+        celdas = [c.group(0).strip() for c in RE_CELDA.finditer(linea, m.end())]
+        if celdas and RE_AREA.fullmatch(RE_CELDA.match(celdas[-1]).group(1)):
+            salida.append([m.group(1)] + celdas)
     return salida
 
 
+def _lote_de_fila(texto: str) -> str:
+    """'012' → '12'; '8-01' queda como está impreso (así sale en el KMZ)."""
+    return texto if "-" in texto else str(int(texto))
+
+
 def areas_de_filas(filas: list[list[str]]) -> dict[str, float]:
-    """{numero: m²} con el último número de cada fila (la columna TOTAL); la primera
-    lectura de cada lote gana. La unidad se decide por columna: si la mediana es < 100,
-    son hectáreas."""
-    ultimo = {}
+    """{numero: m²} con la última celda de cada fila (la columna TOTAL: la de más a la
+    derecha; las del medio, como "SUP. SERVIDUMBRE", no cuentan). Si varias pasadas
+    leen el mismo lote, gana el valor más leído (a igual cuenta, el primero). La unidad
+    es la que trae la celda ("m2", "hás") o, si no trae, la de la columna: si la
+    mediana es < 100, son hectáreas.
+
+    Un número de lote se compara por `numeros.clave` ("8-01" = "8-1") y se guarda como
+    se leyó primero."""
+    from .numeros import clave
+    lecturas: dict[str, list[str]] = defaultdict(list)
+    impreso: dict[str, str] = {}
     for f in filas:
-        n = str(int(f[0]))
-        if n not in ultimo:
-            ultimo[n] = f[-1]
-    valores = [a_numero(t) for t in ultimo.values()]
+        n = _lote_de_fila(f[0])
+        impreso.setdefault(clave(n), n)
+        lecturas[clave(n)].append(f[-1])
+    valores = [a_numero(t) for ts in lecturas.values() for t in ts if not RE_HA.search(t) and not RE_M2.search(t)]
     valores = [v for v in valores if v]
-    if not valores:
-        return {}
-    unidad = "ha" if statistics.median(valores) < 100 else "m2"
+    unidad = "ha" if valores and statistics.median(valores) < 100 else "m2"
     salida = {}
-    for n, t in ultimo.items():
-        a = area_m2(t, unidad)
-        if a:
-            salida[n] = a
+    for c, textos in lecturas.items():
+        areas = [a for a in (area_m2(t, unidad) for t in textos) if a]
+        if areas:
+            salida[impreso[c]] = Counter(areas).most_common(1)[0][0]
     return salida
 
 
@@ -718,7 +740,7 @@ def sin_lineas(g: np.ndarray, largo: int = 60) -> np.ndarray:
 
 def _tabla(recorte: np.ndarray) -> dict[str, float]:
     import pytesseract
-    cfg = "--oem 1 --psm {} -c tessedit_char_whitelist=0123456789,."
+    cfg = CFG_CUADRO
     g = gris_normalizado(recorte)
     escala = min(4.0, max(1.0, ALTO_TABLA_PX / alto_caracter(g)))
     g = _escalar(g, escala)

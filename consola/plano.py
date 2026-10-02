@@ -260,6 +260,15 @@ class Plano:
             raise PlanoInvalido(f"el PDF tiene {total} páginas; no existe la {normalizadas['pagina']}")
         if normalizadas["rotacion"] % 90:
             raise PlanoInvalido(f"la rotación es 0, 90, 180 o 270 grados, no {normalizadas['rotacion']}")
+        if normalizadas.get("cuadro"):
+            # Puede estar fuera del dibujo, pero no fuera de la página (px de página: la
+            # imagen ya girada).
+            hoja = next(p for p in self.paginas() if p["n"] == normalizadas["pagina"])
+            ancho, alto = ((hoja["alto"], hoja["ancho"]) if normalizadas["rotacion"] % 180
+                           else (hoja["ancho"], hoja["alto"]))
+            x0, y0, x1, y1 = normalizadas["cuadro"]
+            if x1 <= 0 or y1 <= 0 or x0 >= ancho or y0 >= alto:
+                raise PlanoInvalido("el cuadro de superficies está fuera de la página: enciérralo de nuevo")
         escribir_json(self.carpeta / ENTRADAS, normalizadas)
         return normalizadas
 

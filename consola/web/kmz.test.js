@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import {
   anclaDesde, aPagina, claveLote, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
-  matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
+  HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, siguienteNombre, sinNumero, sugerencias,
   tamanoRotado, textoHuecos, vistaAjustada, zoomEn,
 } from './js/kmz_geometria.js';
@@ -65,6 +65,41 @@ test('girar la página lleva lo marcado a la nueva rotación', () => {
   assert.deepEqual(vuelta.rectangulo, entradas.rectangulo);
   assert.deepEqual(vuelta.semillas, entradas.semillas);
   assert.deepEqual(girarPunto(20, 10, 0, 270, 100, 60), rotarPunto(20, 10, 270, 100, 60));
+});
+
+test('el cuadro de superficies es un rectángulo solo, que se reemplaza y se quita', () => {
+  const vacias = { rectangulo: [100, 100, 300, 300], mascaras: [[0, 0, 4, 4]], cuadro: null };
+  assert.deepEqual(HERRAMIENTAS_RECTANGULO, ['dibujo', 'mascara', 'cuadro']);
+  // Fuera del dibujo vale igual: no se recorta contra el rectángulo.
+  const una = marcarRectangulo(vacias, 'cuadro', [400, 20, 520, 260]);
+  assert.deepEqual(una.cuadro, [400, 20, 520, 260]);
+  assert.deepEqual([una.rectangulo, una.mascaras], [vacias.rectangulo, vacias.mascaras]);
+  // Dibujarlo de nuevo lo reemplaza (no se suman como los tapados).
+  const otra = marcarRectangulo(una, 'cuadro', [410, 30, 500, 250]);
+  assert.deepEqual(otra.cuadro, [410, 30, 500, 250]);
+  assert.equal(marcarRectangulo(otra, 'mascara', [1, 1, 9, 9]).mascaras.length, 2);
+  // Un clic (menos de 3 px) no marca nada, y otra herramienta no toca el cuadro.
+  assert.equal(marcarRectangulo(otra, 'cuadro', [400, 20, 401, 260]), otra);
+  assert.equal(marcarRectangulo(otra, 'numero', [0, 0, 50, 50]), otra);
+  assert.deepEqual(marcarRectangulo(otra, 'dibujo', [0, 0, 50, 50]).cuadro, otra.cuadro);
+  // Quitarlo es dejarlo en null (lo que hace "Quitar" en la lista).
+  assert.equal({ ...otra, cuadro: null }.cuadro, null);
+});
+
+test('el cuadro se guarda en px de página aunque la página esté girada', () => {
+  // Imagen de 100 × 60 girada 90°: la página mide 60 × 100. Un arrastre en pantalla se
+  // pasa a página con la vista (sin rotación de por medio: la vista ya es de la página).
+  const vista = { escala: 2, dx: 10, dy: 20 };
+  const p = aPagina(vista, 10 + 2 * 5, 20 + 2 * 70);
+  const q = aPagina(vista, 10 + 2 * 40, 20 + 2 * 95);
+  const entradas = marcarRectangulo({ rotacion: 90, mascaras: [], semillas: [], anclas: [] }, 'cuadro',
+    rectanguloDe(q, p));
+  assert.deepEqual(entradas.cuadro, [5, 70, 40, 95]);
+  // Girar la página lleva el cuadro con lo demás, y de vuelta queda igual.
+  const derecha = girarEntradas(entradas, 90, 0, 100, 60);
+  assert.deepEqual(derecha.cuadro, [70, 19, 95, 54]);
+  assert.deepEqual(girarEntradas(derecha, 0, 90, 100, 60).cuadro, entradas.cuadro);
+  assert.deepEqual(girarEntradas(derecha, 0, 270, 100, 60).cuadro, [19, 4, 54, 29]);
 });
 
 test('el marco de la foto cambia ancho por alto con un cuarto de vuelta', () => {

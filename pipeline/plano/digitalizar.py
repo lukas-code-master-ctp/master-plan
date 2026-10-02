@@ -32,8 +32,11 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
                                        sin Tesseract instalado se sigue sin él
       "lector_apoyo_min": 2,           cuántas pasadas deben leer un número para
                                        que sea semilla
-      "cuadro": null,                  [x0, y0, x1, y1] del cuadro de superficies; sin
-                                       él se prueba cada máscara
+      "cuadro": null,                  [x0, y0, x1, y1] del cuadro de superficies (lo
+                                       marca la loteadora); puede estar fuera de
+                                       `rectangulo`: se lee igual. Dentro del dibujo
+                                       tapa como una máscara. Sin él se prueba cada
+                                       máscara
       "anclas": [{"nombre": "roja", "x": 2533, "y": 8037,       punto del plano ↔ su lon/lat
                   "lon": -70.8240, "lat": -34.7240}],           WGS84 en grados decimales
       "ajuste": {"de": 0.0, "dn": 0.0}  traslación fina en metros (este, norte)
@@ -65,7 +68,8 @@ entero. Si cambia la rotación, cambian las coordenadas.
       "huecos": ["8-03"],                          números que faltan en la numeración, por
                                                    sector (`numeros.huecos`), junto a una cara
                                                    sin número del tamaño de un lote; y los del
-                                                   cuadro
+                                                   cuadro (menos el resto de la propiedad,
+                                                   `numeros.esperados`)
       "cuadricula": {"verticales": [{"valor", "p": [x, y], "q": [x, y], "valida"}],
                      "horizontales": [...]},       las rectas detectadas (o null)
       "lector": {"activo", "disponible", "motivo",   motivo: por qué no hubo lector
@@ -242,7 +246,7 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
            + (f" (apoyo ≥ {entradas['lector_apoyo_min']})" if lector else " (lector apagado)"))
     semillas = [(s["numero"], s["x"], s["y"]) for s in combinadas]
     r = digitalizar_imagen(imagen, hoja.ppmm, semillas, entradas.get("rectangulo"),
-                           entradas.get("mascaras") or [], entradas.get("esquinas"),
+                           _mascaras(entradas), entradas.get("esquinas"),
                            entradas.get("marco_mm"), entradas.get("cuadricula"), avance)
     posicion = {s["numero"]: s for s in combinadas}
     cuadro = (lector or {}).get("cuadro") or {}
@@ -261,7 +265,7 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     mediana = float(np.median([g.area for g in r.lotes.values()])) if r.lotes else 0.0
     grandes = [c for c in r.sin_numero if c.area >= particion.LOTE_FRAC * mediana]
     junto = [n for n, g in r.lotes.items() if any(g.distance(c) <= 0.5 * hoja.ppmm for c in grandes)]
-    huecos = numeros_lote.huecos(presentes, list(cuadro), junto)
+    huecos = numeros_lote.huecos(presentes, numeros_lote.esperados(cuadro), junto)
     if huecos:
         avance(f"Faltan en la numeración: {', '.join(huecos)}")
     datos = dict(
@@ -308,6 +312,12 @@ def _sugerencias(caras: list[Polygon], de_lote: list[bool], leidos, apoyo_min: i
     return salida
 
 
+def _mascaras(entradas: dict) -> list[list[float]]:
+    """Lo que no es dibujo: las máscaras y el cuadro de superficies (si cae dentro del
+    rectángulo del dibujo, sus números no son rótulos ni sus líneas deslindes)."""
+    return list(entradas.get("mascaras") or []) + ([entradas["cuadro"]] if entradas.get("cuadro") else [])
+
+
 def _previo(carpeta: Path, numero: int, rotacion: int) -> dict | None:
     """La digitalización anterior, si es de la misma página y rotación (sus lotes dicen
     dónde corrigió la loteadora; sus lecturas se reusan)."""
@@ -352,13 +362,14 @@ def _leer_rotulos(carpeta: Path, entradas: dict, imagen: np.ndarray, ppmm: float
     # El dibujo con las máscaras tapadas (los cuadros y el cajetín traen números que no
     # son lotes), en la resolución de la página: el texto chico no aguanta remuestreo.
     dibujo = pag.tapar(imagen[y0:y1, x0:x1], [[m[0] - x0, m[1] - y0, m[2] - x0, m[3] - y0]
-                                             for m in entradas.get("mascaras") or []],
+                                             for m in _mascaras(entradas)],
                        pag.color_papel(imagen, rect))
     leidos = [replace(r, x=r.x + x0, y=r.y + y0) for r in rotulos.leer(dibujo, ppmm, avance)]
     del dibujo
     # Siempre, aunque la loteadora ya haya dado la cuadrícula: así aceptar la propuesta
     # (que cambia las entradas) no obliga a leer todo de nuevo. Son solo franjas.
     cuadricula = rotulos.leer_cuadricula(imagen, ppmm, avance, rectangulo=[x0, y0, x1, y1])
+    # El cuadro marcado se lee de la página entera, aunque esté fuera del dibujo.
     cuadro = rotulos.leer_cuadro(imagen, [entradas["cuadro"]] if entradas.get("cuadro")
                                  else entradas.get("mascaras") or [], avance)
     # Sin ningún rótulo no se guarda la huella: lo más probable es que el lector haya

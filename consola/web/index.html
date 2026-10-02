@@ -376,6 +376,9 @@
         <ol class="kmz-instrucciones">
           <li><b>Encierra el dibujo</b> del loteo (la "situación propuesta"): arrastra un rectángulo.</li>
           <li><b>Tapa</b> lo que no es dibujo y quedó adentro: cuadros, cajetín, timbres, croquis.</li>
+          <li>Si el plano trae un <b>cuadro de superficies</b> (los lotes y sus áreas), enciérralo con
+            esa herramienta, aunque esté fuera del dibujo: así se sabe qué lotes faltan y cuánto
+            debe medir cada uno.</li>
           <li>Si es una foto del papel, marca las 4 esquinas del marco impreso.</li>
         </ol>
         <p id="kmz-sin-lector" class="kmz-nota-fuerte" hidden>Este servidor no lee los números del
@@ -630,6 +633,8 @@
             <button type="button" data-herramienta="mover" aria-pressed="true">Mover</button>
             <button type="button" data-herramienta="dibujo" aria-pressed="false">Encerrar el dibujo</button>
             <button type="button" data-herramienta="mascara" aria-pressed="false">Tapar</button>
+            <button type="button" data-herramienta="cuadro" aria-pressed="false"
+                    title="Encierra el cuadro de superficies (los lotes y sus áreas), aunque esté fuera del dibujo">Cuadro de superficies</button>
             <button type="button" data-herramienta="numero" aria-pressed="false">Marcar un número</button>
             <button type="button" data-herramienta="esquinas" aria-pressed="false" hidden>Esquinas del marco</button>
           </div>

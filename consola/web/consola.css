@@ -807,6 +807,7 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .visor-plano canvas:active { cursor: grabbing; }
 .visor-plano canvas:focus-visible { outline: 2px solid var(--marca-700); outline-offset: -3px; }
 .visor-plano[data-herramienta="dibujo"] canvas, .visor-plano[data-herramienta="mascara"] canvas,
+.visor-plano[data-herramienta="cuadro"] canvas,
 .visor-plano[data-herramienta="numero"] canvas, .visor-plano[data-herramienta="esquinas"] canvas,
 .visor-plano[data-modo="numerar"] canvas, .visor-plano[data-modo="ubicar"] canvas { cursor: crosshair; }
 .visor-plano__herramientas, .visor-plano__zoom {
