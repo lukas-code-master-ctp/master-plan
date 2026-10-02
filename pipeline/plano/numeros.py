@@ -57,3 +57,75 @@ def repetidos(numeros) -> list[str]:
     claves = [clave(n) for n in numeros]
     cuenta = Counter(claves)
     return sorted({n for n, c in zip(numeros, claves) if cuenta[c] > 1})
+
+
+# Más números seguidos que esto sin ninguno no es un hueco: es otra serie, otra etapa o
+# un número que no es de lote (una cota leída como rótulo). El lector pierde rótulos
+# sueltos (Caminos de Rapel: 8-03, 8-05, 8-11); Curicó salta tramos de 4 a 9 números
+# que no están en ese plano (5–9, 15–18, 42–48).
+SALTO_MAX = 3
+
+
+def _serie(numero) -> tuple[str, int] | None:
+    """("8-", 1) para "8-01"; ("A", 3) para "A03"; ("", 12) para "12"."""
+    m = re.fullmatch(r"(.*?)(\d+)", clave(numero))
+    return (m.group(1), int(m.group(2))) if m else None
+
+
+def _como(plantilla: str, n: int) -> str:
+    """`n` escrito como `plantilla`, un número de su serie: ("8-01", 3) → "8-03"."""
+    m = re.search(r"(\d+)\D*$", plantilla)
+    if not m:
+        return str(n)
+    digitos = m.group(1)
+    return plantilla[:m.start(1)] + (str(n).zfill(len(digitos)) if digitos.startswith("0") else str(n))
+
+
+def huecos(numeros, esperados=(), junto=None) -> list[str]:
+    """Los números que faltan en la numeración, escritos como su serie.
+
+    Por sector ("8-01" es el 1 del sector 8): los enteros que faltan entre el menor y el
+    mayor de los leídos ("8-01", "8-02", "8-04" → "8-03"), sin contar saltos de más de
+    SALTO_MAX. Con `esperados` (los números del cuadro de superficies) también los del
+    cuadro que no están, si el cuadro calza con lo leído (la mitad o más de sus números
+    está): así sale también el último ("8-16").
+
+    `junto`: si se da, los números de los lotes que tocan una cara sin número del tamaño
+    de un lote. Un hueco de la serie solo se dice si el lote anterior o el siguiente que
+    sí está es uno de esos: el lote que falta suele ser esa cara (Caminos de Rapel). Sin
+    una cara así al lado, el hueco suele ser un lote que esa lámina no dibuja (Curicó:
+    11–13, 50–51, 120–122) y avisarlo es ruido. Los del cuadro se dicen siempre."""
+    numeros = [str(n) for n in numeros]
+    series: dict[str, dict[int, str]] = {}
+    for texto in numeros:
+        s = _serie(texto)
+        if s:
+            series.setdefault(s[0], {}).setdefault(s[1], texto)
+    plantillas = {}
+    for sector, vistos in series.items():
+        # Si alguno trae ceros a la izquierda, la serie los usa.
+        plantillas[sector] = next((v for v in vistos.values() if re.search(r"(?:^|\D)0\d+\D*$", v)),
+                                  next(iter(vistos.values())))
+    vecinos = None if junto is None else {clave(n) for n in junto}
+    faltan: dict[tuple[str, int], str] = {}
+    for sector, vistos in series.items():
+        orden = sorted(vistos)
+        for a, b in zip(orden, orden[1:]):
+            if vecinos is not None and not {clave(vistos[a]), clave(vistos[b])} & vecinos:
+                continue
+            if b - a - 1 <= SALTO_MAX:
+                for n in range(a + 1, b):
+                    faltan[(sector, n)] = _como(plantillas[sector], n)
+    esperados = [str(e) for e in esperados]
+    if esperados and 2 * sum(any(mismo_lote(e, n) for n in numeros) for e in esperados) >= len(esperados):
+        for e in esperados:
+            s = _serie(e)
+            if s is None or any(mismo_lote(e, n) for n in numeros):
+                continue
+            sector, n = s
+            # El cuadro puede listar "16" en un loteo "8-16": va con la única serie que hay.
+            if sector not in series and len(series) == 1:
+                sector = next(iter(series))
+            if (sector, n) not in faltan:
+                faltan[(sector, n)] = _como(plantillas[sector], n) if sector in plantillas else e
+    return [faltan[k] for k in sorted(faltan)]

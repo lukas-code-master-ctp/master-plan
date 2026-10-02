@@ -35,6 +35,9 @@ instancia de Cloud Run se cayó a la pasada 30 de 96 del lector (12 s por pasada
    restos de texto).
 3. **Huecos en la numeración.** Si aparecen 1, 2, 4, 6… 15 (por sector), se avisa "faltan el
    3, 5 y 11". Con el cuadro leído, los esperados salen del cuadro (incluido el 16).
+   Sin cuadro, un hueco de la serie se avisa solo si el lote anterior o el siguiente toca
+   una cara sin número del tamaño de un lote: si no, suele ser un lote que esa lámina no
+   dibuja (Curicó mostraba 10 huecos así; ahora ninguno, y Rapel sigue con 8-03, 8-05, 8-11).
 4. **Marcar el cuadro de superficies.** Una herramienta en el paso Marcar para encerrarlo,
    aunque esté fuera del dibujo. Se lee con los números y las áreas oficiales, y alimenta los
    faltantes y el color por error de área.

@@ -383,15 +383,43 @@ export function nivelDe(propiedades) {
 
 /** Lo que la revisión cuenta de un vistazo. */
 export function resumenRevision(rasgos) {
-  const cuenta = { lotes: 0, verde: 0, ambar: 0, rojo: 0, gris: 0, sin_numero: 0, duplicados: 0 };
+  const cuenta = { lotes: 0, verde: 0, ambar: 0, rojo: 0, gris: 0, sin_numero: 0, sin_numero_lote: 0, duplicados: 0 };
   for (const { properties: p } of rasgos) {
     const banderas = p.banderas ?? [];
-    if (banderas.includes('sin_numero')) { cuenta.sin_numero += 1; continue; }
+    if (banderas.includes('sin_numero')) {
+      cuenta.sin_numero += 1;
+      if (p.de_lote) cuenta.sin_numero_lote += 1;
+      continue;
+    }
     cuenta.lotes += 1;
     if (banderas.includes('duplicado')) cuenta.duplicados += 1;
     cuenta[nivelDe(p)] += 1;
   }
   return cuenta;
+}
+
+/**
+ * Las partes sin número, primero las del tamaño de un lote (un lote cuyo número no se
+ * leyó) y, entre ellas, las que traen una lectura que confirmar.
+ */
+export function sinNumero(rasgos) {
+  const peso = ({ properties: p }) => (p.de_lote ? 0 : 2) + (p.sugerencia ? 0 : 1);
+  return rasgos.filter((r) => (r.properties.banderas ?? []).includes('sin_numero') && r.properties.numero == null)
+    .map((r, i) => [r, i]).sort(([a, i], [b, j]) => peso(a) - peso(b) || i - j).map(([r]) => r);
+}
+
+/** Las partes sin número con una lectura del lector que se confirma con un clic: [{numero, rasgo}]. */
+export function sugerencias(rasgos) {
+  return sinNumero(rasgos).filter((r) => r.properties.sugerencia?.numero)
+    .map((r) => ({ numero: String(r.properties.sugerencia.numero), rasgo: r }));
+}
+
+/** "Faltan los números 8-03, 8-05 y 8-11." ("" si no falta ninguno). */
+export function textoHuecos(huecos) {
+  const lista = (huecos ?? []).map(String);
+  if (!lista.length) return '';
+  if (lista.length === 1) return `Falta el número ${lista[0]}.`;
+  return `Faltan los números ${lista.slice(0, -1).join(', ')} y ${lista[lista.length - 1]}.`;
 }
 
 /** Los números que se repiten entre los lotes. */

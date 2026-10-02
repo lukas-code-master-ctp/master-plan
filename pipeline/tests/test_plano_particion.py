@@ -198,3 +198,85 @@ def test_inundar_solo_desde_el_borde_de_las_marcas_da_el_mismo_watershed():
 
     assert nuevo.dtype == np.int32
     assert np.array_equal(nuevo, watershed(relieve, marcas))
+
+
+def _grilla_tenue(sin_semilla=("2", "6", "7"), franja=True):
+    """4 × 2 lotes de 30 × 40 mm con el borde negro y las divisorias en gris claro
+    (tinta que no es "firme", como en Caminos de Rapel): un lote sin semilla se uniría
+    a su vecino sin aviso. En el lote 1, una franja de 7 mm cerrada por otra línea gris
+    (un bolsillo que sí se une)."""
+    px = lambda v: int(round(v * PPMM))
+    m, w, h = 20.0, 30.0, 40.0
+    img = np.full((px(2 * m + 2 * h), px(2 * m + 4 * w), 3), (244, 241, 233), np.uint8)
+    gris = (165, 165, 165)
+    xs = [px(m + i * w) for i in range(5)]
+    ys = [px(m + j * h) for j in range(3)]
+    for x in xs[1:-1]:
+        cv2.line(img, (x, ys[0]), (x, ys[-1]), gris, 2)
+    cv2.line(img, (xs[0], ys[1]), (xs[-1], ys[1]), gris, 2)
+    if franja:
+        cv2.line(img, (xs[0], px(m + 7)), (xs[1], px(m + 7)), gris, 2)
+    cv2.rectangle(img, (xs[0], ys[0]), (xs[-1], ys[-1]), NEGRO, 3)
+    celdas, semillas = {}, []
+    for j in range(2):
+        for i in range(4):
+            n = str(j * 4 + i + 1)
+            celdas[n] = Polygon([(xs[i], ys[j]), (xs[i + 1], ys[j]), (xs[i + 1], ys[j + 1]), (xs[i], ys[j + 1])])
+            if n not in sin_semilla:
+                semillas.append((n, (xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2 + px(3)))
+    return img, semillas, celdas
+
+
+def test_un_lote_sin_rotulo_no_se_pega_a_su_vecino(monkeypatch):
+    img, semillas, celdas = _grilla_tenue()
+    alto, ancho = img.shape[:2]
+    r = digitalizar_imagen(img, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+
+    # Los 3 lotes sin semilla quedan como caras sin número del tamaño de un lote...
+    assert len(r.lotes) == 5 and r.estadisticas["sin_numero_lote"] == 3
+    de_lote = [c for c, es in zip(r.sin_numero, r.sin_numero_lote) if es]
+    for n in ("2", "6", "7"):
+        assert sum(iou(c, celdas[n]) > 0.9 for c in de_lote) == 1, n
+    # ...y los numerados no crecen.
+    for n, p in r.lotes.items():
+        assert iou(p, celdas[n]) > 0.9, n
+    # La franja de 7 mm del lote 1 sí se une: es un trozo, no un lote.
+    assert r.estadisticas["particion"]["fusiones_sin_tinta"]
+    assert not any(iou(c, celdas["1"]) > 0.05 for c in r.sin_numero)
+
+    # Lo que pasaba antes: sin el tope, los tres se pegaban a un vecino.
+    monkeypatch.setattr(particion, "LOTE_FRAC", 1e9)
+    antes = digitalizar_imagen(img, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+    assert antes.estadisticas["sin_numero_lote"] == 0
+    assert len(antes.estadisticas["particion"]["fusiones_sin_tinta"]) >= 4
+    assert max(p.area for p in antes.lotes.values()) > 1.8 * celdas["1"].area
+
+
+def test_un_rotulo_pegado_al_lado_largo_no_une_al_vecino_sin_numero():
+    # El rótulo del 1 a 1,5 mm de su deslinde con el 2 (sin semilla): está "sobre el
+    # corte", pero el lado común (40 mm) es mucho más largo que el texto. No es el
+    # rótulo partiendo su lote: el 2 queda como lote sin número.
+    img, semillas, celdas = _grilla_tenue(franja=False)
+    x1 = celdas["1"].bounds[2]
+    semillas = [(n, x1 - 1.5 * PPMM, y) if n == "1" else (n, x, y) for n, x, y in semillas]
+    alto, ancho = img.shape[:2]
+    r = digitalizar_imagen(img, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+
+    assert r.estadisticas["sin_numero_lote"] == 3
+    assert iou(r.lotes["1"], celdas["1"]) > 0.9
+    assert sum(iou(c, celdas["2"]) > 0.9 for c, es in zip(r.sin_numero, r.sin_numero_lote) if es) == 1
+
+
+def test_las_lecturas_con_poco_apoyo_se_sugieren_en_su_lote_sin_numero():
+    from pipeline.plano.digitalizar import _sugerencias
+    from pipeline.plano.rotulos import Rotulo
+    caras = [Polygon([(0, 0), (10, 0), (10, 10), (0, 10)]), Polygon([(10, 0), (20, 0), (20, 10), (10, 10)]),
+             Polygon([(20, 0), (30, 0), (30, 10), (20, 10)])]
+    de_lote = [True, True, False]
+    leidos = [Rotulo("8-03", 5, 5, 0.01, 1), Rotulo("8-3", 6, 6, 0.005, 1),      # el mismo, peor leído
+              Rotulo("8-04", 15, 5, 0.3, 3),                                    # con apoyo: era semilla
+              Rotulo("8-02", 16, 5, 0.01, 1),                                   # ya es de otro lote
+              Rotulo("8-05", 25, 5, 0.01, 1)]                                   # cara que no es lote
+    s = _sugerencias(caras, de_lote, leidos, 2, ["8-02"])
+    assert s == [dict(numero="8-03", confianza=0.01, apoyo=1), None, None]
+    assert _sugerencias(caras, de_lote, [], 2, []) == [None, None, None]

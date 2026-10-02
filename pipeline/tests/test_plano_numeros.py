@@ -56,3 +56,48 @@ def test_numeracion_de_la_regresion_compara_normalizado():
     verdad = [dict(numero="6", x=5, y=5), dict(numero="8-01", x=15, y=5), dict(numero="9", x=25, y=5)]
     u = regresion.numeracion(digitalizado, verdad)
     assert (u["correctos"], u["errados"], u["lotes_numero_ajeno"]) == (2, 1, 1)
+
+
+RAPEL_LEIDOS = ["8-01", "8-02", "8-04", "8-06", "8-07", "8-08", "8-09", "8-10", "8-12", "8-13", "8-14", "8-15"]
+
+
+def test_huecos_de_una_serie_con_ceros_como_en_el_plano():
+    assert numeros.huecos(RAPEL_LEIDOS) == ["8-03", "8-05", "8-11"]
+    assert numeros.huecos(["1", "2", "4", "7"]) == ["3", "5", "6"]
+    assert numeros.huecos(["01", "02", "05"]) == ["03", "04"]
+    assert numeros.huecos(["1", "2", "3"]) == [] and numeros.huecos([]) == []
+
+
+def test_huecos_por_sector_y_letra():
+    # Cada sector es su propia serie: el 9-01 no tapa el 8-01, ni el 10-6 al 9-6.
+    assert numeros.huecos(["8-01", "8-03", "9-1", "9-3", "10-6", "10-8"]) == ["10-7", "8-02", "9-2"]
+    assert numeros.huecos(["A01", "A03", "B1", "B3"]) == ["A02", "B2"]
+    # Lo que no es número no cuenta; "8-1" y "8-01" son el mismo.
+    assert numeros.huecos(["8-01", "8-1", "8-03", "??"]) == ["8-02"]
+
+
+def test_un_salto_largo_no_es_un_hueco():
+    # Una cota leída como rótulo, u otra etapa: no se piden 200 números.
+    assert numeros.huecos(["1", "2", "4", "250"]) == ["3"]
+    assert numeros.huecos(["1", "2"] + [str(n) for n in range(3 + numeros.SALTO_MAX + 1, 20)]) == []
+
+
+def test_un_hueco_se_dice_solo_junto_a_un_lote_sin_numero():
+    # Con `junto` (los lotes que tocan una cara sin número del tamaño de un lote), un
+    # hueco se dice si el anterior o el siguiente es uno de ellos (Curicó: los lotes que
+    # esa lámina no dibuja no se avisan).
+    assert numeros.huecos(RAPEL_LEIDOS, junto=["8-2", "8-12"]) == ["8-03", "8-11"]
+    assert numeros.huecos(RAPEL_LEIDOS, junto=[]) == []
+    assert numeros.huecos(["10", "14", "88", "89"], junto=["88"]) == []
+    # Los del cuadro van igual.
+    assert numeros.huecos(RAPEL_LEIDOS, [f"8-{n:02d}" for n in range(1, 17)], junto=[]) \
+        == ["8-03", "8-05", "8-11", "8-16"]
+
+
+def test_huecos_con_el_cuadro_de_superficies():
+    # El cuadro trae el último (el 16), que la serie sola no ve; "16" sin sector va con la serie.
+    cuadro = [str(n) for n in range(1, 17)]
+    assert numeros.huecos(RAPEL_LEIDOS, cuadro) == ["8-03", "8-05", "8-11", "8-16"]
+    assert numeros.huecos(RAPEL_LEIDOS, [f"8-{n:02d}" for n in range(1, 17)])[-1] == "8-16"
+    # Un cuadro que no calza con lo leído (otro cuadro: vértices, roles) no se usa.
+    assert numeros.huecos(RAPEL_LEIDOS, ["101", "102", "103"]) == ["8-03", "8-05", "8-11"]

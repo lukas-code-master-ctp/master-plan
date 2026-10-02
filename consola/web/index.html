@@ -517,6 +517,11 @@
           <span class="kmz-muestra kmz-muestra--malo">rojo</span> los sin número o repetidos.</p>
         <p id="kmz-sin-numero" class="kmz-nota-fuerte"></p>
         <button class="boton boton--contorno boton--chico" data-accion="kmz-siguiente-sin-numero" type="button">Ir al siguiente sin número</button>
+        <p id="kmz-huecos" class="kmz-nota-fuerte" hidden></p>
+        <div id="kmz-sugerencias-caja" hidden>
+          <h3>Leídos con muy pocas lecturas: confírmalos</h3>
+          <div id="kmz-sugerencias" class="kmz-pastillas"></div>
+        </div>
         <p id="kmz-faltantes" class="kmz-nota-fuerte" hidden></p>
         <div id="kmz-duplicados-caja" hidden>
           <h3>Números repetidos</h3>
@@ -823,6 +828,17 @@
   <div class="modal__pie">
     <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
     <button id="kmz-reemplazar" class="boton" type="button">Reemplazarlo</button>
+  </div>
+</dialog>
+
+<!-- Mis KMZ: crear el KMZ aunque queden lotes sin número -->
+<dialog id="kmz-sin-numero-dialogo" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2>Quedan lotes sin número</h2>
+  <p class="ayuda" id="kmz-sin-numero-texto"></p>
+  <div class="modal__pie">
+    <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
+    <button id="kmz-crear-sin-numero" class="boton" type="button">Crear sin ellos</button>
   </div>
 </dialog>
 

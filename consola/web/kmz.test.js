@@ -7,8 +7,8 @@ import assert from 'node:assert/strict';
 import {
   anclaDesde, aPagina, claveLote, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
-  puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, siguienteNombre,
-  tamanoRotado, vistaAjustada, zoomEn,
+  puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, siguienteNombre, sinNumero, sugerencias,
+  tamanoRotado, textoHuecos, vistaAjustada, zoomEn,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
 
@@ -205,9 +205,28 @@ test('la revisión cuenta por color y marca los sin número y repetidos', () => 
   const rasgos = [
     lote('1', [], { nivel: 'verde' }), lote('2', [], { nivel: 'rojo' }), lote('3', []),
     lote('4', [], { nivel: 'verde', banderas: ['duplicado'] }), lote(null, [], { banderas: ['sin_numero'] }),
+    lote(null, [], { banderas: ['sin_numero', 'de_lote'], de_lote: true }),
   ];
   assert.deepEqual(resumenRevision(rasgos),
-    { lotes: 4, verde: 2, ambar: 0, rojo: 1, gris: 1, sin_numero: 1, duplicados: 1 });
+    { lotes: 4, verde: 2, ambar: 0, rojo: 1, gris: 1, sin_numero: 2, sin_numero_lote: 1, duplicados: 1 });
+});
+
+test('las partes sin número: primero los lotes, y entre ellos los que traen sugerencia', () => {
+  const camino = lote(null, [], { banderas: ['sin_numero'] });
+  const solo = lote(null, [], { banderas: ['sin_numero', 'de_lote'], de_lote: true });
+  const con = lote(null, [], { banderas: ['sin_numero', 'de_lote'], de_lote: true,
+    sugerencia: { numero: '8-03', confianza: 0.01, apoyo: 1 } });
+  const rasgos = [lote('1', []), camino, solo, con];
+  assert.deepEqual(sinNumero(rasgos), [con, solo, camino]);
+  assert.deepEqual(sugerencias(rasgos), [{ numero: '8-03', rasgo: con }]);
+  assert.deepEqual(sugerencias([lote('1', [])]), []);
+});
+
+test('los huecos de la numeración se dicen en una frase', () => {
+  assert.equal(textoHuecos([]), '');
+  assert.equal(textoHuecos(undefined), '');
+  assert.equal(textoHuecos(['8-03']), 'Falta el número 8-03.');
+  assert.equal(textoHuecos(['8-03', '8-05', '8-11']), 'Faltan los números 8-03, 8-05 y 8-11.');
 });
 
 test('los leídos con poco apoyo se señalan para mirarlos', () => {

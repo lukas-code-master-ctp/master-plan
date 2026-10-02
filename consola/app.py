@@ -55,7 +55,7 @@ from .disenos import DisenoInvalido, Disenos, VistaDisenos
 from .disenos import como_json as diseno_json
 from .kmzs import NombreInvalido, RegistroKmz, VistaKmz, slug_de_clave
 from .kmzs import clave as clave_kmz
-from .plano import PlanoInvalido, PlanoNoListo
+from .plano import LotesSinNumero, PlanoInvalido, PlanoNoListo
 from .plantilla import MIME_XLSX, plantilla
 from .proyectos import KMZ as KMZ_DEL_MASTER
 from .proyectos import KmzExistente, LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
@@ -579,10 +579,13 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return mis.plano(slug).lotes(en)
 
     @app.post("/api/kmz/{slug}/crear", status_code=201)
-    async def escribir_kmz(slug: str, mis: VistaKmz = Depends(mis_kmz)) -> dict:
+    async def escribir_kmz(slug: str, campos: dict | None = Body(None),
+                           mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        """`{"omitir_sin_numero": true}`: crearlo aunque queden lotes sin número (sin ellos)."""
         plano = mis.plano(slug)
         kmz_libre(slug)
-        return await run_in_threadpool(plano.crear_kmz)
+        omitir = (campos or {}).get("omitir_sin_numero") is True
+        return await run_in_threadpool(plano.crear_kmz, omitir)
 
     @app.get("/api/kmz/{slug}/descargar")
     def descargar_kmz(slug: str, mis: VistaKmz = Depends(mis_kmz)) -> FileResponse:
@@ -829,6 +832,11 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     @app.exception_handler(PlanoNoListo)
     async def plano_no_listo(peticion: Request, error: PlanoNoListo):
         return JSONResponse(status_code=409, content={"detail": str(error)})
+
+    @app.exception_handler(LotesSinNumero)
+    async def lotes_sin_numero(peticion: Request, error: LotesSinNumero):
+        """Dice cuántos, para que la pantalla ofrezca crearlo igual sin ellos."""
+        return JSONResponse(status_code=409, content={"detail": str(error), "sin_numero": error.cuantos})
 
     @app.exception_handler(KmzExistente)
     async def kmz_existente(peticion: Request, error: KmzExistente):

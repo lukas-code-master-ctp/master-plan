@@ -54,8 +54,18 @@ entero. Si cambia la rotación, cambian las coordenadas.
                  "confianza", "apoyo",             del lector (null si lo marcó ella)
                  "area_oficial"}],                 m² del cuadro de superficies (o null)
                                                    todo en px de página
-      "sin_numero": [{"poligono", "area_px"}],     caras dentro del contorno sin lote
+      "sin_numero": [{"poligono", "area_px",       caras dentro del contorno sin lote
+                      "de_lote",                   del tamaño de un lote: un lote cuyo número
+                                                   no se leyó (no se unió a su vecino); hay que
+                                                   numerarlo o crear el KMZ sin él
+                      "sugerencia"}],              {"numero", "confianza", "apoyo"} o null: lo
+                                                   que leyó el lector dentro, con menos apoyo
+                                                   que `lector_apoyo_min` (no es semilla)
       "faltantes": ["13"],                         semillas de la loteadora sin polígono
+      "huecos": ["8-03"],                          números que faltan en la numeración, por
+                                                   sector (`numeros.huecos`), junto a una cara
+                                                   sin número del tamaño de un lote; y los del
+                                                   cuadro
       "cuadricula": {"verticales": [{"valor", "p": [x, y], "q": [x, y], "valida"}],
                      "horizontales": [...]},       las rectas detectadas (o null)
       "lector": {"activo", "disponible", "motivo",   motivo: por qué no hubo lector
@@ -109,6 +119,7 @@ class Resultado:
     lotes_trabajo: dict[str, Polygon]  # px de trabajo
     estadisticas: dict = field(default_factory=dict)
     cuadricula: dict | None = None     # líneas detectadas, en px de página
+    sin_numero_lote: list[bool] = field(default_factory=list)   # por cara sin número: ¿es un lote?
 
 
 def digitalizar_imagen(imagen: np.ndarray, ppmm: float, semillas, rectangulo=None, mascaras=(),
@@ -176,6 +187,10 @@ def digitalizar_imagen(imagen: np.ndarray, ppmm: float, semillas, rectangulo=Non
     a_pagina = lambda g: _transformar(g, encuadre)
     lotes = {n: a_pagina(g) for n, g in red.lotes.items()}
     sin_numero = [a_pagina(g) for g in red.sin_numero]
+    # Una cara de una región de lote que el polígono dejó chica (un resto) no es un lote.
+    mediana = float(np.median([g.area for g in lotes.values()])) if lotes else 0.0
+    sin_numero_lote = [bool(es and g.area >= particion.LOTE_FRAC * mediana)
+                       for es, g in zip(red.sin_numero_lote, sin_numero)]
     numeros = [str(n) for n, _, _ in semillas]
     faltantes = [n for n in numeros if n not in lotes]
     suma = sum(g.area for g in red.lotes.values())
@@ -183,13 +198,15 @@ def digitalizar_imagen(imagen: np.ndarray, ppmm: float, semillas, rectangulo=Non
     estadisticas = dict(
         particion=estadisticas_particion, red=red.estadisticas,
         lotes=len(lotes), semillas=len(semillas), faltantes=faltantes, sin_numero=len(sin_numero),
+        sin_numero_lote=sum(sin_numero_lote),
         traslape_px=float(suma - union.area),
         segundos=round(time.time() - inicio, 1),
     )
     avance(f"Lotes: {len(lotes)} de {len(semillas)}"
            + (f"; sin polígono: {', '.join(faltantes)}" if faltantes else "")
-           + (f"; {len(sin_numero)} caras sin número" if sin_numero else ""))
-    return Resultado(encuadre, lotes, sin_numero, red.lotes, estadisticas, detectada)
+           + (f"; {len(sin_numero)} caras sin número" if sin_numero else "")
+           + (f", {sum(sin_numero_lote)} del tamaño de un lote" if any(sin_numero_lote) else ""))
+    return Resultado(encuadre, lotes, sin_numero, red.lotes, estadisticas, detectada, sin_numero_lote)
 
 
 def _transformar(g: Polygon, encuadre: pag.Encuadre) -> Polygon:
@@ -234,6 +251,19 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     faltantes = [n for n in r.estadisticas["faltantes"] if posicion[n]["origen"] == "usuario"]
     sin_poligono = [n for n in r.estadisticas["faltantes"] if posicion[n]["origen"] == "lector"]
     r.estadisticas.update(faltantes=faltantes, semillas_lector=de_lector)
+    sugerencias = _sugerencias(r.sin_numero, r.sin_numero_lote, (lector or {}).get("rotulos") or [],
+                               entradas["lector_apoyo_min"], [s["numero"] for s in combinadas])
+    # Los números que hay: los lotes y lo que marcó ella (aunque no haya caído en un lote).
+    # Un número del lector sin polígono suele ser ruido: no cuenta.
+    presentes = list(r.lotes) + [s["numero"] for s in combinadas if s["origen"] == "usuario"]
+    # Un hueco de la serie se dice solo junto a una cara sin número del tamaño de un lote
+    # (sea "de lote" o tenga deslinde firme): ahí suele estar el que falta.
+    mediana = float(np.median([g.area for g in r.lotes.values()])) if r.lotes else 0.0
+    grandes = [c for c in r.sin_numero if c.area >= particion.LOTE_FRAC * mediana]
+    junto = [n for n, g in r.lotes.items() if any(g.distance(c) <= 0.5 * hoja.ppmm for c in grandes)]
+    huecos = numeros_lote.huecos(presentes, list(cuadro), junto)
+    if huecos:
+        avance(f"Faltan en la numeración: {', '.join(huecos)}")
     datos = dict(
         pagina=dict(numero=numero, rotacion=rotacion, ancho=int(imagen.shape[1]), alto=int(imagen.shape[0]),
                     ppmm=hoja.ppmm, fuente=hoja.fuente),
@@ -245,8 +275,10 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
                     confianza=posicion[n]["confianza"], apoyo=posicion[n]["apoyo"],
                     area_oficial=numeros_lote.buscar(cuadro, n))
                for n, g in r.lotes.items()],
-        sin_numero=[dict(poligono=_anillo(g.exterior), area_px=round(g.area, 1)) for g in r.sin_numero],
+        sin_numero=[dict(poligono=_anillo(g.exterior), area_px=round(g.area, 1), de_lote=es, sugerencia=sug)
+                    for g, es, sug in zip(r.sin_numero, r.sin_numero_lote, sugerencias)],
         faltantes=faltantes,
+        huecos=huecos,
         cuadricula=r.cuadricula,
         lector=_resumen_lector(lector, entradas, de_lector, sin_poligono),
         estadisticas=r.estadisticas,
@@ -254,6 +286,26 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     escribir_json(carpeta / SALIDA, datos)
     avance(f"Listo: {carpeta / SALIDA}")
     return datos
+
+
+def _sugerencias(caras: list[Polygon], de_lote: list[bool], leidos, apoyo_min: int,
+                 usados: list[str]) -> list[dict | None]:
+    """Por cara sin número: lo que el lector leyó dentro con menos apoyo que `apoyo_min`
+    (no alcanzó a ser semilla), si es un lote y el número no lo tiene ya otro. La mejor
+    lectura (más apoyo, más confianza) va primero, y un número no se sugiere dos veces.
+    La loteadora lo confirma con un clic."""
+    from shapely.geometry import Point
+    salida: list[dict | None] = [None] * len(caras)
+    tomados = list(usados)
+    for r in sorted((r for r in leidos if r.apoyo < apoyo_min), key=lambda r: (-r.apoyo, -r.confianza)):
+        if any(numeros_lote.mismo_lote(r.numero, n) for n in tomados):
+            continue
+        for i, (cara, es) in enumerate(zip(caras, de_lote)):
+            if es and salida[i] is None and cara.contains(Point(r.x, r.y)):
+                salida[i] = dict(numero=r.numero, confianza=round(r.confianza, 4), apoyo=r.apoyo)
+                tomados.append(r.numero)
+                break
+    return salida
 
 
 def _previo(carpeta: Path, numero: int, rotacion: int) -> dict | None:

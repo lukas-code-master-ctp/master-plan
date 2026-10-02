@@ -104,6 +104,17 @@ class PlanoNoListo(Exception):
     """Falta un paso anterior (409)."""
 
 
+class LotesSinNumero(PlanoNoListo):
+    """Hay caras del tamaño de un lote sin número (409): no irían al KMZ. Se crea igual
+    solo si la loteadora lo pide (`omitir_sin_numero`)."""
+
+    def __init__(self, cuantos: int):
+        self.cuantos = cuantos
+        super().__init__(
+            ("Queda 1 lote sin número" if cuantos == 1 else f"Quedan {cuantos} lotes sin número")
+            + " (en rojo): no irían al KMZ. Numéralos en el paso Numerar, o crea el KMZ sin ellos.")
+
+
 @dataclass(frozen=True)
 class Plano:
     """El plano en `carpeta` y el KMZ que sale de él en `destino_kmz`."""
@@ -293,14 +304,19 @@ class Plano:
         return dict(resumen_georreferencia(self._leer(GEORREFERENCIA)), vigente=True, lineas=lineas)
 
     @_a_solas
-    def crear_kmz(self) -> dict:
-        """Escribe el KMZ. Es su propio archivo: se rehace sin preguntar."""
+    def crear_kmz(self, omitir_sin_numero: bool = False) -> dict:
+        """Escribe el KMZ. Es su propio archivo: se rehace sin preguntar. Si quedan caras
+        del tamaño de un lote sin número, 409 (`LotesSinNumero`) salvo `omitir_sin_numero`:
+        el KMZ lleva solo los lotes numerados."""
         entradas = self._entradas_o_409()
         if not (self.carpeta / GEORREFERENCIA).is_file():
             raise PlanoNoListo("primero hay que ubicar el plano en el mapa")
         if not self._georreferencia_vigente(entradas):
             raise PlanoNoListo("cambiaron las entradas desde que se ubicó el plano: digitaliza o ubica de nuevo")
         digitalizado = self._leer(DIGITALIZADO)
+        sin_numero = sum(bool(c.get("de_lote")) for c in digitalizado.get("sin_numero") or [])
+        if sin_numero and not omitir_sin_numero:
+            raise LotesSinNumero(sin_numero)
         t = Transformacion.desde_dict(self._leer(GEORREFERENCIA))
         try:
             # Aparte y `os.replace` al final: un error no se lleva el anterior.
@@ -322,9 +338,15 @@ class Plano:
         digitalizado = georreferencia = None
         if (self.carpeta / DIGITALIZADO).is_file():
             d = self._leer(DIGITALIZADO)
+            caras = d.get("sin_numero") or []
             digitalizado = dict(
                 lotes=len(d.get("lotes") or []), faltantes=d.get("faltantes") or [],
-                sin_numero=len(d.get("sin_numero") or []), pagina=d.get("pagina"),
+                sin_numero=len(caras), pagina=d.get("pagina"),
+                # Caras del tamaño de un lote sin número (y cuántas traen una lectura que
+                # confirmar), y los números que faltan en la numeración.
+                sin_numero_lote=sum(bool(c.get("de_lote")) for c in caras),
+                sugerencias=sum(bool(c.get("sugerencia")) for c in caras),
+                huecos=d.get("huecos") or [],
                 cuadricula=d.get("cuadricula") is not None,
                 segundos=(d.get("estadisticas") or {}).get("segundos"),
                 lector=_resumen_lector(d.get("lector")),
@@ -392,7 +414,12 @@ class Plano:
                                        "ambar" if abs(error) <= AMBAR else "rojo")
             rasgos.append(_rasgo(lote["poligono"], lote.get("huecos") or [], propiedades, en, t))
         for cara in d.get("sin_numero") or []:
-            propiedades = dict(numero=None, area_px=cara.get("area_px"), banderas=["sin_numero"])
+            # `de_lote`: del tamaño de un lote (no se pegó a su vecino); `sugerencia`: lo que
+            # leyó el lector dentro, con poco apoyo, para confirmar con un clic.
+            de_lote = bool(cara.get("de_lote"))
+            propiedades = dict(numero=None, area_px=cara.get("area_px"),
+                               banderas=["sin_numero"] + (["de_lote"] if de_lote else []),
+                               de_lote=de_lote, sugerencia=cara.get("sugerencia"))
             if t is not None:
                 utm = Polygon(np.c_[t.a_utm(*np.asarray(cara["poligono"], float).T)])
                 propiedades["area_m2"] = round(utm.area, 1)

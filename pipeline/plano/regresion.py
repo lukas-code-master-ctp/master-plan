@@ -81,6 +81,10 @@ def correr_plano(carpeta: Path, avance=lambda texto: None, con_lector: bool = Fa
         fila["lotes"] = len(digitalizado["lotes"])
         fila["faltantes"] = digitalizado["faltantes"]
         fila["sin_numero"] = len(digitalizado["sin_numero"])
+        # Caras del tamaño de un lote que quedaron sin número (no se pegaron a un vecino).
+        fila["sin_numero_lote"] = sum(bool(c.get("de_lote")) for c in digitalizado["sin_numero"])
+        fila["sugerencias"] = [c["sugerencia"]["numero"] for c in digitalizado["sin_numero"] if c.get("sugerencia")]
+        fila["huecos"] = digitalizado.get("huecos") or []
         fila["trabajo_ppmm"] = round(digitalizado["trabajo"]["ppmm"], 3)
         fila["trabajo_mpx"] = round(digitalizado["trabajo"]["ancho"] * digitalizado["trabajo"]["alto"] / 1e6, 1)
         if not entradas["anclas"] and not entradas.get("cuadricula"):
@@ -221,7 +225,7 @@ def tabla(filas: list[dict]) -> str:
 
 def tabla_con_lector(filas: list[dict]) -> str:
     n = lambda v, f="{:.3f}": "—" if v is None else f.format(v)
-    lineas = ["| Plano | Rótulos leídos / semillas del lector | Lotes | Numeración correcta (recall)"
+    lineas = ["| Plano | Rótulos leídos / semillas del lector | Lotes (+ de lote sin número) | Numeración correcta (recall)"
               " | Errados / sin lote | Lotes con número ajeno | Pareados / real | IoU tal cual → what-if (mediana)"
               " | Centroide tal cual → what-if (m) | Cuadro: áreas (±2 % del real) | Cuadrícula: coinciden / reales"
               " | Segundos (lector) |",
@@ -235,7 +239,8 @@ def tabla_con_lector(filas: list[dict]) -> str:
         cuadro = f.get("cuadro") or {}
         cuad = f.get("cuadricula_leida") or {}
         lineas.append(
-            f"| {f['plano']} | {u['rotulos_leidos']} / {u['semillas_lector']} | {f.get('lotes')}"
+            f"| {f['plano']} | {u['rotulos_leidos']} / {u['semillas_lector']}"
+            f" | {f.get('lotes')} + {f.get('sin_numero_lote', 0)} sin número"
             f" | {u['correctos']} / {u['verdad']} ({n(u['recall'], '{:.0%}')})"
             f" | {u['errados']} / {u['sin_lote']} | {u['lotes_numero_ajeno']}"
             f" | {f.get('pareados', '—')} / {f.get('lotes_real', '—')}"

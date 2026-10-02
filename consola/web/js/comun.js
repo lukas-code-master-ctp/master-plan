@@ -27,7 +27,12 @@ export async function pedir(ruta, opciones = {}) {
   const respuesta = await fetch(ruta, opciones);
   if (respuesta.status === 204) return null;
   const cuerpo = await respuesta.json().catch(() => ({}));
-  if (!respuesta.ok) throw new Error(cuerpo.detail ?? `Error ${respuesta.status}`);
+  if (!respuesta.ok) {
+    // El estado y el cuerpo van en el error: un 409 puede traer qué ofrecer (p. ej.
+    // crear el KMZ igual, sin los lotes sin número).
+    throw Object.assign(new Error(cuerpo.detail ?? `Error ${respuesta.status}`),
+      { estado: respuesta.status, cuerpo });
+  }
   return cuerpo;
 }
 
