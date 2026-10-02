@@ -21,6 +21,7 @@
 
   <nav class="pestanas" aria-label="Secciones">
     <a href="#/planos" data-seccion="planos">Mis planos</a>
+    <a href="#/kmz" data-seccion="kmz">Mis KMZ</a>
     <a href="#/disenos" data-seccion="disenos">Mis diseños</a>
   </nav>
 
@@ -53,12 +54,36 @@
         <h1 id="titulo-planos">Mis planos</h1>
         <p id="guia" class="guia"></p>
       </div>
-      <a class="boton" href="#/planos/nuevo">
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        Nuevo master
-      </a>
+      <div class="pantalla__acciones">
+        <a class="boton" href="#/planos/nuevo">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          Nuevo master
+        </a>
+        <button id="planos-nuevo-kmz" class="boton boton--contorno" type="button">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          Nuevo KMZ
+        </button>
+      </div>
     </header>
     <ul id="planos" class="planos" aria-live="polite"></ul>
+  </section>
+
+  <!-- Mis KMZ -->
+  <section id="pantalla-kmzs" class="pantalla pantalla--angosta" aria-labelledby="titulo-kmzs" hidden>
+    <header class="pantalla__cabecera">
+      <div>
+        <h1 id="titulo-kmzs">Mis KMZ</h1>
+        <p class="guia">El KMZ de tu subdivisión, hecho desde el plano aprobado. Lo descargas
+          para Google Earth o tu topógrafo, o lo usas en un master.</p>
+      </div>
+      <div class="pantalla__acciones">
+        <button id="kmzs-nuevo" class="boton" type="button">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          Nuevo KMZ
+        </button>
+      </div>
+    </header>
+    <ul id="kmzs" class="mis-kmz" aria-live="polite"></ul>
   </section>
 
   <!-- Nuevo master -->
@@ -82,10 +107,12 @@
             <input id="nuevo-kmz" type="file" accept=".kmz" aria-labelledby="rotulo-kmz">
             <span class="archivo__texto" id="texto-kmz">Subir el plano (.kmz)</span>
           </label>
-          <p class="nota" id="nuevo-plano-nota" hidden>Subes el PDF del plano aprobado (SAG o CBR) y
-            lo conviertes en el KMZ paso a paso. Las panorámicas las subes después, desde el master.</p>
-          <p class="nota"><button id="nuevo-desde-plano" class="enlace" type="button"
-            aria-pressed="false">No tengo el KMZ: créalo desde el plano</button></p>
+          <label class="nota nuevo-mio" id="nuevo-mio-caja" hidden>
+            <span id="nuevo-mio-rotulo">o elige uno de Mis KMZ</span>
+            <select id="nuevo-mio" aria-labelledby="rotulo-kmz nuevo-mio-rotulo"></select>
+          </label>
+          <p class="nota" id="nuevo-mio-vacio" hidden>¿No tienes el KMZ? Créalo desde el plano
+            aprobado en <a class="enlace" href="#/kmz">Mis KMZ</a>.</p>
         </div>
       </div>
 
@@ -160,7 +187,7 @@
           <div id="plano-meta" class="meta"></div>
         </div>
         <div class="plano-detalle__acciones">
-          <a id="plano-kmz" class="boton boton--contorno" href="#/planos">Crear el KMZ desde el plano</a>
+          <button class="boton boton--contorno" data-accion="usar-kmz" type="button">Usar un KMZ de Mis KMZ</button>
           <button class="boton boton--contorno" data-accion="archivos" type="button">Subir archivos</button>
           <button class="boton boton--contorno" data-accion="construir" type="button">Construir</button>
         </div>
@@ -281,12 +308,15 @@
     </article>
   </section>
 
-  <!-- Crea tu KMZ: del plano aprobado al KMZ de la subdivisión -->
+  <!-- Un KMZ de Mis KMZ: del plano aprobado al KMZ de la subdivisión -->
   <section id="pantalla-kmz" class="pantalla kmz" aria-labelledby="kmz-titulo" hidden>
-    <a class="volver" id="kmz-volver" href="#/planos">← Volver al master</a>
+    <a class="volver" href="#/kmz">← Mis KMZ</a>
     <header class="pantalla__cabecera">
       <div>
-        <h1 id="kmz-titulo">Crea tu KMZ</h1>
+        <div class="kmz-cabecera">
+          <h1 id="kmz-titulo">KMZ</h1>
+          <button class="boton boton--texto boton--chico" data-accion="kmz-renombrar" type="button">Cambiar nombre</button>
+        </div>
         <p class="guia">Del plano aprobado (el PDF del SAG o del CBR) al KMZ de la subdivisión.
           Lo que marcas se guarda solo: puedes dejarlo y seguir otro día.</p>
       </div>
@@ -484,8 +514,12 @@
         <button class="boton boton--grande" data-accion="kmz-crear" type="button">Crear el KMZ</button>
         <div id="kmz-listo" class="kmz-listo" role="status" hidden>
           <p id="kmz-listo-texto"></p>
-          <p class="nota">Ahora sube las panorámicas del dron desde el master y construye.</p>
-          <a id="kmz-al-master" class="boton" href="#/planos">Ir al master</a>
+          <p class="nota">Descárgalo para Google Earth o tu topógrafo, o úsalo en un master para
+            construir el visor.</p>
+          <div class="fila fila--envuelve">
+            <a id="kmz-descargar" class="boton" href="#/kmz" download>Descargar</a>
+            <button class="boton boton--contorno" data-accion="kmz-usar" type="button">Usar en un master</button>
+          </div>
         </div>
       </div>
 
@@ -652,10 +686,44 @@
   </div>
 </dialog>
 
-<!-- Crea tu KMZ: ya hay un KMZ en el master -->
+<!-- Mis KMZ: el nombre de uno nuevo, o cambiarlo -->
+<dialog id="kmz-nombre" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2 id="kmz-nombre-titulo">Nuevo KMZ</h2>
+  <p class="ayuda" id="kmz-nombre-ayuda"></p>
+  <form id="kmz-nombre-form" novalidate>
+    <label class="campo">
+      <span>Nombre</span>
+      <input id="kmz-nombre-valor" type="text" maxlength="160" placeholder="Praderas de Cauquenes" autocomplete="off">
+    </label>
+    <div class="modal__pie">
+      <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
+      <button id="kmz-nombre-listo" class="boton" type="submit">Crear y seguir</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Mis KMZ: usar un KMZ en un master (desde el KMZ o desde el master) -->
+<dialog id="kmz-usar" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2 id="kmz-usar-titulo">Usar en un master</h2>
+  <p class="ayuda" id="kmz-usar-texto"></p>
+  <label class="campo" id="kmz-usar-campo">
+    <span id="kmz-usar-rotulo">Master</span>
+    <select id="kmz-usar-opciones"></select>
+  </label>
+  <p class="ayuda" id="kmz-usar-vacio" hidden>Todavía no tienes un KMZ terminado. Créalo desde el
+    plano aprobado en <a class="enlace" href="#/kmz">Mis KMZ</a>.</p>
+  <div class="modal__pie">
+    <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
+    <button id="kmz-usar-listo" class="boton" type="button">Usar este KMZ</button>
+  </div>
+</dialog>
+
+<!-- Mis KMZ: el master elegido ya tiene un KMZ -->
 <dialog id="kmz-reemplazo" class="modal">
   <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
-  <h2>Ya hay un KMZ en este master</h2>
+  <h2 id="kmz-reemplazo-master">Ya hay un KMZ en este master</h2>
   <ul id="kmz-reemplazo-lista" class="kmz-reemplazo"></ul>
   <p class="ayuda">Si lo reemplazas, el nuevo queda como subdivision.kmz y el anterior se
     guarda con la terminación .anterior: no se borra.</p>

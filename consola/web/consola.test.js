@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 
 import { dinero, iniciales, ruta } from './js/comun.js';
 import { avance } from './js/vuelo.js';
+import { cuantosLotes, descargaDe, pasoEnPalabras, terminados, textoDeUso } from './js/kmzs.js';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(aqui, 'index.html'), 'utf8');
@@ -86,7 +87,76 @@ test('el hash elige la pantalla', () => {
   assert.deepEqual(ruta('#/planos/praderas-de-cauquenes'),
     { pantalla: 'plano', slug: 'praderas-de-cauquenes' });
   assert.deepEqual(ruta('#/disenos'), { pantalla: 'disenos' });
+  assert.deepEqual(ruta('#/kmz'), { pantalla: 'kmzs' });
+  assert.deepEqual(ruta('#/kmz/los-robles'), { pantalla: 'kmz', slug: 'los-robles' });
   assert.deepEqual(ruta('#/cualquier-cosa'), { pantalla: 'planos' });
+});
+
+test('Nuevo master puede llegar con un KMZ de Mis KMZ ya elegido', () => {
+  assert.deepEqual(ruta('#/planos/nuevo?kmz=los-robles'), { pantalla: 'nuevo', kmz: 'los-robles' });
+  assert.deepEqual(ruta('#/planos/nuevo?kmz='), { pantalla: 'nuevo' });
+  assert.deepEqual(ruta('#/planos/nuevo?otra=1'), { pantalla: 'nuevo' });
+});
+
+test('la navegación tiene la pestaña Mis KMZ, entre Mis planos y Mis diseños', () => {
+  const pestanas = [...html.matchAll(/<a href="#\/(\w+)" data-seccion="(\w+)">/g)].map((c) => c[2]);
+  assert.deepEqual(pestanas, ['planos', 'kmz', 'disenos']);
+});
+
+test('Nuevo KMZ va a la derecha de Nuevo master en Mis planos', () => {
+  const planos = html.slice(html.indexOf('id="pantalla-planos"'), html.indexOf('id="planos"'));
+  assert.ok(planos.indexOf('Nuevo master') < planos.indexOf('id="planos-nuevo-kmz"'));
+});
+
+test('ya no queda el flujo del KMZ dentro del master', () => {
+  for (const viejo of ['plano-kmz', 'nuevo-desde-plano', 'nuevo-plano-nota', 'kmz-al-master', '/plano/']) {
+    assert.ok(!html.includes(viejo), `index.html todavía tiene ${viejo}`);
+  }
+  for (const viejo of ['}/plano/', 'proyecto.plano', '/kmz`;', 'desdePlano', 'alCrearDesdePlano']) {
+    assert.ok(!guion.includes(viejo), `el guion todavía tiene ${viejo}`);
+  }
+});
+
+// --- Mis KMZ ----------------------------------------------------------------------
+
+test('el paso de un KMZ se dice en palabras', () => {
+  assert.equal(pasoEnPalabras({ paso: 'subir' }), 'Falta subir el plano');
+  assert.equal(pasoEnPalabras({ paso: 'marcar' }), 'Falta marcar el dibujo');
+  assert.equal(pasoEnPalabras({ paso: 'digitalizar' }), 'Falta digitalizar');
+  assert.equal(pasoEnPalabras({ paso: 'ubicar' }), 'Falta ubicarlo en el mapa');
+  assert.equal(pasoEnPalabras({ paso: 'crear' }), 'Falta crear el KMZ');
+  assert.equal(pasoEnPalabras({ paso: 'listo' }), 'KMZ creado');
+  // Digitalizando gana sobre el paso; algo raro cae en el primero.
+  assert.equal(pasoEnPalabras({ paso: 'digitalizar', trabajo: { id: 'x' } }), 'Digitalizando…');
+  assert.equal(pasoEnPalabras({ paso: 'otro' }), 'Falta subir el plano');
+  assert.equal(pasoEnPalabras(null), 'Falta subir el plano');
+});
+
+test('para usar en un master se ofrecen solo los KMZ terminados', () => {
+  const lista = [
+    { slug: 'a', terminado: true, paso: 'listo' },
+    { slug: 'b', terminado: false, paso: 'ubicar' },
+    // Subió otro PDF: el paso volvió atrás, pero el KMZ de antes sigue sirviendo.
+    { slug: 'c', terminado: true, paso: 'marcar' },
+  ];
+  assert.deepEqual(terminados(lista).map((k) => k.slug), ['a', 'c']);
+  assert.deepEqual(terminados([]), []);
+  assert.deepEqual(terminados(undefined), []);
+});
+
+test('los lotes van en singular o plural, y nada si no se digitalizó', () => {
+  assert.equal(cuantosLotes(1), '1 lote');
+  assert.equal(cuantosLotes(12), '12 lotes');
+  assert.equal(cuantosLotes(0), '0 lotes');
+  assert.equal(cuantosLotes(null), null);
+});
+
+test('al usar un KMZ se dice en qué master quedó y qué pasó con el anterior', () => {
+  assert.equal(textoDeUso({ lotes: 12, anteriores: [] }, 'Los Robles'),
+    'Listo: Los Robles ya tiene el KMZ (12 lotes). Ahora sube las panorámicas si faltan y construye.');
+  assert.match(textoDeUso({ lotes: 1, anteriores: ['subdivision.kmz.anterior'] }, 'X'),
+    /\(1 lote\)\. El anterior quedó como subdivision\.kmz\.anterior\./);
+  assert.equal(descargaDe('los robles'), '/api/kmz/los%20robles/descargar');
 });
 
 test('las iniciales del avatar salen del correo', () => {

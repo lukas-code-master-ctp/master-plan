@@ -1,6 +1,6 @@
 """La base de la consola: quién es cliente, quién entra y qué loteo es de quién.
 
-Son nueve tablas y un puñado de consultas, así que se usa SQLAlchemy Core y no el
+Son diez tablas y un puñado de consultas, así que se usa SQLAlchemy Core y no el
 ORM: no hace falta identidad de objetos ni carga perezosa, y el SQL queda a la vista.
 Corre igual sobre SQLite (este computador y las pruebas) y sobre Postgres (el
 servidor), que es lo único que se le pide.
@@ -159,6 +159,19 @@ proyectos = Table(
     UniqueConstraint("cliente_id", "nombre", name="un_nombre_por_cliente"),
 )
 
+# Mis KMZ: el KMZ que una loteadora arma desde el plano aprobado, aparte de cualquier
+# master. Sus archivos viven en `kmz/<slug>/`; si está terminado lo dice el disco.
+kmzs = Table(
+    "kmzs", metadatos,
+    Column("id", Integer, primary_key=True),
+    Column("cliente_id", Integer, ForeignKey("clientes.id"), nullable=False, index=True),
+    # Único en todo el sistema: es el nombre de su carpeta.
+    Column("slug", String(80), nullable=False, unique=True),
+    Column("nombre", String(160), nullable=False),
+    Column("creado_en", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("cliente_id", "nombre", name="un_kmz_por_nombre"),
+)
+
 # La clave de API que la loteadora creó en Cierra, cifrada: con ella se leen sus
 # parcelas. Una por loteadora; `pista` son los últimos caracteres, para mostrarla.
 cierra_claves = Table(
@@ -204,6 +217,10 @@ class ProyectoYaExiste(Exception):
 
 class DisenoYaExiste(Exception):
     """Este cliente ya tiene un diseño con ese nombre."""
+
+
+class KmzYaExiste(Exception):
+    """Este cliente ya tiene un KMZ con ese nombre."""
 
 
 class NoEncontrado(Exception):
@@ -277,6 +294,15 @@ class Diseno:
     logo: str | None
     texto_contacto: str | None
     texto_pago: str | None
+
+
+@dataclass(frozen=True)
+class KmzGuardado:
+    id: int
+    cliente_id: int
+    slug: str
+    nombre: str
+    creado_en: datetime
 
 
 class Base:
@@ -531,6 +557,10 @@ class Base:
         """
         ahora = _ahora()
         with self.motor.begin() as con:
+            # Un slug adoptado (vincular) nunca lleva ":": "kmz:<slug>" es la clave de
+            # los trabajos de Mis KMZ, y un master así se colaría en su avance.
+            if slug and (":" in slug or "/" in slug):
+                raise ValueError(f"el slug {slug!r} no sirve para un loteo")
             elegido = slug or _slug_libre(con, nombre)
             try:
                 con.execute(insert(proyectos).values(
@@ -627,6 +657,53 @@ class Base:
                         .values(diseno_id=None))
             con.execute(delete(disenos).where(disenos.c.id == diseno_id))
 
+    # --- mis KMZ -----------------------------------------------------------------------
+
+    def kmzs(self, cliente_id: int | None = None) -> list[KmzGuardado]:
+        """Del más nuevo al más viejo. Sin `cliente_id`, los de todas: solo para plataforma."""
+        consulta = select(kmzs).order_by(kmzs.c.creado_en.desc(), kmzs.c.id.desc())
+        if cliente_id is not None:
+            consulta = consulta.where(kmzs.c.cliente_id == cliente_id)
+        with self.motor.connect() as con:
+            return [_kmz(f) for f in con.execute(consulta)]
+
+    def kmz(self, slug: str, cliente_id: int | None = None) -> KmzGuardado:
+        consulta = select(kmzs).where(kmzs.c.slug == slug)
+        if cliente_id is not None:
+            consulta = consulta.where(kmzs.c.cliente_id == cliente_id)
+        with self.motor.connect() as con:
+            fila = con.execute(consulta).first()
+        if fila is None:
+            raise NoEncontrado(f"no existe el KMZ {slug!r}")
+        return _kmz(fila)
+
+    def crear_kmz(self, cliente_id: int, nombre: str) -> KmzGuardado:
+        """El slug sale del nombre, con sufijo si ya está tomado (por cualquiera)."""
+        with self.motor.begin() as con:
+            if con.execute(select(kmzs.c.id).where(kmzs.c.cliente_id == cliente_id,
+                                                   kmzs.c.nombre == nombre.strip())).first():
+                raise KmzYaExiste(f"ya tienes un KMZ llamado {nombre.strip()!r}")
+            elegido = _slug_libre(con, nombre, kmzs.c.slug, defecto="kmz", largo=60)
+            try:
+                con.execute(insert(kmzs).values(cliente_id=cliente_id, slug=elegido,
+                                                nombre=nombre.strip(), creado_en=_ahora()))
+            except IntegrityError as error:
+                raise KmzYaExiste(f"ya tienes un KMZ llamado {nombre.strip()!r}") from error
+        return self.kmz(elegido)
+
+    def renombrar_kmz(self, slug: str, nombre: str) -> KmzGuardado:
+        """El slug no cambia: es su carpeta."""
+        with self.motor.begin() as con:
+            try:
+                con.execute(update(kmzs).where(kmzs.c.slug == slug).values(nombre=nombre.strip()))
+            except IntegrityError as error:
+                raise KmzYaExiste(f"ya tienes un KMZ llamado {nombre.strip()!r}") from error
+        return self.kmz(slug)
+
+    def borrar_kmz(self, slug: str) -> None:
+        with self.motor.begin() as con:
+            con.execute(delete(kmzs).where(kmzs.c.slug == slug))
+
     def olvidar_proyecto(self, slug: str) -> None:
         with self.motor.begin() as con:
             ids = select(proyectos.c.id).where(proyectos.c.slug == slug).scalar_subquery()
@@ -703,17 +780,22 @@ def _clave_provisional() -> str:
     return "".join(secrets.choice(ALFABETO_CLAVE) for _ in range(LARGO_CLAVE))
 
 
-def _slug(nombre: str) -> str:
+def _slug(nombre: str, defecto: str = "cliente") -> str:
     plano = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()
-    return re.sub(r"[^a-z0-9]+", "-", plano.lower()).strip("-") or "cliente"
+    return re.sub(r"[^a-z0-9]+", "-", plano.lower()).strip("-") or defecto
 
 
-def _slug_libre(con, nombre: str) -> str:
+def _slug_libre(con, nombre: str, columna=None, defecto: str = "cliente",
+                largo: int | None = None) -> str:
     """El slug sugerido, o el siguiente con sufijo. Dos clientes pueden llamar igual
-    a su loteo; el que manda es quien llega primero."""
-    sugerido = _slug(nombre)
+    a su loteo; el que manda es quien llega primero. `columna` es de qué tabla
+    (la de los loteos si no se dice); `largo`, cuánto se deja del nombre."""
+    columna = proyectos.c.slug if columna is None else columna
+    sugerido = _slug(nombre, defecto)
+    if largo is not None:
+        sugerido = sugerido[:largo].strip("-") or defecto
     tomados = {f[0] for f in con.execute(
-        select(proyectos.c.slug).where(proyectos.c.slug.like(f"{sugerido}%")))}
+        select(columna).where(columna.like(f"{sugerido}%")))}
     if sugerido not in tomados:
         return sugerido
     siguiente = 2
@@ -744,6 +826,11 @@ def _migrar(motor) -> None:
         with motor.begin() as con:
             con.execute(text("ALTER TABLE usuarios ADD COLUMN email_verificado BOOLEAN "
                              "NOT NULL DEFAULT TRUE"))
+
+
+def _kmz(fila) -> KmzGuardado:
+    return KmzGuardado(id=fila.id, cliente_id=fila.cliente_id, slug=fila.slug,
+                       nombre=fila.nombre, creado_en=_utc(fila.creado_en))
 
 
 def _diseno(fila) -> Diseno:

@@ -12,6 +12,7 @@ from consola.acceso import Acceso
 from consola.app import crear_app
 from consola.datos import Base
 from consola.disenos import Disenos
+from consola.kmzs import RegistroKmz
 from consola.proyectos import Limites, Registro
 from consola.trabajos import Trabajos
 
@@ -44,10 +45,11 @@ class ComandosDePrueba:
         self.pedidos.append(("calce", proyecto.slug, None))
         return self._guion(f"calce de {proyecto.slug}")
 
-    def digitalizar_plano(self, proyecto):
-        self.pedidos.append(("digitalizar-plano", proyecto.slug, None))
-        # Con tildes y símbolos: el avance del plano los trae.
-        return self._guion(f"digitalizando {proyecto.slug}: 1.200×900 px, rotación 90°")
+    def digitalizar_carpeta(self, carpeta):
+        """Un KMZ de Mis KMZ: la carpeta se llama como su slug. Con tildes y símbolos:
+        el avance del plano los trae."""
+        self.pedidos.append(("digitalizar-kmz", carpeta.name, None))
+        return self._guion(f"digitalizando {carpeta.name}: 1.200×900 px, rotación 90°")
 
     def publicar(self, proyecto, vercel_proyecto, crear=False):
         self.pedidos.append(("publicar", proyecto.slug, vercel_proyecto, crear))
@@ -68,7 +70,8 @@ def montar(tmp_path, local=True, crm_por_defecto=None, limites=None):
     comandos = ComandosDePrueba()
     app = crear_app(registro=registro, trabajos=Trabajos(), comandos=comandos,
                     acceso=Acceso(base=base, secreto="un-secreto", local=local), base=base,
-                    disenos=Disenos(base=base, carpeta=tmp_path / "disenos"))
+                    disenos=Disenos(base=base, carpeta=tmp_path / "disenos"),
+                    kmzs=RegistroKmz(base=base, carpeta=tmp_path / "kmz", limites=registro.limites))
     return app, base, registro, comandos
 
 
@@ -473,15 +476,23 @@ RUTAS = {
     ("POST", "/api/proyectos/{slug}/construir"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/publicar"): AJENO_404,
     ("GET", "/api/trabajos/{identificador}"): AJENO_404,
-    ("POST", "/api/proyectos/{slug}/plano"): AJENO_404,
-    ("GET", "/api/proyectos/{slug}/plano"): AJENO_404,
-    ("GET", "/api/proyectos/{slug}/plano/paginas/{n}"): AJENO_404,
-    ("PUT", "/api/proyectos/{slug}/plano/entradas"): AJENO_404,
-    ("POST", "/api/proyectos/{slug}/plano/digitalizar"): AJENO_404,
-    ("POST", "/api/proyectos/{slug}/plano/georreferenciar"): AJENO_404,
-    ("GET", "/api/proyectos/{slug}/plano/lotes"): AJENO_404,
-    ("POST", "/api/proyectos/{slug}/plano/kmz"): AJENO_404,
+    # Master ajeno → 404 (abajo); KMZ ajeno → 404 (test_kmz.py).
+    ("POST", "/api/proyectos/{slug}/kmz"): AJENO_404,
     ("GET", "/calce/{slug}/{archivo}"): AJENO_404,
+    # Mis KMZ: lo ajeno se prueba en test_kmz.py (test_el_kmz_de_otra_contesta_404...).
+    ("GET", "/api/kmz"): SOLO_SUYO,
+    ("POST", "/api/kmz"): SOLO_SUYO,
+    ("GET", "/api/kmz/{slug}"): AJENO_404,
+    ("PATCH", "/api/kmz/{slug}"): AJENO_404,
+    ("DELETE", "/api/kmz/{slug}"): AJENO_404,
+    ("POST", "/api/kmz/{slug}/plano"): AJENO_404,
+    ("GET", "/api/kmz/{slug}/paginas/{n}"): AJENO_404,
+    ("PUT", "/api/kmz/{slug}/entradas"): AJENO_404,
+    ("POST", "/api/kmz/{slug}/digitalizar"): AJENO_404,
+    ("POST", "/api/kmz/{slug}/georreferenciar"): AJENO_404,
+    ("GET", "/api/kmz/{slug}/lotes"): AJENO_404,
+    ("POST", "/api/kmz/{slug}/crear"): AJENO_404,
+    ("GET", "/api/kmz/{slug}/descargar"): AJENO_404,
     ("POST", "/api/proyectos/vincular"): SOLO_CTP,
     ("GET", "/api/plataforma/clientes"): SOLO_CTP,
     ("POST", "/api/plataforma/clientes"): SOLO_CTP,
@@ -574,18 +585,9 @@ def de_ana(ctp, ana, registro, nombre="De Ana"):
     lambda web, slug: web.get(f"/api/proyectos/{slug}/plantilla"),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/archivos",
                                files=[("archivos", ("x.kmz", b"kmz", "application/octet-stream"))]),
-    lambda web, slug: web.post(f"/api/proyectos/{slug}/plano",
-                               files={"archivo": ("plano.pdf", b"%PDF-1.7 ", "application/pdf")}),
-    lambda web, slug: web.get(f"/api/proyectos/{slug}/plano"),
-    lambda web, slug: web.get(f"/api/proyectos/{slug}/plano/paginas/1"),
-    lambda web, slug: web.put(f"/api/proyectos/{slug}/plano/entradas", json={"pagina": 1}),
-    lambda web, slug: web.post(f"/api/proyectos/{slug}/plano/digitalizar"),
-    lambda web, slug: web.post(f"/api/proyectos/{slug}/plano/georreferenciar"),
-    lambda web, slug: web.get(f"/api/proyectos/{slug}/plano/lotes"),
-    lambda web, slug: web.post(f"/api/proyectos/{slug}/plano/kmz", json={"confirmar_reemplazo": True}),
+    lambda web, slug: web.post(f"/api/proyectos/{slug}/kmz", json={"kmz": "x", "confirmar_reemplazo": True}),
 ], ids=["ajustar", "olvidar", "construir", "publicar", "calce", "portada", "plantilla", "subir",
-        "plano-subir", "plano-ver", "plano-pagina", "plano-entradas", "plano-digitalizar",
-        "plano-georreferenciar", "plano-lotes", "plano-kmz"])
+        "usar-kmz"])
 def test_el_loteo_de_otra_contesta_404_en_todas_las_rutas(ana_y_luis, pedir):
     ctp, ana, luis, registro, comandos = ana_y_luis
     slug = de_ana(ctp, ana, registro)

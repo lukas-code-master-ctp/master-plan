@@ -290,6 +290,15 @@ export function pasosHabilitados(e) {
   };
 }
 
+/**
+ * "Seguir: numerar" desde el paso 3: solo con una digitalización vigente (hecha con
+ * lo último que se marcó) y sin otra corriendo. Sin digitalizar, no hay qué numerar.
+ */
+export function puedeSeguirANumerar(e) {
+  const trabajando = Boolean(e?.trabajo && !e.trabajo.terminado);
+  return Boolean(e?.digitalizado?.vigente) && !trabajando;
+}
+
 /** El paso donde conviene abrir la pantalla, según `estado.paso` del servidor. */
 export function pasoSugerido(e) {
   switch (e?.paso) {

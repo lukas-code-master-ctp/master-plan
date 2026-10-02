@@ -1,5 +1,7 @@
 /**
- * Crea tu KMZ (`#/planos/<slug>/kmz`): del plano aprobado al KMZ de la subdivisión.
+ * Un KMZ de Mis KMZ (`#/kmz/<slug>`): del plano aprobado al KMZ de la subdivisión.
+ * Todo va contra `/api/kmz/<slug>/...`; el KMZ no es de ningún master. Al crearlo
+ * se descarga o se usa en un master (ver `kmzs.js`).
  *
  * Siete pasos, como el spec: subir el PDF, marcar el dibujo, digitalizar, numerar,
  * ubicar en el mapa, revisar y crear el KMZ. Lo que marca la loteadora vive en
@@ -7,13 +9,14 @@
  * guarda solo, un momento después de cada cambio. El servidor dice qué quedó
  * atrasado (`vigente`) y qué paso sigue (`paso`).
  */
-import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
+import { $, $$, avisar, estado, json, pedir } from './comun.js';
 import {
   dudosos, duplicados, empujar, girarEntradas, loteEn, nombreDelSistema, ordenarEsquinas, PASOS,
-  pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puntoDeRotulo, puntoEnPoligono,
+  pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono,
   resumenRevision, siguienteNombre,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
+import { abrirNombre, abrirUsarKmz, cuantosLotes, descargaDe } from './kmzs.js';
 import { cargarLeaflet, COLORES, MapaKmz } from './mapa_kmz.js';
 import { oyentes, seguir } from './plano.js';
 import { soltadero } from './subida.js';
@@ -25,7 +28,12 @@ const VACIAS = () => ({
 
 let refrescar = async () => {};
 let slug = null;
-let plano = null;             // GET /plano
+let plano = null;             // GET /api/kmz/<slug>: el estado del plano, con nombre y trabajo
+
+/** Las rutas del KMZ en el servidor. */
+const api = (de = slug) => `/api/kmz/${encodeURIComponent(de)}`;
+/** La clave de sus trabajos, la misma del servidor: no choca con el slug de un master. */
+const clave = (de = slug) => `kmz:${de}`;
 let entradas = VACIAS();
 let rasgos = [];              // lotes en px de página
 let rasgosGeo = null;         // lotes en lon/lat, si está ubicado
@@ -46,7 +54,7 @@ let sucio = false;
 let temporizador = 0;
 let enVuelo = null;
 let ubicarLuego = 0;
-let vaciado = Promise.resolve();  // el guardado pendiente al dejar un master: se espera antes de releer
+let vaciado = Promise.resolve();  // el guardado pendiente al dejar un KMZ: se espera antes de releer
 
 function cambiar(nuevas) {
   entradas = nuevas;
@@ -68,10 +76,10 @@ async function guardar() {
   $('#kmz-guardado').textContent = 'Guardando…';
   enVuelo = (async () => {
     try {
-      const normalizadas = await pedir(`/api/proyectos/${mias}/plano/entradas`, json(entradas, 'PUT'));
+      const normalizadas = await pedir(`${api(mias)}/entradas`, json(entradas, 'PUT'));
       if (mias !== slug) return;
       if (!sucio) entradas = normalizadas;
-      plano = await pedir(`/api/proyectos/${mias}/plano`);
+      plano = await pedir(api(mias));
       $('#kmz-guardado').textContent = 'Guardado';
     } catch (error) {
       $('#kmz-guardado').textContent = 'No se guardó';
@@ -130,13 +138,6 @@ export function prepararKmz(opciones) {
     if (e.key === 'Enter') { e.preventDefault(); irA().catch((error) => avisar(error.message)); }
   });
 
-  $('#kmz-reemplazar').addEventListener('click', async () => {
-    try {
-      await crearKmz(true);
-      $('#kmz-reemplazo').close();
-    } catch (error) { avisar(error.message); }
-  });
-
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || pantalla.hidden || document.querySelector('dialog[open]')) return;
     if (pendiente) { cancelarAncla(); e.preventDefault(); }
@@ -151,17 +152,13 @@ export function prepararKmz(opciones) {
 
 /** Llega a la pantalla (`nuevo`) o se repinta tras un refresco de la lista. */
 export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
-  const proyecto = estado.proyectos.find((p) => p.slug === nuevoSlug);
-  $('#kmz-volver').href = `#/planos/${encodeURIComponent(nuevoSlug)}`;
-  $('#kmz-volver').textContent = `← ${proyecto?.nombre ?? 'Volver al master'}`;
-  $('#kmz-al-master').href = `#/planos/${encodeURIComponent(nuevoSlug)}`;
-  document.title = `Crea tu KMZ${proyecto ? ` · ${proyecto.nombre}` : ''} — Tu Masterplan`;
+  pintarCabecera(nuevoSlug);
   if (!nuevo && nuevoSlug === slug) return;
   if (sucio && slug) {
     // Lo marcado hace un instante (aún en la espera del guardado) no se pierde al volver
-    // a entrar ni al pasar a otro master: se guarda en el suyo antes de limpiar.
+    // a entrar ni al pasar a otro KMZ: se guarda en el suyo antes de limpiar.
     clearTimeout(temporizador);
-    vaciado = pedir(`/api/proyectos/${slug}/plano/entradas`, json(entradas, 'PUT'))
+    vaciado = pedir(`${api(slug)}/entradas`, json(entradas, 'PUT'))
       .catch((error) => avisar(error.message));
   }
   slug = nuevoSlug;
@@ -178,15 +175,29 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
   $('#kmz-registro').replaceChildren();
   $('#kmz-registro').hidden = true;
   $('#kmz-listo').hidden = true;
-  cargarTodo(true).catch((error) => avisar(error.message));
+  $('#kmz-listo-texto').textContent = '';
+  cargarTodo(true).catch((error) => {
+    // Borrado en otra pestaña, o de otra loteadora: el servidor dice 404.
+    if (nuevoSlug === slug && !plano) $('#kmz-titulo').textContent = 'Este KMZ no existe';
+    avisar(error.message);
+  });
+}
+
+/** El nombre del KMZ: el del servidor si ya llegó, si no el de la lista. */
+function pintarCabecera(de = slug) {
+  const nombre = (de === slug ? plano?.nombre : null)
+    ?? estado.kmzs.find((k) => k.slug === de)?.nombre;
+  $('#kmz-titulo').textContent = nombre ?? 'Cargando…';
+  document.title = `${nombre ?? 'KMZ'} — Mis KMZ — Tu Masterplan`;
 }
 
 async function cargarTodo(alLlegar = false) {
   const mio = slug;
   await vaciado;
-  const nuevo = await pedir(`/api/proyectos/${mio}/plano`);
+  const nuevo = await pedir(api(mio));
   if (mio !== slug) return;
   plano = nuevo;
+  pintarCabecera();
   if (!sucio) entradas = { ...VACIAS(), ...(plano.entradas ?? {}) };
   $('#kmz-es-foto').checked = Boolean(entradas.esquinas || entradas.marco_mm);
   await cargarLotes();
@@ -195,7 +206,7 @@ async function cargarTodo(alLlegar = false) {
     if (plano.trabajo && !plano.trabajo.terminado) {
       paso = 'digitalizar';
       escuchar();
-      if (!estado.sondeos.has(slug)) seguir(slug, plano.trabajo.id);
+      if (!estado.sondeos.has(clave())) seguir(clave(), plano.trabajo.id);
     }
   }
   mostrarPagina().catch((error) => avisar(error.message));
@@ -207,12 +218,12 @@ async function cargarLotes() {
   rasgos = [];
   rasgosGeo = null;
   if (plano?.digitalizado) {
-    const px = await pedir(`/api/proyectos/${mio}/plano/lotes?en=px`);
+    const px = await pedir(`${api(mio)}/lotes?en=px`);
     rasgos = px.features;
     for (const r of rasgos) r.rotulo = puntoDeRotulo(r);
   }
   if (plano?.georreferencia) {
-    rasgosGeo = await pedir(`/api/proyectos/${mio}/plano/lotes?en=lonlat`);
+    rasgosGeo = await pedir(`${api(mio)}/lotes?en=lonlat`);
   }
   lienzo?.redibujar();
 }
@@ -221,7 +232,7 @@ async function cargarLotes() {
 async function mostrarPagina() {
   const hoja = paginaActual();
   if (!hoja) return;
-  await lienzo.cargar(`/api/proyectos/${slug}/plano/paginas/${hoja.n}?v=${version}`,
+  await lienzo.cargar(`${api()}/paginas/${hoja.n}?v=${version}`,
     hoja.ancho, hoja.alto, entradas.rotacion ?? 0);
 }
 
@@ -277,7 +288,9 @@ async function manejar(nodo) {
     return pintarPanel();
   }
   if (accion === 'kmz-georreferenciar') return ubicar();
-  if (accion === 'kmz-crear') return crearKmz(false);
+  if (accion === 'kmz-crear') return crearKmz();
+  if (accion === 'kmz-renombrar') return renombrar();
+  if (accion === 'kmz-usar') return usar();
   return undefined;
 }
 
@@ -306,7 +319,7 @@ function subirPdf(archivo) {
   const mio = slug;
   return new Promise((listo, fallo) => {
     const peticion = new XMLHttpRequest();
-    peticion.open('POST', `/api/proyectos/${mio}/plano`);
+    peticion.open('POST', `${api(mio)}/plano`);
     peticion.upload.addEventListener('progress', (e) => {
       if (!e.lengthComputable) return;
       $('#kmz-subiendo i').style.width = `${Math.round((e.loaded / e.total) * 100)}%`;
@@ -401,7 +414,7 @@ const round = (v) => Math.round(v * 10) / 10;
 
 function escuchar() {
   const mio = slug;
-  oyentes.set(mio, (trabajo) => {
+  oyentes.set(clave(mio), (trabajo) => {
     if (mio !== slug) return;
     pintarRegistro();
     if (trabajo.terminado) terminoDigitalizar(trabajo).catch((error) => avisar(error.message));
@@ -412,14 +425,14 @@ async function digitalizar() {
   if (!entradas.rectangulo
     && !confirm('No encerraste el dibujo: se va a digitalizar la página entera, con cuadros y cajetín. ¿Seguir?')) return;
   await guardar();
-  estado.registros.set(slug, []);
+  estado.registros.set(clave(), []);
   pintarRegistro();
   escuchar();
-  const { id } = await pedir(`/api/proyectos/${slug}/plano/digitalizar`, json({}));
+  const { id } = await pedir(`${api()}/digitalizar`, json({}));
   paso = 'digitalizar';
   plano = { ...plano, trabajo: { id, terminado: false } };
   pintarPaso();
-  seguir(slug, id);
+  seguir(clave(), id);
   refrescar().catch(() => {});
 }
 
@@ -434,7 +447,7 @@ async function terminoDigitalizar(trabajo) {
 
 function pintarRegistro() {
   const caja = $('#kmz-registro');
-  const lineas = estado.registros.get(slug) ?? [];
+  const lineas = estado.registros.get(clave()) ?? [];
   caja.hidden = !lineas.length;
   caja.replaceChildren(...lineas.map((texto) => {
     const span = document.createElement('span');
@@ -565,13 +578,13 @@ async function ubicar() {
   if (entradas.anclas.length < 2 && !entradas.cuadricula) return;
   $('#kmz-ancla-estado').textContent = 'Ubicando…';
   try {
-    plano.georreferencia = await pedir(`/api/proyectos/${slug}/plano/georreferenciar`, json({}));
+    plano.georreferencia = await pedir(`${api()}/georreferenciar`, json({}));
   } catch (error) {
     $('#kmz-ancla-estado').textContent = '';
     throw error;
   }
-  plano = await pedir(`/api/proyectos/${slug}/plano`);
-  rasgosGeo = await pedir(`/api/proyectos/${slug}/plano/lotes?en=lonlat`);
+  plano = await pedir(api());
+  rasgosGeo = await pedir(`${api()}/lotes?en=lonlat`);
   pintar();
   pintarMapa();
 }
@@ -589,26 +602,36 @@ async function irA() {
 
 // --- 7. crear ----------------------------------------------------------------------------
 
-async function crearKmz(confirmado) {
-  const respuesta = await fetch(`/api/proyectos/${slug}/plano/kmz`, json({ confirmar_reemplazo: confirmado }));
-  const cuerpo = await respuesta.json().catch(() => ({}));
-  if (respuesta.status === 409 && cuerpo.existentes) {
-    const lista = $('#kmz-reemplazo-lista');
-    lista.replaceChildren(...cuerpo.existentes.map((nombre) => {
-      const li = document.createElement('li');
-      li.textContent = nombre;
-      return li;
-    }));
-    abrirDialogo($('#kmz-reemplazo'));
-    return;
-  }
-  if (!respuesta.ok) throw new Error(cuerpo.detail ?? `Error ${respuesta.status}`);
-  plano = await pedir(`/api/proyectos/${slug}/plano`);
-  $('#kmz-listo-texto').textContent = `Listo: ${cuerpo.kmz} con ${cuerpo.lotes} lotes quedó en las fuentes del master.`
-    + (cuerpo.anteriores?.length ? ` El anterior quedó como ${cuerpo.anteriores.join(', ')}.` : '');
-  $('#kmz-listo').hidden = false;
+async function crearKmz() {
+  await guardar();
+  const mio = slug;
+  const creado = await pedir(`${api(mio)}/crear`, json({}));
+  if (mio !== slug) return;
+  plano = await pedir(api(mio));
+  const lotes = cuantosLotes(creado.lotes);
+  $('#kmz-listo-texto').textContent = `Listo: el KMZ "${plano.nombre}" quedó creado${lotes ? ` con ${lotes}` : ''}.`;
   await refrescar();
   pintar();
+}
+
+const terminado = () => Boolean(plano?.kmz?.length);
+
+/** Cambiar el nombre: el mismo diálogo de Nuevo KMZ. */
+function renombrar() {
+  if (!plano) return;
+  abrirNombre({ slug, nombre: plano.nombre }, (listo) => {
+    if (plano && listo.slug === slug) plano = { ...plano, nombre: listo.nombre };
+    // El texto de "listo" lleva el nombre: se rehace con el nuevo.
+    $('#kmz-listo-texto').textContent = '';
+    pintarCabecera();
+    pintarCrear();
+  });
+}
+
+/** Usar en un master: uno existente o uno nuevo con este KMZ. */
+function usar() {
+  if (!terminado()) return;
+  abrirUsarKmz({ slug, nombre: plano.nombre });
 }
 
 // --- pintar --------------------------------------------------------------------------------
@@ -677,7 +700,7 @@ function pintarSubir() {
     boton.dataset.pagina = hoja.n;
     boton.setAttribute('aria-pressed', String(hoja.n === entradas.pagina));
     const imagen = document.createElement('img');
-    imagen.src = `/api/proyectos/${slug}/plano/paginas/${hoja.n}?mini=1&v=${version}`;
+    imagen.src = `${api()}/paginas/${hoja.n}?mini=1&v=${version}`;
     imagen.alt = '';
     imagen.loading = 'lazy';
     const texto = document.createElement('span');
@@ -744,6 +767,8 @@ function pintarDigitalizar() {
   boton.disabled = trabajando || !pasosHabilitados(plano).digitalizar;
   boton.textContent = trabajando ? 'Digitalizando…' : d ? 'Digitalizar de nuevo' : 'Digitalizar';
   pintarRegistro();
+  // Antes del `return` de abajo: sin digitalizar también hay que apagarlo.
+  $('#kmz-panel-digitalizar [data-accion="kmz-siguiente"]').disabled = !puedeSeguirANumerar(plano);
   const cifras = $('#kmz-cifras');
   cifras.hidden = !d;
   if (!d) return;
@@ -765,7 +790,6 @@ function pintarDigitalizar() {
     div.append(dt, dd);
     return div;
   }));
-  $('#kmz-panel-digitalizar [data-accion="kmz-siguiente"]').disabled = !d.vigente || trabajando;
 }
 
 function pintarNumerar() {
@@ -916,15 +940,23 @@ function pintarRevisar() {
 }
 
 function pintarCrear() {
-  const hay = plano.kmz ?? [];
+  if (!plano) return;
+  const hay = terminado();
   $('#kmz-crear-texto').textContent = plano.paso === 'listo'
     ? 'El KMZ ya está creado con lo último que ubicaste.'
-    : hay.length ? `Ya hay un KMZ en el master (${hay.join(', ')}): se te va a pedir confirmar el reemplazo.`
-      : 'Se guarda como subdivision.kmz en las fuentes del master, un polígono por lote.';
-  $('[data-accion="kmz-crear"]').disabled = !pasosHabilitados(plano).crear;
-  if (plano.paso === 'listo') $('#kmz-listo').hidden = false;
-  if (plano.paso === 'listo' && !$('#kmz-listo-texto').textContent) {
-    $('#kmz-listo-texto').textContent = 'Listo: subdivision.kmz quedó en las fuentes del master.';
+    : hay ? 'Ya hay un KMZ creado de antes: crearlo de nuevo lo reemplaza con lo último que ubicaste.'
+      : 'Un polígono por lote, con su número. Después lo descargas o lo usas en un master.';
+  const crear = $('[data-accion="kmz-crear"]');
+  crear.disabled = !pasosHabilitados(plano).crear;
+  crear.textContent = hay ? 'Crear el KMZ de nuevo' : 'Crear el KMZ';
+  crear.className = hay ? 'boton boton--contorno' : 'boton boton--grande';
+  // Descargar y usar sirven mientras haya un KMZ hecho, aunque esté por rehacerse.
+  $('#kmz-listo').hidden = !hay;
+  $('#kmz-descargar').href = descargaDe(slug);
+  if (hay && !$('#kmz-listo-texto').textContent) {
+    $('#kmz-listo-texto').textContent = plano.paso === 'listo'
+      ? `Listo: el KMZ "${plano.nombre}" está creado.`
+      : `El KMZ "${plano.nombre}" que creaste antes sigue disponible.`;
   }
 }
 

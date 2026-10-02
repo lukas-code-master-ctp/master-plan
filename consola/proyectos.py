@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -27,7 +28,6 @@ from pipeline import config
 
 from .acceso import Sesion
 from .datos import Base, NoEncontrado, ProyectoGuardado
-from .plano import PDF, Plano
 from .portada import portada
 
 CARPETA_SUBIDAS = config.SUBIDAS
@@ -73,6 +73,57 @@ class Limites:
 
 class LimiteAlcanzado(Exception):
     """Lo que se pidió pasa un tope de `Limites`. El mensaje es para la persona."""
+
+
+# Donde queda un KMZ que se pone en un master (de Mis KMZ), y el sufijo del que había.
+KMZ = "subdivision.kmz"
+ANTERIOR = ".anterior"
+_PONIENDO_KMZ = threading.Lock()
+
+
+class KmzExistente(Exception):
+    """Ya hay un KMZ en las fuentes y no se confirmó reemplazarlo (409)."""
+
+    def __init__(self, existentes: list[str]):
+        self.existentes = existentes
+        super().__init__(f"ya hay un KMZ ({', '.join(existentes)}): confirma que lo reemplazas;"
+                         f" el anterior queda como {existentes[0]}{ANTERIOR}")
+
+
+def poner_kmz(fuentes: Path, contenido: bytes, confirmar_reemplazo: bool = False) -> list[str]:
+    """Deja `contenido` como `<fuentes>/subdivision.kmz`. Si ya hay un KMZ (cualquiera,
+    los mismos que buscaría construir) pide confirmar, y cada uno queda como
+    `<nombre>.kmz.anterior`: así construir encuentra uno solo. Devuelve los apartados.
+
+    Se escribe aparte y se mueve con `os.replace` al final, sin copystat (`/datos`
+    puede ser gcsfuse): un error no deja el loteo sin KMZ (si falla a mitad, los
+    apartados vuelven a su nombre). Un `.anterior` de un reemplazo previo se pisa:
+    se guarda solo el último KMZ reemplazado, no la historia."""
+    with _PONIENDO_KMZ:
+        existentes = config.kmz_en(fuentes) if fuentes.is_dir() else []
+        if existentes and not confirmar_reemplazo:
+            raise KmzExistente([p.relative_to(fuentes).as_posix() for p in existentes])
+        fuentes.mkdir(parents=True, exist_ok=True)
+        temporal = fuentes / f".{KMZ}.{os.getpid()}.{threading.get_ident()}"
+        movidos: list[tuple[Path, Path]] = []
+        try:
+            temporal.write_bytes(contenido)
+            for viejo in existentes:
+                apartado = viejo.with_name(viejo.name + ANTERIOR)
+                os.replace(viejo, apartado)
+                movidos.append((viejo, apartado))
+            os.replace(temporal, fuentes / KMZ)
+        except BaseException:
+            # Lo apartado vuelve a su lugar: el loteo queda con el KMZ que tenía.
+            for viejo, apartado in reversed(movidos):
+                try:
+                    os.replace(apartado, viejo)
+                except OSError:
+                    pass
+            raise
+        finally:
+            temporal.unlink(missing_ok=True)
+    return [apartado.relative_to(fuentes).as_posix() for _, apartado in movidos]
 
 
 @dataclass(frozen=True)
@@ -376,22 +427,20 @@ class Vista:
             for otro in set(config.INVENTARIOS) - llegados:
                 (carpeta / otro).unlink(missing_ok=True)
         # El KMZ puede venir en esta tanda o de una anterior; lo que no puede es
-        # faltar, porque sin él no hay nada que proyectar. Salvo que se esté
-        # creando desde el plano: ahí llega después, y construir lo sigue pidiendo.
-        if not any(carpeta.rglob("*.kmz")) and not Plano(carpeta).hay():
+        # faltar, porque sin él no hay nada que proyectar.
+        if not any(carpeta.rglob("*.kmz")):
             raise ValueError("falta el KMZ del loteo entre los archivos")
         return self.ver(slug)
 
-    def plano(self, slug: str) -> Plano:
-        """El plano del loteo (Crea tu KMZ), exista o no todavía."""
-        return Plano(self.ver(slug).fuentes)
-
-    def subir_plano(self, slug: str, archivo: Subida) -> list[dict]:
-        """Guarda el PDF del plano y extrae sus páginas. Cuenta para el tope del loteo."""
-        plano = self.plano(slug)
+    def usar_kmz(self, slug: str, origen: Path, confirmar_reemplazo: bool = False) -> list[str]:
+        """Pone un KMZ ya hecho (de Mis KMZ) en las fuentes del loteo: ver `poner_kmz`.
+        Que el KMZ sea de quien pide lo mira la ruta. Cuenta para el tope del loteo
+        (lo apartado sigue en disco: no se descuenta nada)."""
+        proyecto = self.ver(slug)
+        contenido = origen.read_bytes()
         if not self.es_equipo:
-            self._revisar_tamano(plano.fuentes, [(archivo, plano.carpeta / PDF)])
-        return plano.subir_pdf(archivo.contenido)
+            self._revisar_tamano(proyecto.fuentes, [(Subida(ruta=KMZ, contenido=contenido), None)])
+        return poner_kmz(proyecto.fuentes, contenido, confirmar_reemplazo)
 
     def vincular(self, carpeta: Path) -> Proyecto:
         """Registra una carpeta que ya está en el disco, sin copiar nada.

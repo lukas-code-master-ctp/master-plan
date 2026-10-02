@@ -5,19 +5,21 @@
  * construcción. Si se corta a mitad de camino, el loteo ya creado queda en Mis
  * planos para terminar de subir desde su detalle: nada se pierde.
  *
- * Sin KMZ ("créalo desde el plano") solo se crea el loteo y se sigue en Crea tu
- * KMZ; las panorámicas se suben después, desde el master.
+ * El KMZ se sube como archivo o se elige de Mis KMZ (los terminados). Elegido de
+ * Mis KMZ, se pone en el master con `POST /api/proyectos/<slug>/kmz` ANTES de subir
+ * las fotos: la subida exige que el master tenga su KMZ al terminar.
  */
 import { $, avisar, estado, json, pedir } from './comun.js';
 import { opcionesDeDiseno } from './disenos.js';
 import { comoInventario } from './inventario.js';
+import { cuantosLotes, terminados } from './kmzs.js';
 import { desdeEntrada, esFoto, esKmz, esPlanilla, megas, soltadero, subir } from './subida.js';
 
-const eleccion = { kmz: null, fotos: [], inventario: null };
+// `mio`: el slug de un KMZ de Mis KMZ elegido en vez de subir el archivo.
+const eleccion = { kmz: null, mio: '', fotos: [], inventario: null };
 let enCurso = false;
-let desdePlano = false;
 
-export function prepararNuevo({ alCrear, alCrearDesdePlano }) {
+export function prepararNuevo({ alCrear }) {
   const form = $('#nuevo-master');
 
   $('#nuevo-kmz').addEventListener('change', (e) => tomar(desdeEntrada(e.target)));
@@ -33,12 +35,11 @@ export function prepararNuevo({ alCrear, alCrearDesdePlano }) {
   form.addEventListener('submit', async (evento) => {
     evento.preventDefault();
     if (enCurso) return;
-    if (desdePlano) await crearDesdePlano(alCrearDesdePlano);
-    else await construir(alCrear);
+    await construir(alCrear);
   });
 
-  $('#nuevo-desde-plano').addEventListener('click', () => {
-    desdePlano = !desdePlano;
+  $('#nuevo-mio').addEventListener('change', (e) => {
+    eleccion.mio = e.target.value;
     pintar();
   });
 
@@ -52,19 +53,42 @@ export function prepararNuevo({ alCrear, alCrearDesdePlano }) {
   });
 }
 
-/** Al entrar a la pantalla se parte de cero. */
-export function abrirNuevo() {
+/**
+ * Al entrar a la pantalla se parte de cero. `kmz` es un KMZ de Mis KMZ ya elegido
+ * (llega de "Usar en un master" → "Nuevo master con este KMZ").
+ */
+export function abrirNuevo({ kmz = null } = {}) {
   if (enCurso) return;
   $('#nuevo-master').reset();
   eleccion.kmz = null;
   eleccion.fotos = [];
   eleccion.inventario = null;
-  desdePlano = false;
+  const listos = terminados(estado.kmzs);
+  eleccion.mio = listos.some((k) => k.slug === kmz) ? kmz : '';
+  opcionesDeMisKmz($('#nuevo-mio'), listos, eleccion.mio);
   $('#nuevo-progreso').hidden = true;
   $('#carpeta-local').hidden = !(estado.sesion?.rol === 'plataforma' && estado.sesion?.puede_vincular);
   opcionesDeDiseno($('#nuevo-diseno'), null);
+  // Con el KMZ elegido, el nombre del master parte con el del KMZ.
+  const elegido = listos.find((k) => k.slug === eleccion.mio);
+  if (elegido) $('#nuevo-nombre').value = elegido.nombre;
   pintar();
   $('#nuevo-nombre').focus();
+}
+
+/** "Subir un archivo" y después los KMZ terminados de la loteadora. */
+function opcionesDeMisKmz(select, listos, elegido) {
+  const opciones = [{ slug: '', texto: 'No: subo el archivo' },
+    ...listos.map((k) => ({ slug: k.slug, texto: [k.nombre, cuantosLotes(k.lotes)].filter(Boolean).join(' · ') }))];
+  select.replaceChildren(...opciones.map(({ slug, texto }) => {
+    const opcion = document.createElement('option');
+    opcion.value = slug;
+    opcion.textContent = texto;
+    return opcion;
+  }));
+  select.value = elegido;
+  $('#nuevo-mio-caja').hidden = !listos.length;
+  $('#nuevo-mio-vacio').hidden = listos.length > 0;
 }
 
 /**
@@ -76,21 +100,17 @@ function tomar(encontrados) {
   const fotos = encontrados.filter(({ ruta }) => esFoto(ruta));
   const kmz = encontrados.find(({ ruta }) => esKmz(ruta));
   const planilla = encontrados.find(({ ruta }) => esPlanilla(ruta) && !ruta.split('/').pop().startsWith('~$'));
-  if (kmz) eleccion.kmz = { archivo: kmz.archivo, ruta: kmz.archivo.name };
+  // Con uno de Mis KMZ elegido, el KMZ que traiga la carpeta no lo pisa.
+  if (kmz && !eleccion.mio) eleccion.kmz = { archivo: kmz.archivo, ruta: kmz.archivo.name };
   if (fotos.length) eleccion.fotos = fotos;
   if (planilla) eleccion.inventario = planilla;
   pintar();
 }
 
 function pintar() {
-  $('#caja-kmz').hidden = desdePlano;
-  $('#nuevo-plano-nota').hidden = !desdePlano;
-  $('#nuevo-renglon-fotos').hidden = desdePlano;
-  $('#nuevo-renglon-inventario').hidden = desdePlano;
-  $('#nuevo-desde-plano').setAttribute('aria-pressed', String(desdePlano));
-  $('#nuevo-desde-plano').textContent = desdePlano
-    ? 'Tengo el KMZ: subirlo con las panorámicas' : 'No tengo el KMZ: créalo desde el plano';
-  $('#construir-nuevo').textContent = desdePlano ? 'Crear y seguir con el plano' : 'Construir';
+  // Elegido de Mis KMZ, no hay archivo que subir.
+  $('#caja-kmz').hidden = Boolean(eleccion.mio);
+  $('#nuevo-mio-rotulo').textContent = eleccion.mio ? 'De Mis KMZ' : 'o elige uno de Mis KMZ';
   const marcar = (caja, texto, lleno) => {
     $(`#texto-${caja}`).textContent = texto;
     $(`#caja-${caja}`).classList.toggle('archivo--lleno', lleno);
@@ -106,7 +126,7 @@ function pintar() {
 
 /** El inventario va en la raíz, con el nombre que el pipeline pone primero. */
 function archivosASubir() {
-  const lista = [eleccion.kmz, ...eleccion.fotos.map(({ archivo, ruta }) => ({
+  const lista = [...(eleccion.mio ? [] : [eleccion.kmz]), ...eleccion.fotos.map(({ archivo, ruta }) => ({
     archivo, ruta: `panoramicas/${ruta}` }))];
   if (eleccion.inventario) lista.push(comoInventario(eleccion.inventario));
   return lista;
@@ -114,7 +134,10 @@ function archivosASubir() {
 
 function faltante() {
   if (!$('#nuevo-nombre').value.trim()) return ['Ponle un nombre al loteo.', '#nuevo-nombre'];
-  if (!eleccion.kmz) return ['Falta el KMZ del loteo: es el plano que se dibuja sobre las fotos.', '#nuevo-kmz'];
+  if (!eleccion.kmz && !eleccion.mio) {
+    return ['Falta el KMZ del loteo: es el plano que se dibuja sobre las fotos. Súbelo o elige uno de Mis KMZ.',
+      $('#nuevo-mio-caja').hidden ? '#nuevo-kmz' : '#nuevo-mio'];
+  }
   if (!eleccion.fotos.length) return ['Faltan las panorámicas del dron.', '#nuevo-fotos'];
   // El servidor lo rechaza igual, pero después de recibir todo: mejor decirlo
   // antes de mandar un giga.
@@ -127,30 +150,8 @@ function faltante() {
   return null;
 }
 
-/** Sin KMZ: solo el loteo (nombre y diseño), y a Crea tu KMZ. */
-async function crearDesdePlano(alCrear) {
-  avisar(null);
-  if (!$('#nuevo-nombre').value.trim()) {
-    avisar('Ponle un nombre al loteo.');
-    $('#nuevo-nombre').focus();
-    return;
-  }
-  enCurso = true;
-  const boton = $('#construir-nuevo');
-  boton.disabled = true;
-  try {
-    const { slug } = await pedir('/api/proyectos', json({
-      nombre: $('#nuevo-nombre').value.trim(),
-      diseno_id: $('#nuevo-diseno').value || null,
-    }));
-    await alCrear(slug);
-  } catch (error) {
-    avisar(error.message);
-  } finally {
-    enCurso = false;
-    boton.disabled = false;
-  }
-}
+/** Los mensajes del servidor no siempre terminan en punto, y aquí sigue otra frase. */
+const conPunto = (texto) => (/[.!?…]$/.test(texto) ? texto : `${texto}.`);
 
 async function construir(alCrear) {
   avisar(null);
@@ -171,12 +172,20 @@ async function construir(alCrear) {
   };
 
   let slug = null;
+  let poniendoKmz = false;
   try {
     paso('Creando el loteo…', 0);
     slug = (await pedir('/api/proyectos', json({
       nombre: $('#nuevo-nombre').value.trim(),
       diseno_id: $('#nuevo-diseno').value || null,
     }))).slug;
+    if (eleccion.mio) {
+      // Antes que las fotos: la subida pide que el master ya tenga su KMZ.
+      paso('Poniendo el KMZ de Mis KMZ…', 0);
+      poniendoKmz = true;
+      await pedir(`/api/proyectos/${encodeURIComponent(slug)}/kmz`, json({ kmz: eleccion.mio }));
+      poniendoKmz = false;
+    }
     const lista = archivosASubir();
     const total = megas(lista);
     await subir(slug, lista, (fraccion) =>
@@ -189,7 +198,11 @@ async function construir(alCrear) {
       // El loteo ya existe: se sigue desde su detalle, donde se puede reintentar.
       // Si ni eso se puede (se cortó la red), igual hay que decir qué pasó.
       try { await alCrear(slug); } catch { /* el aviso de abajo basta */ }
-      avisar(`${error.message} El loteo quedó creado: sube lo que falte desde su detalle.`);
+      avisar(poniendoKmz
+        // Sin KMZ no se subió nada: se elige de nuevo desde el detalle (o se borra el master).
+        ? `No se pudo poner el KMZ de Mis KMZ: ${conPunto(error.message)} El master quedó creado sin KMZ ni fotos: `
+          + 'usa "Usar un KMZ de Mis KMZ" o sube el archivo desde aquí, o quítalo de la lista si no lo necesitas.'
+        : `${conPunto(error.message)} El loteo quedó creado: sube lo que falte desde su detalle.`);
     } else {
       avisar(error.message);
     }

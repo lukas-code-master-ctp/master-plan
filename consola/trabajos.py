@@ -20,7 +20,7 @@ LIMITE_LINEAS = 2000
 @dataclass
 class Trabajo:
     id: str
-    proyecto: str
+    proyecto: str                     # el slug del master, o "kmz:<slug>" para Mis KMZ
     accion: str                       # "construir" | "publicar" | "digitalizar-plano"
     estado: str = "corriendo"         # "corriendo" | "listo" | "falló"
     codigo: int | None = None
@@ -87,6 +87,14 @@ class Trabajos:
     def ultimo(self, proyecto: str) -> Trabajo | None:
         suyos = [t for t in self._trabajos.values() if t.proyecto == proyecto]
         return max(suyos, key=lambda t: t.comenzo) if suyos else None
+
+    def olvidar(self, proyecto: str) -> None:
+        """Suelta los trabajos terminados de esa clave: lo que se borra no deja su
+        avance a quien tome después el mismo nombre."""
+        with self._candado:
+            for identificador, trabajo in list(self._trabajos.items()):
+                if trabajo.proyecto == proyecto and trabajo.terminado:
+                    del self._trabajos[identificador]
 
     def corriendo(self, proyecto: str) -> bool:
         """¿Hay algo en curso para ese loteo?"""

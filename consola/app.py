@@ -13,10 +13,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import traceback
+import unicodedata
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import (
     Body,
@@ -33,6 +36,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from pipeline import config, visor
+from pipeline.kmz import leer_kmz
 
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
 from .cierra import Cierra, Cifrador, Conexiones, cierra_del_entorno
@@ -43,14 +47,18 @@ from .datos import (
     ClienteYaExiste,
     DisenoYaExiste,
     EmailYaExiste,
+    KmzYaExiste,
     NoEncontrado,
     ProyectoYaExiste,
 )
 from .disenos import DisenoInvalido, Disenos, VistaDisenos
 from .disenos import como_json as diseno_json
-from .plano import KmzExistente, Plano, PlanoInvalido, PlanoNoListo
+from .kmzs import NombreInvalido, RegistroKmz, VistaKmz, slug_de_clave
+from .kmzs import clave as clave_kmz
+from .plano import PlanoInvalido, PlanoNoListo
 from .plantilla import MIME_XLSX, plantilla
-from .proyectos import LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
+from .proyectos import KMZ as KMZ_DEL_MASTER
+from .proyectos import KmzExistente, LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
 from .republicar import republicar
 from .rutas_cierra import rutas_de_cierra, sincronizar_antes_de_construir
 from .rutas_cuentas import (
@@ -69,7 +77,8 @@ WEB = Path(__file__).resolve().parent / "web"
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
-           "vuelo.js", "kmz.js", "kmz_geometria.js", "lienzo_plano.js", "mapa_kmz.js")
+           "vuelo.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "lienzo_plano.js",
+           "mapa_kmz.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
 MODULOS_DEL_VISOR = ("marca.js",)
@@ -109,7 +118,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
               disenos: Disenos | None = None, cuentas: Cuentas | None = None,
               google: Google | None | bool = True,
               republicar_al_arrancar: bool | None = None,
-              cierra: Cierra | None | bool = True, conexiones: Conexiones | None = None) -> FastAPI:
+              cierra: Cierra | None | bool = True, conexiones: Conexiones | None = None,
+              kmzs: RegistroKmz | None = None) -> FastAPI:
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
     cuentas = cuentas or Cuentas(base=base, correo=correo_del_entorno(acceso.local),
@@ -123,6 +133,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     registro = registro or Registro(base=base, crm_por_defecto=config.csv_del_crm(),
                                     limites=Limites.desde_el_entorno())
     trabajos = trabajos or Trabajos(directorio=config.RAIZ)
+    kmzs = kmzs or RegistroKmz(base=base, limites=registro.limites)
     comandos = comandos or Comandos()
     # Solo lo enciende el despliegue (cloudbuild.yaml): en el computador y en las
     # pruebas arrancar la consola no sube nada a ningún lado.
@@ -169,6 +180,10 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def mis_disenos(sesion: Sesion = Depends(quien)) -> VistaDisenos:
         """Los diseños de quien pide, y ningún otro."""
         return disenos.para(sesion)
+
+    def mis_kmz(sesion: Sesion = Depends(quien)) -> VistaKmz:
+        """Los KMZ de quien pide, y ningún otro."""
+        return kmzs.para(sesion)
 
     def solo_plataforma(sesion: Sesion = Depends(quien)) -> Sesion:
         """Lo que puede hacer el equipo de CTP y ninguna loteadora."""
@@ -224,13 +239,18 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         respuesta.delete_cookie(GALLETA, path="/")
         return respuesta
 
-    def una_a_la_vez(mios: Vista, slug: str) -> None:
-        """El servidor tiene pocas CPU: cada loteadora corre un trabajo pesado a la vez."""
-        if not mios.es_equipo:
-            otros = [p.slug for p in mios.listar() if p.slug != slug and trabajos.corriendo(p.slug)]
-            if len(otros) >= registro.limites.construcciones:
-                raise HTTPException(429, "ya tienes otro master construyendo o digitalizando;"
-                                         " lanza este cuando termine ese")
+    def una_a_la_vez(sesion: Sesion, clave: str) -> None:
+        """El servidor tiene pocas CPU: cada loteadora corre un trabajo pesado a la vez,
+        y cuentan juntas las construcciones de sus masters y las digitalizaciones de sus
+        KMZ. `clave` es la del trabajo que se quiere lanzar."""
+        if sesion.es_plataforma:
+            return
+        claves = ([p.slug for p in registro.para(sesion).listar()]
+                  + [clave_kmz(k.slug) for k in kmzs.para(sesion).listar()])
+        otros = [c for c in claves if c != clave and trabajos.corriendo(c)]
+        if len(otros) >= registro.limites.construcciones:
+            raise HTTPException(429, "ya tienes otro master construyendo o un KMZ digitalizando;"
+                                     " lanza este cuando termine ese")
 
     def lanzar(proyecto: Proyecto, accion: str, comando: list[str], al_terminar=None) -> dict:
         try:
@@ -400,12 +420,12 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
 
     @app.post("/api/proyectos/{slug}/construir", status_code=202)
     def construir(slug: str, opciones: dict = Body(default={}),
-                  mios: Vista = Depends(vista)) -> dict:
+                  mios: Vista = Depends(vista), yo: Sesion = Depends(quien)) -> dict:
         proyecto = mios.ver(slug)
-        # Un master que va por el plano existe sin KMZ; construirlo, no.
+        # Un master recién creado todavía no tiene KMZ.
         if not config.kmz_en(proyecto.fuentes):
-            raise HTTPException(409, "falta el KMZ: súbelo o créalo desde el plano")
-        una_a_la_vez(mios, slug)
+            raise HTTPException(409, "falta el KMZ: súbelo o elige uno de Mis KMZ")
+        una_a_la_vez(yo, slug)
         sin_imagenes = bool(opciones.get("sin_imagenes"))
         # Con una construcción en curso, `lanzar` contesta 409: no se le cambia el
         # inventario por debajo a la que está leyendo.
@@ -446,96 +466,170 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                       comandos.publicar(proyecto, vercel_proyecto=nombre, crear=primera_vez),
                       al_terminar=_anotar_publicacion(mios, proyecto, nombre))
 
-    # --- crea tu KMZ: del plano aprobado al KMZ del master ------------------------
+    # --- mis KMZ: del plano aprobado a un KMZ propio, sin master ---------------------
     #
-    # Lo que hacen está en `consola/plano.py`; acá, quién puede y cuándo. Todas
-    # resuelven el loteo con `mios.ver`: el plano de otra es un 404.
+    # Lo que hacen está en `consola/plano.py` y `consola/kmzs.py`; acá, quién puede y
+    # cuándo. Todas resuelven el KMZ con `mis.ver`/`mis.plano`: el de otra es un 404.
 
-    def plano_libre(slug: str) -> None:
-        """Lo que reescribe el plano o el KMZ no se hace mientras algo lo lee."""
-        if trabajos.corriendo(slug):
-            raise HTTPException(409, "este master está en algo (digitalizando o construyendo);"
-                                     " espera a que termine")
+    def kmz_libre(slug: str) -> None:
+        """Lo que reescribe el plano o el KMZ, o lo borra, no se hace mientras se digitaliza."""
+        if trabajos.corriendo(clave_kmz(slug)):
+            raise HTTPException(409, "este KMZ se está digitalizando; espera a que termine")
 
-    @app.post("/api/proyectos/{slug}/plano", status_code=201)
-    async def subir_plano(slug: str, archivo: UploadFile = File(...),
-                          mios: Vista = Depends(vista)) -> dict:
-        mios.ver(slug)
-        plano_libre(slug)
+    def kmz_json(mis: VistaKmz, guardado) -> dict:
+        ultimo = trabajos.ultimo(clave_kmz(guardado.slug))
+        return {**mis.resumen(guardado),
+                "trabajo": ultimo.como_json() if ultimo and not ultimo.terminado else None}
+
+    @app.get("/api/kmz")
+    def listar_kmz(mis: VistaKmz = Depends(mis_kmz)) -> list[dict]:
+        return [kmz_json(mis, k) for k in mis.listar()]
+
+    @app.post("/api/kmz", status_code=201)
+    def crear_kmz(campos: dict = Body(...), mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        try:
+            return kmz_json(mis, mis.crear(campos.get("nombre")))
+        except NombreInvalido as error:
+            raise HTTPException(400, str(error)) from error
+        except KmzYaExiste as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.get("/api/kmz/{slug}")
+    def ver_kmz(slug: str, mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        guardado = mis.ver(slug)
+        estado = mis.plano(slug).estado()
+        ultimo = trabajos.ultimo(clave_kmz(slug))
+        return {**estado, "slug": guardado.slug, "nombre": guardado.nombre,
+                "trabajo": ultimo.como_json() if ultimo else None}
+
+    @app.patch("/api/kmz/{slug}")
+    def renombrar_kmz(slug: str, campos: dict = Body(...),
+                      mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        try:
+            return kmz_json(mis, mis.renombrar(slug, campos.get("nombre")))
+        except NombreInvalido as error:
+            raise HTTPException(400, str(error)) from error
+        except KmzYaExiste as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.delete("/api/kmz/{slug}", status_code=204)
+    def borrar_kmz(slug: str, mis: VistaKmz = Depends(mis_kmz)) -> None:
+        mis.ver(slug)
+        kmz_libre(slug)
+        mis.borrar(slug)
+        # Su avance no queda para quien cree después otro con el mismo nombre.
+        trabajos.olvidar(clave_kmz(slug))
+
+    @app.post("/api/kmz/{slug}/plano", status_code=201)
+    async def subir_plano_kmz(slug: str, archivo: UploadFile = File(...),
+                              mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        mis.ver(slug)
+        kmz_libre(slug)
         subida = Subida(ruta=archivo.filename or "plano.pdf", contenido=archivo.file, tamano=archivo.size)
         try:
             # Sacar las páginas de un escaneo grande toma segundos.
-            paginas = await run_in_threadpool(mios.subir_plano, slug, subida)
+            paginas = await run_in_threadpool(mis.subir_plano, slug, subida)
         except LimiteAlcanzado as error:
             raise HTTPException(413, str(error)) from error
         return {"paginas": paginas}
 
-    @app.get("/api/proyectos/{slug}/plano")
-    def ver_plano(slug: str, mios: Vista = Depends(vista)) -> dict:
-        estado = mios.plano(slug).estado()
-        ultimo = trabajos.ultimo(slug)
-        estado["trabajo"] = (ultimo.como_json() if ultimo and ultimo.accion == "digitalizar-plano"
-                             else None)
-        return estado
-
-    @app.get("/api/proyectos/{slug}/plano/paginas/{n}")
-    def pagina_del_plano(slug: str, n: int, mini: bool = False,
-                         mios: Vista = Depends(vista)) -> FileResponse:
-        archivo = mios.plano(slug).imagen(n, mini)
+    @app.get("/api/kmz/{slug}/paginas/{n}")
+    def pagina_del_kmz(slug: str, n: int, mini: bool = False,
+                       mis: VistaKmz = Depends(mis_kmz)) -> FileResponse:
+        archivo = mis.plano(slug).imagen(n, mini)
         if archivo is None:
             raise HTTPException(404, "esa página no existe")
         return FileResponse(archivo, media_type="image/jpeg",
                             headers={"Cache-Control": "private, no-cache"})
 
-    @app.put("/api/proyectos/{slug}/plano/entradas")
-    def guardar_entradas(slug: str, entradas: dict = Body(...),
-                         mios: Vista = Depends(vista)) -> dict:
-        return mios.plano(slug).guardar_entradas(entradas)
+    @app.put("/api/kmz/{slug}/entradas")
+    def entradas_del_kmz(slug: str, entradas: dict = Body(...),
+                         mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        return mis.plano(slug).guardar_entradas(entradas)
 
-    @app.post("/api/proyectos/{slug}/plano/digitalizar", status_code=202)
-    def digitalizar_plano(slug: str, mios: Vista = Depends(vista)) -> dict:
-        proyecto = mios.ver(slug)
-        plano = mios.plano(slug)
+    @app.post("/api/kmz/{slug}/digitalizar", status_code=202)
+    def digitalizar_kmz(slug: str, mis: VistaKmz = Depends(mis_kmz),
+                        yo: Sesion = Depends(quien)) -> dict:
+        plano = mis.plano(slug)
         huella = plano.para_digitalizar()
-        una_a_la_vez(mios, slug)
+        una_a_la_vez(yo, clave_kmz(slug))
 
         def anotar(trabajo) -> None:
             # Con qué entradas quedó: si cambian, el paso se ve atrasado.
             if trabajo.estado == "listo":
                 plano.anotar("digitalizado", huella)
 
-        return lanzar(proyecto, "digitalizar-plano", comandos.digitalizar_plano(proyecto),
-                      al_terminar=anotar)
+        try:
+            identificador = trabajos.lanzar(clave_kmz(slug), "digitalizar-plano",
+                                            comandos.digitalizar_carpeta(plano.carpeta),
+                                            al_terminar=anotar)
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+        return {"id": identificador}
 
-    @app.post("/api/proyectos/{slug}/plano/georreferenciar")
-    async def georreferenciar_plano(slug: str, mios: Vista = Depends(vista)) -> dict:
-        plano = mios.plano(slug)
-        ultimo = trabajos.ultimo(slug)
-        if ultimo and ultimo.accion == "digitalizar-plano" and not ultimo.terminado:
+    @app.post("/api/kmz/{slug}/georreferenciar")
+    async def georreferenciar_kmz(slug: str, mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        plano = mis.plano(slug)
+        if trabajos.corriendo(clave_kmz(slug)):
             raise HTTPException(409, "se está digitalizando; ubícalo cuando termine")
         return await run_in_threadpool(plano.georreferenciar)
 
-    @app.get("/api/proyectos/{slug}/plano/lotes")
-    def lotes_del_plano(slug: str, en: str = "px", mios: Vista = Depends(vista)) -> dict:
-        return mios.plano(slug).lotes(en)
+    @app.get("/api/kmz/{slug}/lotes")
+    def lotes_del_kmz(slug: str, en: str = "px", mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        return mis.plano(slug).lotes(en)
 
-    @app.post("/api/proyectos/{slug}/plano/kmz", status_code=201)
-    async def kmz_del_plano(slug: str, opciones: dict = Body(default={}),
-                            mios: Vista = Depends(vista)) -> dict:
-        plano = mios.plano(slug)
-        plano_libre(slug)
-        return await run_in_threadpool(plano.crear_kmz, bool(opciones.get("confirmar_reemplazo")))
+    @app.post("/api/kmz/{slug}/crear", status_code=201)
+    async def escribir_kmz(slug: str, mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        plano = mis.plano(slug)
+        kmz_libre(slug)
+        return await run_in_threadpool(plano.crear_kmz)
+
+    @app.get("/api/kmz/{slug}/descargar")
+    def descargar_kmz(slug: str, mis: VistaKmz = Depends(mis_kmz)) -> FileResponse:
+        guardado = mis.ver(slug)
+        plano = mis.plano(slug)
+        if not plano.terminado():
+            raise HTTPException(409, "todavía no está creado: termina los pasos y crea el KMZ")
+        return FileResponse(plano.kmz, media_type="application/vnd.google-earth.kmz", headers={
+            "Content-Disposition": _adjunto(f"{guardado.nombre}.kmz", f"{guardado.slug}.kmz"),
+            "Cache-Control": "private, no-cache"})
+
+    @app.post("/api/proyectos/{slug}/kmz", status_code=201)
+    async def usar_kmz(slug: str, opciones: dict = Body(...), mios: Vista = Depends(vista),
+                       mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        """Pone un KMZ de Mis KMZ en las fuentes del master como `subdivision.kmz`.
+        El master y el KMZ se piden como siempre: el de otra es un 404, aunque se
+        sepa su slug. El equipo puede usar cualquiera (los ve todos)."""
+        mios.ver(slug)
+        guardado = mis.ver(str(opciones.get("kmz") or ""))
+        plano = mis.plano(guardado.slug)
+        if not plano.terminado():
+            raise HTTPException(409, "ese KMZ todavía no está creado")
+        # No se le cambia el KMZ por debajo a una construcción.
+        if trabajos.corriendo(slug):
+            raise HTTPException(409, "este master está construyendo o publicando; espera a que termine")
+        try:
+            lotes = len(await run_in_threadpool(leer_kmz, plano.kmz))
+            anteriores = await run_in_threadpool(mios.usar_kmz, slug, plano.kmz,
+                                                 bool(opciones.get("confirmar_reemplazo")))
+        except LimiteAlcanzado as error:
+            raise HTTPException(413, str(error)) from error
+        return {"kmz": KMZ_DEL_MASTER, "origen": guardado.slug, "lotes": lotes, "anteriores": anteriores}
 
     @app.get("/api/trabajos/{identificador}")
-    def ver_trabajo(identificador: str, desde: int = 0,
-                    mios: Vista = Depends(vista)) -> dict:
+    def ver_trabajo(identificador: str, desde: int = 0, mios: Vista = Depends(vista),
+                    mis: VistaKmz = Depends(mis_kmz)) -> dict:
         try:
             trabajo = trabajos.ver(identificador)
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
         # El avance de una construcción dice de qué loteo es y qué está pasando:
-        # se pide como se pide el loteo.
-        mios.ver(trabajo.proyecto)
+        # se pide como se pide el loteo (o el KMZ).
+        kmz = slug_de_clave(trabajo.proyecto)
+        if kmz is not None:
+            mis.ver(kmz)
+        else:
+            mios.ver(trabajo.proyecto)
         return trabajo.como_json(desde)
 
     # --- mis diseños ------------------------------------------------------------
@@ -821,6 +915,16 @@ def _descarga(contenido: bytes, nombre: str) -> Response:
         "Cache-Control": "private, no-cache"})
 
 
+def _adjunto(nombre: str, respaldo: str) -> str:
+    """`Content-Disposition` de una descarga: un nombre ASCII para los navegadores
+    viejos y el de verdad, con tildes, en `filename*` (RFC 5987)."""
+    plano = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()
+    plano = re.sub(r"[^A-Za-z0-9 ._-]+", "_", plano).strip(" ._")
+    if not plano.lower().endswith(".kmz") or plano.lower() == ".kmz":
+        plano = respaldo
+    return f"attachment; filename=\"{plano}\"; filename*=UTF-8''{quote(nombre, safe='')}"
+
+
 def _cliente_json(cliente, base: Base) -> dict:
     return {
         "id": cliente.id,
@@ -834,11 +938,6 @@ def _cliente_json(cliente, base: Base) -> dict:
 
 def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
     ultimo = trabajos.ultimo(proyecto.slug)
-    try:
-        paso = Plano(proyecto.fuentes).paso()
-    except (OSError, ValueError):
-        # Un plano a medio escribir no puede tumbar la lista de masters.
-        paso = "subir"
     return {
         "slug": proyecto.slug,
         "nombre": proyecto.nombre,
@@ -864,7 +963,5 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "subido": proyecto.subido,
         "diseno_id": proyecto.diseno_id,
         "trabajo": ultimo.como_json() if ultimo and not ultimo.terminado else None,
-        # Crea tu KMZ: en qué paso va el plano, si hay uno.
-        "plano": {"paso": paso} if paso != "subir" else None,
     }
 

@@ -62,7 +62,8 @@ Una carpeta con:
 
 1. **Un KMZ** del loteo. Sirven los dos formatos que exporta Global Mapper: polígonos
    con un punto por lote (`LOTE A123`), o el dibujo CAD tal cual, como red de líneas
-   con un punto por lote. Ver [El KMZ](#el-kmz).
+   con un punto por lote. Ver [El KMZ](#el-kmz). Si no lo tienes, sale del plano
+   aprobado con [Crea tu KMZ](#crea-tu-kmz).
 2. **Las panorámicas del dron**, equirectangulares y con el XMP intacto. Da lo mismo
    en qué subcarpetas vengan o si la misma foto está dos veces: las tomas se agrupan
    por GPS y se numeran en orden de captura.
@@ -434,13 +435,34 @@ pipeline con un aviso: es un dato que falta, no algo que se pueda adivinar.
 Muchas loteadoras no tienen el KMZ de la subdivisión, y pedirle el DWG al topógrafo no
 es una opción. Lo que sí tienen siempre es el **plano aprobado por el SAG y archivado en
 el CBR**: un PDF escaneado (o una foto del papel), sin vectores ni coordenadas. Crea tu
-KMZ convierte ese plano en el KMZ del master, desde la consola y sin tocar archivos.
+KMZ convierte ese plano en el KMZ de la subdivisión, desde la consola y sin tocar
+archivos.
 
-Está en el detalle de cada master (`#/planos/<slug>/kmz`) y en **Nuevo master**, como
-"No tengo el KMZ: créalo desde el plano": eso crea el master sin KMZ y lleva a la
-pantalla. Construir sigue exigiendo el KMZ; lo que se relaja es solo crear el master.
+Es una herramienta aparte, **Mis KMZ**: el KMZ no necesita un master. La loteadora
+puede quererlo para su topógrafo, para Google Earth o para otro sistema, y usarlo en un
+master cuando quiera (o nunca).
 
-Spec: [`docs/specs/2026-10-01-crea-tu-kmz.md`](docs/specs/2026-10-01-crea-tu-kmz.md).
+- **Dónde se entra.** El botón **Nuevo KMZ**, a la derecha de **Nuevo master** en *Mis
+  planos*, y la pestaña **Mis KMZ** (`#/kmz`), con los KMZ en curso y terminados: el
+  paso en que va cada uno, cuántos lotes tiene y la fecha. Nuevo KMZ pide un nombre y
+  lleva a los 7 pasos (`#/kmz/<slug>`).
+- **Al terminar**, **Descargar** entrega el `.kmz` con el nombre que le pusiste, y
+  **Usar en un master** lo pone en uno existente o en un "Nuevo master con este KMZ".
+  También se elige desde el otro lado: en *Nuevo master* el KMZ se sube o se elige de
+  Mis KMZ, y en el detalle del master está "Usar un KMZ de Mis KMZ".
+- **Quién ve qué**: como con los masters y los diseños, cada loteadora ve los suyos y el
+  equipo los ve todos. Uno ajeno da 404, aunque se sepa su slug.
+- **Gratis y sin tope de cantidad**, pero cada loteadora corre **una digitalización o
+  una construcción a la vez**: cuentan juntas, porque cada una usa hasta ~5 min de CPU.
+
+El flujo de antes, dentro del master ("No tengo el KMZ" en Nuevo master y el botón del
+detalle, con las rutas `/api/proyectos/{slug}/plano/*`), **se retiró**. Construir sin
+KMZ da 409: "falta el KMZ: súbelo o elige uno de Mis KMZ".
+
+Specs: [`docs/specs/2026-10-01-crea-tu-kmz.md`](docs/specs/2026-10-01-crea-tu-kmz.md)
+(el lector y la geometría) y
+[`docs/specs/2026-10-02-kmz-independiente.md`](docs/specs/2026-10-02-kmz-independiente.md)
+(Mis KMZ).
 Resultados: [lectura de rótulos](docs/specs/2026-10-01-crea-tu-kmz-rotulos.md) y
 [set de regresión](docs/specs/2026-10-01-crea-tu-kmz-regresion.md).
 
@@ -504,7 +526,8 @@ con los números marcados a mano. Un número que solo una pasada leyó no cuenta
 
 ### Lo que se guarda
 
-En `<fuentes>/plano/`, junto a lo demás que subió la loteadora:
+Cada KMZ tiene nombre (único por loteadora) y slug (único en todo el sistema) en la
+tabla `kmzs`, y su carpeta en `/datos/kmz/<slug>/`:
 
 | Archivo | Qué es |
 |---|---|
@@ -515,11 +538,38 @@ En `<fuentes>/plano/`, junto a lo demás que subió la loteadora:
 | `georreferencia.json` | La transformación, el residuo de cada ancla y el datum |
 | `lotes.geojson` | Los lotes en lon/lat, para el mapa |
 | `huellas.json` | Con qué entradas se hizo cada paso |
+| `<slug>.kmz` | El resultado. Que exista es lo que dice que el KMZ está terminado |
 
-El KMZ queda en `<fuentes>/subdivision.kmz`, donde lo busca construir: un Polygon por
-lote, con nombre `LOTE <n>`, KML 2.2 y sin líneas, así que `pipeline/kmz.py` lo lee en
-modo polígonos. Si ya había un KMZ, la consola pide confirmar y el anterior queda como
-`<nombre>.kmz.anterior`.
+El KMZ es un Polygon por lote, con nombre `LOTE <n>`, KML 2.2 y sin líneas, así que
+`pipeline/kmz.py` lo lee en modo polígonos. Borrar un KMZ borra su carpeta.
+
+### Las rutas
+
+Todas bajo `/api/kmz`, y declaradas en el inventario de `consola/tests/test_app.py`:
+
+| Ruta | Qué hace |
+|---|---|
+| `GET /api/kmz`, `POST /api/kmz {nombre}` | Lista y crea |
+| `GET /api/kmz/{slug}` | El estado: el paso que sigue, qué quedó atrasado y el último trabajo |
+| `PATCH /api/kmz/{slug} {nombre}`, `DELETE /api/kmz/{slug}` | Renombra; borra con su carpeta |
+| `POST /api/kmz/{slug}/plano` | Sube el PDF y saca las páginas |
+| `GET /api/kmz/{slug}/paginas/{n}` | La imagen de una página (`?mini=1`, la miniatura) |
+| `PUT /api/kmz/{slug}/entradas` | Guarda lo que marca la loteadora |
+| `POST /api/kmz/{slug}/digitalizar` | Trabajo de fondo, clave `kmz:<slug>` (no choca con el slug de un master) |
+| `POST /api/kmz/{slug}/georreferenciar` | Cuadrícula o anclas → UTM |
+| `GET /api/kmz/{slug}/lotes` | Los lotes en píxeles o en lon/lat (`?en=lonlat`) |
+| `POST /api/kmz/{slug}/crear` | Escribe `<slug>.kmz` |
+| `GET /api/kmz/{slug}/descargar` | El `.kmz`, con el nombre en el `Content-Disposition` |
+
+Lo que reescribe el plano o el KMZ, o lo borra, da 409 mientras se digitaliza.
+
+**Usarlo en un master**: `POST /api/proyectos/{slug}/kmz {kmz: <slug del KMZ>,
+confirmar_reemplazo}` copia el KMZ a las fuentes del master como `subdivision.kmz`,
+donde lo busca construir. Solo KMZ propios y terminados. Si el master ya tenía un KMZ,
+responde 409 con `existentes`; al confirmar, cada anterior queda como
+`<nombre>.kmz.anterior` (se guarda solo el último reemplazado). Se escribe aparte y se
+mueve al final: si algo falla a mitad, lo apartado vuelve a su nombre y el master queda
+con el KMZ que tenía. Tampoco se cambia mientras el master construye o publica.
 
 ### Límites
 
@@ -528,7 +578,8 @@ modo polígonos. Si ya había un KMZ, la consola pide confirmar y el anterior qu
   ~140 MP: sin el tope pasaba de 4 GiB; con él, el pico queda en ~2 GiB de RAM. La
   exactitud casi no cambia con la resolución.
 - En Cloud Run (4 GiB, 2 vCPU) digitalizar corre como subproceso en un trabajo de
-  fondo, igual que construir, y una sola a la vez por loteadora. La geometría toma
+  fondo, igual que construir, y una digitalización o construcción a la vez por
+  loteadora. La geometría toma
   menos de un minuto; el lector es lo que pesa: corre tantas pasadas a la vez como
   núcleos tenga el contenedor (`LECTOR_HEBRAS` lo acota) y las que quepan en la
   memoria libre. Medido en la imagen con `--cpus=2 --memory=4g`: Puente Negro con
@@ -681,10 +732,12 @@ tumasterplan/
 │   ├── proyectos.py   Qué loteos conoce y en qué estado están
 │   ├── trabajos.py    Corre el pipeline y muestra su avance en vivo
 │   ├── comandos.py    Qué le pide al pipeline
-│   ├── plano.py       Crea tu KMZ: el plano de un master y lo que sale de él
+│   ├── plano.py       Crea tu KMZ: un plano en su carpeta y lo que sale de él
+│   ├── kmzs.py        Mis KMZ: el KMZ de la loteadora, sin master, y quién ve cuál
 │   ├── republicar.py  Al arrancar, republica los loteos con el visor atrasado
 │   └── web/           La página
-│       └── js/kmz.js, kmz_geometria.js, lienzo_plano.js, mapa_kmz.js   La pantalla de Crea tu KMZ
+│       ├── js/kmzs.js     Mis KMZ: la lista, el nombre y "usar en un master"
+│       └── js/kmz.js, kmz_geometria.js, lienzo_plano.js, mapa_kmz.js   Los 7 pasos de un KMZ
 ├── web/               El sitio (html, css, js): la plantilla de la que se copia cada salida
 │   ├── js/            Visor WebGL, mapa, ficha, filtros
 │   ├── vercel.json    Cabeceras (caché, CSP) que viajan con cada sitio
