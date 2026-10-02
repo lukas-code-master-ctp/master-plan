@@ -27,6 +27,7 @@ from pipeline import config
 
 from .acceso import Sesion
 from .datos import Base, NoEncontrado, ProyectoGuardado
+from .plano import PDF, Plano
 from .portada import portada
 
 CARPETA_SUBIDAS = config.SUBIDAS
@@ -195,11 +196,12 @@ class Proyecto:
         """
         if not self.fuentes.is_dir():
             return {"kmz": None, "panoramicas": 0, "megas": 0, "planilla": None}
-        kmz = sorted(p.name for p in self.fuentes.rglob("*.kmz"))
+        # Lo de Crea tu KMZ (el PDF y sus páginas en JPEG) no es del vuelo.
+        kmz = [p.name for p in config.kmz_en(self.fuentes)]
         planilla = config.planilla_en(self.fuentes)
         fotos: dict[tuple[str, int], int] = {}
         for ruta in self.fuentes.rglob("*"):
-            if ruta.suffix.lower() in EXTENSIONES_FOTO:
+            if ruta.suffix.lower() in EXTENSIONES_FOTO and not config.del_plano(ruta, self.fuentes):
                 tamano = ruta.stat().st_size
                 fotos[(ruta.name, tamano)] = tamano
         return {
@@ -374,10 +376,22 @@ class Vista:
             for otro in set(config.INVENTARIOS) - llegados:
                 (carpeta / otro).unlink(missing_ok=True)
         # El KMZ puede venir en esta tanda o de una anterior; lo que no puede es
-        # faltar, porque sin él no hay nada que proyectar.
-        if not any(carpeta.rglob("*.kmz")):
+        # faltar, porque sin él no hay nada que proyectar. Salvo que se esté
+        # creando desde el plano: ahí llega después, y construir lo sigue pidiendo.
+        if not any(carpeta.rglob("*.kmz")) and not Plano(carpeta).hay():
             raise ValueError("falta el KMZ del loteo entre los archivos")
         return self.ver(slug)
+
+    def plano(self, slug: str) -> Plano:
+        """El plano del loteo (Crea tu KMZ), exista o no todavía."""
+        return Plano(self.ver(slug).fuentes)
+
+    def subir_plano(self, slug: str, archivo: Subida) -> list[dict]:
+        """Guarda el PDF del plano y extrae sus páginas. Cuenta para el tope del loteo."""
+        plano = self.plano(slug)
+        if not self.es_equipo:
+            self._revisar_tamano(plano.fuentes, [(archivo, plano.carpeta / PDF)])
+        return plano.subir_pdf(archivo.contenido)
 
     def vincular(self, carpeta: Path) -> Proyecto:
         """Registra una carpeta que ya está en el disco, sin copiar nada.

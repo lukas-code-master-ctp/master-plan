@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from . import geo
+from . import config, geo
 from .proyeccion import Vista
 from .solar import DiscoSolar, detectar_disco, posicion_solar, rumbo_desde_sol
 
@@ -93,7 +93,7 @@ def buscar_panoramas(carpeta: Path) -> list[Panorama]:
     for ruta in sorted(carpeta.rglob("*")):
         if ruta.suffix.lower() not in (".jpg", ".jpeg"):
             continue
-        if "REFERENCIA" in ruta.stem.upper():
+        if "REFERENCIA" in ruta.stem.upper() or config.del_plano(ruta, carpeta):
             continue
         panorama = leer_panorama(ruta)
         if not panorama:

@@ -114,6 +114,26 @@ def planilla_en(carpeta: Path) -> Path | None:
     return _opcional(Path(carpeta), "*.xlsx")
 
 
+# Crea tu KMZ guarda en `<fuentes>/plano/` el PDF del plano y sus páginas en JPEG:
+# no son fotos del vuelo ni el KMZ del loteo, y no se pueden confundir con ellos.
+CARPETA_PLANO = "plano"
+
+
+def del_plano(ruta: Path, carpeta: Path) -> bool:
+    """¿La ruta es de la carpeta del plano de `carpeta`?
+
+    Solo si esa carpeta la armó Crea tu KMZ (tiene el PDF o las páginas): un vuelo
+    puede traer su propia carpeta "plano" con el KMZ o las fotos, y esa sigue
+    siendo fuente."""
+    plano = Path(carpeta) / CARPETA_PLANO
+    return _dentro(Path(ruta), plano) and ((plano / "plano.pdf").is_file() or (plano / "paginas").is_dir())
+
+
+def kmz_en(carpeta: Path) -> list[Path]:
+    """Los KMZ que el pipeline consideraría, en el orden en que los elige."""
+    return _candidatos(Path(carpeta), "*.kmz")
+
+
 def _es_nuestro(ruta: Path) -> bool:
     """¿La ruta la escribió el propio pipeline? Si no se excluye se confunde con
     las fuentes: una carpeta del disco que contiene al repo traería sus salidas.
@@ -133,7 +153,7 @@ def _dentro(ruta: Path, carpeta: Path) -> bool:
 def _candidatos(carpeta: Path, patron: str) -> list[Path]:
     # Se ignoran los temporales que Excel deja abiertos (~$archivo.xlsx).
     return sorted(p for p in carpeta.rglob(patron)
-                  if not p.name.startswith("~$") and not _es_nuestro(p))
+                  if not p.name.startswith("~$") and not _es_nuestro(p) and not del_plano(p, carpeta))
 
 
 def _unico(carpeta: Path, patron: str, que: str) -> Path:
@@ -152,7 +172,8 @@ def _carpeta_de_panoramas(carpeta: Path) -> Path:
     """La carpeta que contiene las fotos. Las panorámicas suelen venir separadas
     por posición de vuelo, así que se toma el ancestro común de todas."""
     fotos = [p for p in carpeta.rglob("*")
-             if p.suffix.lower() in (".jpg", ".jpeg") and not _es_nuestro(p)]
+             if p.suffix.lower() in (".jpg", ".jpeg") and not _es_nuestro(p)
+             and not del_plano(p, carpeta)]
     if not fotos:
         raise FileNotFoundError(f"no encontré panorámicas (.jpg) dentro de {carpeta}")
 

@@ -26,6 +26,29 @@ export const PASOS = {
     ['Subiendo a la web', /^▶ Publicando/],
     ['Dejándolo en línea', /^(Production|Aliased|▶ URL publicada)/],
   ],
+  // Crea tu KMZ: las líneas de `python -m pipeline.plano digitalizar`.
+  'digitalizar-plano': [
+    ['Abriendo el plano', /^Página \d+/],
+    ['Leyendo los números de lote', /^(Rótulos|Lector|Cuadrícula|Cuadro de superficies)/],
+    ['Siguiendo los deslindes', /^(Imagen de trabajo|Tinta)/],
+    ['Separando los lotes', /^(Semillas|Regiones)/],
+    ['Enderezando las líneas', /^(Red de deslindes|Lotes:)/],
+  ],
+};
+
+/** El resultado de los trabajos que no son construir ni publicar. */
+const RESUMENES = {
+  'digitalizar-plano': (lineas) => {
+    const lotes = lineas.map((l) => String(l).trim()).find((l) => /^Lotes: \d+/.test(l));
+    return lotes ? `Plano digitalizado: ${lotes.match(/^Lotes: (\d+)/)[1]} lotes` : 'Plano digitalizado';
+  },
+};
+
+/** Cómo se nombra cada trabajo en la tarjeta: mientras corre y si falla. */
+const NOMBRES = {
+  construir: ['Construyendo', 'construir'],
+  publicar: ['Publicando', 'publicar'],
+  'digitalizar-plano': ['Digitalizando el plano', 'digitalizar el plano'],
 };
 
 const LOTES = 15;     // los que tiene el loteo dibujado en index.html
@@ -64,6 +87,7 @@ function resumenDe(lineas, accion) {
     const url = [...lineas].reverse().find((l) => /URL publicada/.test(l));
     return url ? `En línea: ${url.split(': ').pop().trim()}` : 'Publicado';
   }
+  if (RESUMENES[accion]) return RESUMENES[accion](lineas);
   const listo = lineas.find((l) => /^Listo\. /.test(String(l).trim()));
   const medida = listo?.match(/(\d+) parcelas .* en (\d+) vistas?/);
   if (!medida) return 'Listo';
@@ -94,10 +118,9 @@ export function pintarVuelo(lineas, trabajo) {
   const progreso = avance(lineas, trabajo.accion, trabajo.terminado, fallo);
   tarjeta.dataset.estado = corriendo ? 'volando' : (fallo ? 'fallo' : 'listo');
 
-  const verbo = trabajo.accion === 'publicar' ? 'Publicando' : 'Construyendo';
+  const [verbo, infinitivo] = NOMBRES[trabajo.accion] ?? NOMBRES.construir;
   $('#vuelo-titulo').textContent = corriendo ? progreso.titulo
-    : (fallo ? `No se pudo terminar de ${trabajo.accion === 'publicar' ? 'publicar' : 'construir'}`
-      : progreso.resumen);
+    : (fallo ? `No se pudo terminar de ${infinitivo}` : progreso.resumen);
   $('#vuelo-paso').textContent = corriendo
     ? `${verbo} · paso ${progreso.paso} de ${progreso.total}`
     : (fallo ? progreso.causa : 'El detalle técnico está en el registro.');

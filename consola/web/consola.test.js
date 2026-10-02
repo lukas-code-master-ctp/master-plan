@@ -151,3 +151,13 @@ test('una sola vista va en singular', () => {
   assert.equal(avance(['Listo. 88 parcelas (88 con geometría) en 1 vistas.'], 'construir', true).resumen,
     'Listo: 88 parcelas en 1 vista');
 });
+
+test('digitalizar el plano tiene sus propios pasos, no los de construir', () => {
+  const lineas = ['Página 1 de 1: 6596×9600 px, 150 dpi', 'Rótulos: texto típico de 24 px; 96 pasadas',
+    'Imagen de trabajo: 5000×7000 px a 7.87 px/mm', 'Semillas: 3 de la loteadora y 62 del lector'];
+  const progreso = avance(lineas, 'digitalizar-plano');
+  assert.equal(progreso.titulo, 'Separando los lotes');
+  assert.equal(progreso.total, 5);
+  assert.equal(avance([...lineas, 'Lotes: 65 de 65', 'Listo: /datos/x/plano/digitalizado.json'],
+    'digitalizar-plano', true).resumen, 'Plano digitalizado: 65 lotes');
+});

@@ -48,6 +48,7 @@ from .datos import (
 )
 from .disenos import DisenoInvalido, Disenos, VistaDisenos
 from .disenos import como_json as diseno_json
+from .plano import KmzExistente, Plano, PlanoInvalido, PlanoNoListo
 from .plantilla import MIME_XLSX, plantilla
 from .proyectos import LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
 from .republicar import republicar
@@ -67,10 +68,14 @@ WEB = Path(__file__).resolve().parent / "web"
 # cualquier archivo de la carpeta: una ruta que arma rutas de disco con lo que
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
-           "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js", "vuelo.js")
+           "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
+           "vuelo.js", "kmz.js", "kmz_geometria.js", "lienzo_plano.js", "mapa_kmz.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
 MODULOS_DEL_VISOR = ("marca.js",)
+# Y las librerías del visor que usa Crea tu KMZ (el mapa para ubicar el plano). Igual
+# que los módulos: por nombre, de una lista cerrada.
+VENDOR_DEL_VISOR = {"leaflet.js": "text/javascript", "leaflet.css": "text/css"}
 
 TIPOS_LOGO = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp",
               ".svg": "image/svg+xml"}
@@ -219,6 +224,14 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         respuesta.delete_cookie(GALLETA, path="/")
         return respuesta
 
+    def una_a_la_vez(mios: Vista, slug: str) -> None:
+        """El servidor tiene pocas CPU: cada loteadora corre un trabajo pesado a la vez."""
+        if not mios.es_equipo:
+            otros = [p.slug for p in mios.listar() if p.slug != slug and trabajos.corriendo(p.slug)]
+            if len(otros) >= registro.limites.construcciones:
+                raise HTTPException(429, "ya tienes otro master construyendo o digitalizando;"
+                                         " lanza este cuando termine ese")
+
     def lanzar(proyecto: Proyecto, accion: str, comando: list[str], al_terminar=None) -> dict:
         try:
             identificador = trabajos.lanzar(proyecto.slug, accion, comando,
@@ -244,6 +257,12 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         if modulo not in MODULOS:
             raise HTTPException(404, "no existe ese módulo")
         return FileResponse(WEB / "js" / modulo, media_type="text/javascript")
+
+    @app.get("/vendor/{archivo}")
+    def libreria(archivo: str) -> FileResponse:
+        if archivo not in VENDOR_DEL_VISOR:
+            raise HTTPException(404, "no existe ese archivo")
+        return FileResponse(config.PLANTILLA_WEB / "vendor" / archivo, media_type=VENDOR_DEL_VISOR[archivo])
 
     @app.get("/fuente.woff2")
     def fuente() -> FileResponse:
@@ -383,11 +402,10 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def construir(slug: str, opciones: dict = Body(default={}),
                   mios: Vista = Depends(vista)) -> dict:
         proyecto = mios.ver(slug)
-        if not mios.es_equipo:
-            otros = [p.slug for p in mios.listar() if p.slug != slug and trabajos.corriendo(p.slug)]
-            if len(otros) >= registro.limites.construcciones:
-                raise HTTPException(429, "ya tienes una construcción en curso; lanza esta "
-                                         "cuando termine esa")
+        # Un master que va por el plano existe sin KMZ; construirlo, no.
+        if not config.kmz_en(proyecto.fuentes):
+            raise HTTPException(409, "falta el KMZ: súbelo o créalo desde el plano")
+        una_a_la_vez(mios, slug)
         sin_imagenes = bool(opciones.get("sin_imagenes"))
         # Con una construcción en curso, `lanzar` contesta 409: no se le cambia el
         # inventario por debajo a la que está leyendo.
@@ -427,6 +445,86 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return lanzar(proyecto, "publicar",
                       comandos.publicar(proyecto, vercel_proyecto=nombre, crear=primera_vez),
                       al_terminar=_anotar_publicacion(mios, proyecto, nombre))
+
+    # --- crea tu KMZ: del plano aprobado al KMZ del master ------------------------
+    #
+    # Lo que hacen está en `consola/plano.py`; acá, quién puede y cuándo. Todas
+    # resuelven el loteo con `mios.ver`: el plano de otra es un 404.
+
+    def plano_libre(slug: str) -> None:
+        """Lo que reescribe el plano o el KMZ no se hace mientras algo lo lee."""
+        if trabajos.corriendo(slug):
+            raise HTTPException(409, "este master está en algo (digitalizando o construyendo);"
+                                     " espera a que termine")
+
+    @app.post("/api/proyectos/{slug}/plano", status_code=201)
+    async def subir_plano(slug: str, archivo: UploadFile = File(...),
+                          mios: Vista = Depends(vista)) -> dict:
+        mios.ver(slug)
+        plano_libre(slug)
+        subida = Subida(ruta=archivo.filename or "plano.pdf", contenido=archivo.file, tamano=archivo.size)
+        try:
+            # Sacar las páginas de un escaneo grande toma segundos.
+            paginas = await run_in_threadpool(mios.subir_plano, slug, subida)
+        except LimiteAlcanzado as error:
+            raise HTTPException(413, str(error)) from error
+        return {"paginas": paginas}
+
+    @app.get("/api/proyectos/{slug}/plano")
+    def ver_plano(slug: str, mios: Vista = Depends(vista)) -> dict:
+        estado = mios.plano(slug).estado()
+        ultimo = trabajos.ultimo(slug)
+        estado["trabajo"] = (ultimo.como_json() if ultimo and ultimo.accion == "digitalizar-plano"
+                             else None)
+        return estado
+
+    @app.get("/api/proyectos/{slug}/plano/paginas/{n}")
+    def pagina_del_plano(slug: str, n: int, mini: bool = False,
+                         mios: Vista = Depends(vista)) -> FileResponse:
+        archivo = mios.plano(slug).imagen(n, mini)
+        if archivo is None:
+            raise HTTPException(404, "esa página no existe")
+        return FileResponse(archivo, media_type="image/jpeg",
+                            headers={"Cache-Control": "private, no-cache"})
+
+    @app.put("/api/proyectos/{slug}/plano/entradas")
+    def guardar_entradas(slug: str, entradas: dict = Body(...),
+                         mios: Vista = Depends(vista)) -> dict:
+        return mios.plano(slug).guardar_entradas(entradas)
+
+    @app.post("/api/proyectos/{slug}/plano/digitalizar", status_code=202)
+    def digitalizar_plano(slug: str, mios: Vista = Depends(vista)) -> dict:
+        proyecto = mios.ver(slug)
+        plano = mios.plano(slug)
+        huella = plano.para_digitalizar()
+        una_a_la_vez(mios, slug)
+
+        def anotar(trabajo) -> None:
+            # Con qué entradas quedó: si cambian, el paso se ve atrasado.
+            if trabajo.estado == "listo":
+                plano.anotar("digitalizado", huella)
+
+        return lanzar(proyecto, "digitalizar-plano", comandos.digitalizar_plano(proyecto),
+                      al_terminar=anotar)
+
+    @app.post("/api/proyectos/{slug}/plano/georreferenciar")
+    async def georreferenciar_plano(slug: str, mios: Vista = Depends(vista)) -> dict:
+        plano = mios.plano(slug)
+        ultimo = trabajos.ultimo(slug)
+        if ultimo and ultimo.accion == "digitalizar-plano" and not ultimo.terminado:
+            raise HTTPException(409, "se está digitalizando; ubícalo cuando termine")
+        return await run_in_threadpool(plano.georreferenciar)
+
+    @app.get("/api/proyectos/{slug}/plano/lotes")
+    def lotes_del_plano(slug: str, en: str = "px", mios: Vista = Depends(vista)) -> dict:
+        return mios.plano(slug).lotes(en)
+
+    @app.post("/api/proyectos/{slug}/plano/kmz", status_code=201)
+    async def kmz_del_plano(slug: str, opciones: dict = Body(default={}),
+                            mios: Vista = Depends(vista)) -> dict:
+        plano = mios.plano(slug)
+        plano_libre(slug)
+        return await run_in_threadpool(plano.crear_kmz, bool(opciones.get("confirmar_reemplazo")))
 
     @app.get("/api/trabajos/{identificador}")
     def ver_trabajo(identificador: str, desde: int = 0,
@@ -630,6 +728,20 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     async def diseno_invalido(peticion: Request, error: DisenoInvalido):
         return JSONResponse(status_code=400, content={"detail": str(error)})
 
+    @app.exception_handler(PlanoInvalido)
+    async def plano_invalido(peticion: Request, error: PlanoInvalido):
+        return JSONResponse(status_code=400, content={"detail": str(error)})
+
+    @app.exception_handler(PlanoNoListo)
+    async def plano_no_listo(peticion: Request, error: PlanoNoListo):
+        return JSONResponse(status_code=409, content={"detail": str(error)})
+
+    @app.exception_handler(KmzExistente)
+    async def kmz_existente(peticion: Request, error: KmzExistente):
+        """Dice cuál hay, para que la pantalla pida confirmar nombrándolo."""
+        return JSONResponse(status_code=409, content={"detail": str(error),
+                                                      "existentes": error.existentes})
+
     @app.exception_handler(NoEncontrado)
     async def no_encontrado(peticion: Request, error: NoEncontrado):
         """Lo que no existe y lo que es de otro se contestan igual."""
@@ -722,6 +834,11 @@ def _cliente_json(cliente, base: Base) -> dict:
 
 def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
     ultimo = trabajos.ultimo(proyecto.slug)
+    try:
+        paso = Plano(proyecto.fuentes).paso()
+    except (OSError, ValueError):
+        # Un plano a medio escribir no puede tumbar la lista de masters.
+        paso = "subir"
     return {
         "slug": proyecto.slug,
         "nombre": proyecto.nombre,
@@ -747,5 +864,7 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "subido": proyecto.subido,
         "diseno_id": proyecto.diseno_id,
         "trabajo": ultimo.como_json() if ultimo and not ultimo.terminado else None,
+        # Crea tu KMZ: en qué paso va el plano, si hay uno.
+        "plano": {"paso": paso} if paso != "subir" else None,
     }
 

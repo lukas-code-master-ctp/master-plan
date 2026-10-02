@@ -77,13 +77,19 @@
 
       <div class="renglon">
         <span class="renglon__rotulo" id="rotulo-kmz">KMZ</span>
-        <label class="archivo" id="caja-kmz">
-          <input id="nuevo-kmz" type="file" accept=".kmz" aria-labelledby="rotulo-kmz">
-          <span class="archivo__texto" id="texto-kmz">Subir el plano (.kmz)</span>
-        </label>
+        <div>
+          <label class="archivo" id="caja-kmz">
+            <input id="nuevo-kmz" type="file" accept=".kmz" aria-labelledby="rotulo-kmz">
+            <span class="archivo__texto" id="texto-kmz">Subir el plano (.kmz)</span>
+          </label>
+          <p class="nota" id="nuevo-plano-nota" hidden>Subes el PDF del plano aprobado (SAG o CBR) y
+            lo conviertes en el KMZ paso a paso. Las panorámicas las subes después, desde el master.</p>
+          <p class="nota"><button id="nuevo-desde-plano" class="enlace" type="button"
+            aria-pressed="false">No tengo el KMZ: créalo desde el plano</button></p>
+        </div>
       </div>
 
-      <div class="renglon">
+      <div class="renglon" id="nuevo-renglon-fotos">
         <span class="renglon__rotulo" id="rotulo-fotos">Panorámicas</span>
         <div>
           <label class="archivo archivo--alto" id="caja-fotos">
@@ -100,7 +106,7 @@
         </div>
       </div>
 
-      <div class="renglon">
+      <div class="renglon" id="nuevo-renglon-inventario">
         <span class="renglon__rotulo" id="rotulo-inventario">Inventario <i>opcional</i></span>
         <div>
           <label class="archivo" id="caja-inventario">
@@ -154,6 +160,7 @@
           <div id="plano-meta" class="meta"></div>
         </div>
         <div class="plano-detalle__acciones">
+          <a id="plano-kmz" class="boton boton--contorno" href="#/planos">Crear el KMZ desde el plano</a>
           <button class="boton boton--contorno" data-accion="archivos" type="button">Subir archivos</button>
           <button class="boton boton--contorno" data-accion="construir" type="button">Construir</button>
         </div>
@@ -272,6 +279,251 @@
         <button class="boton boton--texto" data-accion="pago" type="button" hidden>Anotar pago</button>
       </footer>
     </article>
+  </section>
+
+  <!-- Crea tu KMZ: del plano aprobado al KMZ de la subdivisión -->
+  <section id="pantalla-kmz" class="pantalla kmz" aria-labelledby="kmz-titulo" hidden>
+    <a class="volver" id="kmz-volver" href="#/planos">← Volver al master</a>
+    <header class="pantalla__cabecera">
+      <div>
+        <h1 id="kmz-titulo">Crea tu KMZ</h1>
+        <p class="guia">Del plano aprobado (el PDF del SAG o del CBR) al KMZ de la subdivisión.
+          Lo que marcas se guarda solo: puedes dejarlo y seguir otro día.</p>
+      </div>
+      <span id="kmz-guardado" class="nota" role="status" aria-live="polite"></span>
+    </header>
+
+    <nav aria-label="Pasos de Crea tu KMZ">
+      <ol id="kmz-pasos" class="pasos">
+        <li><button type="button" data-paso="subir"><b>1</b>Subir el plano</button></li>
+        <li><button type="button" data-paso="marcar"><b>2</b>Marcar</button></li>
+        <li><button type="button" data-paso="digitalizar"><b>3</b>Digitalizar</button></li>
+        <li><button type="button" data-paso="numerar"><b>4</b>Numerar</button></li>
+        <li><button type="button" data-paso="ubicar"><b>5</b>Ubicar</button></li>
+        <li><button type="button" data-paso="revisar"><b>6</b>Revisar</button></li>
+        <li><button type="button" data-paso="crear"><b>7</b>Crear el KMZ</button></li>
+      </ol>
+    </nav>
+
+    <div id="kmz-cuerpo" class="kmz-cuerpo">
+      <!-- 1. Subir -->
+      <div class="kmz-panel" id="kmz-panel-subir" data-panel="subir">
+        <h2 tabindex="-1">Sube el plano aprobado</h2>
+        <p class="ayuda">El PDF escaneado del plano (o una foto del papel en PDF). Se usa la imagen
+          tal como viene, sin perder resolución.</p>
+        <label class="soltadero" id="kmz-soltadero">
+          <input id="kmz-pdf" type="file" accept=".pdf,application/pdf" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 16V4m0 0 4 4m-4-4L8 8M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"
+                  fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span id="kmz-soltadero-texto">Arrastra el PDF del plano aquí o haz clic para elegirlo</span>
+        </label>
+        <div id="kmz-subiendo" class="avance" hidden>
+          <div class="progreso"><i></i></div>
+          <span id="kmz-subiendo-texto"></span>
+        </div>
+        <div id="kmz-hojas-caja" hidden>
+          <h3>Elige la página que muestra el loteo completo</h3>
+          <div id="kmz-hojas" class="hojas" role="group" aria-label="Páginas del PDF"></div>
+          <h3>Gírala hasta que se lea derecha</h3>
+          <div class="fila fila--envuelve">
+            <button class="boton boton--contorno" data-accion="kmz-girar-izq" type="button"
+                    aria-label="Girar 90 grados a la izquierda">↺ 90°</button>
+            <button class="boton boton--contorno" data-accion="kmz-girar-der" type="button"
+                    aria-label="Girar 90 grados a la derecha">↻ 90°</button>
+            <span class="nota">Girada <b id="kmz-rotacion">0°</b></span>
+          </div>
+          <div class="kmz-panel__pie">
+            <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: marcar el dibujo</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Marcar -->
+      <div class="kmz-panel" id="kmz-panel-marcar" data-panel="marcar" hidden>
+        <h2 tabindex="-1">Marca el dibujo</h2>
+        <ol class="kmz-instrucciones">
+          <li><b>Encierra el dibujo</b> del loteo (la "situación propuesta"): arrastra un rectángulo.</li>
+          <li><b>Tapa</b> lo que no es dibujo y quedó adentro: cuadros, cajetín, timbres, croquis.</li>
+          <li>Si es una foto del papel, marca las 4 esquinas del marco impreso.</li>
+        </ol>
+        <p id="kmz-sin-lector" class="kmz-nota-fuerte" hidden>Este servidor no lee los números del
+          plano solo. Con <b>Marcar un número</b>, haz clic en al menos un lote y escribe su número; los
+          demás los numeras después de digitalizar.</p>
+        <label class="kmz-casilla" id="kmz-lector-caja" hidden>
+          <input id="kmz-lector" type="checkbox" checked> Leer los números de lote del plano
+        </label>
+        <label class="kmz-casilla">
+          <input id="kmz-es-foto" type="checkbox"> Es una foto del papel (no un escaneo)
+        </label>
+        <div id="kmz-foto" class="kmz-foto" hidden>
+          <p id="kmz-esquinas-nota" class="nota"></p>
+          <div class="fila fila--envuelve">
+            <label class="campo"><span>Marco, ancho <i>mm, opcional</i></span>
+              <input id="kmz-marco-ancho" type="number" min="1" step="1" inputmode="numeric"></label>
+            <label class="campo"><span>Marco, alto <i>mm, opcional</i></span>
+              <input id="kmz-marco-alto" type="number" min="1" step="1" inputmode="numeric"></label>
+          </div>
+          <button class="boton boton--texto boton--chico" data-accion="kmz-borrar-esquinas" type="button">Borrar las esquinas</button>
+        </div>
+        <ul id="kmz-marcas" class="kmz-lista" aria-label="Lo marcado"></ul>
+        <button class="boton boton--texto boton--chico" data-accion="kmz-quitar-dibujo" type="button" hidden>Quitar el rectángulo del dibujo</button>
+        <p id="kmz-marcar-nota" class="nota" role="status"></p>
+        <div class="kmz-panel__pie">
+          <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: digitalizar</button>
+        </div>
+      </div>
+
+      <!-- 3. Digitalizar -->
+      <div class="kmz-panel" id="kmz-panel-digitalizar" data-panel="digitalizar" hidden>
+        <h2 tabindex="-1">Digitaliza el plano</h2>
+        <p class="ayuda">Se busca la tinta de los deslindes, se arma la red de lotes y se leen los
+          números. Toma de unos segundos a un par de minutos.</p>
+        <button class="boton" data-accion="kmz-digitalizar" type="button">Digitalizar</button>
+        <pre id="kmz-registro" class="consola-log" hidden aria-live="polite"></pre>
+        <dl id="kmz-cifras" class="kmz-cifras" hidden></dl>
+        <div class="kmz-panel__pie">
+          <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: numerar</button>
+        </div>
+      </div>
+
+      <!-- 4. Numerar -->
+      <div class="kmz-panel" id="kmz-panel-numerar" data-panel="numerar" hidden>
+        <h2 tabindex="-1">Revisa los números</h2>
+        <p class="ayuda">Haz clic en un lote para escribir o corregir su número. En
+          <span class="kmz-muestra kmz-muestra--usuario">verde</span> los que marcaste tú, en
+          <span class="kmz-muestra kmz-muestra--lector">azul</span> los leídos del plano (más claros
+          cuanto menos seguros; con "?" los de pocas lecturas) y en
+          <span class="kmz-muestra kmz-muestra--malo">rojo</span> los sin número o repetidos.</p>
+        <p id="kmz-sin-numero" class="kmz-nota-fuerte"></p>
+        <button class="boton boton--contorno boton--chico" data-accion="kmz-siguiente-sin-numero" type="button">Ir al siguiente sin número</button>
+        <p id="kmz-faltantes" class="kmz-nota-fuerte" hidden></p>
+        <div id="kmz-duplicados-caja" hidden>
+          <h3>Números repetidos</h3>
+          <div id="kmz-duplicados" class="kmz-pastillas"></div>
+        </div>
+        <div id="kmz-dudosos-caja" hidden>
+          <h3>Leídos con pocas lecturas: míralos</h3>
+          <div id="kmz-dudosos" class="kmz-pastillas"></div>
+        </div>
+        <p class="nota">Cuando cambias números, vuelve a digitalizar para separar bien los lotes.</p>
+        <div class="kmz-panel__pie">
+          <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: ubicar en el mapa</button>
+        </div>
+      </div>
+
+      <!-- 5. Ubicar -->
+      <div class="kmz-panel" id="kmz-panel-ubicar" data-panel="ubicar" hidden>
+        <h2 tabindex="-1">Ubica el plano en el mapa</h2>
+        <p class="kmz-nota-fuerte">Marca 4 puntos: esquinas del predio o cruces de caminos, lo más
+          separados posible.</p>
+        <p class="ayuda">Haz clic en un punto del plano (acerca bien) y después en el mismo punto
+          del mapa. Con 3 o más, un punto mal marcado se nota.</p>
+        <p id="kmz-ancla-estado" class="kmz-estado" role="status" aria-live="polite"></p>
+        <button class="boton boton--texto boton--chico" data-accion="kmz-cancelar-ancla" type="button" hidden>Cancelar este punto (Esc)</button>
+        <div class="fila">
+          <input id="kmz-ir-a" type="text" placeholder="-34.98, -71.24" autocomplete="off"
+                 aria-label="Ir a una latitud y longitud en el mapa">
+          <button class="boton boton--contorno" data-accion="kmz-ir" type="button">Ir</button>
+        </div>
+        <div id="kmz-cuadricula" class="kmz-cuadricula" hidden>
+          <p id="kmz-cuadricula-texto" class="nota"></p>
+          <button class="boton boton--contorno boton--chico" data-accion="kmz-usar-cuadricula" type="button">Usar la cuadrícula impresa</button>
+          <button class="boton boton--texto boton--chico" data-accion="kmz-quitar-cuadricula" type="button">Dejar de usarla</button>
+        </div>
+        <table id="kmz-anclas" class="kmz-tabla" hidden>
+          <caption class="nota">Residuo: cuánto se aleja cada punto del ajuste.</caption>
+          <thead><tr><th scope="col">Punto</th><th scope="col">Residuo</th><th scope="col">Estado</th><th scope="col"><span class="oculto">Acciones</span></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="kmz-ubicacion" class="kmz-ubicacion" hidden>
+          <p id="kmz-ubicacion-texto"></p>
+          <ul id="kmz-avisos" class="kmz-avisos"></ul>
+        </div>
+        <fieldset id="kmz-ajuste-fino" class="kmz-ajuste">
+          <legend>Ajuste fino</legend>
+          <p class="nota">Mueve los lotes para que los caminos calcen con la imagen.</p>
+          <div class="kmz-flechas">
+            <button class="boton boton--contorno" data-accion="kmz-norte" type="button" aria-label="Mover al norte">↑</button>
+            <button class="boton boton--contorno" data-accion="kmz-oeste" type="button" aria-label="Mover al oeste">←</button>
+            <button class="boton boton--contorno" data-accion="kmz-este" type="button" aria-label="Mover al este">→</button>
+            <button class="boton boton--contorno" data-accion="kmz-sur" type="button" aria-label="Mover al sur">↓</button>
+          </div>
+          <label class="campo"><span>De a</span>
+            <select id="kmz-paso-ajuste"><option value="1">1 m</option><option value="5">5 m</option><option value="0.2">20 cm</option></select>
+          </label>
+          <p id="kmz-ajuste" class="nota"></p>
+          <div class="fila fila--envuelve">
+            <button class="boton boton--contorno boton--chico" data-accion="kmz-arrastrar" type="button" aria-pressed="false">Arrastrar los lotes en el mapa</button>
+            <button class="boton boton--texto boton--chico" data-accion="kmz-ajuste-cero" type="button">Volver a cero</button>
+          </div>
+        </fieldset>
+        <div class="kmz-panel__pie">
+          <button class="boton boton--contorno" data-accion="kmz-georreferenciar" type="button">Ubicar de nuevo</button>
+          <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: revisar</button>
+        </div>
+      </div>
+
+      <!-- 6. Revisar -->
+      <div class="kmz-panel" id="kmz-panel-revisar" data-panel="revisar" hidden>
+        <h2 tabindex="-1">Revisa los lotes</h2>
+        <p class="ayuda">Cada lote se colorea por su área contra el cuadro de superficies del
+          plano. Toca un lote para ver sus números.</p>
+        <dl id="kmz-revision" class="kmz-cifras"></dl>
+        <p id="kmz-revision-nota" class="nota"></p>
+        <div class="kmz-panel__pie">
+          <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: crear el KMZ</button>
+        </div>
+      </div>
+
+      <!-- 7. Crear -->
+      <div class="kmz-panel" id="kmz-panel-crear" data-panel="crear" hidden>
+        <h2 tabindex="-1">Crea el KMZ</h2>
+        <p id="kmz-crear-texto" class="ayuda"></p>
+        <button class="boton boton--grande" data-accion="kmz-crear" type="button">Crear el KMZ</button>
+        <div id="kmz-listo" class="kmz-listo" role="status" hidden>
+          <p id="kmz-listo-texto"></p>
+          <p class="nota">Ahora sube las panorámicas del dron desde el master y construye.</p>
+          <a id="kmz-al-master" class="boton" href="#/planos">Ir al master</a>
+        </div>
+      </div>
+
+      <!-- El plano y el mapa -->
+      <div id="kmz-escena" class="kmz-escena" hidden>
+        <div id="kmz-plano" class="visor-plano">
+          <canvas id="kmz-lienzo" tabindex="0"
+                  aria-label="El plano. Arrastra para moverlo, la rueda o + y − para acercar, 0 para verlo entero."></canvas>
+          <div class="visor-plano__herramientas" role="toolbar" aria-label="Herramientas">
+            <button type="button" data-herramienta="mover" aria-pressed="true">Mover</button>
+            <button type="button" data-herramienta="dibujo" aria-pressed="false">Encerrar el dibujo</button>
+            <button type="button" data-herramienta="mascara" aria-pressed="false">Tapar</button>
+            <button type="button" data-herramienta="numero" aria-pressed="false">Marcar un número</button>
+            <button type="button" data-herramienta="esquinas" aria-pressed="false" hidden>Esquinas del marco</button>
+          </div>
+          <div class="visor-plano__zoom">
+            <button type="button" data-accion="kmz-acercar" aria-label="Acercar">+</button>
+            <button type="button" data-accion="kmz-alejar" aria-label="Alejar">−</button>
+            <button type="button" data-accion="kmz-ajustar" aria-label="Ver el plano entero">⤢</button>
+          </div>
+          <!-- Encima del plano y no arriba de la página: aparecer no corre lo que se está tocando. -->
+          <div id="kmz-atrasado" class="kmz-atrasado" role="status" hidden>
+            <span>Cambiaste el dibujo o los números: los lotes dibujados están desactualizados.</span>
+            <button class="boton boton--chico" data-accion="kmz-redigitalizar" type="button">Volver a digitalizar</button>
+          </div>
+          <form id="kmz-numero" class="kmz-numero" hidden>
+            <label for="kmz-numero-valor" id="kmz-numero-rotulo">Número del lote</label>
+            <div class="fila">
+              <input id="kmz-numero-valor" type="text" autocomplete="off" spellcheck="false" maxlength="20">
+              <button class="boton boton--chico" type="submit">OK</button>
+            </div>
+          </form>
+        </div>
+        <div id="kmz-mapa-caja" class="kmz-mapa" hidden>
+          <div id="kmz-mapa" aria-label="Mapa satelital"></div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- Mis diseños -->
@@ -397,6 +649,19 @@
   <div class="modal__pie">
     <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
     <button id="subir" class="boton" type="button" disabled>Subir</button>
+  </div>
+</dialog>
+
+<!-- Crea tu KMZ: ya hay un KMZ en el master -->
+<dialog id="kmz-reemplazo" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2>Ya hay un KMZ en este master</h2>
+  <ul id="kmz-reemplazo-lista" class="kmz-reemplazo"></ul>
+  <p class="ayuda">Si lo reemplazas, el nuevo queda como subdivision.kmz y el anterior se
+    guarda con la terminación .anterior: no se borra.</p>
+  <div class="modal__pie">
+    <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
+    <button id="kmz-reemplazar" class="boton" type="button">Reemplazarlo</button>
   </div>
 </dialog>
 

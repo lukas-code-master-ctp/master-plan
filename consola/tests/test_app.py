@@ -44,6 +44,11 @@ class ComandosDePrueba:
         self.pedidos.append(("calce", proyecto.slug, None))
         return self._guion(f"calce de {proyecto.slug}")
 
+    def digitalizar_plano(self, proyecto):
+        self.pedidos.append(("digitalizar-plano", proyecto.slug, None))
+        # Con tildes y símbolos: el avance del plano los trae.
+        return self._guion(f"digitalizando {proyecto.slug}: 1.200×900 px, rotación 90°")
+
     def publicar(self, proyecto, vercel_proyecto, crear=False):
         self.pedidos.append(("publicar", proyecto.slug, vercel_proyecto, crear))
         return self._guion(f"publicando {proyecto.slug}")
@@ -327,6 +332,8 @@ def test_un_proyecto_construido_muestra_su_resumen(entorno, tmp_path):
     ("/js/app.js", "text/javascript"),
     ("/js/plano.js", "text/javascript"),
     ("/fuente.woff2", "font/woff2"),
+    ("/vendor/leaflet.js", "text/javascript"),
+    ("/vendor/leaflet.css", "text/css"),
 ])
 def test_la_pagina_trae_sus_propios_archivos(entorno, ruta, tipo):
     cliente, _, _ = entorno
@@ -445,6 +452,7 @@ RUTAS = {
     ("GET", "/fuente.woff2"): SIN_SESION,
     ("GET", "/"): SOLO_SUYO,
     ("GET", "/js/{modulo}"): SOLO_SUYO,
+    ("GET", "/vendor/{archivo}"): SOLO_SUYO,
     ("GET", "/api/sesion"): SOLO_SUYO,
     ("POST", "/api/clave"): SOLO_SUYO,
     ("GET", "/api/proyectos"): SOLO_SUYO,
@@ -465,6 +473,14 @@ RUTAS = {
     ("POST", "/api/proyectos/{slug}/construir"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/publicar"): AJENO_404,
     ("GET", "/api/trabajos/{identificador}"): AJENO_404,
+    ("POST", "/api/proyectos/{slug}/plano"): AJENO_404,
+    ("GET", "/api/proyectos/{slug}/plano"): AJENO_404,
+    ("GET", "/api/proyectos/{slug}/plano/paginas/{n}"): AJENO_404,
+    ("PUT", "/api/proyectos/{slug}/plano/entradas"): AJENO_404,
+    ("POST", "/api/proyectos/{slug}/plano/digitalizar"): AJENO_404,
+    ("POST", "/api/proyectos/{slug}/plano/georreferenciar"): AJENO_404,
+    ("GET", "/api/proyectos/{slug}/plano/lotes"): AJENO_404,
+    ("POST", "/api/proyectos/{slug}/plano/kmz"): AJENO_404,
     ("GET", "/calce/{slug}/{archivo}"): AJENO_404,
     ("POST", "/api/proyectos/vincular"): SOLO_CTP,
     ("GET", "/api/plataforma/clientes"): SOLO_CTP,
@@ -558,7 +574,18 @@ def de_ana(ctp, ana, registro, nombre="De Ana"):
     lambda web, slug: web.get(f"/api/proyectos/{slug}/plantilla"),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/archivos",
                                files=[("archivos", ("x.kmz", b"kmz", "application/octet-stream"))]),
-], ids=["ajustar", "olvidar", "construir", "publicar", "calce", "portada", "plantilla", "subir"])
+    lambda web, slug: web.post(f"/api/proyectos/{slug}/plano",
+                               files={"archivo": ("plano.pdf", b"%PDF-1.7 ", "application/pdf")}),
+    lambda web, slug: web.get(f"/api/proyectos/{slug}/plano"),
+    lambda web, slug: web.get(f"/api/proyectos/{slug}/plano/paginas/1"),
+    lambda web, slug: web.put(f"/api/proyectos/{slug}/plano/entradas", json={"pagina": 1}),
+    lambda web, slug: web.post(f"/api/proyectos/{slug}/plano/digitalizar"),
+    lambda web, slug: web.post(f"/api/proyectos/{slug}/plano/georreferenciar"),
+    lambda web, slug: web.get(f"/api/proyectos/{slug}/plano/lotes"),
+    lambda web, slug: web.post(f"/api/proyectos/{slug}/plano/kmz", json={"confirmar_reemplazo": True}),
+], ids=["ajustar", "olvidar", "construir", "publicar", "calce", "portada", "plantilla", "subir",
+        "plano-subir", "plano-ver", "plano-pagina", "plano-entradas", "plano-digitalizar",
+        "plano-georreferenciar", "plano-lotes", "plano-kmz"])
 def test_el_loteo_de_otra_contesta_404_en_todas_las_rutas(ana_y_luis, pedir):
     ctp, ana, luis, registro, comandos = ana_y_luis
     slug = de_ana(ctp, ana, registro)
@@ -945,6 +972,8 @@ def test_la_pagina_no_sirve_modulos_que_no_son_suyos(entorno):
 
     assert cliente.get("/js/..%2Fapp.py").status_code == 404
     assert cliente.get("/js/otro.js").status_code == 404
+    assert cliente.get("/vendor/..%2F..%2Fconsola%2Fapp.py").status_code == 404
+    assert cliente.get("/vendor/fuentes").status_code == 404
 
 
 def test_un_pago_anotado_no_se_pisa(ana_y_luis):

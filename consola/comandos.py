@@ -31,6 +31,11 @@ class Comandos:
                 "--proyecto", str(proyecto.fuentes),
                 "--salida", str(proyecto.salida.base)]
 
+    def digitalizar_plano(self, proyecto) -> list[str]:
+        """Crea tu KMZ: de `entradas.json` a los lotes en píxeles del plano."""
+        return [sys.executable, "-m", "pipeline.plano", "digitalizar",
+                str(proyecto.fuentes / config.CARPETA_PLANO)]
+
     def publicar(self, proyecto, vercel_proyecto: str, crear: bool = False) -> list[str]:
         """Copia el visor actual sobre el sitio y lo sube.
 

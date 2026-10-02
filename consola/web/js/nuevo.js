@@ -4,6 +4,9 @@
  * Construir es tres pasos: crear el loteo, subirle los archivos y lanzar la
  * construcción. Si se corta a mitad de camino, el loteo ya creado queda en Mis
  * planos para terminar de subir desde su detalle: nada se pierde.
+ *
+ * Sin KMZ ("créalo desde el plano") solo se crea el loteo y se sigue en Crea tu
+ * KMZ; las panorámicas se suben después, desde el master.
  */
 import { $, avisar, estado, json, pedir } from './comun.js';
 import { opcionesDeDiseno } from './disenos.js';
@@ -12,8 +15,9 @@ import { desdeEntrada, esFoto, esKmz, esPlanilla, megas, soltadero, subir } from
 
 const eleccion = { kmz: null, fotos: [], inventario: null };
 let enCurso = false;
+let desdePlano = false;
 
-export function prepararNuevo({ alCrear }) {
+export function prepararNuevo({ alCrear, alCrearDesdePlano }) {
   const form = $('#nuevo-master');
 
   $('#nuevo-kmz').addEventListener('change', (e) => tomar(desdeEntrada(e.target)));
@@ -29,7 +33,13 @@ export function prepararNuevo({ alCrear }) {
   form.addEventListener('submit', async (evento) => {
     evento.preventDefault();
     if (enCurso) return;
-    await construir(alCrear);
+    if (desdePlano) await crearDesdePlano(alCrearDesdePlano);
+    else await construir(alCrear);
+  });
+
+  $('#nuevo-desde-plano').addEventListener('click', () => {
+    desdePlano = !desdePlano;
+    pintar();
   });
 
   $('#vincular').addEventListener('click', async () => {
@@ -49,6 +59,7 @@ export function abrirNuevo() {
   eleccion.kmz = null;
   eleccion.fotos = [];
   eleccion.inventario = null;
+  desdePlano = false;
   $('#nuevo-progreso').hidden = true;
   $('#carpeta-local').hidden = !(estado.sesion?.rol === 'plataforma' && estado.sesion?.puede_vincular);
   opcionesDeDiseno($('#nuevo-diseno'), null);
@@ -72,6 +83,14 @@ function tomar(encontrados) {
 }
 
 function pintar() {
+  $('#caja-kmz').hidden = desdePlano;
+  $('#nuevo-plano-nota').hidden = !desdePlano;
+  $('#nuevo-renglon-fotos').hidden = desdePlano;
+  $('#nuevo-renglon-inventario').hidden = desdePlano;
+  $('#nuevo-desde-plano').setAttribute('aria-pressed', String(desdePlano));
+  $('#nuevo-desde-plano').textContent = desdePlano
+    ? 'Tengo el KMZ: subirlo con las panorámicas' : 'No tengo el KMZ: créalo desde el plano';
+  $('#construir-nuevo').textContent = desdePlano ? 'Crear y seguir con el plano' : 'Construir';
   const marcar = (caja, texto, lleno) => {
     $(`#texto-${caja}`).textContent = texto;
     $(`#caja-${caja}`).classList.toggle('archivo--lleno', lleno);
@@ -106,6 +125,31 @@ function faltante() {
       + 'Sube solo las panorámicas del vuelo, sin videos ni fotos sueltas.', '#nuevo-fotos'];
   }
   return null;
+}
+
+/** Sin KMZ: solo el loteo (nombre y diseño), y a Crea tu KMZ. */
+async function crearDesdePlano(alCrear) {
+  avisar(null);
+  if (!$('#nuevo-nombre').value.trim()) {
+    avisar('Ponle un nombre al loteo.');
+    $('#nuevo-nombre').focus();
+    return;
+  }
+  enCurso = true;
+  const boton = $('#construir-nuevo');
+  boton.disabled = true;
+  try {
+    const { slug } = await pedir('/api/proyectos', json({
+      nombre: $('#nuevo-nombre').value.trim(),
+      diseno_id: $('#nuevo-diseno').value || null,
+    }));
+    await alCrear(slug);
+  } catch (error) {
+    avisar(error.message);
+  } finally {
+    enCurso = false;
+    boton.disabled = false;
+  }
 }
 
 async function construir(alCrear) {
