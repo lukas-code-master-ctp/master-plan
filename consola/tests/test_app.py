@@ -12,6 +12,7 @@ from consola.acceso import Acceso
 from consola.app import crear_app
 from consola.datos import Base
 from consola.disenos import Disenos
+from consola.kmzs import RegistroKmz
 from consola.proyectos import Limites, Registro
 from consola.trabajos import Trabajos
 
@@ -49,6 +50,11 @@ class ComandosDePrueba:
         # Con tildes y símbolos: el avance del plano los trae.
         return self._guion(f"digitalizando {proyecto.slug}: 1.200×900 px, rotación 90°")
 
+    def digitalizar_carpeta(self, carpeta):
+        """Un KMZ de Mis KMZ: la carpeta se llama como su slug."""
+        self.pedidos.append(("digitalizar-kmz", carpeta.name, None))
+        return self._guion(f"digitalizando {carpeta.name}: 1.200×900 px, rotación 90°")
+
     def publicar(self, proyecto, vercel_proyecto, crear=False):
         self.pedidos.append(("publicar", proyecto.slug, vercel_proyecto, crear))
         return self._guion(f"publicando {proyecto.slug}")
@@ -68,7 +74,8 @@ def montar(tmp_path, local=True, crm_por_defecto=None, limites=None):
     comandos = ComandosDePrueba()
     app = crear_app(registro=registro, trabajos=Trabajos(), comandos=comandos,
                     acceso=Acceso(base=base, secreto="un-secreto", local=local), base=base,
-                    disenos=Disenos(base=base, carpeta=tmp_path / "disenos"))
+                    disenos=Disenos(base=base, carpeta=tmp_path / "disenos"),
+                    kmzs=RegistroKmz(base=base, carpeta=tmp_path / "kmz", limites=registro.limites))
     return app, base, registro, comandos
 
 
@@ -482,6 +489,20 @@ RUTAS = {
     ("GET", "/api/proyectos/{slug}/plano/lotes"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/plano/kmz"): AJENO_404,
     ("GET", "/calce/{slug}/{archivo}"): AJENO_404,
+    # Mis KMZ: lo ajeno se prueba en test_kmz.py (test_el_kmz_de_otra_contesta_404...).
+    ("GET", "/api/kmz"): SOLO_SUYO,
+    ("POST", "/api/kmz"): SOLO_SUYO,
+    ("GET", "/api/kmz/{slug}"): AJENO_404,
+    ("PATCH", "/api/kmz/{slug}"): AJENO_404,
+    ("DELETE", "/api/kmz/{slug}"): AJENO_404,
+    ("POST", "/api/kmz/{slug}/plano"): AJENO_404,
+    ("GET", "/api/kmz/{slug}/paginas/{n}"): AJENO_404,
+    ("PUT", "/api/kmz/{slug}/entradas"): AJENO_404,
+    ("POST", "/api/kmz/{slug}/digitalizar"): AJENO_404,
+    ("POST", "/api/kmz/{slug}/georreferenciar"): AJENO_404,
+    ("GET", "/api/kmz/{slug}/lotes"): AJENO_404,
+    ("POST", "/api/kmz/{slug}/crear"): AJENO_404,
+    ("GET", "/api/kmz/{slug}/descargar"): AJENO_404,
     ("POST", "/api/proyectos/vincular"): SOLO_CTP,
     ("GET", "/api/plataforma/clientes"): SOLO_CTP,
     ("POST", "/api/plataforma/clientes"): SOLO_CTP,
