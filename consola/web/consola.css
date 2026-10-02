@@ -513,6 +513,65 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
   .vuelo__lote, .vuelo__progreso i { transition: none; }
 }
 
+/* --- El escáner: digitalizar el plano en Crea tu KMZ --------------------------- */
+
+/* La misma tarjeta que el vuelo, apilada: el panel del KMZ es angosto. `data-paso`
+   (1 a 5) dice qué ya se armó sobre la hoja; cada capa se suma a las anteriores. */
+.escaner { grid-template-columns: minmax(0, 1fr); padding: 0.875rem 1rem; }
+.escaner__escena { max-width: 22rem; margin: 0 auto; color: var(--lote-disponible); }
+.escaner__hoja { transform-box: fill-box; transform-origin: center; }
+.escaner:not([hidden]) .escaner__hoja { animation: escaner-hoja 600ms var(--vuelo-curva); }
+.escaner__papel { fill: #fff; stroke: var(--zinc-300); stroke-width: 1; filter: drop-shadow(0 1px 2px rgb(9 9 11 / 0.08)); }
+.escaner__cajetin { fill: none; stroke: var(--zinc-300); stroke-width: 0.8; }
+/* El loteo impreso, tal como viene en el PDF. */
+.escaner__tinta { fill: none; stroke: var(--zinc-400); stroke-width: 0.8; stroke-dasharray: 3 1.5; transition: opacity 600ms; }
+/* Lo que lee el lector: los números, en el azul de "leído del plano" del paso 4. */
+.escaner__numero {
+  font: 700 9px/1 var(--sans); text-anchor: middle; fill: #1d4ed8;
+  opacity: 0; transform: translateY(3px); transform-box: fill-box;
+  transition: opacity 400ms, transform 400ms var(--vuelo-curva);
+}
+.escaner__numero[data-leido="1"] { opacity: 1; transform: none; }
+/* Los deslindes se dibujan (pathLength = 1) y los lotes se rellenan, de a uno. */
+.escaner__deslinde {
+  fill: none; stroke: var(--zinc-900); stroke-width: 1.2; stroke-linejoin: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  transition: stroke-dashoffset 900ms var(--vuelo-curva) calc(var(--i) * 80ms), stroke-width 500ms;
+}
+.escaner__lote { fill: transparent; transition: fill 500ms calc(var(--i) * 140ms); }
+.escaner:is([data-paso="3"], [data-paso="4"], [data-paso="5"]) .escaner__deslinde { stroke-dashoffset: 0; }
+.escaner:is([data-paso="4"], [data-paso="5"]) .escaner__lote { fill: rgb(22 163 74 / 0.16); }
+.escaner:is([data-paso="4"], [data-paso="5"]) .escaner__lote:nth-child(3n + 2) { fill: rgb(37 99 235 / 0.14); }
+.escaner:is([data-paso="4"], [data-paso="5"]) .escaner__lote:nth-child(3n) { fill: rgb(245 158 11 / 0.16); }
+/* Enderezando: las líneas quedan nítidas y lo impreso se va al fondo. */
+.escaner[data-paso="5"] .escaner__deslinde { stroke-width: 1.6; stroke-linejoin: miter; }
+.escaner[data-paso="5"] .escaner__tinta { opacity: 0.25; }
+
+/* La línea de luz barre la hoja mientras se trabaja; más rápido al leer los números. */
+.escaner__barrido { opacity: 0; transition: opacity 400ms; }
+.escaner__estela { fill: url(#escaner-estela); }
+.escaner__linea { fill: currentColor; }
+.escaner[data-estado="escaneando"] .escaner__barrido {
+  opacity: 1; animation: escaner-barrer 4.2s var(--vuelo-curva) infinite alternate;
+}
+.escaner[data-estado="escaneando"][data-paso="2"] .escaner__barrido { animation-duration: 2.4s; }
+/* Si falla, el escáner se queda donde iba, en rojo, y la hoja se apaga. */
+.escaner[data-estado="fallo"] .escaner__barrido { opacity: 1; color: var(--rojo-700); transform: translateY(84px); }
+.escaner[data-estado="fallo"] .escaner__papel { fill: var(--zinc-50); }
+.escaner[data-estado="fallo"] .escaner__lote { fill: transparent; }
+
+/* Solo se mueve, sin partir transparente: si la animación no corre (pestaña oculta,
+   sin movimiento), la hoja igual se ve. */
+@keyframes escaner-hoja { from { transform: translateY(6px) scale(0.97); } to { transform: none; } }
+@keyframes escaner-barrer { from { transform: translateY(8px); } to { transform: translateY(160px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Sin movimiento: la hoja con lo que ya se armó, la barra y el texto. */
+  .escaner__barrido { display: none; }
+  .escaner:not([hidden]) .escaner__hoja { animation: none; }
+  .escaner__numero, .escaner__deslinde, .escaner__lote, .escaner__tinta { transition: none; }
+}
+
 /* --- Registro del trabajo ----------------------------------------------------- */
 
 .consola-log {
