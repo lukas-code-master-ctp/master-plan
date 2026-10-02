@@ -12,7 +12,7 @@ usarlo más adelante. Hoy no puede.
 | Tema | Decisión |
 |---|---|
 | Qué es | Una herramienta aparte. Un **KMZ** es su propia entidad, con nombre, de una loteadora. |
-| Entrada | Botón **"Nuevo KMZ"** a la derecha de "Nuevo master" en *Mis planos*, y también en *Mis KMZ*. |
+| Entrada | Botón **"Nuevo KMZ"** en *Mis KMZ*. (Al principio también estaba junto a "Nuevo master" en *Mis planos*; se sacó el 2026-10-02 porque la pestaña ya está a la vista.) |
 | Listado | Pantalla propia **"Mis KMZ"**: en curso y terminados. |
 | Resultado | **Descargarlo** y **usarlo en un master**. |
 | Cobro | Gratis y sin tope de cantidad. Se mantiene "una digitalización a la vez por loteadora" (cada una usa hasta ~5 min de CPU). |
@@ -70,7 +70,6 @@ La exclusión de la carpeta `plano/` en `pipeline/config.py` se mantiene: es ino
 protege una carpeta vieja si apareciera.
 
 **Pantallas.**
-- *Mis planos*: botón "Nuevo KMZ" a la derecha de "Nuevo master".
 - *Mis KMZ* (`#/kmz`): tarjetas con nombre, paso en que va (subir, marcar, digitalizar,
   ubicar, crear, listo), cantidad de lotes y fecha. "Nuevo KMZ" pide un nombre y lleva al
   KMZ.

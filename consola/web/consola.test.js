@@ -103,9 +103,11 @@ test('la navegación tiene la pestaña Mis KMZ, entre Mis planos y Mis diseños'
   assert.deepEqual(pestanas, ['planos', 'kmz', 'disenos']);
 });
 
-test('Nuevo KMZ va a la derecha de Nuevo master en Mis planos', () => {
+test('Nuevo KMZ vive en Mis KMZ, no en Mis planos', () => {
   const planos = html.slice(html.indexOf('id="pantalla-planos"'), html.indexOf('id="planos"'));
-  assert.ok(planos.indexOf('Nuevo master') < planos.indexOf('id="planos-nuevo-kmz"'));
+  assert.ok(planos.includes('Nuevo master'));
+  assert.ok(!planos.includes('Nuevo KMZ'), 'Mis planos no debe ofrecer Nuevo KMZ: para eso está la pestaña');
+  assert.ok(html.includes('id="kmzs-nuevo"'));
 });
 
 test('ya no queda el flujo del KMZ dentro del master', () => {
