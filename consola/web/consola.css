@@ -149,6 +149,10 @@ button { cursor: pointer; }
 .pantalla h1 { margin: 0; font: 700 1.75rem/1.15 var(--sans); letter-spacing: -0.025em; }
 .pantalla__cabecera { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .pantalla__cabecera .guia { margin: 0.4rem 0 0; }
+/* El texto toma el ancho que sobra y los botones se quedan a la derecha; en pantallas
+   angostas los botones bajan. */
+.pantalla__cabecera > div:first-child { flex: 1 1 20rem; min-width: 0; }
+.pantalla__cabecera > .boton, .pantalla__acciones { flex-shrink: 0; }
 .volver {
   justify-self: start; margin-bottom: -0.5rem;
   color: var(--zinc-500); font-size: 0.8125rem; text-decoration: none;
