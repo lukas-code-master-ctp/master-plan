@@ -442,10 +442,10 @@ Es una herramienta aparte, **Mis KMZ**: el KMZ no necesita un master. La loteado
 puede quererlo para su topógrafo, para Google Earth o para otro sistema, y usarlo en un
 master cuando quiera (o nunca).
 
-- **Dónde se entra.** El botón **Nuevo KMZ**, a la derecha de **Nuevo master** en *Mis
-  planos*, y la pestaña **Mis KMZ** (`#/kmz`), con los KMZ en curso y terminados: el
-  paso en que va cada uno, cuántos lotes tiene y la fecha. Nuevo KMZ pide un nombre y
-  lleva a los 7 pasos (`#/kmz/<slug>`).
+- **Dónde se entra.** La pestaña **Mis KMZ** (`#/kmz`), con los KMZ en curso y
+  terminados: el paso en que va cada uno, cuántos lotes tiene y la fecha. Su botón
+  **Nuevo KMZ** pide un nombre y lleva a los 7 pasos (`#/kmz/<slug>`). *Mis planos* no lo
+  repite: la pestaña está siempre a la vista.
 - **Al terminar**, **Descargar** entrega el `.kmz` con el nombre que le pusiste, y
   **Usar en un master** lo pone en uno existente o en un "Nuevo master con este KMZ".
   También se elige desde el otro lado: en *Nuevo master* el KMZ se sube o se elige de
