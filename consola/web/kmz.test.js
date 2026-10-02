@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  aPagina, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, loteEn,
+  anclaDesde, aPagina, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, siguienteNombre,
   tamanoRotado, vistaAjustada, zoomEn,
@@ -238,4 +238,99 @@ test('el hash lleva a Mis KMZ y a un KMZ, que ya no cuelga de un master', () => 
   assert.deepEqual(ruta('#/planos/los-robles'), { pantalla: 'plano', slug: 'los-robles' });
   // La ruta vieja dentro del master ya no existe: cae en el master.
   assert.deepEqual(ruta('#/planos/los-robles/kmz'), { pantalla: 'plano', slug: 'los-robles' });
+});
+
+// --- ir a coordenadas -----------------------------------------------------------------
+
+const enCoordenadas = (texto, lat, lon, tol = 1e-6) => {
+  const p = leerCoordenadas(texto);
+  assert.ok(p, `no leyó ${texto}`);
+  cerca(p.lat, lat, tol);
+  cerca(p.lon, lon, tol);
+};
+
+test('leerCoordenadas: decimales con coma, espacios o punto y coma', () => {
+  enCoordenadas('-34.98, -71.24', -34.98, -71.24);
+  enCoordenadas('-34.98,-71.24', -34.98, -71.24);
+  enCoordenadas('  -34.98   -71.24 ', -34.98, -71.24);
+  enCoordenadas('-34.98; -71.24', -34.98, -71.24);
+  enCoordenadas('-34,98 -71,24', -34.98, -71.24);
+  enCoordenadas('+10.5, 20', 10.5, 20);
+});
+
+test('leerCoordenadas: el ejemplo de Google Earth del usuario', () => {
+  enCoordenadas(`34°10'37.50"S 71°32'53.89"W`, -34.177083, -71.548303);
+  enCoordenadas(`34°10'37.50"S, 71°32'53.89"W`, -34.177083, -71.548303);
+});
+
+test('leerCoordenadas: variantes de símbolos y espacios', () => {
+  enCoordenadas('34º10′37.50″S 71º32′53.89″W', -34.177083, -71.548303);
+  enCoordenadas('34° 10’ 37.50” S   71° 32’ 53.89” W', -34.177083, -71.548303);
+  enCoordenadas(`34°10'37.50''S 71°32'53.89''W`, -34.177083, -71.548303);
+  enCoordenadas(`34°10'37,50"S 71°32'53,89"W`, -34.177083, -71.548303);
+  enCoordenadas(`34°10'37.50"s 71°32'53.89"w`, -34.177083, -71.548303);
+  enCoordenadas(`34 10'37.50"S 71 32'53.89"W`, -34.177083, -71.548303);
+});
+
+test('leerCoordenadas: hemisferio adelante, O de oeste y N/E positivos', () => {
+  enCoordenadas(`S 34°10'37.5" W 71°32'53.89"`, -34.177083, -71.548303);
+  enCoordenadas(`S34°10'37.5" O71°32'53.89"`, -34.177083, -71.548303);
+  enCoordenadas(`34°10'37.5"S 71°32'53.89"O`, -34.177083, -71.548303);
+  enCoordenadas(`40°26'46"N 79°58'56"E`, 40 + 26 / 60 + 46 / 3600, 79 + 58 / 60 + 56 / 3600);
+  enCoordenadas(`-34°10'37.5" -71°32'53.89"`, -34.177083, -71.548303);
+});
+
+test('leerCoordenadas: grados y minutos decimales', () => {
+  enCoordenadas(`34°10.625'S 71°32.89817'W`, -34.177083, -71.548303);
+  enCoordenadas('34.177083°S 71.548303°W', -34.177083, -71.548303);
+});
+
+test('leerCoordenadas: las letras deciden cuál es la latitud', () => {
+  enCoordenadas(`71°32'53.89"W 34°10'37.50"S`, -34.177083, -71.548303);
+  enCoordenadas(`71°32'53.89"W, 34°10'37.50"`, 34.177083, -71.548303);  // sin letra, positiva
+  // Sin letras va latitud, longitud; salvo que el primero no pueda ser latitud.
+  enCoordenadas('-34.98, -71.24', -34.98, -71.24);
+  enCoordenadas('10, 20', 10, 20);
+  enCoordenadas('-120.5, -34.98', -34.98, -120.5);
+});
+
+test('leerCoordenadas: lo que no entiende o se sale de rango da null', () => {
+  for (const malo of [
+    '', '   ', 'hola', '-34.98', '-34.98, -71.24, 5', 'S W',
+    `34°10'37.50"S 71°32'53.89"S`,          // dos latitudes
+    `34°10'37.50"W 71°32'53.89"E`,          // dos longitudes
+    `34°60'00"S 71°00'00"W`,                // minutos ≥ 60
+    `34°10'60"S 71°00'00"W`,                // segundos ≥ 60
+    `34.5°10'S 71°W`,                       // grados con decimales y además minutos
+    `34°10.5'30"S 71°W`,                    // minutos con decimales y además segundos
+    `34"10'S 71°W`,                         // símbolos en desorden
+    '-34°N 71°W',                           // el signo contradice la letra
+    '95, 95', '-34, 190', '120, 100',      // fuera de rango
+    `91°00'00"S 71°W`, `34°S 181°W`,
+    '-34.98 x -71.24',
+  ]) assert.equal(leerCoordenadas(malo), null, malo);
+  assert.equal(leerCoordenadas(null), null);
+  assert.equal(leerCoordenadas(undefined), null);
+});
+
+test('anclaDesde: el punto del plano con el lugar escrito, igual que un clic en el mapa', () => {
+  const p = leerCoordenadas(`34°10'37.50"S 71°32'53.89"W`);
+  const ancla = anclaDesde({ nombre: 'A', x: 120.5, y: 88 }, p.lat, p.lon);
+  assert.deepEqual(Object.keys(ancla).sort(), ['lat', 'lon', 'nombre', 'x', 'y']);
+  assert.equal(ancla.nombre, 'A');
+  assert.equal(ancla.x, 120.5);
+  assert.equal(ancla.y, 88);
+  assert.equal(ancla.lat, -34.1770833);
+  assert.equal(ancla.lon, -71.5483028);
+});
+
+test('leerCoordenadas: comas decimales ambiguas y textos largos', () => {
+  // "-34,98, -71,24" mezcla coma decimal y coma separadora: no se adivina.
+  assert.equal(leerCoordenadas('-34,98, -71,24'), null);
+  enCoordenadas('-34,98;-71,24', -34.98, -71.24);
+  for (const largo of ['1,1' + ' '.repeat(100000) + 'x', '1'.repeat(100000), `1'`.repeat(50000), '1 '.repeat(50000)]) {
+    const t0 = performance.now();
+    assert.equal(leerCoordenadas(largo), null);
+    assert.ok(performance.now() - t0 < 500, `lento con ${largo.length} caracteres`);
+  }
 });

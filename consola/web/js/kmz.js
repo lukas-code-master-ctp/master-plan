@@ -11,7 +11,7 @@
  */
 import { $, $$, avisar, estado, json, pedir } from './comun.js';
 import {
-  dudosos, duplicados, empujar, girarEntradas, loteEn, nombreDelSistema, ordenarEsquinas, PASOS,
+  anclaDesde, dudosos, duplicados, empujar, girarEntradas, leerCoordenadas, loteEn, nombreDelSistema, ordenarEsquinas, PASOS,
   pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono,
   resumenRevision, siguienteNombre,
 } from './kmz_geometria.js';
@@ -136,7 +136,7 @@ export function prepararKmz(opciones) {
     if (e.key === 'Escape') { e.stopPropagation(); cerrarNumero(); }
   });
   $('#kmz-ir-a').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); irA().catch((error) => avisar(error.message)); }
+    if (e.key === 'Enter') { e.preventDefault(); (pendiente ? usarCoordenadas : irA)().catch((error) => avisar(error.message)); }
   });
 
   document.addEventListener('keydown', (e) => {
@@ -275,6 +275,7 @@ async function manejar(nodo) {
   if (accion === 'kmz-digitalizar' || accion === 'kmz-redigitalizar') return digitalizar();
   if (accion === 'kmz-siguiente-sin-numero') return siguienteSinNumero();
   if (accion === 'kmz-ir') return irA();
+  if (accion === 'kmz-usar-coordenadas') return usarCoordenadas();
   if (accion === 'kmz-cancelar-ancla') return cancelarAncla();
   if (accion === 'kmz-usar-cuadricula') return usarCuadricula(true);
   if (accion === 'kmz-quitar-cuadricula') return usarCuadricula(false);
@@ -492,14 +493,16 @@ function abrirNumero(x, y) {
   const forma = $('#kmz-numero');
   const [sx, sy] = lienzo.aPantalla(x, y);
   const caja = $('#kmz-plano');
-  forma.style.left = `${Math.min(Math.max(sx, 8), caja.clientWidth - 200)}px`;
-  forma.style.top = `${Math.min(Math.max(sy + 12, 8), caja.clientHeight - 56)}px`;
-  forma.hidden = false;
   const actual = lote?.properties.numero ?? '';
   $('#kmz-numero-valor').value = actual;
   $('#kmz-numero-rotulo').textContent = lote
     ? (actual ? `Lote ${actual}${lote.properties.origen === 'lector' ? ' (leído)' : ''}: corrige el número` : 'Número de este lote')
     : 'Número del lote que está aquí';
+  forma.hidden = false;
+  // Se mide ya visible y se mantiene entera dentro del plano, también junto a los bordes.
+  const margen = 8;
+  forma.style.left = `${Math.max(margen, Math.min(sx, caja.clientWidth - forma.offsetWidth - margen))}px`;
+  forma.style.top = `${Math.max(margen, Math.min(sy + 12, caja.clientHeight - forma.offsetHeight - margen))}px`;
   $('#kmz-numero-valor').focus();
   $('#kmz-numero-valor').select();
   lienzo.redibujar();
@@ -538,6 +541,10 @@ function marcarEnPlano(x, y) {
   pendiente = { nombre, x: round(x), y: round(y) };
   lienzo.redibujar();
   pintarPanel();
+  // En pantalla angosta el mapa queda debajo del plano: se trae a la vista para el clic que falta.
+  const caja = $('#kmz-mapa-caja');
+  const { top, bottom } = caja.getBoundingClientRect();
+  if (!caja.hidden && (top < 0 || bottom > window.innerHeight)) caja.scrollIntoView({ block: 'nearest' });
 }
 
 function marcarEnMapa(lat, lon) {
@@ -546,7 +553,7 @@ function marcarEnMapa(lat, lon) {
     $('#kmz-ancla-estado').textContent = 'Primero haz clic en el punto del plano; después, en el mismo punto del mapa.';
     return;
   }
-  const ancla = { ...pendiente, lon: Number(lon.toFixed(7)), lat: Number(lat.toFixed(7)) };
+  const ancla = anclaDesde(pendiente, lat, lon);
   pendiente = null;
   rehacer = null;
   cambiar({ ...entradas, anclas: [...entradas.anclas.filter((a) => a.nombre !== ancla.nombre), ancla] });
@@ -610,15 +617,23 @@ async function ubicar() {
   pintarMapa();
 }
 
+const NO_ENTENDI = `No entendí esas coordenadas. Escríbelas como -34.98, -71.24 o como 34°10'37.5"S 71°32'53.9"W.`;
+
 async function irA() {
-  const texto = $('#kmz-ir-a').value;
-  const numeros = (texto.match(/-?\d+(?:[.,]\d+)?/g) ?? []).map((n) => Number(n.replace(',', '.')));
-  if (numeros.length !== 2) throw new Error('Escribe la latitud y la longitud, por ejemplo -34.98, -71.24');
-  let [lat, lon] = numeros;
-  // Google Maps copia "lat, lon"; si vienen al revés (lon primero) se nota en Chile.
-  if (Math.abs(lat) > 60 && Math.abs(lon) <= 60) [lat, lon] = [lon, lat];
+  const punto = leerCoordenadas($('#kmz-ir-a').value);
+  if (!punto) throw new Error(NO_ENTENDI);
   await prepararMapa();
-  mapa.ir(lat, lon, 16);
+  mapa.ir(punto.lat, punto.lon, 16);
+}
+
+/** Con un punto marcado en el plano, las coordenadas escritas son su lugar en el mapa. */
+async function usarCoordenadas() {
+  if (!pendiente) return irA();
+  const punto = leerCoordenadas($('#kmz-ir-a').value);
+  if (!punto) throw new Error(NO_ENTENDI);
+  await prepararMapa();
+  mapa.ir(punto.lat, punto.lon, 16);
+  marcarEnMapa(punto.lat, punto.lon);
 }
 
 // --- 7. crear ----------------------------------------------------------------------------
@@ -850,7 +865,8 @@ function pintarUbicar() {
   const vigente = Boolean(g?.vigente);
   const estadoAncla = $('#kmz-ancla-estado');
   if (pendiente) {
-    estadoAncla.textContent = `Punto ${pendiente.nombre} marcado en el plano. Ahora haz clic en el mismo punto del mapa (Esc cancela).`;
+    estadoAncla.textContent = `Punto ${pendiente.nombre} marcado en el plano. Ahora haz clic en el mismo punto del mapa, `
+      + `o pega sus coordenadas y aprieta Usar como punto ${pendiente.nombre} (Esc cancela).`;
   } else if (rehacer) {
     estadoAncla.textContent = `Marca de nuevo el punto ${rehacer}: primero en el plano.`;
   } else {
@@ -859,6 +875,9 @@ function pintarUbicar() {
       : `${n} de 4 puntos. Haz clic en un punto del plano (acerca bien) y después en el mismo punto del mapa.`;
   }
   $('[data-accion="kmz-cancelar-ancla"]').hidden = !pendiente && !rehacer;
+  const usar = $('[data-accion="kmz-usar-coordenadas"]');
+  usar.hidden = !pendiente;
+  if (pendiente) usar.textContent = `Usar como punto ${pendiente.nombre}`;
 
   const propuesta = plano.digitalizado?.lector?.cuadricula;
   $('#kmz-cuadricula').hidden = !propuesta && !entradas.cuadricula;

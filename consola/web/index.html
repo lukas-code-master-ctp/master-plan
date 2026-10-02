@@ -541,11 +541,15 @@
           del mapa. Con 3 o más, un punto mal marcado se nota.</p>
         <p id="kmz-ancla-estado" class="kmz-estado" role="status" aria-live="polite"></p>
         <button class="boton boton--texto boton--chico" data-accion="kmz-cancelar-ancla" type="button" hidden>Cancelar este punto (Esc)</button>
-        <div class="fila">
-          <input id="kmz-ir-a" type="text" placeholder="-34.98, -71.24" autocomplete="off"
-                 aria-label="Ir a una latitud y longitud en el mapa">
+        <div class="fila fila--envuelve">
+          <input id="kmz-ir-a" type="text" placeholder="-34.98, -71.24 o 34°10'37.5&quot;S 71°32'53.9&quot;W"
+                 autocomplete="off" spellcheck="false" aria-label="Ir a una latitud y longitud en el mapa"
+                 aria-describedby="kmz-ir-a-ayuda">
           <button class="boton boton--contorno" data-accion="kmz-ir" type="button">Ir</button>
+          <button class="boton" data-accion="kmz-usar-coordenadas" type="button" hidden>Usar como punto A</button>
         </div>
+        <p id="kmz-ir-a-ayuda" class="nota">Ir a: decimales (-34.98, -71.24) o grados, minutos y
+          segundos como los copia Google Earth (34°10'37.5"S 71°32'53.9"W).</p>
         <div id="kmz-cuadricula" class="kmz-cuadricula" hidden>
           <p id="kmz-cuadricula-texto" class="nota"></p>
           <button class="boton boton--contorno boton--chico" data-accion="kmz-usar-cuadricula" type="button">Usar la cuadrícula impresa</button>
