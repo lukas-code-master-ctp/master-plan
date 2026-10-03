@@ -257,9 +257,10 @@ def test_las_anclas_dicen_el_huso_de_la_cuadricula():
 
 # --- el paso completo ------------------------------------------------------------
 
-def _carpeta(tmp_path, **entradas):
-    lotes = [dict(numero="1", semilla=[150, 150], poligono=[[100, 100], [300, 100], [300, 300], [100, 300], [100, 100]],
-                  huecos=[], area_px=40000.0, vertices=4)]
+def _carpeta(tmp_path, lotes=None, **entradas):
+    lotes = lotes or [dict(numero="1", semilla=[150, 150],
+                           poligono=[[100, 100], [300, 100], [300, 300], [100, 300], [100, 100]],
+                           huecos=[], area_px=40000.0, vertices=4)]
     digitalizado = dict(pagina=dict(numero=1, rotacion=0, ancho=6000, alto=6000, ppmm=6.0, fuente="embebida"),
                         trabajo=dict(ancho=6000, alto=6000, ppmm=6.0, modo="recorte",
                                      homografia=[[1, 0, 0], [0, 1, 0], [0, 0, 1]]),
@@ -351,3 +352,40 @@ def test_epsg_de_la_cuadricula_que_no_es_utm_falla(tmp_path, capsys):
     _carpeta(tmp_path, cuadricula=dict(_marcas(con_rectas=False), epsg=4326))
     assert main(["georreferenciar", str(tmp_path)]) == 1
     assert "4326" in capsys.readouterr().err
+
+
+def _lotes_con_cuadro(area_oficial):
+    """4 lotes de 200 × 200 px (2.500 m² a ESCALA) con su área del cuadro."""
+    lotes = []
+    for i in range(4):
+        x = 100 + 200 * i
+        lotes.append(dict(numero=str(i + 1), semilla=[x + 100, 200], area_px=40000.0, vertices=4, huecos=[],
+                          poligono=[[x, 100], [x + 200, 100], [x + 200, 300], [x, 300], [x, 100]],
+                          area_oficial=area_oficial))
+    return lotes
+
+
+def test_la_escala_de_las_anclas_contra_el_cuadro_de_superficies_se_avisa(tmp_path, capsys):
+    # El cuadro dice 2.500 / 0,97² m²: las anclas dan una escala 3 % menor que la del plano.
+    _carpeta(tmp_path, lotes=_lotes_con_cuadro(2500 / 0.97 ** 2), anclas=_anclas(PX[:4]))
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    assert g["parametros"]["escala_cuadro"] == dict(lotes=4, area_pct=-5.91, escala_pct=-3.0)
+    aviso = [a for a in g["avisos"] if "cuadro de superficies" in a]
+    assert aviso and "5,9 % menos" in aviso[0] and "3,0 % menor" in aviso[0] and "anclas" in aviso[0]
+
+
+def test_la_escala_que_calza_con_el_cuadro_no_se_avisa(tmp_path, capsys):
+    # +1 % de área (0,5 % de escala) es el error del digitalizado, no de la ubicación.
+    _carpeta(tmp_path, lotes=_lotes_con_cuadro(2500 / 1.01), anclas=_anclas(PX[:4]))
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    assert g["parametros"]["escala_cuadro"]["lotes"] == 4
+    assert not [a for a in g["avisos"] if "cuadro de superficies" in a]
+
+
+def test_sin_cuadro_no_se_mide_la_escala(tmp_path, capsys):
+    _carpeta(tmp_path, anclas=_anclas(PX[:4]))
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    assert "escala_cuadro" not in g["parametros"]

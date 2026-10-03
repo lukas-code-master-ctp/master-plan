@@ -86,7 +86,7 @@ def test_un_rotulo_subrayado_que_toca_los_deslindes_no_parte_el_lote():
     semillas = []
     for i in range(3):
         cx, cy = (xs[i] + xs[i + 1]) / 2, (y0 + y1) / 2
-        cv2.putText(img, "LOTE", (xs[i] + 4, int(cy) - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, NEGRO, 2)
+        cv2.putText(img, "LOTE", (xs[i] + 4, int(cy) - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEGRO, 2)
         cv2.line(img, (xs[i] + 1, int(cy) + 4), (xs[i + 1] - 1, int(cy) + 4), NEGRO, 2)   # subrayado
         semillas.append((str(i + 1), cx, cy))
     alto, ancho = img.shape[:2]
@@ -104,7 +104,7 @@ def test_un_lote_chico_aislado_no_se_borra_como_texto_del_rotulo():
     cv2.rectangle(img, (px(10), px(10)), (px(90), px(70)), ROJO, 2)
     a, b, c, d = px(43), px(57), px(33), px(47)
     cv2.rectangle(img, (a, c), (b, d), ROJO, 2)
-    cv2.putText(img, "7", (px(50) - 5, px(40) + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, NEGRO, 1)
+    cv2.putText(img, "7", (px(50) - 5, px(40) + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEGRO, 2)
     semillas = [("1", px(20), px(20)), ("7", px(50), px(40))]
     r = digitalizar_imagen(img, PPMM, semillas, [0, 0, img.shape[1], img.shape[0]], avance=lambda _: None)
     assert iou(r.lotes["7"], Polygon([(a, c), (b, c), (b, d), (a, d)])) > 0.95
@@ -280,3 +280,67 @@ def test_las_lecturas_con_poco_apoyo_se_sugieren_en_su_lote_sin_numero():
     s = _sugerencias(caras, de_lote, leidos, 2, ["8-02"])
     assert s == [dict(numero="8-03", confianza=0.01, apoyo=1), None, None]
     assert _sugerencias(caras, de_lote, [], 2, []) == [None, None, None]
+
+
+def _lotes_con_texto_en_el_borde():
+    """Dos lotes de 50 × 35 mm; sobre el deslinde exterior de arriba, por dentro, un
+    texto en negrita pegado a la línea ("Servidumbre de tránsito 10 m", como en Caminos
+    de Rapel)."""
+    px = lambda v: int(round(v * PPMM))
+    img = np.full((px(75), px(140), 3), 245, np.uint8)
+    x0, x1, x2, y0, y1 = px(20), px(70), px(120), px(20), px(55)
+    cv2.rectangle(img, (x0, y0), (x2, y1), NEGRO, 2)
+    cv2.line(img, (x1, y0), (x1, y1), NEGRO, 2)
+    for x in (x0 + 4, x1 + 4):
+        cv2.putText(img, "SERVIDUMBRE 10M", (x, y0 + 17), cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEGRO, 2)
+    semillas = [("1", (x0 + x1) / 2, (y0 + y1) / 2 + 20), ("2", (x1 + x2) / 2, (y0 + y1) / 2 + 20)]
+    celdas = {"1": Polygon([(x0, y0), (x1, y0), (x1, y1), (x0, y1)]),
+              "2": Polygon([(x1, y0), (x2, y0), (x2, y1), (x1, y1)])}
+    return img, semillas, celdas
+
+
+def test_el_texto_pegado_al_deslinde_no_es_relleno():
+    img, _, celdas = _lotes_con_texto_en_el_borde()
+    t = mascara(img, PPMM)
+    x0, y0, x1, _ = celdas["1"].bounds
+    assert t.lineas[int(y0) + 4:int(y0) + 14, int(x0) + 10:int(x1) - 10].any()     # el texto es tinta
+    assert not t.grueso.any()                                                       # pero no relleno
+
+
+def test_el_texto_pegado_al_deslinde_no_se_come_el_lote():
+    # Como relleno, el texto quedaba fuera del lote (−3 % del área, y 10 caras sin
+    # número entre las letras); como tinta, el watershed la reparte y el lote llega a
+    # la línea.
+    img, semillas, celdas = _lotes_con_texto_en_el_borde()
+    alto, ancho = img.shape[:2]
+    r = digitalizar_imagen(img, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+    for n, celda in celdas.items():
+        assert r.lotes[n].area / celda.area - 1 > -0.015
+        assert iou(r.lotes[n], celda) > 0.98
+    assert r.sin_numero == []
+
+
+def test_el_texto_que_cruza_el_lote_de_deslinde_a_deslinde_no_lo_parte():
+    # Un rótulo en negrita que toca los dos deslindes ("TRANSFERIDO" en los lotes 79 y 92
+    # de Curicó) encierra un trozo del lote. Como tinta firme, ese trozo quedaba sin
+    # número (el 92 perdía un 20 %); es línea pero no firme, y el trozo se une al lote.
+    px = lambda v: int(round(v * PPMM))
+    img = np.full((px(80), px(110), 3), 245, np.uint8)
+    x0, x1, x2, y0, y1 = px(10), px(30), px(100), px(10), px(70)
+    cv2.rectangle(img, (x0, y0), (x2, y1), NEGRO, 2)
+    cv2.line(img, (x1, y0), (x1, y1), NEGRO, 2)
+    yb = y0 + px(28)
+    cv2.putText(img, "TRANSFERID", (x0 - 6, yb), cv2.FONT_HERSHEY_SIMPLEX, 0.75, NEGRO, 2)
+    for y in (yb + 3, yb - 17):                     # enmarcado: las letras quedan en un bloque
+        cv2.line(img, (x0 - 6, y), (x0 + 128, y), NEGRO, 1)
+    semillas = [("1", (x0 + x1) / 2, y0 + px(45)), ("2", (x1 + x2) / 2, y0 + px(45))]
+    celdas = {"1": Polygon([(x0, y0), (x1, y0), (x1, y1), (x0, y1)]),
+              "2": Polygon([(x1, y0), (x2, y0), (x2, y1), (x1, y1)])}
+    t = mascara(img, PPMM)
+    assert t.lineas[yb - 17:yb + 4, x0 + px(3):x1 - px(3)].any(axis=0).all()   # el texto es línea
+    assert not t.grueso.any()
+    alto, ancho = img.shape[:2]
+    r = digitalizar_imagen(img, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+    assert r.sin_numero == []
+    for n, celda in celdas.items():
+        assert iou(r.lotes[n], celda) > 0.97
