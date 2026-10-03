@@ -20,8 +20,8 @@ aviso.
 
 - **Letra de sector**: solo una letra **suelta**, que no sea la cola de una palabra:
   `A214`, `A 214`, `LOTE A 420`, `SECTOR B 12`, `E12`.
-- **Palabras de lote**: `LOTE`, `LOTES` y `PARCELA`, `PARCELAS` se quitan, también pegadas
-  al número (`LOTE12`, `PARCELA4`).
+- **Palabras de lote**: `LOTE`, `LOTES`, `PARCELA`, `PARCELAS` y `SITIO`, `SITIOS` se
+  quitan, también pegadas al número (`LOTE12`, `PARCELA4`, `Sitio 5`).
 - Cualquier otra palabra delante del número (`ROL`, `MANZANA`, `ETAPA`, fechas, áreas) da
   `None`, como ya pasaba con los números sueltos.
 - Lo demás no cambia: el par sector-lote `7-1`, `LOTE 8-01` → `8-1`, `LOTE-12` → `12`, los

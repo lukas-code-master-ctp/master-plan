@@ -65,12 +65,42 @@ def cuadrado(este, norte, lado=70):
     ("LOTE-12", "12"),
     ("LOTE #12", "12"),
     ("LOTE - 12", "12"),
+    # LOTE y PARCELA se quitan también pegados al número: la E de LOTE no es un sector.
+    ("LOTE12", "12"),
+    ("lote007", "7"),
+    ("LOTE8-01", "8-1"),
+    ("Parcela 4", "4"),
+    ("PARCELA4", "4"),
+    ("PARCELAS 12", "12"),
+    ("Parcela-4", "4"),
+    # SITIO también es un lote, como PARCELA.
+    ("Sitio 5", "5"),
+    ("SITIO5", "5"),
+    ("Sitios 12", "12"),
+    ("Lote Sitio 5", "5"),
+    ("SITIOA12", "A12"),
+    ("Sitio A 12", "A12"),
+    # LOTE pegado a una sola letra pegada al número: la letra es el sector.
+    ("LOTEA12", "A12"),
+    ("LOTESA12", "A12"),
+    ("PARCELAB3", "B3"),
+    ("LOTES12", "12"),
+    ("LOTES 12", "12"),
+    # La letra de sector suelta, aunque haya otras palabras.
+    ("A 214", "A214"),
+    ("SECTOR B 12", "B12"),
+    ("ETAPA 2 LOTE A 5", "A5"),
 ])
 def test_normaliza_los_formatos_de_nombre(entrada, esperado):
     assert normalizar_id(entrada) == esperado
 
 
-@pytest.mark.parametrize("entrada", [None, "", "sin numero", "12/03/2024", "A", "-12", "LOTE--12", "12-"])
+@pytest.mark.parametrize("entrada", [None, "", "sin numero", "12/03/2024", "A", "-12", "LOTE--12", "12-",
+                                     # La cola de una palabra no es letra de sector.
+                                     "ROL 273-15", "MANZANA 3", "Mz 3", "ETAPA 2", "LOTEO 12",
+                                     "SUBLOTE 3", "MICROSITIO 3", "5,00hás", "ARRAYÁN 12", "LOTEADORA 12",
+                                     # Tras un número, la letra es una unidad o un sufijo.
+                                     "1.342 m2", "1342 M2", "12 A", "12 A 5", "ETAPA 2 LOTE 5"])
 def test_devuelve_none_cuando_no_hay_lote(entrada):
     assert normalizar_id(entrada) is None
 

@@ -361,11 +361,13 @@ export function loteEn(rasgos, x, y) {
 
 /**
  * El número de lote para comparar, como `pipeline.plano.numeros.clave`: "8-01", "8-1" y
- * "LOTE 8-01" son el mismo lote ("8-1"); "A03" → "A3". Se guarda como lo escribió ella.
+ * "LOTE 8-01" son el mismo lote ("8-1"); "A03" → "A3"; "Parcela 4", "Sitio 4" → "4".
+ * Lo que no es un número de lote ("ROL 273-15", "Mz 3") va en mayúsculas y sin
+ * espacios. Se guarda como lo escribió ella.
  */
 export function claveLote(numero) {
   const t = String(numero ?? '').trim().toUpperCase()
-    .replace(/^(?:LOTES?(?=\d)|LOTES?\b\s*[-#]?\s*|[-#]\s*)/, '');
+    .replace(/^(?:(?:LOTES?|PARCELAS?|SITIOS?)(?=\d)|(?:LOTES?|PARCELAS?|SITIOS?)(?=[A-Z]\d)|(?:LOTES?|PARCELAS?|SITIOS?)\b\s*[-#]?\s*|[-#]\s*)/, '');
   const pares = t.match(/^(\d+(?:\s*-\s*\d+)*)[\s.]*$/);
   if (pares) return pares[1].replace(/\s/g, '').split('-').map((p) => String(Number(p))).join('-');
   const letra = t.match(/^([A-Z])\s*(\d+)$/);

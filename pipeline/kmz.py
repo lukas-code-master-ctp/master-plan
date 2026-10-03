@@ -67,9 +67,29 @@ class _Dibujo:
     lineas: list[tuple[list[geo.Punto], str | None]]
 
 
+# Una letra cualquiera (también Ñ o con tilde): `[^\W\d_]`.
+_LETRA = r"[^\W\d_]"
+
+
 def normalizar_id(texto: str | None) -> str | None:
-    """"LOTE A 420" → "A420".  "LOTE 42" → "42".  "7-1", "LOTE 8-01" → "7-1", "8-1".
-    "LOTE-12" → "12".  Basura → None.
+    """El id de un lote a partir de su nombre, o None si el texto no nombra un lote.
+
+    - Con letra de sector: "A214", "A 214", "LOTE A 420", "SECTOR B 12" → "A214",
+      "A214", "A420", "B12". La letra cuenta solo si:
+      * está **suelta**: la última letra de una palabra no es un sector ("ROL 273-15",
+        "MANZANA 3", "Mz 3" → None);
+      * no hay ningún número antes de ella: tras un número la letra es una unidad o un
+        sufijo ("1.342 m2", "1342 M2", "12 A 5" → None; "12 A" ya era None). La única
+        excepción es "ETAPA n", que nombra la etapa y no el lote ("ETAPA 2 LOTE A 5"
+        → "A5").
+    - Solo número: "LOTE 42", "lote 007", "42", 42.0 → "42", "7".
+    - Par sector-lote: "7-1", "LOTE 8-01" → "7-1", "8-1".
+    - LOTE, LOTES, PARCELA, PARCELAS, SITIO y SITIOS se quitan, también pegadas al
+      número o con guion o # ("LOTE12", "LOTES12", "PARCELA4", "Parcela 4", "Sitio 5",
+      "LOTE-12", "LOTE #12" → "12", "12", "4", "4", "5", "12", "12"), o pegadas a una
+      sola letra de sector que va pegada al número ("LOTEA12" → "A12"; "LOTEADORA 12", "LOTEO 12" → None).
+    - Cualquier otra palabra delante del número, fechas, áreas: None ("12/03/2020",
+      "5,00hás", "ETAPA 2").
 
     Conviven tres formas de numerar: con letra de sector ("A214"), solo con el
     número ("LOTE 42") y como par sector-lote ("7-1"). Un loteo usa una sola, pero
@@ -79,9 +99,15 @@ def normalizar_id(texto: str | None) -> str | None:
         return None
     if isinstance(texto, float) and texto.is_integer():
         texto = int(texto)
-    limpio = re.sub(r"\bLOTES?\b", " ", str(texto).strip().upper())
+    # LOTE suelto o pegado al número ("LOTE12", "LOTES12"), o pegado a una sola letra
+    # que va pegada al número ("LOTEA12": la A es el sector; "LOTEO 12" no).
+    limpio = re.sub(rf"\b(?:LOTES?|PARCELAS?|SITIOS?)(?:(?!{_LETRA})|(?=[A-Z]\d))", " ",
+                    str(texto).strip().upper())
 
-    con_letra = re.search(r"([A-Z])\s*0*(\d+)", limpio)
+    # La letra no puede ser la cola ni la cabeza de una palabra, ni tener un número
+    # antes, salvo el de "ETAPA n".
+    sin_etapa = re.sub(r"\bETAPA\s*\d+", " ", limpio)
+    con_letra = re.match(rf"\D*?(?<!{_LETRA})([A-Z])(?!{_LETRA})\s*0*(\d+)", sin_etapa)
     if con_letra:
         return f"{con_letra.group(1)}{int(con_letra.group(2))}"
 

@@ -15,10 +15,12 @@ from ..kmz import normalizar_id
 
 
 def clave(numero) -> str:
-    """"8-01", "8-1", "LOTE 8-01" → "8-1"; "012" → "12". Lo que `normalizar_id` no
-    reconoce se compara en mayúsculas y sin espacios."""
-    # "LOTE12" pegado: sin esto `normalizar_id` toma la E de LOTE como letra de sector.
-    texto = re.sub(r"^LOTES?(?=\d)", "", str(numero).strip().upper())
+    """"8-01", "8-1", "LOTE 8-01" → "8-1"; "012", "LOTE12", "Parcela 4", "Sitio 5" →
+    "12", "12", "4", "5". Lo que `normalizar_id` no reconoce ("ROL 273-15", "Mz 3") se
+    compara en mayúsculas y sin espacios ("ROL273-15", "MZ3")."""
+    # LOTE, PARCELA o SITIO pegado al número no es parte de lo que se compara si no se
+    # reconoce.
+    texto = re.sub(r"^(?:LOTES?|PARCELAS?|SITIOS?)(?=\d)", "", str(numero).strip().upper())
     return normalizar_id(f"LOTE {texto}") or re.sub(r"\s+", "", texto)
 
 

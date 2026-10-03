@@ -221,6 +221,17 @@ test('el número va tal cual y se compara normalizado', () => {
   assert.equal(claveLote('#12'), '12');
   assert.equal(claveLote('12 .'), '12');
   assert.equal(claveLote('3A'), '3A');
+  assert.equal(claveLote('Parcela 4'), '4');
+  assert.equal(claveLote('PARCELA4'), '4');
+  assert.equal(claveLote('Sitio 5'), '5');
+  assert.equal(claveLote('SITIO05'), '5');
+  // La cola de una palabra no es letra de sector: no es un lote, va tal cual.
+  assert.equal(claveLote('ROL 273-15'), 'ROL273-15');
+  assert.equal(claveLote('Mz 3'), 'MZ3');
+  // LOTE pegado a la letra de sector pegada al número.
+  assert.equal(claveLote('LOTEA12'), 'A12');
+  assert.equal(claveLote('LOTES12'), '12');
+  assert.equal(claveLote('LOTEO 12'), 'LOTEO12');
   const a = [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]];
   const b = [[[10, 0], [20, 0], [20, 10], [10, 10], [10, 0]]];
   // Escribe "8-01" en a (con el cero: se guarda así) y luego "8-1" en b: es el mismo lote, pasa a b.

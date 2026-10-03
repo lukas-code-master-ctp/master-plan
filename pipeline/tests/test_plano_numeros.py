@@ -24,6 +24,15 @@ def test_clave_y_repetidos():
     assert numeros.clave("A-3?") == "A-3?"                     # lo que no se reconoce, tal cual
     # "LOTE12" pegado: la E de LOTE no es letra de sector (como `claveLote` en la consola).
     assert numeros.clave("LOTE12") == numeros.clave("lote 012") == "12"
+    assert numeros.clave("Parcela 4") == numeros.clave("PARCELA4") == "4"
+    assert numeros.clave("Sitio 5") == numeros.clave("SITIO05") == "5"
+    # La cola de una palabra no es letra de sector: no es un lote, se compara tal cual.
+    assert numeros.clave("ROL 273-15") == "ROL273-15"
+    assert numeros.clave("Mz 3") == "MZ3"
+    # Igual que `claveLote` en la consola.
+    assert numeros.clave("LOTEA12") == "A12"
+    assert numeros.clave("LOTES12") == "12"
+    assert numeros.clave("LOTEO 12") == "LOTEO12"
     assert numeros.clave("A03") == "A3"
     assert numeros.repetidos(["8-01", "8-1", "8-02", "3", "03"]) == ["03", "3", "8-01", "8-1"]
     assert numeros.repetidos(["8-01", "8-02"]) == []
