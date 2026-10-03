@@ -429,8 +429,18 @@ function escuchar() {
   const mio = slug;
   oyentes.set(clave(mio), (trabajo) => {
     if (mio !== slug) return;
+    if (trabajo.interrumpido && plano?.trabajo) {
+      // Se perdió con el servidor (`seguir`): el botón vuelve aunque el servidor todavía
+      // no conteste para recargar el KMZ.
+      plano = { ...plano, trabajo: { ...plano.trabajo, estado: 'falló', terminado: true } };
+    }
     pintarRegistro();
-    if (trabajo.terminado) terminoDigitalizar(trabajo).catch((error) => avisar(error.message));
+    if (trabajo.terminado) {
+      terminoDigitalizar(trabajo).catch((error) => {
+        if (mio === slug) pintarPaso();
+        avisar(error.message);
+      });
+    }
   });
 }
 

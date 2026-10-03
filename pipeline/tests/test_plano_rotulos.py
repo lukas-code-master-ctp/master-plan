@@ -548,11 +548,13 @@ def test_las_hebras_caben_en_la_memoria(monkeypatch):
     monkeypatch.setattr(rotulos, "nucleos", lambda: 16)
     monkeypatch.delenv("LECTOR_HEBRAS", raising=False)
     monkeypatch.setattr(rotulos, "memoria_libre", lambda: 4 * 2**30)
-    # 100 Mpx por pasada × 6 B/px = 600 MB: en el 70 % de 4 GiB caben 5.
-    assert rotulos._hebras(None, 96, 100e6) == 5
+    # 600 MB por pasada: en el 60 % de 4 GiB caben 4.
+    assert rotulos._hebras(None, 96, 600e6) == 4
     assert rotulos._hebras(None, 3, 1e6) == 3
+    # Aunque no quepa ni una, se lee con una.
+    assert rotulos._hebras(None, 96, 8e9) == 1
     monkeypatch.setattr(rotulos, "memoria_libre", lambda: None)
-    assert rotulos._hebras(None, 96, 100e6) == 16
+    assert rotulos._hebras(None, 96, 600e6) == 16
     monkeypatch.setenv("LECTOR_HEBRAS", "2")
     assert rotulos._hebras(None, 96) == 2
 
