@@ -618,3 +618,75 @@ def test_sin_correo_alguien_nuevo_igual_se_crea_la_cuenta_con_google(tmp_path, m
     assert consulta["redirect_uri"] == ["https://consola.test/entrar/google/vuelta"]
     assert alta.status_code == 303
     assert base.usuario_por_email("pia@bosques.cl").email_verificado is True
+
+
+# --- el buzón en una carpeta, para probar en este computador ---------------------
+
+def test_el_buzon_en_carpeta_deja_un_json_por_correo_con_sus_enlaces(tmp_path):
+    import json
+
+    from consola.cuentas import CorreoEnCarpeta
+
+    correo = CorreoEnCarpeta(tmp_path / "buzon")
+    correo.enviar("pia@bosques.cl", "Confirma tu correo",
+                  "Confirma aquí:\n\nhttp://127.0.0.1:8000/verificar?t=abc-123\n\n"
+                  "O entra en https://consola.test/entrar.")
+
+    archivos = list((tmp_path / "buzon").glob("*.json"))
+    assert len(archivos) == 1
+    guardado = json.loads(archivos[0].read_text(encoding="utf-8"))
+    assert guardado["para"] == "pia@bosques.cl"
+    assert guardado["asunto"] == "Confirma tu correo"
+    assert guardado["enlaces"] == ["http://127.0.0.1:8000/verificar?t=abc-123",
+                                   "https://consola.test/entrar"]
+    assert guardado["enviado_en"].endswith("+00:00")
+    assert correo.puede_enviar is True
+    assert correo.enviados == [("pia@bosques.cl", "Confirma tu correo", guardado["texto"])]
+
+
+def test_dos_correos_seguidos_quedan_en_dos_archivos_en_orden(tmp_path):
+    import json
+
+    from consola.cuentas import CorreoEnCarpeta
+
+    correo = CorreoEnCarpeta(tmp_path)
+    correo.enviar("a@a.test", "primero", "uno")
+    correo.enviar("a@a.test", "segundo", "dos")
+
+    archivos = sorted(tmp_path.glob("*.json"))
+    assert [json.loads(a.read_text())["asunto"] for a in archivos] == ["primero", "segundo"]
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_con_buzon_y_en_este_computador_los_correos_van_a_la_carpeta(tmp_path, monkeypatch):
+    from consola.cuentas import CorreoEnCarpeta, correo_del_entorno
+
+    monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
+    monkeypatch.setenv("CONSOLA_BUZON", str(tmp_path / "buzon"))
+
+    correo = correo_del_entorno(local=True)
+
+    assert isinstance(correo, CorreoEnCarpeta)
+    assert correo.carpeta == tmp_path / "buzon"
+    assert Cuentas(base=Base(f"sqlite:///{tmp_path / 'consola.db'}"), correo=correo).registro_abierto
+
+
+def test_desplegada_el_buzon_se_ignora(tmp_path, monkeypatch):
+    from consola.cuentas import CorreoEnElRegistro, correo_del_entorno
+
+    monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
+    monkeypatch.setenv("CONSOLA_BUZON", str(tmp_path / "buzon"))
+
+    correo = correo_del_entorno(local=False)
+
+    assert isinstance(correo, CorreoEnElRegistro)
+    assert correo.puede_enviar is False
+
+
+def test_con_clave_de_sendgrid_gana_sendgrid_aunque_haya_buzon(tmp_path, monkeypatch):
+    from consola.cuentas import CorreoSendGrid, correo_del_entorno
+
+    monkeypatch.setenv("SENDGRID_API_KEY", "SG.clave-de-prueba")
+    monkeypatch.setenv("CONSOLA_BUZON", str(tmp_path / "buzon"))
+
+    assert isinstance(correo_del_entorno(local=True), CorreoSendGrid)

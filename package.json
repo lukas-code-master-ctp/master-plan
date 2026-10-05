@@ -1,0 +1,12 @@
+{
+  "name": "tu-masterplan",
+  "private": true,
+  "scripts": {
+    "qa:levantar": "bash qa/levantar.sh",
+    "qa:bajar": "bash qa/bajar.sh",
+    "qa:captura": "node qa/captura.mjs",
+    "qa:correos": "python3 -m qa.correos",
+    "qa:sembrar": "python3 -m qa.sembrar",
+    "test": "python3 -m pytest -q && node --test web/js/*.test.js consola/web/*.test.js"
+  }
+}

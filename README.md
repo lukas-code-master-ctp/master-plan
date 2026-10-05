@@ -875,6 +875,20 @@ Las de navegador cargan `index.html` dentro de un iframe con `requestAnimationFr
 y `ResizeObserver` parcheados por temporizador. Sin eso no corren en una pestaña de
 fondo, donde el navegador congela ambos.
 
+## QA local
+
+La consola de punta a punta en este computador, con cuentas y loteos de prueba y
+reemplazos locales de Cierra, Vercel y el correo. No toca nada de afuera:
+
+```bash
+npm run qa:levantar     # consola + Cierra falsa + hosting falso, con datos sembrados
+npm run qa:captura      # capturas con Playwright (-- --como duenio --ruta '#/planos')
+npm run qa:correos      # lo que la consola "mandó" por correo, con sus enlaces
+npm run qa:bajar
+```
+
+Cuentas, servicios, recetas y problemas comunes en [docs/qa-local.md](docs/qa-local.md).
+
 ## Cómo se resuelve el rumbo de cada panorámica
 
 Es la parte no obvia. Para proyectar hay que saber hacia dónde apunta la columna x=0
