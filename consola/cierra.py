@@ -270,6 +270,14 @@ class Conexiones:
             con.execute(delete(cierra_loteos).where(
                 cierra_loteos.c.proyecto_id == self._id(con, slug)))
 
+    def loteos_conectados(self) -> list[str]:
+        """Los slugs de todos los loteos conectados a Cierra: para la revisión periódica."""
+        consulta = (select(proyectos.c.slug)
+                    .join(cierra_loteos, cierra_loteos.c.proyecto_id == proyectos.c.id)
+                    .order_by(proyectos.c.slug))
+        with self.base.motor.connect() as con:
+            return [fila.slug for fila in con.execute(consulta)]
+
     def anotar_sincronizacion(self, slug: str) -> datetime:
         momento = datetime.now(timezone.utc)
         with self.base.motor.begin() as con:

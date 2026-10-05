@@ -343,16 +343,8 @@ def _armar_parcelas(fichas: dict[str, FichaComercial],
             "numero": numero,
             "etapa": etapa,
             "rotulo": rotulo,
-            "estado": ficha.estado if ficha else (
-                "no_en_venta" if geometria and not geometria.en_venta else config.ESTADO_POR_DEFECTO),
-            "superficie_m2": ficha.superficie_m2 if ficha else (
-                round(geometria.area_m2) if geometria else None),
-            "servidumbre_m": ficha.servidumbre_m if ficha else None,
-            "servidumbre_m2": ficha.servidumbre_m2 if ficha else None,
-            "precio": ficha.precio if ficha else None,
-            "moneda": ficha.moneda if ficha else "CLP",
-            "link_pago": ficha.link_pago if ficha else None,
-            "en_planilla": ficha is not None,
+            **comerciales(ficha, en_venta=geometria.en_venta if geometria else True,
+                          area_m2=round(geometria.area_m2) if geometria else None),
             "area_kmz_m2": round(geometria.area_m2) if geometria else None,
             "centroide": _redondear_punto(geometria.centroide) if geometria else None,
             "poligono": _redondear_anillo(geometria.anillo) if geometria else None,
@@ -360,6 +352,29 @@ def _armar_parcelas(fichas: dict[str, FichaComercial],
             "vistas": sorted(v for v, _ in vistas),
         })
     return parcelas
+
+
+# Lo que de una parcela sale de la planilla (o de Cierra), y no del dibujo: lo único
+# que `pipeline.inventario` reescribe sin reconstruir.
+CAMPOS_COMERCIALES = ("estado", "superficie_m2", "servidumbre_m", "servidumbre_m2",
+                      "precio", "moneda", "link_pago", "en_planilla")
+
+
+def comerciales(ficha: FichaComercial | None, *, en_venta: bool = True,
+                area_m2: int | None = None) -> dict:
+    """Los datos comerciales de una parcela. Sin ficha: no disponible (o no en
+    venta, si el dibujo lo dice) y la superficie que mide el KMZ."""
+    return {
+        "estado": ficha.estado if ficha else (
+            config.ESTADO_POR_DEFECTO if en_venta else "no_en_venta"),
+        "superficie_m2": ficha.superficie_m2 if ficha else area_m2,
+        "servidumbre_m": ficha.servidumbre_m if ficha else None,
+        "servidumbre_m2": ficha.servidumbre_m2 if ficha else None,
+        "precio": ficha.precio if ficha else None,
+        "moneda": ficha.moneda if ficha else "CLP",
+        "link_pago": ficha.link_pago if ficha else None,
+        "en_planilla": ficha is not None,
+    }
 
 
 def _descomponer(identificador: str, etapa: int | None,

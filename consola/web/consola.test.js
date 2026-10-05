@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 
 import { dinero, iniciales, ruta } from './js/comun.js';
 import { avance } from './js/vuelo.js';
-import { coincide } from './js/cierra.js';
+import { coincide, resumenDeTraer } from './js/cierra.js';
 import { cuantosLotes, descargaDe, pasoEnPalabras, terminados, textoDeUso } from './js/kmzs.js';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -366,4 +366,12 @@ test('el buscador de Cierra no mira tildes, mayúsculas ni el orden de las palab
   assert.ok(coincide('Viñas de Cauquenes', 'cauquenes vinas'));
   assert.ok(coincide('Alto Coquiao Quena', ''));
   assert.ok(!coincide('Alto Cauquenes', 'praderas'));
+});
+
+test('después de traer de Cierra se dice qué pasó en palabras', () => {
+  assert.equal(resumenDeTraer({ cambiadas: 0 }), 'Sin cambios desde la última vez.');
+  assert.equal(resumenDeTraer({ cambiadas: 1 }), '1 parcela cambió.');
+  assert.equal(resumenDeTraer({ cambiadas: 3, publicando: 'x' }), '3 parcelas cambiaron: publicando el sitio.');
+  assert.match(resumenDeTraer({ requiere_reconstruir: ['1-9'] }), /se reconstruye/);
+  assert.equal(resumenDeTraer({ parcelas: 5 }), '');
 });

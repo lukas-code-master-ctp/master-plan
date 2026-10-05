@@ -11,8 +11,21 @@ const estados = new Map();   // slug → lo que contestó GET /api/proyectos/{sl
 let slugActual = null;
 let nombreDelLoteo = '';
 let alTraer = async () => {};
+const resultados = new Map();   // slug → qué pasó la última vez que se trajo, en palabras
 
-/** `traido(slug)` se llama con el inventario nuevo ya en la carpeta del loteo. */
+/** Lo que se le dice a la persona después de traer de Cierra. */
+export function resumenDeTraer(respuesta) {
+  if (respuesta.requiere_reconstruir?.length) {
+    return `Cierra trae ${respuesta.requiere_reconstruir.length} parcela(s) que el plano no tiene: se reconstruye.`;
+  }
+  if (respuesta.cambiadas === undefined) return '';
+  if (!respuesta.cambiadas) return 'Sin cambios desde la última vez.';
+  const cuantas = respuesta.cambiadas === 1 ? '1 parcela cambió' : `${respuesta.cambiadas} parcelas cambiaron`;
+  return respuesta.publicando ? `${cuantas}: publicando el sitio.` : `${cuantas}.`;
+}
+
+/** `traido(slug, respuesta)` se llama con el inventario nuevo ya en la carpeta del
+ * loteo; `respuesta` dice qué cambió y si ya se está publicando. */
 export function prepararCierra({ traido }) {
   alTraer = traido;
   $('#cierra-guardar-clave').addEventListener('click', guardarClave);
@@ -43,6 +56,8 @@ export function pintarCierra(proyecto) {
   $('#cierra-estado').textContent = conectado
     ? `Conectado a Cierra: ${estado.proyectos.map((p) => `${p.nombre} (etapa ${p.etapa})`).join(', ')}.`
       + (estado.sincronizado_en ? ` Actualizado ${fecha(estado.sincronizado_en)}.` : '')
+      + ' Se revisa solo cada 15 minutos.'
+      + (resultados.has(proyecto.slug) ? ` ${resultados.get(proyecto.slug)}` : '')
     : '¿Llevas las parcelas en Cierra? Conéctalo y los estados y precios llegan solos.';
   const boton = (accion) => $(`[data-accion="${accion}"]`, bloque);
   boton('cierra-conectar').textContent = conectado ? 'Cambiar proyectos' : 'Conectar con Cierra';
@@ -55,13 +70,19 @@ export function pintarCierra(proyecto) {
   $('#inventario-subir').hidden = conectado;
 }
 
+/** Recuerda qué pasó al traer, para decirlo junto al estado de la conexión. */
+export function anotarResultado(slug, respuesta) {
+  const texto = resumenDeTraer(respuesta);
+  if (texto) resultados.set(slug, texto); else resultados.delete(slug);
+}
+
 export async function manejarCierra(accion, proyecto) {
   if (accion === 'cierra-conectar') return abrir(proyecto);
   if (accion === 'cierra-actualizar') {
-    const { parcelas } = await pedir(`/api/proyectos/${proyecto.slug}/cierra/actualizar`, json({}));
+    const respuesta = await pedir(`/api/proyectos/${proyecto.slug}/cierra/actualizar`, json({}));
     avisar(null);
     await cargar(proyecto.slug);
-    await alTraer(proyecto.slug, parcelas);
+    await alTraer(proyecto.slug, respuesta);
     return undefined;
   }
   if (accion === 'cierra-desconectar') {
@@ -207,10 +228,10 @@ async function conectar() {
   const slug = slugActual;
   try {
     avisar(null);
-    const { parcelas } = await pedir(`/api/proyectos/${slug}/cierra`, json({ proyectos }, 'PUT'));
+    const respuesta = await pedir(`/api/proyectos/${slug}/cierra`, json({ proyectos }, 'PUT'));
     $('#cierra').close();
     await cargar(slug);
-    await alTraer(slug, parcelas);
+    await alTraer(slug, respuesta);
   } catch (error) {
     avisar(error.message);
   } finally {

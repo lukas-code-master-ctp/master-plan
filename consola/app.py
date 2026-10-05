@@ -11,6 +11,7 @@ contestar "existe pero no es tuyo" ya es contar algo.
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
@@ -53,6 +54,7 @@ from .datos import (
 )
 from .disenos import DisenoInvalido, Disenos, VistaDisenos
 from .disenos import como_json as diseno_json
+from .inventario import poner_al_dia, revisar_cierra
 from .kmzs import NombreInvalido, RegistroKmz, VistaKmz, slug_de_clave
 from .kmzs import clave as clave_kmz
 from .plano import LotesSinNumero, PlanoInvalido, PlanoNoListo
@@ -110,7 +112,10 @@ def url_propuesta(slug: str) -> str:
 
 # Lo único que se puede pedir sin haber entrado: la propia página de entrada y lo
 # que necesita para verse.
-LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2", *LIBRES_DE_CUENTAS)
+# La revisión periódica de Cierra la llama Cloud Scheduler, sin sesión: la ruta
+# exige su propia clave (`CONSOLA_TAREAS_CLAVE`) y sin ella no existe.
+TAREAS = ("/api/tareas/cierra",)
+LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2", *LIBRES_DE_CUENTAS, *TAREAS)
 
 
 def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None,
@@ -832,7 +837,47 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return FileResponse(proyecto.salida.qa / archivo, media_type="image/jpeg")
 
     app.include_router(rutas_de_cuentas(acceso, cuentas, google))
-    app.include_router(rutas_de_cierra(cierra, conexiones, vista, ocupado=trabajos.corriendo))
+    def publicar_en_linea(proyecto: Proyecto) -> dict:
+        """Vuelve a publicar un loteo que ya está en línea, sin preguntar: lo piden
+        los estados y precios nuevos, no una persona que decide salir al mundo. La
+        primera publicación sigue siendo la de la ruta, con su confirmación."""
+        disenos.escribir_en_sitio(proyecto.diseno_id, proyecto.salida.datos)
+        return lanzar(proyecto, "publicar",
+                      comandos.publicar(proyecto, vercel_proyecto=proyecto.vercel_proyecto),
+                      al_terminar=_anotar_publicacion(registro.todos(), proyecto,
+                                                      proyecto.vercel_proyecto))
+
+    app.include_router(rutas_de_cierra(cierra, conexiones, vista, ocupado=trabajos.corriendo,
+                                       publicar_en_linea=publicar_en_linea))
+
+    @app.post("/api/proyectos/{slug}/inventario/actualizar")
+    def actualizar_inventario(slug: str, mios: Vista = Depends(vista)) -> dict:
+        """Los estados y precios del inventario recién subido, sin reconstruir. Si
+        trae parcelas que el sitio no tiene, lo dice: eso sí pide reconstruir."""
+        proyecto = mios.ver(slug)
+        if trabajos.corriendo(slug):
+            raise HTTPException(409, "espera a que termine el trabajo en curso")
+        try:
+            resultado = poner_al_dia(proyecto)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        if resultado.requiere_reconstruir:
+            return {"requiere_reconstruir": list(resultado.faltan)}
+        return {"cambiadas": len(resultado.cambiadas)}
+
+    @app.post("/api/tareas/cierra")
+    def tarea_cierra(peticion: Request) -> dict:
+        """Cada 15 minutos (Cloud Scheduler): los loteos conectados a Cierra y en
+        línea quedan al día. Sin `CONSOLA_TAREAS_CLAVE` la ruta no existe."""
+        esperada = os.environ.get("CONSOLA_TAREAS_CLAVE", "")
+        if not esperada or cierra is None or conexiones is None:
+            raise HTTPException(404, "no existe")
+        dada = peticion.headers.get("x-tarea-clave", "")
+        if not hmac.compare_digest(dada.encode(), esperada.encode()):
+            raise HTTPException(401, "clave de tarea inválida")
+        revisiones = revisar_cierra(registro.todos(), cierra, conexiones, trabajos.corriendo,
+                                    publicar_en_linea)
+        return {"loteos": [r.__dict__ for r in revisiones]}
 
     @app.exception_handler(DisenoInvalido)
     async def diseno_invalido(peticion: Request, error: DisenoInvalido):

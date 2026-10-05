@@ -6,7 +6,7 @@
 import {
   $, $$, abrirDialogo, avisar, estado, etapaDe, fecha, json, pastilla, pedir,
 } from './comun.js';
-import { manejarCierra, pintarCierra, prepararCierra } from './cierra.js';
+import { anotarResultado, manejarCierra, pintarCierra, prepararCierra } from './cierra.js';
 import { opcionesDeDiseno } from './disenos.js';
 import { abrirElegirKmz } from './kmzs.js';
 import { pintarVuelo } from './vuelo.js';
@@ -26,21 +26,46 @@ export function prepararPlano(opciones) {
   });
   prepararSubida();
   prepararPago();
-  prepararInventario({ alSubir: actualizarInventario });
-  // Lo que llega de Cierra es lo que hay que vender: un loteo ya publicado se
-  // vuelve a publicar solo, para que el sitio no se quede con lo de ayer.
-  prepararCierra({ traido: (slug) => actualizarInventario(slug, { publicar: true }) });
+  prepararInventario({ alSubir: inventarioSubido });
+  prepararCierra({ traido: traidoDeCierra });
 }
 
 /**
- * Con el inventario nuevo arriba, lo construido se pone al día. Las fotos no
- * cambiaron: se salta generarlas, que es lo que toma minutos.
+ * Una planilla nueva: los estados y precios se ponen al día en segundos, sin
+ * reconstruir. Solo si trae parcelas que el plano no tiene hace falta construir.
  */
-async function actualizarInventario(slug, { publicar = false } = {}) {
+async function inventarioSubido(slug) {
+  await refrescar();
+  const proyecto = estado.proyectos.find((p) => p.slug === slug);
+  if (!proyecto?.construido || proyecto.trabajo) return;
+  const respuesta = await pedir(`/api/proyectos/${slug}/inventario/actualizar`, json({}));
+  if (respuesta.requiere_reconstruir) await reconstruirDatos(slug, { publicar: false });
+  else await refrescar();
+}
+
+/**
+ * Lo que llegó de Cierra ya quedó al día en el servidor, y si el loteo está en
+ * línea y algo cambió, ya se está publicando: acá solo se sigue ese trabajo. Si
+ * Cierra trajo lotes que el plano no tiene, se reconstruye (y se publica).
+ */
+async function traidoDeCierra(slug, respuesta) {
+  anotarResultado(slug, respuesta);
+  if (respuesta.publicando) {
+    estado.registros.set(slug, []);
+    estado.trabajos.set(slug, { accion: 'publicar', estado: 'corriendo', terminado: false });
+    await refrescar();
+    seguir(slug, respuesta.publicando);
+    return;
+  }
+  if (respuesta.requiere_reconstruir) return reconstruirDatos(slug, { publicar: true });
+  return refrescar();
+}
+
+/** Construir sin generar imágenes; con `publicar`, si ya está en línea, también publica. */
+async function reconstruirDatos(slug, { publicar }) {
   await refrescar();
   const proyecto = estado.proyectos.find((p) => p.slug === slug);
   if (proyecto?.construido && !proyecto.trabajo) {
-    // Con `publicar`, si ya está en línea el sitio también queda al día.
     await lanzar(proyecto, 'construir', { sin_imagenes: true, publicar });
   }
 }
