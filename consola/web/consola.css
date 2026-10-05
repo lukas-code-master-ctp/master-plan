@@ -597,6 +597,11 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
 .inventario__cierra { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem;
   align-items: center; justify-content: space-between; padding-top: 0.75rem; border-top: 1px dashed var(--zinc-200); }
 .inventario__cierra .nota { margin: 0; }
+.nuevo-cierra { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; cursor: default; }
+.nuevo-cierra .archivo__texto { text-align: left; }
+.nuevo-cierra__acciones { display: flex; gap: 0.75rem; flex-shrink: 0; }
+.nuevo-cierra__acciones .enlace { background: none; border: 0; padding: 0; font: inherit; font-size: 0.8125rem; }
+#nuevo-con-cierra .enlace { background: none; border: 0; padding: 0; font: inherit; }
 .cierra-buscar {
   width: 100%; height: 2.375rem; margin-bottom: 0.5rem; padding: 0 0.75rem 0 2.1rem;
   border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); font-size: 0.875rem; outline: none;

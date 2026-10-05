@@ -11,16 +11,34 @@
  */
 import { $, avisar, estado, json, pedir } from './comun.js';
 import { opcionesDeDiseno } from './disenos.js';
+import { cierraDisponible, elegirParaNuevo } from './cierra.js';
 import { comoInventario } from './inventario.js';
 import { cuantosLotes, terminados } from './kmzs.js';
 import { desdeEntrada, esFoto, esKmz, esPlanilla, megas, soltadero, subir } from './subida.js';
 
 // `mio`: el slug de un KMZ de Mis KMZ elegido en vez de subir el archivo.
-const eleccion = { kmz: null, mio: '', fotos: [], inventario: null };
+const eleccion = { kmz: null, mio: '', fotos: [], inventario: null, cierra: null };
 let enCurso = false;
 
 export function prepararNuevo({ alCrear }) {
   const form = $('#nuevo-master');
+
+  const elegirCierra = () => elegirParaNuevo({
+    nombre: $('#nuevo-nombre').value.trim(),
+    elegidos: eleccion.cierra ?? [],
+    alElegir: (proyectos) => {
+      eleccion.cierra = proyectos;
+      eleccion.inventario = null;     // o Cierra o planilla: las dos se pisarían
+      pintar();
+    },
+  }).catch((error) => avisar(error.message));
+  $('#nuevo-cierra-elegir').addEventListener('click', elegirCierra);
+  $('#nuevo-cierra-cambiar').addEventListener('click', elegirCierra);
+  $('#nuevo-cierra-quitar').addEventListener('click', () => {
+    eleccion.cierra = null;
+    $('#nuevo-con-cierra').hidden = false;
+    pintar();
+  });
 
   $('#nuevo-kmz').addEventListener('change', (e) => tomar(desdeEntrada(e.target)));
   $('#nuevo-fotos').addEventListener('change', (e) => tomar(desdeEntrada(e.target)));
@@ -63,6 +81,10 @@ export function abrirNuevo({ kmz = null } = {}) {
   eleccion.kmz = null;
   eleccion.fotos = [];
   eleccion.inventario = null;
+  eleccion.cierra = null;
+  // "Conéctalo con Cierra" solo si la consola tiene Cierra configurado.
+  $('#nuevo-con-cierra').hidden = true;
+  cierraDisponible().then((hay) => { $('#nuevo-con-cierra').hidden = !hay || Boolean(eleccion.cierra); });
   const listos = terminados(estado.kmzs);
   eleccion.mio = listos.some((k) => k.slug === kmz) ? kmz : '';
   opcionesDeMisKmz($('#nuevo-mio'), listos, eleccion.mio);
@@ -119,6 +141,16 @@ function pintar() {
   marcar('fotos', eleccion.fotos.length
     ? `${eleccion.fotos.length} panorámicas · ${megas(eleccion.fotos).toFixed(0)} MB`
     : 'Arrastra la carpeta del vuelo o elige las fotos', eleccion.fotos.length > 0);
+  // Con Cierra elegido, la planilla sobra: el inventario llega de allá.
+  const conCierra = Boolean(eleccion.cierra);
+  $('#caja-inventario').hidden = conCierra;
+  $('#nuevo-inventario-nota').hidden = conCierra;
+  $('#nuevo-cierra').hidden = !conCierra;
+  if (conCierra) {
+    $('#nuevo-con-cierra').hidden = true;
+    $('#nuevo-cierra-texto').textContent = 'De Cierra: '
+      + eleccion.cierra.map((p) => `${p.nombre} (etapa ${p.etapa})`).join(', ');
+  }
   marcar('inventario', eleccion.inventario
     ? eleccion.inventario.archivo.name
     : 'Subir la planilla de precios (.xlsx o .csv)', Boolean(eleccion.inventario));
@@ -179,6 +211,12 @@ async function construir(alCrear) {
       nombre: $('#nuevo-nombre').value.trim(),
       diseno_id: $('#nuevo-diseno').value || null,
     }))).slug;
+    if (eleccion.cierra) {
+      // Conectado antes de construir: la construcción trae lo de Cierra sola.
+      paso('Conectando con Cierra…', 0);
+      await pedir(`/api/proyectos/${encodeURIComponent(slug)}/cierra`,
+        json({ proyectos: eleccion.cierra.map(({ id, etapa }) => ({ id, etapa })) }, 'PUT'));
+    }
     if (eleccion.mio) {
       // Antes que las fotos: la subida pide que el master ya tenga su KMZ.
       paso('Poniendo el KMZ de Mis KMZ…', 0);

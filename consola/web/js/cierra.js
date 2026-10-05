@@ -10,6 +10,12 @@ import { $, abrirDialogo, avisar, fecha, json, pedir } from './comun.js';
 const estados = new Map();   // slug → lo que contestó GET /api/proyectos/{slug}/cierra
 let slugActual = null;
 let nombreDelLoteo = '';
+/**
+ * Para qué se abrió el diálogo. Con un loteo: su clave y sus proyectos, y
+ * "Conectar" lo deja conectado. En Nuevo master el loteo todavía no existe: la
+ * clave es la de la loteadora y "Conectar" solo devuelve lo elegido.
+ */
+let modo = { base: '', elegidos: new Map(), alElegir: async () => {} };
 let alTraer = async () => {};
 const resultados = new Map();   // slug → qué pasó la última vez que se trajo, en palabras
 
@@ -106,10 +112,46 @@ async function cargar(slug) {
 // --- El diálogo ------------------------------------------------------------------
 
 async function abrir(proyecto) {
+  const slug = proyecto.slug;
+  const estado = estados.get(slug);
+  modo = {
+    base: `/api/proyectos/${slug}/cierra`,
+    elegidos: new Map((estado?.proyectos ?? []).map((p) => [p.id, p.etapa])),
+    alElegir: async (proyectos) => {
+      const respuesta = await pedir(`/api/proyectos/${slug}/cierra`, json({ proyectos }, 'PUT'));
+      await cargar(slug);
+      await alTraer(slug, respuesta);
+    },
+  };
+  return abrirDialogoCierra(proyecto.nombre, estado);
+}
+
+/** ¿Se ofrece Cierra a esta loteadora? Para Nuevo master. */
+export async function cierraDisponible() {
+  try {
+    return (await pedir('/api/cierra')).disponible === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Elegir proyectos de Cierra para un master que todavía no existe.
+ * `alElegir(proyectos)` recibe [{id, etapa, nombre}].
+ */
+export async function elegirParaNuevo({ nombre, elegidos = [], alElegir }) {
+  modo = {
+    base: '/api/cierra',
+    elegidos: new Map(elegidos.map((p) => [p.id, p.etapa])),
+    alElegir: async (proyectos) => alElegir(proyectos),
+  };
+  return abrirDialogoCierra(nombre, await pedir('/api/cierra'));
+}
+
+async function abrirDialogoCierra(nombre, estado) {
   $('#cierra-clave').value = '';
-  nombreDelLoteo = proyecto.nombre ?? '';
+  nombreDelLoteo = nombre ?? '';
   abrirDialogo($('#cierra'));
-  const estado = estados.get(proyecto.slug);
   if (!estado?.pista) return mostrarPaso('clave');
   return mostrarProyectos(estado);
 }
@@ -127,9 +169,8 @@ async function guardarClave() {
   boton.disabled = true;
   try {
     avisar(null);
-    await pedir(`/api/proyectos/${slugActual}/cierra/clave`, json({ clave }, 'PUT'));
-    await cargar(slugActual);
-    await mostrarProyectos(estados.get(slugActual));
+    await pedir(`${modo.base}/clave`, json({ clave }, 'PUT'));
+    await mostrarProyectos(await pedir(modo.base));
   } catch (error) {
     avisar(error.message);
   } finally {
@@ -146,11 +187,11 @@ async function mostrarProyectos(estado) {
   mostrarPaso('proyectos');
   let opciones;
   try {
-    ({ proyectos: opciones } = await pedir(`/api/proyectos/${slugActual}/cierra/opciones`));
+    ({ proyectos: opciones } = await pedir(`${modo.base}/opciones`));
   } catch (error) {
     return avisar(error.message);
   }
-  const elegidos = new Map(estado.proyectos.map((p) => [p.id, p.etapa]));
+  const elegidos = modo.elegidos;
   if (!opciones.length) return avisar('Esa clave no ve ningún proyecto en Cierra.');
   lista.replaceChildren(...opciones.map((opcion) => fila(opcion, elegidos)));
   // Se abre ya buscando el loteo: en Cierra hay decenas de proyectos y los de
@@ -221,17 +262,15 @@ function fila(opcion, elegidos) {
 async function conectar() {
   const proyectos = [...$('#cierra-lista').children]
     .filter((li) => $('input[type=checkbox]', li).checked)
-    .map((li) => ({ id: Number(li.dataset.id), etapa: Number($('input[type=number]', li).value) }));
+    .map((li) => ({ id: Number(li.dataset.id), etapa: Number($('input[type=number]', li).value),
+      nombre: li.dataset.nombre }));
   if (!proyectos.length) return avisar('Marca al menos un proyecto de Cierra.');
   const boton = $('#cierra-listo');
   boton.disabled = true;
-  const slug = slugActual;
   try {
     avisar(null);
-    const respuesta = await pedir(`/api/proyectos/${slug}/cierra`, json({ proyectos }, 'PUT'));
+    await modo.alElegir(proyectos);
     $('#cierra').close();
-    await cargar(slug);
-    await alTraer(slug, respuesta);
   } catch (error) {
     avisar(error.message);
   } finally {

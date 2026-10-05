@@ -848,7 +848,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                                                       proyecto.vercel_proyecto))
 
     app.include_router(rutas_de_cierra(cierra, conexiones, vista, ocupado=trabajos.corriendo,
-                                       publicar_en_linea=publicar_en_linea))
+                                       publicar_en_linea=publicar_en_linea, quien=quien))
 
     @app.post("/api/proyectos/{slug}/inventario/actualizar")
     def actualizar_inventario(slug: str, mios: Vista = Depends(vista)) -> dict:

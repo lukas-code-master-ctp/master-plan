@@ -140,10 +140,20 @@
             <input id="nuevo-inventario" type="file" accept=".xlsx,.csv" aria-labelledby="rotulo-inventario">
             <span class="archivo__texto" id="texto-inventario">Subir la planilla de precios (.xlsx o .csv)</span>
           </label>
-          <p class="nota">Una fila por parcela con su estado y precio. Usa la
+          <div id="nuevo-cierra" class="archivo archivo--lleno nuevo-cierra" hidden>
+            <span id="nuevo-cierra-texto" class="archivo__texto"></span>
+            <span class="nuevo-cierra__acciones">
+              <button id="nuevo-cierra-cambiar" class="enlace" type="button">Cambiar</button>
+              <button id="nuevo-cierra-quitar" class="enlace" type="button">Quitar</button>
+            </span>
+          </div>
+          <p class="nota" id="nuevo-inventario-nota">Una fila por parcela con su estado y precio. Usa la
             <a class="enlace" href="/api/plantilla-inventario" download>plantilla</a>; después de
             construir la puedes bajar con tus parcelas ya puestas. Sin planilla, las parcelas
             quedan como no disponibles.</p>
+          <p class="nota" id="nuevo-con-cierra" hidden>¿Llevas las parcelas en Cierra?
+            <button id="nuevo-cierra-elegir" class="enlace" type="button">Conéctalo con Cierra</button>
+            y los estados y precios llegan solos, sin planilla.</p>
         </div>
       </div>
 

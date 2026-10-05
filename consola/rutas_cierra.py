@@ -20,6 +20,7 @@ from .cierra import (
     revisar_eleccion,
     sincronizar,
 )
+from .acceso import Sesion
 from .inventario import poner_al_dia
 from .proyectos import Proyecto, Vista
 
@@ -28,7 +29,7 @@ SIN_CLAVE = ("La clave de Cierra de esta loteadora no está, o ya no se puede le
 
 
 def rutas_de_cierra(cierra: Cierra | None, conexiones: Conexiones | None, vista,
-                    ocupado=lambda slug: False, publicar_en_linea=None) -> APIRouter:
+                    ocupado=lambda slug: False, publicar_en_linea=None, quien=None) -> APIRouter:
     """`ocupado(slug)`: si ese loteo tiene una construcción o publicación en curso.
     `publicar_en_linea(proyecto)`: vuelve a publicar un loteo ya en línea y devuelve
     el trabajo; sin ella, traer de Cierra no publica."""
@@ -45,6 +46,37 @@ def rutas_de_cierra(cierra: Cierra | None, conexiones: Conexiones | None, vista,
         if not clave:
             raise HTTPException(409, SIN_CLAVE)
         return clave
+
+    # --- de la loteadora, sin loteo: lo que usa Nuevo master antes de existir ------
+
+    if quien is not None:
+        @rutas.get("/api/cierra")
+        def estado_propio(sesion: Sesion = Depends(quien)) -> dict:
+            if cierra is None or conexiones is None:
+                return {"disponible": False}
+            return {"disponible": True, "pista": conexiones.pista(sesion.cliente_id),
+                    "conectado": False, "proyectos": []}
+
+        @rutas.put("/api/cierra/clave")
+        async def guardar_clave_propia(campos: dict = Body(...), sesion: Sesion = Depends(quien)) -> dict:
+            api, guardadas = configurado()
+            try:
+                clave = limpiar_clave(campos.get("clave"))
+            except ValueError as error:
+                raise HTTPException(400, str(error)) from error
+            await _pedir(api.proyectos, clave)
+            return {"pista": guardadas.guardar_clave(sesion.cliente_id, clave)}
+
+        @rutas.get("/api/cierra/opciones")
+        async def opciones_propias(sesion: Sesion = Depends(quien)) -> dict:
+            api, guardadas = configurado()
+            clave = guardadas.clave(sesion.cliente_id)
+            if not clave:
+                raise HTTPException(409, SIN_CLAVE)
+            return {"proyectos": [{**p.__dict__, "etapa_sugerida": etapa_sugerida(p.nombre)}
+                                  for p in await _pedir(api.proyectos, clave)]}
+
+    # --- de un loteo ---------------------------------------------------------------
 
     @rutas.get("/api/proyectos/{slug}/cierra")
     def estado(slug: str, mios: Vista = Depends(vista)) -> dict:
