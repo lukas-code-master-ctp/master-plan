@@ -56,12 +56,21 @@ def cuadrado(este, norte, lado=70):
     (42, "42"),
     (42.0, "42"),
     ("7-1", "7-1"),
+    # Par sector-lote con ceros como en el plano (Caminos de Rapel) y LOTE con guion
+    # pegado (El Arrayán).
+    ("Lote 8-01", "8-1"),
+    ("LOTE 8-01", "8-1"),
+    ("8-01", "8-1"),
+    ("LOTE 10-6", "10-6"),
+    ("LOTE-12", "12"),
+    ("LOTE #12", "12"),
+    ("LOTE - 12", "12"),
 ])
 def test_normaliza_los_formatos_de_nombre(entrada, esperado):
     assert normalizar_id(entrada) == esperado
 
 
-@pytest.mark.parametrize("entrada", [None, "", "sin numero", "12/03/2024", "A"])
+@pytest.mark.parametrize("entrada", [None, "", "sin numero", "12/03/2024", "A", "-12", "LOTE--12", "12-"])
 def test_devuelve_none_cuando_no_hay_lote(entrada):
     assert normalizar_id(entrada) is None
 

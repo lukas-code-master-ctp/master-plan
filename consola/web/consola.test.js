@@ -57,6 +57,29 @@ test('todo botón de la página tiene quién lo atienda', () => {
     `hay botones que no hacen nada al tocarlos: ${sinAtender.join(', ')}`);
 });
 
+test('cada herramienta del plano tiene su botón y su cursor', async () => {
+  const { HERRAMIENTAS_RECTANGULO } = await import('./js/kmz_geometria.js');
+  const css = readFileSync(join(aqui, 'consola.css'), 'utf8');
+  const botones = conjunto(html, /data-herramienta="([\w-]+)"/g);
+
+  for (const h of HERRAMIENTAS_RECTANGULO) assert.ok(botones.has(h), `falta el botón de la herramienta ${h}`);
+  const sinCursor = [...botones].filter((h) => h !== 'mover' && !css.includes(`[data-herramienta="${h}"] canvas`));
+  assert.deepEqual(sinCursor, [], `herramientas sin cursor de mira: ${sinCursor.join(', ')}`);
+});
+
+test('cada "Quitar" de lo marcado tiene quién lo atienda', () => {
+  const kmz = readFileSync(join(aqui, 'js', 'kmz.js'), 'utf8');
+  // Los botones de la lista llevan `{ quitarAlgo: ... }` en su dataset.
+  const quitar = conjunto(kmz, /\{ (quitar[A-Z]\w*):/g);
+  const kebab = (c) => c.replace(/[A-Z]/g, (l) => `-${l.toLowerCase()}`);
+
+  assert.ok(quitar.has('quitarCuadro'));
+  for (const clave of quitar) {
+    assert.ok(kmz.includes(`[data-${kebab(clave)}]`), `el clic no escucha data-${kebab(clave)}`);
+    assert.ok(kmz.includes(`dataset.${clave}`), `nadie atiende dataset.${clave}`);
+  }
+});
+
 test('el servidor sirve todos los módulos, y solo esos', () => {
   // El servidor los sirve de una lista cerrada: un módulo nuevo que no esté en
   // ella da 404 y la página queda en blanco sin decir por qué.

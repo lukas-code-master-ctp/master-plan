@@ -376,6 +376,9 @@
         <ol class="kmz-instrucciones">
           <li><b>Encierra el dibujo</b> del loteo (la "situación propuesta"): arrastra un rectángulo.</li>
           <li><b>Tapa</b> lo que no es dibujo y quedó adentro: cuadros, cajetín, timbres, croquis.</li>
+          <li>Si el plano trae un <b>cuadro de superficies</b> (los lotes y sus áreas), enciérralo con
+            esa herramienta, aunque esté fuera del dibujo: así se sabe qué lotes faltan y cuánto
+            debe medir cada uno.</li>
           <li>Si es una foto del papel, marca las 4 esquinas del marco impreso.</li>
         </ol>
         <p id="kmz-sin-lector" class="kmz-nota-fuerte" hidden>Este servidor no lee los números del
@@ -517,6 +520,11 @@
           <span class="kmz-muestra kmz-muestra--malo">rojo</span> los sin número o repetidos.</p>
         <p id="kmz-sin-numero" class="kmz-nota-fuerte"></p>
         <button class="boton boton--contorno boton--chico" data-accion="kmz-siguiente-sin-numero" type="button">Ir al siguiente sin número</button>
+        <p id="kmz-huecos" class="kmz-nota-fuerte" hidden></p>
+        <div id="kmz-sugerencias-caja" hidden>
+          <h3>Leídos con muy pocas lecturas: confírmalos</h3>
+          <div id="kmz-sugerencias" class="kmz-pastillas"></div>
+        </div>
         <p id="kmz-faltantes" class="kmz-nota-fuerte" hidden></p>
         <div id="kmz-duplicados-caja" hidden>
           <h3>Números repetidos</h3>
@@ -625,6 +633,8 @@
             <button type="button" data-herramienta="mover" aria-pressed="true">Mover</button>
             <button type="button" data-herramienta="dibujo" aria-pressed="false">Encerrar el dibujo</button>
             <button type="button" data-herramienta="mascara" aria-pressed="false">Tapar</button>
+            <button type="button" data-herramienta="cuadro" aria-pressed="false"
+                    title="Encierra el cuadro de superficies (los lotes y sus áreas), aunque esté fuera del dibujo">Cuadro de superficies</button>
             <button type="button" data-herramienta="numero" aria-pressed="false">Marcar un número</button>
             <button type="button" data-herramienta="esquinas" aria-pressed="false" hidden>Esquinas del marco</button>
           </div>
@@ -823,6 +833,17 @@
   <div class="modal__pie">
     <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
     <button id="kmz-reemplazar" class="boton" type="button">Reemplazarlo</button>
+  </div>
+</dialog>
+
+<!-- Mis KMZ: crear el KMZ aunque queden lotes sin número -->
+<dialog id="kmz-sin-numero-dialogo" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2>Quedan lotes sin número</h2>
+  <p class="ayuda" id="kmz-sin-numero-texto"></p>
+  <div class="modal__pie">
+    <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
+    <button id="kmz-crear-sin-numero" class="boton" type="button">Crear sin ellos</button>
   </div>
 </dialog>
 

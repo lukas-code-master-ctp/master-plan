@@ -101,6 +101,23 @@ export function girarEntradas(entradas, de, a, ancho, alto) {
   return salida;
 }
 
+/**
+ * Lo marcado tras dibujar `rect` (px de página) con una herramienta del paso Marcar:
+ * "dibujo" encierra el dibujo, "mascara" suma un tapado y "cuadro" encierra el cuadro de
+ * superficies (uno solo: dibujarlo de nuevo lo reemplaza; puede quedar fuera del
+ * dibujo). Un rectángulo de menos de 3 px por lado es un clic, no se marca.
+ */
+export function marcarRectangulo(entradas, herramienta, rect) {
+  if (rect[2] - rect[0] < 3 || rect[3] - rect[1] < 3) return entradas;
+  if (herramienta === 'dibujo') return { ...entradas, rectangulo: rect };
+  if (herramienta === 'mascara') return { ...entradas, mascaras: [...(entradas.mascaras ?? []), rect] };
+  if (herramienta === 'cuadro') return { ...entradas, cuadro: rect };
+  return entradas;
+}
+
+/** Las herramientas del paso Marcar que dibujan un rectángulo. */
+export const HERRAMIENTAS_RECTANGULO = ['dibujo', 'mascara', 'cuadro'];
+
 /** [x0, y0, x1, y1] con x0 < x1 e y0 < y1, de dos esquinas cualesquiera. */
 export function rectanguloDe(p, q) {
   return [Math.min(p[0], q[0]), Math.min(p[1], q[1]), Math.max(p[0], q[0]), Math.max(p[1], q[1])];
@@ -343,17 +360,32 @@ export function loteEn(rasgos, x, y) {
 }
 
 /**
+ * El número de lote para comparar, como `pipeline.plano.numeros.clave`: "8-01", "8-1" y
+ * "LOTE 8-01" son el mismo lote ("8-1"); "A03" → "A3". Se guarda como lo escribió ella.
+ */
+export function claveLote(numero) {
+  const t = String(numero ?? '').trim().toUpperCase()
+    .replace(/^(?:LOTES?(?=\d)|LOTES?\b\s*[-#]?\s*|[-#]\s*)/, '');
+  const pares = t.match(/^(\d+(?:\s*-\s*\d+)*)[\s.]*$/);
+  if (pares) return pares[1].replace(/\s/g, '').split('-').map((p) => String(Number(p))).join('-');
+  const letra = t.match(/^([A-Z])\s*(\d+)$/);
+  if (letra) return `${letra[1]}${Number(letra[2])}`;
+  return t.replace(/\s+/g, '');
+}
+
+/**
  * Le pone `numero` al lote que contiene el clic. Devuelve las semillas nuevas:
  * - la semilla de la loteadora que ya estaba dentro de ese lote cambia de número
  *   (o se quita si el número viene vacío);
  * - si no había, se agrega una en `punto`;
- * - si otra semilla tenía ese número, se quita (un número va en un solo lote).
+ * - si otra semilla tenía ese número, se quita (un número va en un solo lote; "8-1" y
+ *   "8-01" son el mismo). El número va tal como lo escribió.
  */
 export function ponerNumero(semillas, numero, punto, anillos) {
   const limpio = String(numero ?? '').trim();
   const dentro = anillos ? (s) => puntoEnPoligono(s.x, s.y, anillos) : () => false;
   const propia = semillas.find(dentro);
-  let salida = semillas.filter((s) => s !== propia && (!limpio || s.numero !== limpio));
+  let salida = semillas.filter((s) => s !== propia && (!limpio || claveLote(s.numero) !== claveLote(limpio)));
   if (limpio) {
     const [x, y] = propia ? [propia.x, propia.y] : punto;
     salida = [...salida, { numero: limpio, x: redondo(x), y: redondo(y) }];
@@ -368,15 +400,43 @@ export function nivelDe(propiedades) {
 
 /** Lo que la revisión cuenta de un vistazo. */
 export function resumenRevision(rasgos) {
-  const cuenta = { lotes: 0, verde: 0, ambar: 0, rojo: 0, gris: 0, sin_numero: 0, duplicados: 0 };
+  const cuenta = { lotes: 0, verde: 0, ambar: 0, rojo: 0, gris: 0, sin_numero: 0, sin_numero_lote: 0, duplicados: 0 };
   for (const { properties: p } of rasgos) {
     const banderas = p.banderas ?? [];
-    if (banderas.includes('sin_numero')) { cuenta.sin_numero += 1; continue; }
+    if (banderas.includes('sin_numero')) {
+      cuenta.sin_numero += 1;
+      if (p.de_lote) cuenta.sin_numero_lote += 1;
+      continue;
+    }
     cuenta.lotes += 1;
     if (banderas.includes('duplicado')) cuenta.duplicados += 1;
     cuenta[nivelDe(p)] += 1;
   }
   return cuenta;
+}
+
+/**
+ * Las partes sin número, primero las del tamaño de un lote (un lote cuyo número no se
+ * leyó) y, entre ellas, las que traen una lectura que confirmar.
+ */
+export function sinNumero(rasgos) {
+  const peso = ({ properties: p }) => (p.de_lote ? 0 : 2) + (p.sugerencia ? 0 : 1);
+  return rasgos.filter((r) => (r.properties.banderas ?? []).includes('sin_numero') && r.properties.numero == null)
+    .map((r, i) => [r, i]).sort(([a, i], [b, j]) => peso(a) - peso(b) || i - j).map(([r]) => r);
+}
+
+/** Las partes sin número con una lectura del lector que se confirma con un clic: [{numero, rasgo}]. */
+export function sugerencias(rasgos) {
+  return sinNumero(rasgos).filter((r) => r.properties.sugerencia?.numero)
+    .map((r) => ({ numero: String(r.properties.sugerencia.numero), rasgo: r }));
+}
+
+/** "Faltan los números 8-03, 8-05 y 8-11." ("" si no falta ninguno). */
+export function textoHuecos(huecos) {
+  const lista = (huecos ?? []).map(String);
+  if (!lista.length) return '';
+  if (lista.length === 1) return `Falta el número ${lista[0]}.`;
+  return `Faltan los números ${lista.slice(0, -1).join(', ')} y ${lista[lista.length - 1]}.`;
 }
 
 /** Los números que se repiten entre los lotes. */

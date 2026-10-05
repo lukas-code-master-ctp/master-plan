@@ -16,7 +16,10 @@
    Los núcleos sin rótulo son regiones "sin número" (caminos, quebradas, sobrantes).
 3. Watershed sobre la tinta suavizada: el límite queda en el eje de la línea. Una
    región sin número interior cuyo límite con un lote casi no tiene tinta (la inventó
-   el cierre, no el dibujo, o es el texto del rótulo) se une a ese lote.
+   el cierre, no el dibujo, o es el texto del rótulo) se une a ese lote. Salvo si es
+   del tamaño de un lote (≥ LOTE_FRAC de la mediana de los lotes con número): es un
+   lote cuyo número no se leyó, y queda como cara sin número "de lote" para que la
+   loteadora lo numere. Pegarlo al vecino duplica ese lote sin aviso.
 4. Red de deslindes: las grietas entre etiquetas forman una red plana. Cada deslinde
    entre dos regiones es UNA arista, compartida por ambas. Se endereza (recta si cabe
    en DP_MM, si no Douglas-Peucker con cada tramo ajustado por mínimos cuadrados), los
@@ -36,6 +39,7 @@ from shapely.ops import polygonize, unary_union
 from skimage.morphology import skeletonize
 from skimage.segmentation import watershed
 
+from . import numeros as numeros_lote
 from .tinta import Tinta, impar
 
 # Parámetros globales en mm de papel, de la ronda 3 de pruebas (ver `tinta`). Los del
@@ -53,6 +57,18 @@ FUS_DISC_MM = 3.0      # disco de cada rótulo en un núcleo compartido
 DISC_MM = 1.5          # disco de un rótulo sin núcleo propio
 EXCL_MM = 12.0         # alrededor de un rótulo que cayó en el exterior, el exterior no se siembra
 MERGE_INK_FRAC = 0.85  # región sin número cuyo límite con un lote tiene menos tinta firme: se une
+# Lo que no se une aunque el límite no tenga tinta: una región de al menos LOTE_FRAC de
+# la mediana de los lotes con número es un lote sin número. En el set de regresión los
+# trozos unidos (franjas, restos de texto, bolsillos del cierre) miden ≤ 0,36 de la
+# mediana y los lotes sin rótulo de Caminos de Rapel 0,91–1,01. La excepción son las
+# mitades de un lote que partió su propio rótulo (El Arrayán: 0,46–0,74): ahí el
+# rótulo está sobre el corte, a ≤ 1,5 mm del límite común (en Rapel, a ≥ 3,3 mm), y el
+# corte cae entero en la caja de ±FUSION_ROTULO_MM del rótulo (≥ 95 % del límite, de
+# 9 a 16 mm de largo). Se piden las dos cosas: un rótulo pegado a un lado largo de un
+# lote vecino sin número (lotes angostos) no basta para unirlos. Lo que queda sin
+# distinguir es un lado común corto (≲ 10 mm) tapado por el rótulo.
+LOTE_FRAC = 0.4
+CORTE_ROTULO_MM = 2.0
 BLUR_MM = 0.25         # suavizado de la tinta para el watershed
 DP_MM = 0.34           # tolerancia del enderezado (≈ 2 px a 6 px/mm: el ancho de la línea)
 NODE_MOV_MM = 0.5      # lo más que se mueve un nodo hacia la intersección de sus rectas
@@ -67,6 +83,7 @@ class Particion:
     etiquetas: np.ndarray                 # int32, la partición de la imagen de trabajo
     numeros: dict[int, str]               # etiqueta -> número del lote
     estadisticas: dict = field(default_factory=dict)
+    de_lote: set[int] = field(default_factory=set)   # regiones sin número del tamaño de un lote
 
 
 @dataclass
@@ -75,6 +92,8 @@ class Red:
     sin_numero: list[Polygon]             # caras interiores que no son de ningún lote
     deslindes: list[LineString]           # aristas que tocan algún lote
     estadisticas: dict = field(default_factory=dict)
+    # Por cara sin número: ¿es un lote sin número (no se unió a su vecino por tamaño)?
+    sin_numero_lote: list[bool] = field(default_factory=list)
 
 
 def _linea_kernel(largo: int, angulo: float) -> np.ndarray:
@@ -89,7 +108,7 @@ def _linea_kernel(largo: int, angulo: float) -> np.ndarray:
 def particionar(tinta: Tinta, ppmm: float, semillas) -> Particion:
     """`semillas`: [(numero, x, y)] en píxeles de trabajo. Los números no se repiten."""
     numeros = [str(n) for n, _, _ in semillas]
-    repetidos = sorted(n for n, c in Counter(numeros).items() if c > 1)
+    repetidos = numeros_lote.repetidos(numeros)
     if repetidos:
         raise ValueError(f"números de lote repetidos en las semillas: {', '.join(repetidos)}")
     rotulos = {i: (float(x), float(y)) for i, (_, x, y) in enumerate(semillas)}
@@ -206,12 +225,13 @@ def particionar(tinta: Tinta, ppmm: float, semillas) -> Particion:
     relieve = cv2.GaussianBlur(lineas.astype(np.float32), (0, 0), max(0.5, mm(BLUR_MM)))
     etiquetas = _inundar(relieve, marcas)
     del relieve, marcas, lab
-    fusiones = _fusionar_sin_tinta(etiquetas, lineas & tinta.firme, ppmm, rotulos)
+    fusiones, de_lote = _fusionar_sin_tinta(etiquetas, lineas & tinta.firme, ppmm, rotulos)
     n = lambda i: numeros[i]
     estadisticas = dict(
         tramos_pliegue=tinta.pliegues,
         trazos_de_rotulo=n_rotulos,
         fusiones_sin_tinta=[(r, n(i)) for r, i in fusiones],
+        regiones_de_lote=de_lote,
         nucleos=int(es_nucleo.sum()),
         semillas=len(rotulos),
         nucleos_con_semilla=len({c for c in nucleo.values() if c}),
@@ -221,7 +241,7 @@ def particionar(tinta: Tinta, ppmm: float, semillas) -> Particion:
         especiales={n(i): v for i, v in especiales.items()},
     )
     return Particion(etiquetas.astype(np.int32, copy=False), {LOTE0 + i: numeros[i] for i in rotulos},
-                     estadisticas)
+                     estadisticas, set(de_lote))
 
 
 def _sin_rotulos(lineas: np.ndarray, grueso: np.ndarray, rotulos, ppmm: float):
@@ -314,18 +334,29 @@ def _inundar(relieve: np.ndarray, marcas: np.ndarray) -> np.ndarray:
     return salida
 
 
-def _fusionar_sin_tinta(ws: np.ndarray, firme: np.ndarray, ppmm: float, rotulos=None) -> list[tuple[int, int]]:
+def _fusionar_sin_tinta(ws: np.ndarray, firme: np.ndarray, ppmm: float,
+                        rotulos=None) -> tuple[list[tuple[int, int]], list[int]]:
     """Une al lote vecino cada región sin número que no toca el borde y cuyo límite
     con ese lote casi no tiene tinta firme. Si hay varios, al del límite con menos
     tinta (mínimo 3 mm de límite común). La tinta del límite a menos de ±FUSION_ROTULO_MM
     del rótulo del lote no cuenta: es su texto, que en un lote angosto toca los
-    deslindes y lo parte. `rotulos`: {i: (x, y)} del lote LOTE0 + i. Modifica `ws`."""
+    deslindes y lo parte. `rotulos`: {i: (x, y)} del lote LOTE0 + i. Modifica `ws`.
+
+    Una región del tamaño de un lote (`LOTE_FRAC`) no se une, salvo que el rótulo del
+    lote esté a menos de CORTE_ROTULO_MM del límite común y su caja cubra la mitad o más
+    de ese límite (el texto partió ese lote).
+    Devuelve (fusiones [(región, i)], regiones de lote que no se unieron)."""
     tinta = cv2.dilate(firme.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     rotulos = rotulos or {}
     sx = np.full(LOTE0 + len(rotulos) + 1, np.nan)
     sy = sx.copy()
     for i, (x, y) in rotulos.items():
         sx[LOTE0 + i], sy[LOTE0 + i] = x, y
+    # El tamaño de un lote: la mediana de las regiones con número, antes de unir nada.
+    area0 = np.bincount(ws.ravel())
+    con_numero = area0[LOTE0:][area0[LOTE0:] > 0] if len(area0) > LOTE0 else area0[:0]
+    tope = LOTE_FRAC * float(np.median(con_numero)) if con_numero.size else np.inf
+    retenidas = set()
     fusiones = []
     for _ in range(4):
         borde = set(np.unique(np.concatenate([ws[0], ws[-1], ws[:, 0], ws[:, -1]])).tolist())
@@ -354,15 +385,31 @@ def _fusionar_sin_tinta(ws: np.ndarray, firme: np.ndarray, ppmm: float, rotulos=
         total = np.bincount(inverso)
         con_tinta = np.bincount(inverso, weights=t)
         de_rotulo = np.bincount(inverso, weights=cerca)
+        # Lo más cerca que pasa el límite del rótulo de su lote (inf sin rótulo).
+        corte = np.full(len(unicos), np.inf)
+        if rotulos:
+            distancia = np.nan_to_num(np.hypot(px - sx[lote], py - sy[lote]), nan=np.inf)
+            np.minimum.at(corte, inverso, distancia)
         mejor = {}
-        for clave, n, k, c in zip(unicos.tolist(), total.tolist(), con_tinta.tolist(), de_rotulo.tolist()):
+        for clave, n, k, c, d in zip(unicos.tolist(), total.tolist(), con_tinta.tolist(), de_rotulo.tolist(),
+                                     corte.tolist()):
             p, q = clave // 10 ** 7, clave % 10 ** 7
             # Primero el lote cuyo rótulo es la mitad o más del límite común (el texto lo partió).
             orden = (c < n / 2, k / n)
             for r, lote in ((p, q), (q, p)):
                 if (2 <= r < LOTE0 and lote >= LOTE0 and r not in borde and n >= 3 * ppmm
                         and k / n < MERGE_INK_FRAC and orden < mejor.get(r, (0, (True, 2.0)))[1]):
-                    mejor[r] = (lote, orden)
+                    # Del tamaño de un lote y sin el rótulo encima del corte: un lote sin
+                    # número, que no se une (None). "Encima del corte": el centro del
+                    # rótulo a menos de CORTE_ROTULO_MM del límite Y el límite casi todo
+                    # dentro de la caja del rótulo (c ≥ n/2, el mismo criterio de `orden`).
+                    # Un lote vecino de verdad comparte un lado más largo que el texto.
+                    texto_corta = d < CORTE_ROTULO_MM * ppmm and c >= n / 2
+                    de_lote = area0[r] >= tope and not texto_corta
+                    mejor[r] = (None if de_lote else lote, orden)
+        for r in [r for r, (lote, _) in mejor.items() if lote is None or r in retenidas]:
+            retenidas.add(r)
+            del mejor[r]
         if not mejor:
             break
         tabla = np.arange(ws.max() + 1, dtype=np.int32)
@@ -370,7 +417,7 @@ def _fusionar_sin_tinta(ws: np.ndarray, firme: np.ndarray, ppmm: float, rotulos=
             tabla[r] = lote
             fusiones.append((int(r), int(lote) - LOTE0))
         ws[...] = tabla[ws]
-    return fusiones
+    return fusiones, sorted(int(r) for r in retenidas)
 
 
 # ---------------------------------------------------------------------------- red de deslindes
@@ -463,26 +510,28 @@ def red_de_deslindes(particion: Particion, ppmm: float) -> Red:
     original = particion.etiquetas
     afuera = set(np.unique(np.concatenate([original[0], original[-1], original[:, 0], original[:, -1]])).tolist())
     afuera.discard(1)       # el relleno es una sola etiqueta: decide si la cara toca el marco
-    sin_numero = _caras_interiores([(e, c) for e, fs in por_etiqueta.items() if e < LOTE0 for c in fs],
+    interiores = _caras_interiores([(e, c) for e, fs in por_etiqueta.items() if e < LOTE0 for c in fs],
                                    list(lotes.values()), afuera, ancho, alto)
+    sin_numero = [c for _, c in interiores]
+    sin_numero_lote = [e in particion.de_lote for e, _ in interiores]
 
     estadisticas = dict(
         nodos=len(nodos), aristas=len(aristas), aristas_rectas=int(rectas), nodos_movidos=movidos,
         caras=len(caras), lotes_multicara=multicara,
         vertices_mediana=float(np.median([len(p.exterior.coords) - 1 for p in lotes.values()])) if lotes else 0.0,
     )
-    return Red(lotes, sin_numero, [l for l, d in zip(lineas, de_lote) if d], estadisticas)
+    return Red(lotes, sin_numero, [l for l, d in zip(lineas, de_lote) if d], estadisticas, sin_numero_lote)
 
 
 def _caras_interiores(caras: list[tuple[int, Polygon]], lotes: list[Polygon], afuera: set[int],
-                      ancho: int, alto: int) -> list[Polygon]:
+                      ancho: int, alto: int) -> list[tuple[int, Polygon]]:
     """Las caras que no son de ningún lote pero quedan dentro del loteo: caminos,
     quebradas, lotes sin rótulo. Es exterior la cara de una región que toca el borde
     de la imagen (`afuera`) y la que toca el marco. Los islotes dentro de un lote
     (texto, achurado) son del lote."""
     marco = Polygon([(-0.5, -0.5), (ancho - 0.5, -0.5), (ancho - 0.5, alto - 0.5), (-0.5, alto - 0.5)]).exterior
     union = unary_union(lotes)
-    return [c for e, c in caras
+    return [(e, c) for e, c in caras
             if e not in afuera and c.distance(marco) >= 1.5 and not union.contains(c.representative_point())]
 
 

@@ -5,10 +5,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  anclaDesde, aPagina, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
-  matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
-  puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, siguienteNombre,
-  tamanoRotado, vistaAjustada, zoomEn,
+  anclaDesde, aPagina, claveLote, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
+  HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
+  puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, siguienteNombre, sinNumero, sugerencias,
+  tamanoRotado, textoHuecos, vistaAjustada, zoomEn,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
 
@@ -65,6 +65,41 @@ test('girar la página lleva lo marcado a la nueva rotación', () => {
   assert.deepEqual(vuelta.rectangulo, entradas.rectangulo);
   assert.deepEqual(vuelta.semillas, entradas.semillas);
   assert.deepEqual(girarPunto(20, 10, 0, 270, 100, 60), rotarPunto(20, 10, 270, 100, 60));
+});
+
+test('el cuadro de superficies es un rectángulo solo, que se reemplaza y se quita', () => {
+  const vacias = { rectangulo: [100, 100, 300, 300], mascaras: [[0, 0, 4, 4]], cuadro: null };
+  assert.deepEqual(HERRAMIENTAS_RECTANGULO, ['dibujo', 'mascara', 'cuadro']);
+  // Fuera del dibujo vale igual: no se recorta contra el rectángulo.
+  const una = marcarRectangulo(vacias, 'cuadro', [400, 20, 520, 260]);
+  assert.deepEqual(una.cuadro, [400, 20, 520, 260]);
+  assert.deepEqual([una.rectangulo, una.mascaras], [vacias.rectangulo, vacias.mascaras]);
+  // Dibujarlo de nuevo lo reemplaza (no se suman como los tapados).
+  const otra = marcarRectangulo(una, 'cuadro', [410, 30, 500, 250]);
+  assert.deepEqual(otra.cuadro, [410, 30, 500, 250]);
+  assert.equal(marcarRectangulo(otra, 'mascara', [1, 1, 9, 9]).mascaras.length, 2);
+  // Un clic (menos de 3 px) no marca nada, y otra herramienta no toca el cuadro.
+  assert.equal(marcarRectangulo(otra, 'cuadro', [400, 20, 401, 260]), otra);
+  assert.equal(marcarRectangulo(otra, 'numero', [0, 0, 50, 50]), otra);
+  assert.deepEqual(marcarRectangulo(otra, 'dibujo', [0, 0, 50, 50]).cuadro, otra.cuadro);
+  // Quitarlo es dejarlo en null (lo que hace "Quitar" en la lista).
+  assert.equal({ ...otra, cuadro: null }.cuadro, null);
+});
+
+test('el cuadro se guarda en px de página aunque la página esté girada', () => {
+  // Imagen de 100 × 60 girada 90°: la página mide 60 × 100. Un arrastre en pantalla se
+  // pasa a página con la vista (sin rotación de por medio: la vista ya es de la página).
+  const vista = { escala: 2, dx: 10, dy: 20 };
+  const p = aPagina(vista, 10 + 2 * 5, 20 + 2 * 70);
+  const q = aPagina(vista, 10 + 2 * 40, 20 + 2 * 95);
+  const entradas = marcarRectangulo({ rotacion: 90, mascaras: [], semillas: [], anclas: [] }, 'cuadro',
+    rectanguloDe(q, p));
+  assert.deepEqual(entradas.cuadro, [5, 70, 40, 95]);
+  // Girar la página lleva el cuadro con lo demás, y de vuelta queda igual.
+  const derecha = girarEntradas(entradas, 90, 0, 100, 60);
+  assert.deepEqual(derecha.cuadro, [70, 19, 95, 54]);
+  assert.deepEqual(girarEntradas(derecha, 0, 90, 100, 60).cuadro, entradas.cuadro);
+  assert.deepEqual(girarEntradas(derecha, 0, 270, 100, 60).cuadro, [19, 4, 54, 29]);
 });
 
 test('el marco de la foto cambia ancho por alto con un cuarto de vuelta', () => {
@@ -175,6 +210,26 @@ test('clic en un lote: se escribe, se corrige, se mueve y se borra su número', 
   assert.deepEqual(ponerNumero([], '7', [1.234, 2.345], null), [{ numero: '7', x: 1.23, y: 2.35 }]);
 });
 
+test('el número va tal cual y se compara normalizado', () => {
+  assert.equal(claveLote('8-01'), '8-1');
+  assert.equal(claveLote('LOTE 8-01'), '8-1');
+  assert.equal(claveLote('lote-12'), '12');
+  assert.equal(claveLote('A03'), 'A3');
+  assert.equal(claveLote('10-6'), '10-6');
+  // Igual que `pipeline.plano.numeros.clave`.
+  assert.equal(claveLote('LOTE12'), '12');
+  assert.equal(claveLote('#12'), '12');
+  assert.equal(claveLote('12 .'), '12');
+  assert.equal(claveLote('3A'), '3A');
+  const a = [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]];
+  const b = [[[10, 0], [20, 0], [20, 10], [10, 10], [10, 0]]];
+  // Escribe "8-01" en a (con el cero: se guarda así) y luego "8-1" en b: es el mismo lote, pasa a b.
+  let semillas = ponerNumero([], '8-01', [5, 5], a);
+  assert.deepEqual(semillas, [{ numero: '8-01', x: 5, y: 5 }]);
+  semillas = ponerNumero(semillas, '8-1', [15, 5], b);
+  assert.deepEqual(semillas, [{ numero: '8-1', x: 15, y: 5 }]);
+});
+
 test('el lote bajo el clic', () => {
   const rasgos = [lote('1', [cuadro(0, 0, 10, 10)]), lote('2', [cuadro(10, 0, 20, 10)])];
   assert.equal(loteEn(rasgos, 15, 5).properties.numero, '2');
@@ -185,9 +240,28 @@ test('la revisión cuenta por color y marca los sin número y repetidos', () => 
   const rasgos = [
     lote('1', [], { nivel: 'verde' }), lote('2', [], { nivel: 'rojo' }), lote('3', []),
     lote('4', [], { nivel: 'verde', banderas: ['duplicado'] }), lote(null, [], { banderas: ['sin_numero'] }),
+    lote(null, [], { banderas: ['sin_numero', 'de_lote'], de_lote: true }),
   ];
   assert.deepEqual(resumenRevision(rasgos),
-    { lotes: 4, verde: 2, ambar: 0, rojo: 1, gris: 1, sin_numero: 1, duplicados: 1 });
+    { lotes: 4, verde: 2, ambar: 0, rojo: 1, gris: 1, sin_numero: 2, sin_numero_lote: 1, duplicados: 1 });
+});
+
+test('las partes sin número: primero los lotes, y entre ellos los que traen sugerencia', () => {
+  const camino = lote(null, [], { banderas: ['sin_numero'] });
+  const solo = lote(null, [], { banderas: ['sin_numero', 'de_lote'], de_lote: true });
+  const con = lote(null, [], { banderas: ['sin_numero', 'de_lote'], de_lote: true,
+    sugerencia: { numero: '8-03', confianza: 0.01, apoyo: 1 } });
+  const rasgos = [lote('1', []), camino, solo, con];
+  assert.deepEqual(sinNumero(rasgos), [con, solo, camino]);
+  assert.deepEqual(sugerencias(rasgos), [{ numero: '8-03', rasgo: con }]);
+  assert.deepEqual(sugerencias([lote('1', [])]), []);
+});
+
+test('los huecos de la numeración se dicen en una frase', () => {
+  assert.equal(textoHuecos([]), '');
+  assert.equal(textoHuecos(undefined), '');
+  assert.equal(textoHuecos(['8-03']), 'Falta el número 8-03.');
+  assert.equal(textoHuecos(['8-03', '8-05', '8-11']), 'Faltan los números 8-03, 8-05 y 8-11.');
 });
 
 test('los leídos con poco apoyo se señalan para mirarlos', () => {

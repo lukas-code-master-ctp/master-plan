@@ -9,6 +9,7 @@ from PIL import Image
 from shapely.geometry import Point, Polygon
 
 from pipeline.plano.__main__ import main
+from pipeline.plano.digitalizar import digitalizar
 from pipeline.tests.plano_sintetico import NEGRO, PPMM, dibujar, iou
 
 
@@ -61,6 +62,22 @@ def test_digitalizar_desde_la_carpeta(tmp_path, capsys):
     assert np.allclose(h[:2, 2], [-100, -100])
     # El cajetín quedó tapado: no aparece como cara sin número.
     assert all(Polygon(c["poligono"]).centroid.y < 850 for c in datos["sin_numero"])
+    # El camino no es un lote sin número, y la numeración (1…12) no tiene huecos.
+    assert datos["huecos"] == []
+    assert all(c["de_lote"] is False and c["sugerencia"] is None for c in datos["sin_numero"])
+
+
+def test_los_huecos_de_la_numeracion_quedan_en_el_digitalizado(tmp_path):
+    _carpeta(tmp_path)
+    entradas = json.loads((tmp_path / "entradas.json").read_text(encoding="utf-8"))
+    entradas["semillas"] = [s for s in entradas["semillas"] if s["numero"] not in ("6", "7")]
+    entradas["lector"] = False
+    (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+
+    datos = digitalizar(tmp_path, avance=lambda _: None)
+
+    assert datos["huecos"] == ["6", "7"]
+    assert json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))["huecos"] == ["6", "7"]
 
 
 def test_sin_entradas(tmp_path, capsys):

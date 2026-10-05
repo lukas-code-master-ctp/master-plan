@@ -55,6 +55,16 @@ NORTE_MINIMO = 1_000_000
 
 WGS84 = 4326
 
+# Las áreas del cuadro de superficies son una escala que no depende de la ubicación: si
+# los lotes ubicados miden en mediana otra cosa, la escala de las anclas (o de la
+# cuadrícula) está corrida. Se avisa desde ESCALA_CUADRO_MAX de escala (el doble en
+# área), con al menos ESCALA_CUADRO_LOTES lotes con área oficial. En el set de
+# regresión, con la escala corregida (el what-if) el área mediana de los lotes queda a
+# ±0,9 % de la real; en Caminos de Rapel las 4 anclas dan una escala 2,8 % menor que la
+# del plano (todas sus combinaciones, entre −2,5 y −3,3 %) y los lotes salen ~5,6 % chicos.
+ESCALA_CUADRO_MAX = 0.015
+ESCALA_CUADRO_LOTES = 3
+
 
 # --- husos y datums ------------------------------------------------------------
 
@@ -464,6 +474,37 @@ def comparar_datum(t: Transformacion, anclas) -> dict:
                 n_anclas=len(anclas), candidatos=candidatos)
 
 
+# --- la escala contra el cuadro de superficies -----------------------------------
+
+def escala_contra_cuadro(digitalizado: dict, t: Transformacion) -> dict | None:
+    """Los lotes ubicados con `t` contra su área del cuadro de superficies
+    (`area_oficial`): {lotes, area_pct, escala_pct}, con la mediana del cociente de
+    áreas y la escala que implica (su raíz). None si hay menos de ESCALA_CUADRO_LOTES
+    lotes con área oficial."""
+    from .salida import lotes_utm
+
+    oficiales = {str(l["numero"]): float(l["area_oficial"]) for l in digitalizado.get("lotes") or []
+                 if l.get("area_oficial")}
+    if len(oficiales) < ESCALA_CUADRO_LOTES:
+        return None
+    cocientes = [p.area / oficiales[n] for n, p in lotes_utm(digitalizado, t) if n in oficiales]
+    mediana = float(np.median(cocientes))
+    return dict(lotes=len(cocientes), area_pct=round(100 * (mediana - 1), 2),
+                escala_pct=round(100 * (math.sqrt(mediana) - 1), 2))
+
+
+def _aviso_escala(escala: dict, metodo: str) -> str:
+    coma = lambda v: f"{abs(v):.1f}".replace(".", ",")
+    area, factor = escala["area_pct"], escala["escala_pct"]
+    origen = "las anclas" if metodo == "anclas" else "la cuadrícula"
+    revisar = ("Revisa las anclas: márcalas en puntos que se vean igual en el plano y en la imagen"
+               " (esquinas de deslinde, cruces de caminos), lo más separadas posible."
+               if metodo == "anclas" else "Revisa los valores de la cuadrícula.")
+    return (f"Los lotes miden un {coma(area)} % {'menos' if area < 0 else 'más'} que en el cuadro de superficies"
+            f" (mediana de {escala['lotes']} lotes): la escala de {origen} parece {coma(factor)} %"
+            f" {'menor' if factor < 0 else 'mayor'} que la del plano. {revisar}")
+
+
 # --- el paso completo ----------------------------------------------------------
 
 def _marcas(entradas: dict, detectada: dict | None, avisos: list) -> dict:
@@ -543,6 +584,13 @@ def georreferenciar(carpeta: Path, avance=print) -> Transformacion:
             if "residuo_sin_ella_m" in a:
                 avance(f"  {a['nombre']}: residuo {a['residuo_m']:.1f} m, sin ella {a['residuo_sin_ella_m']:.1f} m"
                        + (" ATÍPICA" if a["atipica"] else ""))
+    escala = escala_contra_cuadro(digitalizado, t)
+    if escala:
+        t.parametros["escala_cuadro"] = escala
+        avance(f"Cuadro de superficies: {escala['lotes']} lotes, área mediana {escala['area_pct']:+.1f} %,"
+               f" escala {escala['escala_pct']:+.1f} %")
+        if abs(escala["escala_pct"]) > 100 * ESCALA_CUADRO_MAX:
+            t.avisos.append(_aviso_escala(escala, t.metodo))
     ajuste = entradas.get("ajuste") or {}
     if ajuste.get("de") or ajuste.get("dn"):
         t = ajuste_fino(t, ajuste.get("de", 0.0), ajuste.get("dn", 0.0))

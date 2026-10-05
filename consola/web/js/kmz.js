@@ -9,11 +9,12 @@
  * guarda solo, un momento después de cada cambio. El servidor dice qué quedó
  * atrasado (`vigente`) y qué paso sigue (`paso`).
  */
-import { $, $$, avisar, estado, json, pedir } from './comun.js';
+import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
-  anclaDesde, dudosos, duplicados, empujar, girarEntradas, leerCoordenadas, loteEn, nombreDelSistema, ordenarEsquinas, PASOS,
+  anclaDesde, claveLote, dudosos, duplicados, empujar, girarEntradas, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo,
+  nombreDelSistema, ordenarEsquinas, PASOS,
   pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono,
-  resumenRevision, siguienteNombre,
+  resumenRevision, siguienteNombre, sinNumero, sugerencias, textoHuecos,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
 import { abrirNombre, abrirUsarKmz, cuantosLotes, descargaDe } from './kmzs.js';
@@ -23,7 +24,7 @@ import { soltadero } from './subida.js';
 import { pintarEscaner } from './vuelo.js';
 
 const VACIAS = () => ({
-  pagina: 1, rotacion: 0, rectangulo: null, mascaras: [], esquinas: null, semillas: [], anclas: [],
+  pagina: 1, rotacion: 0, rectangulo: null, mascaras: [], cuadro: null, esquinas: null, semillas: [], anclas: [],
   ajuste: { de: 0, dn: 0 },
 });
 
@@ -98,9 +99,18 @@ export function prepararKmz(opciones) {
   const pantalla = $('#pantalla-kmz');
   pantalla.addEventListener('click', (evento) => {
     const nodo = evento.target.closest('[data-accion], [data-paso], [data-pagina], [data-herramienta],'
-      + ' [data-quitar-mascara], [data-quitar-semilla], [data-ancla-quitar], [data-ancla-rehacer], [data-centrar]');
+      + ' [data-quitar-mascara], [data-quitar-cuadro], [data-quitar-semilla], [data-ancla-quitar], [data-ancla-rehacer],'
+      + ' [data-centrar],'
+      + ' [data-confirmar]');
     if (!nodo || nodo.disabled) return;
     manejar(nodo).catch((error) => avisar(error.message));
+  });
+
+  $('#kmz-crear-sin-numero').addEventListener('click', () => {
+    const pendiente = sinNumeroPendiente;
+    sinNumeroPendiente = null;
+    $('#kmz-sin-numero-dialogo').close();
+    if (pendiente && pendiente === slug) crearKmz(true).catch((error) => avisar(error.message));
   });
 
   $('#kmz-pdf').addEventListener('change', (e) => {
@@ -250,6 +260,7 @@ async function manejar(nodo) {
   if (dataset.quitarMascara) {
     return cambiar({ ...entradas, mascaras: entradas.mascaras.filter((_, i) => i !== Number(dataset.quitarMascara)) });
   }
+  if (dataset.quitarCuadro) return cambiar({ ...entradas, cuadro: null });
   if (dataset.quitarSemilla) {
     return cambiar({ ...entradas, semillas: entradas.semillas.filter((s) => s.numero !== dataset.quitarSemilla) });
   }
@@ -259,6 +270,7 @@ async function manejar(nodo) {
     const [x, y] = dataset.centrar.split(',').map(Number);
     return lienzo.centrar(x, y, Math.max(lienzo.vista.escala, 0.6));
   }
+  if (dataset.confirmar) return confirmarSugerencia(Number(dataset.confirmar));
 
   const accion = dataset.accion;
   if (accion === 'kmz-siguiente') return irAlPaso(PASOS[PASOS.indexOf(paso) + 1]);
@@ -352,7 +364,7 @@ function subirPdf(archivo) {
   });
 }
 
-const hayMarcas = () => Boolean(entradas.rectangulo || entradas.mascaras.length || entradas.esquinas
+const hayMarcas = () => Boolean(entradas.rectangulo || entradas.mascaras.length || entradas.cuadro || entradas.esquinas
   || entradas.semillas.length || entradas.anclas.length);
 
 async function elegirPagina(n) {
@@ -378,7 +390,7 @@ async function girar(grados) {
 
 function elegirHerramienta(nombre) {
   herramienta = nombre;
-  lienzo.herramienta = ['dibujo', 'mascara'].includes(nombre) ? 'rectangulo' : 'mover';
+  lienzo.herramienta = HERRAMIENTAS_RECTANGULO.includes(nombre) ? 'rectangulo' : 'mover';
   for (const boton of $$('[data-herramienta]')) {
     boton.setAttribute('aria-pressed', String(boton.dataset.herramienta === nombre));
   }
@@ -388,9 +400,8 @@ function elegirHerramienta(nombre) {
 
 function rectangulo(rect) {
   if (paso !== 'marcar') return;
-  if (rect[2] - rect[0] < 3 || rect[3] - rect[1] < 3) return;
-  if (herramienta === 'dibujo') cambiar({ ...entradas, rectangulo: rect });
-  if (herramienta === 'mascara') cambiar({ ...entradas, mascaras: [...entradas.mascaras, rect] });
+  const nuevas = marcarRectangulo(entradas, herramienta, rect);
+  if (nuevas !== entradas) cambiar(nuevas);
 }
 
 function tocarPlano(x, y) {
@@ -418,8 +429,18 @@ function escuchar() {
   const mio = slug;
   oyentes.set(clave(mio), (trabajo) => {
     if (mio !== slug) return;
+    if (trabajo.interrumpido && plano?.trabajo) {
+      // Se perdió con el servidor (`seguir`): el botón vuelve aunque el servidor todavía
+      // no conteste para recargar el KMZ.
+      plano = { ...plano, trabajo: { ...plano.trabajo, estado: 'falló', terminado: true } };
+    }
     pintarRegistro();
-    if (trabajo.terminado) terminoDigitalizar(trabajo).catch((error) => avisar(error.message));
+    if (trabajo.terminado) {
+      terminoDigitalizar(trabajo).catch((error) => {
+        if (mio === slug) pintarPaso();
+        avisar(error.message);
+      });
+    }
   });
 }
 
@@ -451,7 +472,7 @@ async function digitalizar() {
 async function terminoDigitalizar(trabajo) {
   await cargarTodo();
   if (trabajo.estado === 'listo') {
-    await irAlPaso(plano.digitalizado?.sin_numero || plano.digitalizado?.faltantes?.length ? 'numerar' : 'ubicar');
+    await irAlPaso(plano.digitalizado?.sin_numero || plano.digitalizado?.faltantes?.length || plano.digitalizado?.huecos?.length ? 'numerar' : 'ubicar');
   } else {
     pintarPaso();
   }
@@ -494,9 +515,12 @@ function abrirNumero(x, y) {
   const [sx, sy] = lienzo.aPantalla(x, y);
   const caja = $('#kmz-plano');
   const actual = lote?.properties.numero ?? '';
-  $('#kmz-numero-valor').value = actual;
+  // Un lote sin número con una lectura del lector: va escrita, y Enter la confirma.
+  const sugerido = actual ? '' : lote?.properties.sugerencia?.numero ?? '';
+  $('#kmz-numero-valor').value = actual || sugerido;
   $('#kmz-numero-rotulo').textContent = lote
-    ? (actual ? `Lote ${actual}${lote.properties.origen === 'lector' ? ' (leído)' : ''}: corrige el número` : 'Número de este lote')
+    ? (actual ? `Lote ${actual}${lote.properties.origen === 'lector' ? ' (leído)' : ''}: corrige el número`
+      : sugerido ? `¿Es el ${sugerido}? Enter lo confirma` : 'Número de este lote')
     : 'Número del lote que está aquí';
   forma.hidden = false;
   // Se mide ya visible y se mantiene entera dentro del plano, también junto a los bordes.
@@ -518,7 +542,7 @@ function cerrarNumero() {
 function escribirNumero(valor) {
   if (!numerando) return;
   const limpio = valor.trim().replace(/^lote\s*/i, '');
-  const otra = entradas.semillas.find((s) => s.numero === limpio
+  const otra = entradas.semillas.find((s) => claveLote(s.numero) === claveLote(limpio)
     && !(numerando.anillos && puntoEnPoligono(s.x, s.y, numerando.anillos)));
   if (limpio && otra && !confirm(`El ${limpio} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
   cambiar({ ...entradas, semillas: ponerNumero(entradas.semillas, limpio, [numerando.x, numerando.y], numerando.anillos) });
@@ -526,8 +550,18 @@ function escribirNumero(valor) {
   lienzo.canvas.focus({ preventScroll: true });
 }
 
+/** Confirma la lectura sugerida de la i-ésima parte con sugerencia: queda como número suyo. */
+function confirmarSugerencia(i) {
+  const s = sugerencias(rasgos)[i];
+  if (!s) return;
+  const otra = entradas.semillas.find((x) => claveLote(x.numero) === claveLote(s.numero));
+  if (otra && !confirm(`El ${s.numero} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
+  cambiar({ ...entradas, semillas: ponerNumero(entradas.semillas, s.numero, s.rasgo.rotulo, s.rasgo.geometry.coordinates) });
+}
+
 function siguienteSinNumero() {
-  const lista = rasgos.filter((r) => r.properties.banderas.includes('sin_numero'));
+  // Primero los del tamaño de un lote: los caminos y áreas comunes quedan al final.
+  const lista = sinNumero(rasgos);
   if (!lista.length) return;
   siguienteSinNumero.i = ((siguienteSinNumero.i ?? -1) + 1) % lista.length;
   const [x, y] = lista[siguienteSinNumero.i].rotulo;
@@ -638,10 +672,25 @@ async function usarCoordenadas() {
 
 // --- 7. crear ----------------------------------------------------------------------------
 
-async function crearKmz() {
+/** El KMZ (slug) que espera que confirme crearlo sin sus lotes sin número. */
+let sinNumeroPendiente = null;
+
+/** Con `omitir`, sin los lotes sin número (lo confirmó en el diálogo). */
+async function crearKmz(omitir = false) {
   await guardar();
   const mio = slug;
-  const creado = await pedir(`${api(mio)}/crear`, json({}));
+  let creado;
+  try {
+    creado = await pedir(`${api(mio)}/crear`, json(omitir ? { omitir_sin_numero: true } : {}));
+  } catch (error) {
+    // Quedan lotes sin número: se crea igual solo si ella lo confirma en el diálogo.
+    if (omitir || error.estado !== 409 || !error.cuerpo?.sin_numero) throw error;
+    if (mio !== slug) return;
+    sinNumeroPendiente = mio;
+    $('#kmz-sin-numero-texto').textContent = error.message;
+    abrirDialogo($('#kmz-sin-numero-dialogo'));
+    return;
+  }
   if (mio !== slug) return;
   plano = await pedir(api(mio));
   const lotes = cuantosLotes(creado.lotes);
@@ -769,6 +818,7 @@ function pintarMarcar() {
   filas.push(fila(entradas.rectangulo ? 'Dibujo encerrado' : 'Falta encerrar el dibujo', null,
     entradas.rectangulo ? 'ok' : 'falta'));
   entradas.mascaras.forEach((_, i) => filas.push(fila(`Tapado ${i + 1}`, { quitarMascara: String(i) })));
+  if (entradas.cuadro) filas.push(fila('Cuadro de superficies', { quitarCuadro: '1' }));
   for (const s of entradas.semillas) filas.push(fila(`Lote ${s.numero}`, { quitarSemilla: s.numero }));
   lista.replaceChildren(...filas);
   const listo = Boolean(entradas.rectangulo) && (!sinLector || entradas.semillas.length > 0);
@@ -799,6 +849,7 @@ function fila(texto, quitar, tono) {
 function pintarDigitalizar() {
   const trabajando = Boolean(plano.trabajo && !plano.trabajo.terminado);
   const d = plano.digitalizado;
+  const huecos = d?.huecos ?? [];
   const boton = $('[data-accion="kmz-digitalizar"]');
   boton.disabled = trabajando || !pasosHabilitados(plano).digitalizar;
   boton.textContent = trabajando ? 'Digitalizando…' : d ? 'Digitalizar de nuevo' : 'Digitalizar';
@@ -811,7 +862,9 @@ function pintarDigitalizar() {
   const lector = d.lector;
   const lineas = [
     ['Lotes', d.lotes],
-    ['Sin número', d.sin_numero],
+    ['Lotes sin número', d.sin_numero_lote ?? 0],
+    ['Otras partes sin número', d.sin_numero - (d.sin_numero_lote ?? 0)],
+    ['Faltan en la numeración', huecos.length ? huecos.join(', ') : '—'],
     ['Números sin lote', d.faltantes.length ? d.faltantes.join(', ') : '—'],
     ['Lector', !lector ? 'apagado' : lector.disponible === false ? 'no disponible'
       : `${lector.rotulos} leídos · ${lector.semillas} usados`],
@@ -830,14 +883,34 @@ function pintarDigitalizar() {
 
 function pintarNumerar() {
   const d = plano.digitalizado;
-  const sinNumero = rasgos.filter((r) => r.properties.banderas.includes('sin_numero'));
+  const partes = sinNumero(rasgos);
+  const deLote = partes.filter((r) => r.properties.de_lote).length;
   const repetidos = duplicados(rasgos);
   const dudas = dudosos(rasgos);
-  $('#kmz-sin-numero').textContent = sinNumero.length
-    ? `${sinNumero.length} ${sinNumero.length === 1 ? 'parte sin número' : 'partes sin número'} (en rojo, con "?"). `
-      + 'Si es un lote, haz clic y escribe su número. Los caminos y áreas comunes se dejan así: no van al KMZ.'
-    : 'Todos los lotes tienen número.';
-  $('[data-accion="kmz-siguiente-sin-numero"]').hidden = !sinNumero.length;
+  const lotesSin = deLote === 1 ? 'Un lote quedó sin número' : `${deLote} lotes quedaron sin número`;
+  $('#kmz-sin-numero').textContent = deLote
+    ? `${lotesSin} (en rojo, con "?"): no se leyó su número. Haz clic y escríbelo; si no, no va al KMZ.`
+      + (partes.length > deLote ? ` Además hay ${partes.length - deLote} ${partes.length - deLote === 1 ? 'parte' : 'partes'}`
+        + ' sin número más chicas: si son caminos o áreas comunes, se dejan así.' : '')
+    : partes.length
+      ? `${partes.length} ${partes.length === 1 ? 'parte sin número' : 'partes sin número'} (en rojo, con "?"). `
+        + 'Si es un lote, haz clic y escribe su número. Los caminos y áreas comunes se dejan así: no van al KMZ.'
+      : 'Todos los lotes tienen número.';
+  $('[data-accion="kmz-siguiente-sin-numero"]').hidden = !partes.length;
+  const huecos = textoHuecos(d?.huecos);
+  $('#kmz-huecos').hidden = !huecos;
+  $('#kmz-huecos').textContent = huecos ? `${huecos} Búscalos en el plano: suelen ser los lotes sin número.` : '';
+  const porConfirmar = sugerencias(rasgos);
+  $('#kmz-sugerencias-caja').hidden = !porConfirmar.length;
+  $('#kmz-sugerencias').replaceChildren(...porConfirmar.map(({ numero }, i) => {
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = 'pastilla pastilla--boton';
+    boton.dataset.confirmar = String(i);
+    boton.textContent = `¿${numero}? Confirmar`;
+    boton.setAttribute('aria-label', `Confirmar el número ${numero} en su lote`);
+    return boton;
+  }));
   const faltan = [...(d?.faltantes ?? []), ...(d?.lector?.sin_poligono ?? [])];
   $('#kmz-faltantes').hidden = !faltan.length;
   $('#kmz-faltantes').textContent = faltan.length
@@ -948,7 +1021,8 @@ function pintarRevisar() {
     ['Área ±5 %', cuenta.ambar, 'ambar'],
     ['Área más de 5 %', cuenta.rojo, 'rojo'],
     ['Sin área oficial', cuenta.gris, 'gris'],
-    ['Sin número', cuenta.sin_numero, cuenta.sin_numero ? 'rojo' : null],
+    ['Lotes sin número', cuenta.sin_numero_lote, cuenta.sin_numero_lote ? 'rojo' : null],
+    ['Otras partes sin número', cuenta.sin_numero - cuenta.sin_numero_lote, null],
     ['Repetidos', cuenta.duplicados, cuenta.duplicados ? 'rojo' : null],
   ];
   $('#kmz-revision').replaceChildren(...datos.map(([rotulo, valor, color]) => {
@@ -969,12 +1043,17 @@ function pintarRevisar() {
   const problemas = cuenta.duplicados;
   $('#kmz-revision-nota').textContent = problemas
     ? 'Hay números repetidos: el KMZ no se puede crear así. Vuelve a Numerar.'
+    : cuenta.sin_numero_lote
+      ? (cuenta.sin_numero_lote === 1 ? 'Un lote quedó sin número y no iría al KMZ.'
+        : `${cuenta.sin_numero_lote} lotes quedaron sin número y no irían al KMZ.`) + ' Vuelve a Numerar.'
     : cuenta.sin_numero
       ? (cuenta.sin_numero === 1 ? 'Una parte queda sin número (rayada en rojo) y no va al KMZ.'
         : `${cuenta.sin_numero} partes quedan sin número (rayadas en rojo) y no van al KMZ.`)
         + ' Si es un lote, vuelve a Numerar.'
       : cuenta.lotes === cuenta.gris
-      ? 'No se leyó el cuadro de superficies: revisa a ojo que los lotes calcen con los caminos.'
+      ? (entradas.cuadro ? 'No se leyó el cuadro de superficies: revisa a ojo que los lotes calcen con los caminos.'
+        : 'Sin cuadro de superficies no hay áreas oficiales: si el plano lo trae, enciérralo en Marcar'
+          + ' con "Cuadro de superficies". Si no, revisa a ojo que los lotes calcen con los caminos.')
       : 'Los rojos tienen un área muy distinta a la oficial: suelen ser lotes mal separados.';
   $('#kmz-panel-revisar [data-accion="kmz-siguiente"]').disabled = Boolean(problemas);
 }
@@ -1073,6 +1152,18 @@ function dibujar(ctx, P) {
       ctx.strokeRect(a, b, c - a, d - b);
       etiqueta(ctx, `Tapado ${i + 1}`, a + 4, b + 4, '#dc2626', 'left');
     });
+    if (entradas.cuadro) {
+      // Puede estar fuera del dibujo: se lee igual (los lotes y sus áreas oficiales).
+      const [x0, y0, x1, y1] = entradas.cuadro;
+      const [a, b] = P(x0, y0);
+      const [c, d] = P(x1, y1);
+      ctx.fillStyle = 'rgb(217 119 6 / 0.14)';
+      ctx.fillRect(a, b, c - a, d - b);
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(a, b, c - a, d - b);
+      etiqueta(ctx, 'Cuadro de superficies', a + 4, b + 4, '#b45309', 'left');
+    }
     const esquinas = esquinasMarcando.length ? esquinasMarcando : entradas.esquinas ?? [];
     if (esquinas.length) {
       ctx.strokeStyle = '#7c3aed';
@@ -1115,7 +1206,8 @@ function dibujar(ctx, P) {
         // Sobre la semilla va su punto: el número, justo arriba.
         const b = p.semilla ? b0 - 14 : b0;
         const lector = p.origen === 'lector';
-        const texto = p.numero == null ? '?' : `${p.numero}${lector && (p.apoyo ?? 0) < 3 ? '?' : ''}`;
+        const texto = p.numero == null ? (p.sugerencia?.numero ? `¿${p.sugerencia.numero}?` : '?')
+          : `${p.numero}${lector && (p.apoyo ?? 0) < 3 ? '?' : ''}`;
         etiqueta(ctx, texto, a, b, p.banderas.length ? '#dc2626' : lector ? '#1d4ed8' : '#14532d', 'center');
       }
     }

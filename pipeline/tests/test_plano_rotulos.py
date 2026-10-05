@@ -21,8 +21,11 @@ con_tesseract = pytest.mark.skipif(not rotulos.disponible(), reason="tesseract n
 # --- números ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("texto, esperado", [
-    ("LOTE-12", 12), ("LOTE12", 12), ("12", 12), ("10-6", 6), ("lote-7-", 7),
-    ("123,45", None), ("5.000", None), ("LOTE", None), ("0", None), ("1234", None), ("", None),
+    # El rótulo como está en el plano: El Arrayán (LOTE-12), Hidango (LOTE 10-6, la
+    # palabra LOTE llega aparte) y Caminos de Rapel (LOTE 8-01, con el cero).
+    ("LOTE-12", "12"), ("LOTE12", "12"), ("12", "12"), ("10-6", "10-6"), ("lote-7-", "7"),
+    ("8-01", "8-01"), ("LOTE-8-01", "8-01"), ("012", "012"),
+    ("123,45", None), ("5.000", None), ("LOTE", None), ("0", None), ("8-00", None), ("1234", None), ("", None),
 ])
 def test_numero(texto, esperado):
     assert rotulos.numero(texto) == esperado
@@ -43,7 +46,7 @@ def test_interpretar_vuelve_al_marco_original_y_reconoce_lote():
     d = _datos([("LOTE", 100, 50, 60, 20), ("12", 170, 50, 30, 20), ("123,45", 300, 50, 60, 20)])
     m = np.array([[1.0, 0, 0], [0, 1.0, 0]])
     (l,) = rotulos.interpretar(d, m, 2.0, 0.0, "gris")
-    assert l["numero"] == 12 and l["lote"]
+    assert l["numero"] == "12" and l["lote"]
     assert l["x"] == pytest.approx((100 + 200) / 2 / 2) and l["y"] == pytest.approx(30)
     assert l["alto"] == pytest.approx(10)
 
@@ -68,6 +71,21 @@ def test_seleccionar_agrupa_por_apoyo_y_deja_un_numero_por_lugar():
     assert "17" not in salida
     assert (salida["5"].x, salida["5"].y, salida["5"].apoyo) == (400, 300, 2)
     assert "3" not in salida                              # el plano rotula con LOTE: el suelto no cuenta
+
+
+def test_seleccionar_guarda_el_rotulo_completo_y_junta_las_formas():
+    # "LOTE 8-01" en Caminos de Rapel: unas pasadas leen "8-01", otra "8-1" y otra solo
+    # "01" (sin el sector). Es un solo rótulo y se queda como en el plano.
+    lecturas = [_lectura("8-01", 100, 100, ang=a) for a in (0, 15, 30)]
+    lecturas += [_lectura("8-1", 101, 100, ang=45), _lectura("01", 102, 101, ang=60)]
+    lecturas += [_lectura("10-6", 500, 500, ang=a) for a in (0, 15)]
+    lecturas += [_lectura(n, 50 * n, 900) for n in range(20, 28)]                  # ≥ 10 con LOTE
+
+    salida = {r.numero: r for r in rotulos.seleccionar(lecturas, alto_modal=8.0, pasadas=96)}
+
+    assert salida["8-01"].apoyo == 5 and (salida["8-01"].x, salida["8-01"].y) == (100, 100)
+    assert "8-1" not in salida and "01" not in salida
+    assert salida["10-6"].apoyo == 2
 
 
 def test_seleccionar_sin_lote_pide_texto_grande():
@@ -95,6 +113,16 @@ def test_combinar_da_prioridad_a_la_loteadora():
     assert (por_numero["5"]["x"], por_numero["5"]["origen"]) == (1500.0, "usuario")
     assert por_numero["1"] == dict(numero="1", x=100.0, y=100.0, origen="lector", confianza=0.5, apoyo=48)
     assert [s["origen"] for s in salida[:3]] == ["usuario"] * 3
+
+
+def test_combinar_compara_numeros_normalizados():
+    # Ella escribió "8-1" lejos del rótulo "8-01": es el mismo lote, gana ella. Y en
+    # Hidango marcó "6" donde el plano dice "LOTE 10-6".
+    lector = [Rotulo("8-01", 100, 100, 0.5, 48), Rotulo("10-6", 300, 100, 0.4, 40),
+              Rotulo("8-02", 500, 100, 0.3, 30)]
+    usuario = [("8-1", 900, 900), ("6", 1200, 900)]
+    salida = rotulos.combinar(usuario, lector, radio=20)
+    assert [s["numero"] for s in salida] == ["8-1", "6", "8-02"]
 
 
 def test_combinar_sin_semillas_de_la_loteadora_toma_las_del_lector():
@@ -143,6 +171,30 @@ def test_areas_de_filas_usa_la_ultima_columna_y_decide_la_unidad_por_columna():
     assert rotulos.areas_de_filas(filas) == {"1": 100000.0, "2": 108400.0, "3": 138800.0}
     # En m² (la mediana es grande): '5.000' son 5000 m², no 5000 ha.
     assert rotulos.areas_de_filas([["1", "5.000"], ["2", "5.230,5"]]) == {"1": 5000.0, "2": 5230.5}
+
+
+def test_cuadro_como_el_de_caminos_de_rapel():
+    """LOTE | SUP. SERVIDUMBRE | TOTAL, con el número como está impreso ("8-01") y la unidad
+    pegada. El total es la columna de más a la derecha; la del medio no cuenta. El resto
+    de la propiedad no empieza con un número de lote en la línea que trae las áreas (el
+    "8" va solo en la línea de arriba): no es fila. Sin la "m" en la lista blanca,
+    Tesseract leía "5.0002": eso no tiene forma de área y no es fila."""
+    texto = (".0\n8-01 1.342m2 5.000m2\n8-02 435 m2 5.000 m2\n8-02 4352 5.0002\n8-03 456m2 5.000m2\n"
+             "8\ns 0.000m2 760.000m2\n0sa 0.000m2 760.000m2\n")
+    filas = rotulos.filas_cuadro(texto)
+    assert filas == [["8-01", "1.342m2", "5.000m2"], ["8-02", "435 m2", "5.000 m2"], ["8-03", "456m2", "5.000m2"]]
+    assert rotulos.areas_de_filas(filas) == {"8-01": 5000.0, "8-02": 5000.0, "8-03": 5000.0}
+    # Si una pasada lee el resto en una sola línea, queda en el cuadro con su número.
+    assert rotulos.areas_de_filas(rotulos.filas_cuadro("8 o resto 0.000 m2 760.000 m2")) == {"8": 760000.0}
+    # La unidad de la celda manda sobre la de la columna: "5,00hás" son 5 ha aunque las
+    # demás estén en m².
+    assert rotulos.areas_de_filas([["1", "5.000"], ["2", "5.100"], ["3", "5,00hás"]]) \
+        == {"1": 5000.0, "2": 5100.0, "3": 50000.0}
+
+
+def test_areas_de_filas_gana_el_valor_mas_leido():
+    filas = [["8-01", "5.000m2"], ["8-1", "6.000m2"], ["8-01", "5.000m2"], ["2", "5.100"], ["02", "5.100"]]
+    assert rotulos.areas_de_filas(filas) == {"8-01": 5000.0, "2": 5100.0}
 
 
 # --- cuadrícula --------------------------------------------------------------------------
@@ -236,6 +288,72 @@ def test_digitalizar_con_las_semillas_del_lector(tmp_path, monkeypatch, capsys):
     datos = json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))
     numeros = {l["numero"]: l["origen"] for l in datos["lotes"]}
     assert "1" not in numeros and numeros["101"] == "usuario" and len(numeros) == len(plano.semillas)
+
+
+def _lector_falso(monkeypatch, cuadro, leidos=None):
+    """El lector sin Tesseract: guarda lo que recibe y devuelve `leidos` y `cuadro`."""
+    visto = {}
+    monkeypatch.setattr(rotulos, "motivo_no_disponible", lambda: None)
+    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance: visto.update(dibujo=imagen) or (leidos or []))
+    monkeypatch.setattr(rotulos, "leer_cuadricula", lambda imagen, ppmm, avance, rectangulo: None)
+    monkeypatch.setattr(rotulos, "leer_cuadro",
+                        lambda imagen, rects, avance: visto.update(pagina=imagen.shape, rects=rects) or cuadro)
+    return visto
+
+
+def test_el_cuadro_marcado_fuera_del_dibujo_se_lee_y_da_los_faltantes(tmp_path, monkeypatch):
+    """El cuadro de Caminos de Rapel está fuera del rectángulo del dibujo: se lee igual
+    (de la página entera), no tapa nada del dibujo, y sus números dan los faltantes (el
+    13, que el lector nunca leyó) y el área oficial de cada lote."""
+    plano, entradas = _carpeta_sin_semillas(tmp_path)
+    x0, y0 = entradas["rectangulo"][:2]
+    leidos = [Rotulo(n, x - x0, y - y0, 0.4, 40, 12.0) for n, x, y in plano.semillas]
+    cuadro = {str(n): 5000.0 + n for n in range(1, 14)}
+    entradas["cuadro"] = [2, 2, x0 - 10, y0 - 10]                      # fuera del dibujo
+    (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+    visto = _lector_falso(monkeypatch, cuadro, leidos)
+
+    assert main(["digitalizar", str(tmp_path)]) == 0
+
+    datos = json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))
+    assert visto["rects"] == [[2.0, 2.0, x0 - 10.0, y0 - 10.0]]
+    assert visto["pagina"][:2] == (plano.imagen.shape[0], plano.imagen.shape[1])    # la página entera
+    assert datos["huecos"] == ["13"]
+    assert datos["lector"]["cuadro"] == cuadro
+    assert {l["numero"]: l["area_oficial"] for l in datos["lotes"]} == {str(n): 5000.0 + n for n in range(1, 13)}
+    # Fuera del dibujo no tapa nada: lo que lee el lector es el dibujo tal cual.
+    assert not (visto["dibujo"] == visto["dibujo"][0, 0]).all()
+
+
+def test_el_resto_de_la_propiedad_no_es_un_faltante(tmp_path, monkeypatch):
+    plano, entradas = _carpeta_sin_semillas(tmp_path)
+    x0, y0 = entradas["rectangulo"][:2]
+    # Como Rapel: lotes "8-01"… y el resto, "8", con su área.
+    leidos = [Rotulo(f"8-{int(n):02d}", x - x0, y - y0, 0.4, 40, 12.0) for n, x, y in plano.semillas]
+    cuadro = {f"8-{n:02d}": 5000.0 for n in range(1, 14)} | {"8": 760000.0}
+    entradas["cuadro"] = [2, 2, x0 - 10, y0 - 10]
+    (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+    _lector_falso(monkeypatch, cuadro, leidos)
+
+    assert main(["digitalizar", str(tmp_path)]) == 0
+
+    datos = json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))
+    assert datos["huecos"] == ["8-13"]
+    assert {l["area_oficial"] for l in datos["lotes"]} == {5000.0}
+
+
+def test_el_cuadro_dentro_del_dibujo_lo_tapa(tmp_path, monkeypatch):
+    plano, entradas = _carpeta_sin_semillas(tmp_path)
+    x0, y0 = entradas["rectangulo"][:2]
+    entradas["cuadro"] = [x0 + 10, y0 + 10, x0 + 200, y0 + 150]
+    (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+    visto = _lector_falso(monkeypatch, {})
+
+    assert main(["digitalizar", str(tmp_path)]) == 0
+
+    tapado = visto["dibujo"][12:148, 12:198]                     # en px del recorte del dibujo
+    assert (tapado == tapado[0, 0]).all()
+    assert visto["rects"] == [entradas["cuadro"]]
 
 
 def test_una_lectura_vacia_no_se_reusa(tmp_path, monkeypatch):
@@ -403,6 +521,13 @@ def test_franjas_alrededor_del_dibujo():
     assert not any(a0 <= 1800 < a1 and b0 <= 3000 < b1 for a0, b0, a1, b1 in cajas)    # el centro no
 
 
+def test_combinar_con_cuadro_compara_el_numero_dentro_del_sector():
+    # El cuadro de Rapel lista 1…16 (o 8-01…8-16): "8-03" es el 3; "8-450" no está.
+    lector = [Rotulo("8-03", 100, 100, 0.5, 48), Rotulo("8-450", 300, 100, 0.4, 40)]
+    for cuadro in ({"1": 5000.0, "2": 5000.0, "3": 5000.0}, {"8-01": 5000.0, "8-02": 5000.0, "8-03": 5000.0}):
+        assert [s["numero"] for s in rotulos.combinar([], lector, radio=20, oficiales=cuadro)] == ["8-03"]
+
+
 def test_combinar_con_cuadro_descarta_numeros_que_no_son_lotes():
     lector = [Rotulo("12", 100, 100, 0.5, 48), Rotulo("450", 300, 100, 0.4, 40),     # una cota
               Rotulo("30", 500, 100, 0.3, 30)]                                     # falta en el cuadro leído
@@ -423,11 +548,13 @@ def test_las_hebras_caben_en_la_memoria(monkeypatch):
     monkeypatch.setattr(rotulos, "nucleos", lambda: 16)
     monkeypatch.delenv("LECTOR_HEBRAS", raising=False)
     monkeypatch.setattr(rotulos, "memoria_libre", lambda: 4 * 2**30)
-    # 100 Mpx por pasada × 6 B/px = 600 MB: en el 70 % de 4 GiB caben 5.
-    assert rotulos._hebras(None, 96, 100e6) == 5
+    # 600 MB por pasada: en el 60 % de 4 GiB caben 4.
+    assert rotulos._hebras(None, 96, 600e6) == 4
     assert rotulos._hebras(None, 3, 1e6) == 3
+    # Aunque no quepa ni una, se lee con una.
+    assert rotulos._hebras(None, 96, 8e9) == 1
     monkeypatch.setattr(rotulos, "memoria_libre", lambda: None)
-    assert rotulos._hebras(None, 96, 100e6) == 16
+    assert rotulos._hebras(None, 96, 600e6) == 16
     monkeypatch.setenv("LECTOR_HEBRAS", "2")
     assert rotulos._hebras(None, 96) == 2
 

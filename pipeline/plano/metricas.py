@@ -37,6 +37,7 @@ from shapely.affinity import affine_transform
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import nearest_points, polygonize, unary_union
 
+from ..kmz import normalizar_id
 from .georreferencia import _transformador, huso
 
 NS = "{http://www.opengis.net/kml/2.2}"
@@ -54,12 +55,15 @@ DENSIFICAR = 0.05
 
 
 def numero(nombre: str | None) -> str | None:
-    """"LOTE 12", "LOTE-12", " 12", "12." → "12"; lo demás no es un número de lote."""
+    """"LOTE 12", "LOTE-12", " 12", "12." → "12"; "Lote 8-01", "8-1" → "8-1" (el par
+    sector-lote, normalizado con `normalizar_id` del pipeline del master: así se
+    emparejan el candidato y el real aunque uno escriba los ceros). Lo demás no es un
+    número de lote (sin letras de sector: los KMZ de CAD traen roles y capas)."""
     if nombre is None:
         return None
     t = re.sub(r"\bLOTES?\b", " ", nombre.strip().upper())
-    m = re.fullmatch(r"[\s\-_.#]*(\d+)[\s.]*", t)
-    return str(int(m.group(1))) if m else None
+    m = re.fullmatch(r"[\s\-_.#]*(\d+(?:\s*-\s*\d+)?)[\s.]*", t)
+    return normalizar_id(m.group(1)) if m else None
 
 
 def _coordenadas(texto: str) -> list[tuple[float, float]]:
@@ -189,7 +193,8 @@ def _conectores(lineas: list[LineString], tolerancia: float) -> list[LineString]
 
 
 def _orden(n: str):
-    return (0, int(n), "") if n.isdigit() else (1, 0, n)
+    partes = n.split("-")
+    return (0, tuple(int(p) for p in partes), "") if all(p.isdigit() for p in partes) else (1, (), n)
 
 
 # --- métricas ------------------------------------------------------------------

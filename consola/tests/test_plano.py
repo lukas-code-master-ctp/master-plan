@@ -231,6 +231,36 @@ def test_las_entradas_malas_dicen_que_esta_mal(ana, cambio, mensaje):
     assert mensaje in respuesta.json()["detail"]
 
 
+def test_el_cuadro_de_superficies_puede_estar_fuera_del_dibujo(ana):
+    web, slug, raiz, _ = ana
+    subir(web, slug)
+
+    respuesta = web.put(f"/api/kmz/{slug}/entradas",
+                        json=dict(ENTRADAS, rectangulo=[100, 100, 300, 300], cuadro=[2, 2, 60, 80]))
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["cuadro"] == [2.0, 2.0, 60.0, 80.0]
+    guardadas = json.loads((carpeta_del_plano(raiz, slug) / "entradas.json").read_text(encoding="utf-8"))
+    assert guardadas["cuadro"] == [2.0, 2.0, 60.0, 80.0]
+
+
+@pytest.mark.parametrize("cuadro,mensaje", [
+    ([10, 10, 5, 5], "cuadro de superficies está vacío"),
+    ([1, 2, 3], "«cuadro» debe ser una lista de 4 números"),
+    ([10**6, 10**6, 10**6 + 50, 10**6 + 50], "fuera de la página"),
+    ([-90, -90, -10, -10], "fuera de la página"),
+])
+def test_un_cuadro_malo_dice_que_esta_mal(ana, cuadro, mensaje):
+    web, slug, raiz, _ = ana
+    subir(web, slug)
+
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, cuadro=cuadro))
+
+    assert respuesta.status_code == 400
+    assert mensaje in respuesta.json()["detail"]
+    assert not (carpeta_del_plano(raiz, slug) / "entradas.json").exists()
+
+
 def test_las_entradas_tienen_tope(ana):
     """Miles de semillas atorarían la revisión (los repetidos se buscan de a pares)."""
     web, slug, raiz, _ = ana
@@ -481,3 +511,57 @@ def test_numeros_que_chocan_se_marcan_y_no_dan_kmz(ana):
     respuesta = web.post(f"/api/kmz/{slug}/crear")
     assert respuesta.status_code == 400
     assert not list(carpeta_del_plano(raiz, slug).glob("*.kmz"))
+
+
+def _con_lote_sin_numero(carpeta):
+    """El digitalizado de `listo_para_ubicar` con un lote sin número (con la lectura que
+    no alcanzó a ser semilla) y los huecos de la numeración."""
+    datos = json.loads((carpeta / "digitalizado.json").read_text(encoding="utf-8"))
+    datos["sin_numero"].append(dict(poligono=_cuadro(800, 300, 1000, 700), area_px=80000, de_lote=True,
+                                    sugerencia=dict(numero="4", confianza=0.01, apoyo=1)))
+    datos["huecos"] = ["4"]
+    (carpeta / "digitalizado.json").write_text(json.dumps(datos), encoding="utf-8")
+
+
+def test_un_lote_sin_numero_se_marca_con_su_sugerencia(ana):
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    _con_lote_sin_numero(carpeta_del_plano(raiz, slug))
+
+    rasgos = [r["properties"] for r in web.get(f"/api/kmz/{slug}/lotes").json()["features"]]
+
+    camino, lote = rasgos[3], rasgos[4]
+    assert camino["banderas"] == ["sin_numero"] and camino["de_lote"] is False and camino["sugerencia"] is None
+    assert lote["numero"] is None and lote["banderas"] == ["sin_numero", "de_lote"] and lote["de_lote"] is True
+    assert lote["sugerencia"] == dict(numero="4", confianza=0.01, apoyo=1)
+    d = web.get(f"/api/kmz/{slug}").json()["digitalizado"]
+    assert (d["sin_numero"], d["sin_numero_lote"], d["sugerencias"], d["huecos"]) == (2, 1, 1, ["4"])
+
+
+def test_con_lotes_sin_numero_el_kmz_pide_confirmar(ana):
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    _con_lote_sin_numero(carpeta)
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
+
+    respuesta = web.post(f"/api/kmz/{slug}/crear")
+
+    assert respuesta.status_code == 409
+    assert respuesta.json()["sin_numero"] == 1 and "1 lote sin número" in respuesta.json()["detail"]
+    assert not list(carpeta.glob("*.kmz"))
+    assert web.post(f"/api/kmz/{slug}/crear", json={"omitir_sin_numero": False}).status_code == 409
+
+    respuesta = web.post(f"/api/kmz/{slug}/crear", json={"omitir_sin_numero": True})
+
+    assert respuesta.status_code == 201, respuesta.text
+    assert respuesta.json()["lotes"] == 3                 # sin el lote sin número
+    assert web.get(f"/api/kmz/{slug}").json()["paso"] == "listo"
+
+
+def test_un_camino_sin_numero_no_pide_confirmar(ana):
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)              # su única cara sin número no es de lote
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
+
+    assert web.post(f"/api/kmz/{slug}/crear").status_code == 201

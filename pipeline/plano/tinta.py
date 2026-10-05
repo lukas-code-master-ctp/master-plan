@@ -43,6 +43,15 @@ FOLD_MM = 0.8          # semiancho de la franja del pliegue
 MIN_COMP_MM = 10.0     # lado mayor mínimo de una línea: borra texto, cotas, puntos y trazos sueltos
 HOLE_MM2 = 10.0        # huecos menores se rellenan (celdas de un achurado)
 THICK_MM = 1.6         # lo que sobrevive a esta apertura es relleno (franja achurada): no es lote
+# Un relleno de verdad es un achurado, y es grande. Lo chico que sobrevive a la apertura
+# es tinta: texto pegado a una línea ("Servidumbre de tránsito 10 m" sobre el deslinde),
+# rótulos en negrita, sellos, el nudo de líneas que se juntan en ángulo agudo. Como
+# relleno se comía el borde o la esquina de los lotes vecinos (en Caminos de Rapel, del
+# 5 al 10 % del área de los lotes 8-03 a 8-05 y 8-13); como tinta, el watershed la
+# reparte por su eje. En el set de regresión lo chico mide ≤ 135 mm² (el texto sobre el
+# deslinde de Rapel, 88 mm²) y los achurados ≥ 1.300 mm² (Puente Negro, 3.685 mm²; la
+# prueba sintética, 1.333 mm²). El ancho y la fracción de papel no los separan.
+RELLENO_MIN_MM2 = 250.0
 
 
 @dataclass
@@ -83,7 +92,10 @@ def mascara(imagen: np.ndarray, ppmm: float, banda_cuadricula: np.ndarray | None
     firme = tinta & ((imagen.min(-1) <= DARK_MAX) | rojo)
     del d, dr, dg, db, rojo, dmax
     lineas = _lineas(tinta, ppmm)
-    grueso = _rellenos(lineas, ppmm)
+    grueso, chico = _rellenos(lineas, ppmm)
+    # Lo chico queda como línea pero no como tinta firme: si el texto encierra un trozo
+    # de lote (un rótulo en diagonal de deslinde a deslinde), ese trozo se une al lote.
+    firme &= ~chico
     return Tinta(lineas=lineas, firme=firme, grueso=grueso, pliegues=pliegues)
 
 
@@ -125,16 +137,22 @@ def _lineas(tinta: np.ndarray, ppmm: float) -> np.ndarray:
     return conservar[etiquetas]
 
 
-def _rellenos(lineas: np.ndarray, ppmm: float) -> np.ndarray:
+def _rellenos(lineas: np.ndarray, ppmm: float) -> tuple[np.ndarray, np.ndarray]:
     """Achurados y franjas: se rellenan los huecos chicos y lo que sobrevive a una
-    apertura de THICK_MM es relleno."""
+    apertura de THICK_MM es relleno, si mide al menos RELLENO_MIN_MM2. Devuelve
+    (relleno, lo que sobrevive a la apertura pero es más chico)."""
     _, etiquetas, stats, _ = cv2.connectedComponentsWithStats((~lineas).astype(np.uint8), connectivity=4)
     hueco = stats[:, 4] < HOLE_MM2 * ppmm * ppmm
     hueco[0] = False
     lleno = lineas | hueco[etiquetas]
     del etiquetas
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (impar(THICK_MM * ppmm),) * 2)
-    return cv2.morphologyEx(lleno.astype(np.uint8), cv2.MORPH_OPEN, k) > 0
+    abierto = cv2.morphologyEx(lleno.astype(np.uint8), cv2.MORPH_OPEN, k)
+    del lleno
+    n, etiquetas, stats, _ = cv2.connectedComponentsWithStats(abierto, connectivity=8)
+    grande = stats[:, 4] >= RELLENO_MIN_MM2 * ppmm * ppmm
+    grande[0] = False
+    return grande[etiquetas], abierto.astype(bool) & ~grande[etiquetas]
 
 
 # ---------------------------------------------------------------------------- cuadrícula

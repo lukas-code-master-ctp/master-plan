@@ -25,8 +25,9 @@ la imagen de Docker). Las semillas borradas son la verdad de la numeración: un 
 está bien numerado si contiene la semilla real de su número. Además del recall de la
 numeración se informan las mismas métricas de geometría (pareadas por número: un
 número errado empareja mal y, si queda lejos, desarma la similitud del what-if; el
-"tal cual", con la georreferencia de las anclas o la cuadrícula, no se contamina), las áreas del cuadro contra el KMZ real y la cuadrícula
-leída contra la de `entradas.json`. Es informativa: no se compara con la línea base.
+"tal cual", con la georreferencia de las anclas o la cuadrícula, no se contamina), las áreas del cuadro contra el KMZ real, el área
+de cada lote del KMZ creado contra la de su cuadro (lo que la consola pinta verde, ámbar
+o rojo en Revisar) y la cuadrícula leída contra la de `entradas.json`. Es informativa: no se compara con la línea base.
 """
 from __future__ import annotations
 
@@ -44,6 +45,7 @@ from shapely.geometry import Point, Polygon
 from .digitalizar import ENTRADAS, digitalizar, leer_entradas
 from .georreferencia import georreferenciar
 from .metricas import comparar, epsg_de_kmz, lotes_kmz
+from .numeros import buscar, mismo_lote
 from .salida import kmz
 
 LINEA_BASE = "linea_base.json"
@@ -80,6 +82,10 @@ def correr_plano(carpeta: Path, avance=lambda texto: None, con_lector: bool = Fa
         fila["lotes"] = len(digitalizado["lotes"])
         fila["faltantes"] = digitalizado["faltantes"]
         fila["sin_numero"] = len(digitalizado["sin_numero"])
+        # Caras del tamaño de un lote que quedaron sin número (no se pegaron a un vecino).
+        fila["sin_numero_lote"] = sum(bool(c.get("de_lote")) for c in digitalizado["sin_numero"])
+        fila["sugerencias"] = [c["sugerencia"]["numero"] for c in digitalizado["sin_numero"] if c.get("sugerencia")]
+        fila["huecos"] = digitalizado.get("huecos") or []
         fila["trabajo_ppmm"] = round(digitalizado["trabajo"]["ppmm"], 3)
         fila["trabajo_mpx"] = round(digitalizado["trabajo"]["ancho"] * digitalizado["trabajo"]["alto"] / 1e6, 1)
         if not entradas["anclas"] and not entradas.get("cuadricula"):
@@ -102,28 +108,31 @@ def correr_plano(carpeta: Path, avance=lambda texto: None, con_lector: bool = Fa
     fila.update(m, epsg_medicion=epsg, real=informe_real)
     if con_lector:
         fila["cuadro"] = cuadro_contra_real(digitalizado, lotes_real)
+        fila["area_oficial"] = areas_contra_oficial(digitalizado, lotes_candidato)
     return fila
 
 
 def numeracion(digitalizado: dict, verdad: list[dict]) -> dict:
     """Qué tan bien numeró el lector: cada semilla real (número y posición, px de
-    página) cae en un lote con su número (correcto), con otro (errado) o en ninguno."""
+    página) cae en un lote con su número (correcto), con otro (errado) o en ninguno.
+    El número se compara con `numeros.mismo_lote`: "8-01" = "8-1", y "10-6" = "6"
+    (las semillas de Hidango se leyeron sin el sector)."""
     lotes = [(l["numero"], Polygon(l["poligono"], l.get("huecos") or [])) for l in digitalizado["lotes"]]
     correctos = errados = sin_lote = 0
     for s in verdad:
         punto = Point(s["x"], s["y"])
         dentro = [n for n, g in lotes if g.contains(punto)]
-        if str(s["numero"]) in dentro:
+        if any(mismo_lote(n, s["numero"]) for n in dentro):
             correctos += 1
         elif dentro:
             errados += 1
         else:
             sin_lote += 1
-    reales = {str(s["numero"]) for s in verdad}
+    reales = [str(s["numero"]) for s in verdad]
     lector = digitalizado.get("lector") or {}
     return dict(verdad=len(verdad), correctos=correctos, errados=errados, sin_lote=sin_lote,
                 recall=correctos / len(verdad) if verdad else None,
-                lotes_numero_ajeno=sum(1 for n, _ in lotes if n not in reales),
+                lotes_numero_ajeno=sum(1 for n, _ in lotes if not any(mismo_lote(n, r) for r in reales)),
                 rotulos_leidos=len(lector.get("rotulos") or []), semillas_lector=lector.get("semillas"),
                 segundos_lector=lector.get("segundos"), areas_leidas=len(lector.get("cuadro") or {}),
                 motivo=lector.get("motivo"))
@@ -150,12 +159,33 @@ def cuadricula_leida(leida: dict | None, verdad: dict | None) -> dict | None:
 
 
 def cuadro_contra_real(digitalizado: dict, lotes_real: dict) -> dict:
-    """Las áreas leídas del cuadro contra las del KMZ real (por número)."""
+    """Las áreas leídas del cuadro contra las del KMZ real (por número normalizado)."""
     cuadro = (digitalizado.get("lector") or {}).get("cuadro") or {}
-    errores = [abs(a / lotes_real[n].area - 1) for n, a in cuadro.items() if n in lotes_real and lotes_real[n].area]
+    pares = [(a, buscar(lotes_real, n)) for n, a in cuadro.items()]
+    errores = [abs(a / p.area - 1) for a, p in pares if p is not None and p.area]
     return dict(leidas=len(cuadro), comparadas=len(errores),
                 dentro_2pct=sum(e <= 0.02 for e in errores),
                 error_mediano_pct=round(100 * float(np.median(errores)), 2) if errores else None)
+
+
+# Los niveles de la consola (`consola/plano.py`): verde ±2 %, ámbar ±5 %, rojo más.
+VERDE, AMBAR = 0.02, 0.05
+
+
+def areas_contra_oficial(digitalizado: dict, lotes_candidato: dict) -> dict:
+    """El área de cada lote del KMZ creado contra la de su cuadro de superficies: el
+    error con signo (negativo: el lote salió más chico) y cuántos quedan en cada nivel."""
+    errores = []
+    for lote in digitalizado.get("lotes") or []:
+        oficial, poligono = lote.get("area_oficial"), buscar(lotes_candidato, lote["numero"])
+        if oficial and poligono is not None:
+            errores.append(poligono.area / float(oficial) - 1)
+    if not errores:
+        return dict(n=0)
+    pct = lambda v: round(100 * float(v), 2)
+    return dict(n=len(errores), error_mediano_pct=pct(np.median(errores)), minimo_pct=pct(min(errores)),
+                maximo_pct=pct(max(errores)), verde=sum(abs(e) <= VERDE for e in errores),
+                ambar=sum(VERDE < abs(e) <= AMBAR for e in errores), rojo=sum(abs(e) > AMBAR for e in errores))
 
 
 def resumen_base(fila: dict) -> dict:
@@ -217,27 +247,31 @@ def tabla(filas: list[dict]) -> str:
 
 def tabla_con_lector(filas: list[dict]) -> str:
     n = lambda v, f="{:.3f}": "—" if v is None else f.format(v)
-    lineas = ["| Plano | Rótulos leídos / semillas del lector | Lotes | Numeración correcta (recall)"
+    lineas = ["| Plano | Rótulos leídos / semillas del lector | Lotes (+ de lote sin número) | Numeración correcta (recall)"
               " | Errados / sin lote | Lotes con número ajeno | Pareados / real | IoU tal cual → what-if (mediana)"
-              " | Centroide tal cual → what-if (m) | Cuadro: áreas (±2 % del real) | Cuadrícula: coinciden / reales"
-              " | Segundos (lector) |",
-              "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+              " | Centroide tal cual → what-if (m) | Cuadro: áreas (±2 % del real) | Área contra el cuadro:"
+              " n, mediana (mín / máx), verde / ámbar / rojo | Cuadrícula: coinciden / reales | Segundos (lector) |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for f in filas:
         u = f.get("numeracion")
         if not u:
-            lineas.append(f"| {f['plano']} | {f.get('medicion', '—')} |" + " |" * 10)
+            lineas.append(f"| {f['plano']} | {f.get('medicion', '—')} |" + " |" * 11)
             continue
         w, c = f.get("what_if") or {}, f.get("tal_cual") or {}
         cuadro = f.get("cuadro") or {}
         cuad = f.get("cuadricula_leida") or {}
+        o = f.get("area_oficial") or {}
+        oficial = (f"{o['n']}, {o['error_mediano_pct']:+.1f} % ({o['minimo_pct']:+.1f} / {o['maximo_pct']:+.1f}),"
+                   f" {o['verde']} / {o['ambar']} / {o['rojo']}") if o.get("n") else "—"
         lineas.append(
-            f"| {f['plano']} | {u['rotulos_leidos']} / {u['semillas_lector']} | {f.get('lotes')}"
+            f"| {f['plano']} | {u['rotulos_leidos']} / {u['semillas_lector']}"
+            f" | {f.get('lotes')} + {f.get('sin_numero_lote', 0)} sin número"
             f" | {u['correctos']} / {u['verdad']} ({n(u['recall'], '{:.0%}')})"
             f" | {u['errados']} / {u['sin_lote']} | {u['lotes_numero_ajeno']}"
             f" | {f.get('pareados', '—')} / {f.get('lotes_real', '—')}"
             f" | {n(c.get('iou_mediana'))} → {n(w.get('iou_mediana'))}"
             f" | {n(c.get('centroide_mediana_m'), '{:.2f}')} → {n(w.get('centroide_mediana_m'), '{:.2f}')}"
-            f" | {cuadro.get('leidas', u['areas_leidas'])} ({cuadro.get('dentro_2pct', '—')})"
+            f" | {cuadro.get('leidas', u['areas_leidas'])} ({cuadro.get('dentro_2pct', '—')}) | {oficial}"
             f" | {cuad.get('coinciden', '—')} / {cuad.get('reales', '—')}"
             f" | {f['segundos_digitalizar']} ({u['segundos_lector']}) |")
     return "\n".join(lineas)

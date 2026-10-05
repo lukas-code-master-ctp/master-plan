@@ -92,6 +92,22 @@ def test_numeros_repetidos_o_ilegibles_fallan():
         kml(d, _transformacion())
 
 
+def test_el_nombre_va_como_en_el_plano_y_se_compara_normalizado(tmp_path):
+    # Caminos de Rapel: "LOTE 8-01", con el cero; el master lo lee como "8-1".
+    d = _digitalizado()
+    for lote, n in zip(d["lotes"], ("8-01", "8-02", "10-6")):
+        lote["numero"] = n
+    raiz = ET.fromstring(kml(d, _transformacion()))
+    assert [m.find(NS + "name").text for m in raiz.iter(NS + "Placemark")] == ["LOTE 8-01", "LOTE 8-02", "LOTE 10-6"]
+    destino = tmp_path / "s.kmz"
+    escribir_kmz(destino, d, _transformacion())
+    assert sorted(p.id for p in leer_kmz(destino)) == ["10-6", "8-1", "8-2"]
+    # "8-1" y "8-01" son el mismo lote: repetido, nombrado como vino.
+    d["lotes"][1]["numero"] = "8-1"
+    with pytest.raises(ValueError, match="repetidos: 8-01, 8-1"):
+        kml(d, _transformacion())
+
+
 def test_geojson_en_lon_lat_con_huecos():
     g = geojson(_digitalizado(), _transformacion())
 
