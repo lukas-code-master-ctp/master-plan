@@ -106,11 +106,9 @@ seis parcelas cada una, en los cuatro estados, con precios en CLP y UF.
 
 **Vercel falso.** Imita `project add`, `link`, `deploy --prod` e `inspect`, lo justo para
 que corra el `publicar.sh` de verdad. `project add` falla si el proyecto ya existe, como
-el real. La URL que queda anotada en el loteo termina en `#.vercel.app`, por ejemplo
-`http://127.0.0.1:8792/masterplan-praderas-demo/#.vercel.app`: `publicar.sh` solo
-acepta alias `https://` o que terminen en `.vercel.app`, y el fragmento es la forma de
-que acepte la URL local sin cambiar nada (el navegador no lo manda y el visor no lo lee).
-Ábrela tal cual.
+el real. La URL que queda anotada en el loteo es la local, por ejemplo
+`http://127.0.0.1:8792/masterplan-praderas-demo/`: `publicar.sh` acepta `https://` y,
+para esto, `http://` solo hacia 127.0.0.1 o localhost (Vercel real nunca devuelve http).
 
 ## Recetas
 
@@ -227,7 +225,7 @@ entra como `plataforma`, abre el loteo y usa **Anotar pago** → "Habilitar publ
 ```bash
 ls .qa/publicados/                     # masterplan-praderas-demo/ ...
 npm run qa:captura -- --como anonimo \
-  --ruta 'http://127.0.0.1:8792/masterplan-praderas-demo/#.vercel.app'
+  --ruta 'http://127.0.0.1:8792/masterplan-praderas-demo/'
 npm run qa:captura -- --como anonimo --movil \
   --ruta 'http://127.0.0.1:8792/masterplan-praderas-demo/'
 ```
