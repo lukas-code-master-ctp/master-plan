@@ -21,10 +21,16 @@
    lote cuyo número no se leyó, y queda como cara sin número "de lote" para que la
    loteadora lo numere. Pegarlo al vecino duplica ese lote sin aviso.
 4. Red de deslindes: las grietas entre etiquetas forman una red plana. Cada deslinde
-   entre dos regiones es UNA arista, compartida por ambas. Se endereza (recta si cabe
-   en DP_MM, si no Douglas-Peucker con cada tramo ajustado por mínimos cuadrados), los
-   nodos van a la intersección de sus rectas y `polygonize` da las caras. Como todas
-   las caras salen de la misma red, no hay traslapes ni huecos por construcción.
+   entre dos regiones es UNA arista, compartida por ambas. Las aristas que siguen
+   derecho por un nodo (el borde del loteo que pasa por donde llega una divisoria, en
+   T o en cruz) se enderezan juntas, como una sola línea: si no, cada trozo tiene su
+   propia recta y la línea queda quebrada en cada nodo. Se endereza (recta si cabe en
+   DP_MM, si no Douglas-Peucker con cada tramo ajustado por mínimos cuadrados) y los
+   tramos cortos que se apartan poco de un deslinde recto que sigue a ambos lados (el
+   eje del texto pegado a la línea, que el watershed reparte) se reemplazan por esa
+   recta. Los nodos van a la intersección de sus rectas y `polygonize` da las caras.
+   Como todas las caras salen de la misma red, no hay traslapes ni huecos por
+   construcción.
 """
 from __future__ import annotations
 
@@ -34,7 +40,8 @@ from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
-from shapely.geometry import LineString, Polygon
+import shapely
+from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import polygonize, unary_union
 from skimage.morphology import skeletonize
 from skimage.segmentation import watershed
@@ -72,6 +79,19 @@ CORTE_ROTULO_MM = 2.0
 BLUR_MM = 0.25         # suavizado de la tinta para el watershed
 DP_MM = 0.34           # tolerancia del enderezado (≈ 2 px a 6 px/mm: el ancho de la línea)
 NODE_MOV_MM = 0.5      # lo más que se mueve un nodo hacia la intersección de sus rectas
+# Deslindes torcidos por el texto pegado a la línea (Caminos de Rapel: el borde norte de
+# los lotes 8-03 a 8-05 y el sur de 8-12 a 8-15 en dientes de varios metros). Un tramo
+# recto de al menos ANCLA_MM es un apoyo; entre dos apoyos de la misma recta (o que se
+# cortan en una esquina), o entre un apoyo y la punta de la línea, lo que se aparta a lo
+# más EXCURSION_MM y menos de EXCURSION_FRAC de su propio largo se endereza: en el KMZ de
+# Rapel los dientes se apartan del 4 al 7 % de su largo. Un ochavo (≥ 0,35) o un entrante
+# de verdad (alto / (2 alto + ancho): 0,25 si es el doble de ancho que de hondo) se
+# respetan; se pierde un entrante de menos de EXCURSION_MM que sea casi cinco veces más
+# ancho que hondo.
+ANCLA_MM = 8.0
+EXCURSION_MM = 6.0
+EXCURSION_FRAC = 0.15
+SIGUE_DERECHO_GRADOS = 20.0  # en un nodo, dos aristas que siguen derecho son la misma línea
 
 # Etiquetas de la partición: 1 = relleno, 2.. = regiones sin número, LOTE0 + i = la
 # semilla i-ésima.
@@ -429,40 +449,63 @@ def red_de_deslindes(particion: Particion, ppmm: float) -> Red:
     ws[0, :] = ws[-1, :] = ws[:, 0] = ws[:, -1] = 1
     aristas, nodos = _grietas(ws)
 
-    tramos, polilineas = [], []
-    rectas = 0
-    for cadena, _ in aristas:
-        P = np.array([(c[1] - 0.5, c[0] - 0.5) for c in cadena], float)
-        idx = _douglas_peucker(P, tolerancia)
-        rs = []
-        for s, e in zip(idx[:-1], idx[1:]):
-            seg = P[s:e + 1]
-            if len(seg) >= 3:
-                rs.append(_recta(seg))
-            else:
-                dv = seg[-1] - seg[0]
-                rs.append((seg.mean(0), dv / max(1e-9, math.hypot(*dv))))
-        V = [P[0]]
-        for k in range(1, len(idx) - 1):
-            x = _cruce(rs[k - 1], rs[k])
-            V.append(x if x is not None and math.hypot(*(x - P[idx[k]])) < 3 * tolerancia else P[idx[k]])
-        V.append(P[-1])
-        rectas += len(idx) == 2
-        tramos.append(rs)
-        polilineas.append(np.array(V))
+    caminos = [np.array([(c[1] - 0.5, c[0] - 0.5) for c in cadena], float) for cadena, _ in aristas]
+    grupo = _grupos_de_nodos(aristas, nodos)
+    tramos, polilineas = [None] * len(aristas), [None] * len(aristas)
+    puenteadas = defaultdict(int)
+    cadenas = _encadenar(aristas, caminos, grupo, tolerancia, ppmm)
 
-    # Nodos: a la intersección por mínimos cuadrados de las rectas incidentes.
+    en_diente = set()
+
+    def enderezar(miembros, cerrada, puntas_libres=(False, False)):
+        for i, rs, V, n, dientes in _enderezar_cadena(miembros, cerrada, caminos, tolerancia, ppmm,
+                                                       puntas_libres):
+            tramos[i], polilineas[i] = rs, V
+            puenteadas[i] = n
+            for c, d in zip((aristas[i][0][0], aristas[i][0][-1]), dientes):
+                if d and c in grupo:
+                    en_diente.add(grupo[c])
+
+    def puntas(miembros):
+        (i, d), (j, e) = miembros[0], miembros[-1]
+        return (aristas[i][0][0 if d else -1], aristas[j][0][-1 if e else 0])
+
+    for miembros, cerrada in cadenas:
+        enderezar(miembros, cerrada)
+    # Un nodo que quedó dentro de un diente enderezado de otra línea (la divisoria que
+    # llega al borde por dentro del texto): la punta de la divisoria se endereza hasta él.
+    for miembros, cerrada in cadenas:
+        if cerrada:
+            continue
+        libres = tuple(c in grupo and grupo[c] in en_diente for c in puntas(miembros))
+        if any(libres):
+            enderezar(miembros, cerrada, libres)
+    puenteadas = sum(puenteadas.values())
+    rectas = sum(len(rs) == 1 for rs in tramos)
+
+    # Nodos: a la intersección por mínimos cuadrados de las rectas incidentes. Un nodo
+    # sobre un tramo enderezado puede estar hasta EXCURSION_MM fuera de su recta. Los
+    # nodos de un mismo grupo (unidos por una arista de un par de píxeles: dos líneas que
+    # se cruzan no siempre lo hacen en un solo punto de la grieta) van al mismo lugar.
     incidentes = defaultdict(list)
+    holgura = defaultdict(lambda: mov_maximo)
     for (cadena, _), rs in zip(aristas, tramos):
         if cadena[0] == cadena[-1] and cadena[0] not in nodos:
             continue
-        incidentes[cadena[0]].append(rs[0])
-        incidentes[cadena[-1]].append(rs[-1])
+        if cadena[0] in grupo and grupo.get(cadena[-1]) == grupo[cadena[0]] and cadena[0] != cadena[-1]:
+            continue
+        for c, r in ((cadena[0], rs[0]), (cadena[-1], rs[-1])):
+            incidentes[grupo[c]].append(r[:2])
+            if r[2]:
+                holgura[grupo[c]] = max(mov_maximo, EXCURSION_MM * ppmm)
+    miembros_de = defaultdict(list)
+    for c in nodos:
+        miembros_de[grupo[c]].append(c)
     nuevo = {}
     movidos = 0
-    for c in nodos:
-        p0 = np.array((c[1] - 0.5, c[0] - 0.5))
-        ls = incidentes[c]
+    for g, cs in miembros_de.items():
+        p0 = np.mean([(c[1] - 0.5, c[0] - 0.5) for c in cs], axis=0)
+        ls = incidentes[g]
         if len(ls) >= 2:
             M = np.zeros((2, 2))
             b = np.zeros(2)
@@ -472,11 +515,11 @@ def red_de_deslindes(particion: Particion, ppmm: float) -> Red:
                 b += nn @ p
             if np.linalg.cond(M) < 1e3:
                 x = np.linalg.solve(M, b)
-                if math.hypot(*(x - p0)) <= mov_maximo:
-                    nuevo[c] = x
-                    movidos += 1
+                if math.hypot(*(x - p0)) <= holgura[g]:
+                    nuevo.update((c, x) for c in cs)
+                    movidos += len(cs)
                     continue
-        nuevo[c] = p0
+        nuevo.update((c, p0) for c in cs)
 
     lineas, de_lote = [], []
     for (cadena, par), V in zip(aristas, polilineas):
@@ -485,7 +528,7 @@ def red_de_deslindes(particion: Particion, ppmm: float) -> Red:
             V[0] = nuevo[cadena[0]]
         if cadena[-1] in nuevo:
             V[-1] = nuevo[cadena[-1]]
-        if len(V) >= 2:
+        if len(V) >= 2 and np.ptp(V, axis=0).max() > 1e-9:
             lineas.append(LineString(V))
             de_lote.append(max(par) >= LOTE0)
     caras = list(polygonize(unary_union(lineas)))
@@ -517,6 +560,7 @@ def red_de_deslindes(particion: Particion, ppmm: float) -> Red:
 
     estadisticas = dict(
         nodos=len(nodos), aristas=len(aristas), aristas_rectas=int(rectas), nodos_movidos=movidos,
+        tramos_enderezados=int(puenteadas),
         caras=len(caras), lotes_multicara=multicara,
         vertices_mediana=float(np.median([len(p.exterior.coords) - 1 for p in lotes.values()])) if lotes else 0.0,
     )
@@ -604,6 +648,320 @@ def _grietas(ws: np.ndarray):
             aristas.append((cadena, par))
     nodos = {c for c in adj if es_nodo(c)}
     return aristas, nodos
+
+
+def _grupos_de_nodos(aristas, nodos) -> dict:
+    """nodo -> su representante: los nodos unidos por una arista de a lo más dos
+    pasos de grieta son el mismo cruce."""
+    padre = {c: c for c in nodos}
+
+    def raiz(c):
+        while padre[c] != c:
+            padre[c] = padre[padre[c]]
+            c = padre[c]
+        return c
+
+    for cadena, _ in aristas:
+        a, b = cadena[0], cadena[-1]
+        if len(cadena) <= 3 and a != b and a in padre and b in padre:
+            padre[raiz(a)] = raiz(b)
+    return {c: raiz(c) for c in nodos}
+
+
+def _encadenar(aristas, caminos, grupo: dict, tolerancia: float, ppmm: float):
+    """Las aristas en cadenas: [(miembros, cerrada)], con miembros = [(i, al_derecho)] en
+    orden. En cada nodo se unen, de a pares, las puntas de arista que siguen derecho (a
+    menos de SIGUE_DERECHO_GRADOS, y la recta de una pasa por la otra): el borde del
+    loteo pasa entero por los nodos en T donde llegan las divisorias; los nodos de un
+    mismo `grupo` cuentan como uno. Una arista sola es una cadena de un miembro."""
+    ancla = ANCLA_MM * ppmm
+    excursion = EXCURSION_MM * ppmm
+
+    def apoyo(P, desde_el_final):
+        """La recta (punto, dirección hacia afuera del nodo) de la punta: el primer tramo
+        de Douglas-Peucker de al menos ANCLA_MM desde esa punta, o el más largo."""
+        Q = P[::-1] if desde_el_final else P
+        idx = _douglas_peucker(Q, tolerancia)
+        pares = list(zip(idx[:-1], idx[1:]))
+        largos = [math.hypot(*(Q[e] - Q[s])) for s, e in pares]
+        k = next((k for k, l in enumerate(largos) if l >= ancla), int(np.argmax(largos)))
+        s, e = pares[k]
+        punto, u = _recta(Q[s:e + 1]) if e - s >= 2 else (Q[s:e + 1].mean(0), _unitario(Q[e] - Q[s]))
+        if np.dot(u, Q[e] - Q[0]) < 0:
+            u = -u
+        return punto, u, largos[k]
+
+    puntas = defaultdict(list)      # nodo -> [(i, 0 = inicio | 1 = final, punto, dirección)]
+    for i, (cadena, _) in enumerate(aristas):
+        if cadena[0] == cadena[-1] or len(caminos[i]) < 3:
+            continue
+        for lado, c in ((0, cadena[0]), (1, cadena[-1])):
+            if c in grupo:
+                punto, u, _ = apoyo(caminos[i], lado == 1)
+                puntas[grupo[c]].append((i, lado, punto, u))
+    pareja = {}
+    for c, ps in puntas.items():
+        nodo = np.array((c[1] - 0.5, c[0] - 0.5))
+        candidatos = []
+        for a in range(len(ps)):
+            for b in range(a + 1, len(ps)):
+                (i, li, pi, ui), (j, lj, pj, uj) = ps[a], ps[b]
+                if i == j:
+                    continue
+                angulo = math.degrees(math.acos(max(-1.0, min(1.0, -float(np.dot(ui, uj))))))
+                if angulo > SIGUE_DERECHO_GRADOS:
+                    continue
+                if max(_distancia_recta(nodo, (pi, ui)), _distancia_recta(nodo, (pj, uj))) > excursion:
+                    continue
+                candidatos.append((angulo, (i, li), (j, lj)))
+        for _, x, y in sorted(candidatos):
+            if x not in pareja and y not in pareja:
+                pareja[x], pareja[y] = y, x
+
+    vistas = set()
+    cadenas = []
+
+    def recorrer(i, al_derecho):
+        miembros = []
+        while True:
+            vistas.add(i)
+            miembros.append((i, al_derecho))
+            siguiente = pareja.get((i, 1 if al_derecho else 0))
+            if siguiente is None or siguiente[0] in vistas:
+                return miembros, siguiente is not None and siguiente[0] == miembros[0][0]
+            i, al_derecho = siguiente[0], siguiente[1] == 0
+
+    # Primero las que tienen una punta libre; lo que queda son anillos.
+    for i in range(len(aristas)):
+        for lado in (0, 1):
+            if i not in vistas and (i, lado) not in pareja:
+                miembros, _ = recorrer(i, lado == 0)
+                cadenas.append((miembros, False))
+    for i, (cadena, _) in enumerate(aristas):
+        if i not in vistas:
+            if cadena[0] == cadena[-1] and cadena[0] not in grupo:
+                vistas.add(i)
+                cadenas.append(([(i, True)], True))
+            else:
+                miembros, cerrada = recorrer(i, True)
+                cadenas.append((miembros, cerrada))
+    return cadenas
+
+
+def _enderezar_cadena(miembros, cerrada: bool, caminos, tolerancia: float, ppmm: float,
+                      puntas_libres=(False, False)):
+    """Endereza una cadena entera y la reparte en sus aristas: [(i, rectas, vértices,
+    tramos enderezados)]. Las rectas de cada arista son (punto, dirección, enderezado)
+    en su propio sentido, y los vértices van de su primer punto al último."""
+    P, rangos = [], []
+    for i, al_derecho in miembros:
+        Q = caminos[i] if al_derecho else caminos[i][::-1]
+        inicio = max(0, len(P) - 1)
+        P.extend(Q if not P else Q[1:])
+        rangos.append((inicio, len(P) - 1))
+    P = np.array(P)
+    M = len(P) - 1
+    rotacion = 0
+    if cerrada and M >= 4:
+        # Se parte el anillo al medio de su tramo recto más largo: la esquina queda donde
+        # el dibujo la tiene y no donde empieza la grieta.
+        idx = _douglas_peucker(P, tolerancia)
+        s, e = max(zip(idx[:-1], idx[1:]), key=lambda se: math.hypot(*(P[se[1]] - P[se[0]])))
+        rotacion = (s + e) // 2
+        P = np.concatenate([P[rotacion:M], P[:rotacion + 1]])
+    # Las uniones entre aristas (los nodos), en índices de la cadena girada.
+    uniones = sorted({(a - rotacion) % M for a, _ in rangos[1:]} | ({(rangos[0][0] - rotacion) % M} if cerrada else set()))
+    segmentos, fijos = _enderezar(P, tolerancia, ppmm, uniones, puntas_libres, anillo=cerrada)
+    if cerrada and len(segmentos) >= 2:
+        # Las dos mitades del tramo partido son la misma recta.
+        a, b = segmentos[0], segmentos[-1]
+        if not a[3] and not b[3]:
+            recta = _recta(np.concatenate([P[b[0]:b[1] + 1], P[a[0]:a[1] + 1]]))
+            segmentos[0] = (a[0], a[1], recta, a[3])
+            segmentos[-1] = (b[0], b[1], recta, b[3])
+    vertices = _vertices(P, segmentos, fijos, tolerancia, ppmm, cerrada)
+
+    # Índices de la cadena girada, repetidos una vuelta más para las aristas que la cruzan.
+    vueltas = 2 if cerrada else 1
+    segs = [(s + k * M, e + k * M, r, p) for k in range(vueltas) for s, e, r, p in segmentos]
+    verts = sorted(((j + k * M, v) for k in range(vueltas) for j, v in vertices), key=lambda jv: jv[0])
+    salida = []
+    for (i, al_derecho), (a, b) in zip(miembros, rangos):
+        if cerrada:
+            a, b = (a - rotacion) % M, (a - rotacion) % M + (b - a)
+        rs = [(r[0], r[1], p) for s, e, r, p in segs if e > a and s < b]
+        V = [v for j, v in verts if a < j < b]
+        # ¿La punta cae en medio de un tramo enderezado? (un nodo dentro de un diente)
+        en_diente = [any(p and s < x < e for s, e, _, p in segs) for x in (a, b)]
+        if not al_derecho:
+            rs, V, en_diente = rs[::-1], V[::-1], en_diente[::-1]
+        Q = caminos[i]
+        # Un lazo sin nodos cierra en su primer vértice, no en el punto de la grieta.
+        V = np.array([*V, V[0]] if cerrada and len(miembros) == 1 and len(V) >= 3 else [Q[0], *V, Q[-1]])
+        salida.append((i, rs, V, sum(p for *_, p in rs), en_diente))
+    return salida
+
+
+def _enderezar(P: np.ndarray, tolerancia: float, ppmm: float, uniones=(), puntas_libres=(False, False),
+               anillo: bool = False):
+    """Douglas-Peucker y una recta por tramo; después, lo que se aparta poco entre apoyos
+    rectos se reemplaza por la recta de los apoyos. Devuelve los tramos [(inicio, fin,
+    recta, enderezado)] (índices de P, contiguos) y los vértices ya resueltos {índice:
+    punto} (las esquinas entre dos apoyos). Un vértice a pocos píxeles de una de las
+    `uniones` (índices de los nodos) va al nodo: si no, queda un codo de un píxel
+    entre el vértice y el nodo, que se resuelve aparte.
+
+    `puntas_libres` (inicio, fin): la punta llega a un nodo que quedó dentro de un diente
+    enderezado de otra línea (el texto pegado al borde); ahí basta con que lo que va del
+    último apoyo al nodo mida a lo más EXCURSION_MM. `anillo`: P es un anillo partido al
+    medio de un tramo; sus dos mitades juntas cuentan para ser apoyo."""
+    ancla = ANCLA_MM * ppmm
+    excursion = EXCURSION_MM * ppmm
+    uniones = np.asarray(uniones, int)
+
+    def al_nodo(j):
+        if uniones.size:
+            u = int(uniones[np.argmin(np.abs(uniones - j))])
+            if 0 < u < len(P) - 1 and abs(u - j) <= 3 * tolerancia:
+                return u
+        return j
+
+    idx = sorted({al_nodo(j) for j in _douglas_peucker(P, tolerancia)})
+    segs = [(s, e, _recta_tramo(P[s:e + 1]), False) for s, e in zip(idx[:-1], idx[1:])]
+    fijos = {}
+    largo = lambda t: math.hypot(*(P[t[1]] - P[t[0]]))
+    # 0. Un tramo de pocos píxeles en una esquina (el codo de una línea gruesa) no es un
+    # lado: la esquina va al cruce de los dos lados.
+    k = 1
+    while k < len(segs) - 1:
+        a, t, b = segs[k - 1], segs[k], segs[k + 1]
+        esquina = abs(float(np.dot(a[2][1], b[2][1]))) < math.cos(math.radians(20))   # no una curva
+        x = _cruce(a[2], b[2]) if largo(t) < ancla and esquina else None
+        if x is not None and LineString(P[t[0]:t[1] + 1]).distance(Point(x)) < 3 * tolerancia:
+            segs[k - 1:k + 1] = [(a[0], t[1], a[2], a[3])]
+        else:
+            k += 1
+    extremos = largo(segs[0]) + largo(segs[-1]) if anillo and len(segs) >= 2 else 0.0
+
+    def es_apoyo(k):
+        t = segs[k]
+        return t[3] or largo(t) >= ancla or (k in (0, len(segs) - 1) and extremos >= ancla)
+
+    def zigzag(k0, k1):
+        # Los dientes del texto giran a un lado y al otro; una curva, siempre al mismo.
+        giros = []
+        for a, b in zip(segs[k0:k1], segs[k0 + 1:k1 + 1]):
+            u, v = P[a[1]] - P[a[0]], P[b[1]] - P[b[0]]
+            giros.append(math.degrees(math.atan2(u[0] * v[1] - u[1] * v[0], float(u @ v))))
+        return max(giros, default=0) > 5 and min(giros, default=0) < -5
+
+    def se_aparta_poco(desde, hasta, distancias, punta=False):
+        Q = P[desde:hasta + 1]
+        if len(Q) < 3:
+            return False
+        recorrido = float(np.hypot(*np.diff(Q, axis=0).T).sum())
+        hondo = float(distancias(Q).max())
+        return hondo <= excursion and (hondo < EXCURSION_FRAC * recorrido or (punta and recorrido <= excursion))
+
+    # 1. Dos apoyos seguidos de la misma recta, con solo tramos cortos entre medio y
+    # cerca de ella. Un tramo largo entre medio (un escalón, la cuerda de una curva) es
+    # del dibujo.
+    k = 0
+    while k < len(segs) - 2:
+        if not es_apoyo(k):
+            k += 1
+            continue
+        j = next((j for j in range(k + 1, len(segs)) if es_apoyo(j)), None)
+        if j is None:
+            break
+        A, B = segs[k], segs[j]
+        if j >= k + 2 and abs(float(np.dot(A[2][1], B[2][1]))) >= math.cos(math.radians(3)):
+            puntos = np.concatenate([P[A[0]:A[1] + 1], P[B[0]:B[1] + 1]])
+            recta = _recta(puntos)
+            if (_distancia_recta(puntos, recta).max() <= 2 * tolerancia and zigzag(k, j)
+                    and se_aparta_poco(A[1], B[0], lambda Q: _distancia_recta(Q, recta))):
+                segs[k:j + 1] = [(A[0], B[1], recta, True)]
+                continue                      # el tramo unido sigue siendo apoyo
+        k = j
+
+    # 2. Las puntas: de la punta al primer apoyo, la recta del apoyo.
+    apoyos = [k for k in range(len(segs)) if es_apoyo(k)]
+    if apoyos and not anillo:
+        k = apoyos[-1]
+        A = segs[k]
+        if k < len(segs) - 1 and (puntas_libres[1] or zigzag(k, len(segs) - 1)) and se_aparta_poco(
+                A[1], len(P) - 1, lambda Q: _distancia_recta(Q, A[2]), puntas_libres[1]):
+            segs[k:] = [(A[0], len(P) - 1, A[2], True)]
+        k = apoyos[0]
+        A = segs[k]
+        if k > 0 and (puntas_libres[0] or zigzag(0, k)) and se_aparta_poco(
+                0, A[0], lambda Q: _distancia_recta(Q, A[2]), puntas_libres[0]):
+            segs[:k + 1] = [(0, A[1], A[2], True)]
+
+    # 3. Dos apoyos que se cortan, con al menos dos tramos cortos entre medio: la
+    # esquina va al cruce de sus rectas.
+    k = 0
+    while k < len(segs) - 1:
+        j = next((j for j in range(k + 1, len(segs)) if es_apoyo(j)), None)
+        if j is None:
+            break
+        A, B = segs[k], segs[j]
+        x = _cruce(A[2], B[2]) if es_apoyo(k) and j - k >= 3 else None
+        if x is not None:
+            Q = P[A[1]:B[0] + 1]
+            guia = LineString([_proyectar(P[A[1]], A[2]), x, _proyectar(P[B[0]], B[2])])
+            m = al_nodo(A[1] + int(np.argmin(np.hypot(*(Q - x).T))))
+            if (A[1] < m < B[0] and zigzag(k, j) and LineString(Q).distance(Point(x)) <= excursion
+                    and se_aparta_poco(A[1], B[0], lambda Q: shapely.distance(guia, shapely.points(Q)))):
+                segs[k:j + 1] = [(A[0], m, A[2], True), (m, B[1], B[2], True)]
+                fijos[m] = x
+                k += 1
+                continue
+        k = j
+    return segs, fijos
+
+
+def _vertices(P, segs, fijos, tolerancia, ppmm, cerrada):
+    """[(índice, punto)] entre tramos consecutivos: el cruce de sus rectas si queda
+    cerca del punto de la grieta, su proyección si son la misma recta."""
+    salida = []
+    pares = list(zip(segs[:-1], segs[1:]))
+    if cerrada and len(segs) >= 2:
+        pares.append((segs[-1], segs[0]))
+    for a, b in pares:
+        j = b[0]
+        if j in fijos:
+            salida.append((j, fijos[j]))
+            continue
+        if a[2] is b[2]:
+            salida.append((j, _proyectar(P[j], a[2])))
+            continue
+        cerca = (EXCURSION_MM * ppmm) if (a[3] or b[3]) else 3 * tolerancia
+        x = _cruce(a[2], b[2])
+        salida.append((j, x if x is not None and math.hypot(*(x - P[j])) < cerca else P[j]))
+    return salida
+
+
+def _recta_tramo(seg: np.ndarray):
+    if len(seg) >= 3:
+        return _recta(seg)
+    return seg.mean(0), _unitario(seg[-1] - seg[0])
+
+
+def _unitario(v: np.ndarray) -> np.ndarray:
+    return v / max(1e-9, math.hypot(*v))
+
+
+def _distancia_recta(q, recta):
+    """Distancia de un punto (o de los puntos de un arreglo N×2) a la recta."""
+    p, u = recta
+    q = np.asarray(q, float)
+    return np.abs(u[0] * (q[..., 1] - p[1]) - u[1] * (q[..., 0] - p[0]))
+
+
+def _proyectar(q, recta) -> np.ndarray:
+    p, u = recta
+    return p + float(np.dot(q - p, u)) * u
 
 
 def _douglas_peucker(P: np.ndarray, tolerancia: float) -> list[int]:
