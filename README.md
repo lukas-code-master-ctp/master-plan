@@ -462,7 +462,9 @@ KMZ da 409: "falta el KMZ: súbelo o elige uno de Mis KMZ".
 Specs: [`docs/specs/2026-10-01-crea-tu-kmz.md`](docs/specs/2026-10-01-crea-tu-kmz.md)
 (el lector y la geometría) y
 [`docs/specs/2026-10-02-kmz-independiente.md`](docs/specs/2026-10-02-kmz-independiente.md)
-(Mis KMZ).
+(Mis KMZ) y
+[`docs/specs/2026-10-02-kmz-lotes-y-lector.md`](docs/specs/2026-10-02-kmz-lotes-y-lector.md)
+(lotes sin número, números como en el plano, cuadro de superficies y el lector por teselas).
 Resultados: [lectura de rótulos](docs/specs/2026-10-01-crea-tu-kmz-rotulos.md) y
 [set de regresión](docs/specs/2026-10-01-crea-tu-kmz-regresion.md).
 
@@ -472,7 +474,10 @@ Resultados: [lectura de rótulos](docs/specs/2026-10-01-crea-tu-kmz-rotulos.md) 
    rerasterizar**; si no hay, se renderiza a 200 dpi. Se elige la página y la rotación.
 2. **Marcar el dibujo**: un rectángulo alrededor de la situación propuesta, y máscaras
    sobre lo que no es dibujo (cuadros, cajetín, timbres, croquis). Si es una foto, las 4
-   esquinas del marco impreso, para enderezar la perspectiva.
+   esquinas del marco impreso, para enderezar la perspectiva. Con la herramienta
+   **Cuadro de superficies** se encierra el cuadro de áreas del plano, **aunque quede
+   fuera del dibujo** (en Caminos de Rapel lo estaba, y no se leía): de ahí salen las
+   áreas oficiales y la lista de números que el plano debería tener.
 3. **Digitalizar**, en un trabajo de fondo con avance en vivo: la tinta de los deslindes
    (roja o negra; se descartan verde, azul, achurados y cuadrícula), regiones cerradas
    separadas con los rótulos, una red de deslindes compartida entre vecinos, aristas
@@ -480,16 +485,41 @@ Resultados: [lectura de rótulos](docs/specs/2026-10-01-crea-tu-kmz-rotulos.md) 
    construcción, y el deslinde va por el eje del camino: no hay polígonos de camino.
 4. **Numerar**: el lector propone los números; la loteadora corrige o completa con un
    clic sobre el lote, y sus clics mandan. Se destacan los lotes sin número y los
-   repetidos.
+   repetidos. Ver abajo *Los números de lote*.
 5. **Ubicar en el mapa**, plano y mapa Esri lado a lado. Ver abajo.
 6. **Revisar**: los lotes sobre la imagen satelital, coloreados por error de área contra
-   el cuadro de superficies del plano, si se pudo leer: verde ±2 %, ámbar ±5 %, rojo
-   más.
-7. **Crear el KMZ.**
+   el cuadro de superficies del plano, si se pudo leer (el marcado o, si no, el que se
+   encuentre dentro del dibujo): verde ±2 %, ámbar ±5 %, rojo más. Sin cuadro, la
+   pantalla sugiere marcarlo o revisar a ojo que los lotes calcen con los caminos.
+7. **Crear el KMZ.** Si quedan lotes sin número, pide confirmación: esos lotes no van
+   al KMZ, y lo normal es volver a Numerar.
 
 Todo se puede retomar y rehacer: cambiar una entrada vuelve a calcular solo lo que
 depende de ella (`huellas.json` dice qué quedó atrasado). Si un lote sale mal se
 corrige con las entradas (una máscara, un número), no moviendo vértices.
+
+### Los números de lote
+
+- **Como en el plano.** El número se guarda tal cual está impreso: "LOTE 8-01" queda
+  `8-01` (con el sector), y "LOTE 10-6", `10-6`. Antes el lector se quedaba con el último
+  número y el KMZ decía "LOTE 1". Para comparar con un inventario o buscar repetidos se
+  normaliza (`normalizar_id`): "8-01" y "8-1" son el mismo lote, así que no rompe las
+  planillas que ya existían.
+- **Un lote sin número no se pega al vecino.** Una región cerrada sin número de al menos
+  el 40 % de la mediana de los lotes con número (`LOTE_FRAC` en `particion.py`) queda
+  como **lote sin número**, en rojo, para numerarla con un clic. Solo se unen al vecino
+  los trocitos (franjas, restos de texto: ≤ 0,36 de la mediana en el set). La excepción
+  es un lote que su propio rótulo partió en dos (El Arrayán): se unen si el rótulo está
+  encima del corte (a ≤ 1,5 mm del límite común) y el corte cae entero junto a él. En
+  Caminos de Rapel, antes, los lotes 3, 5, 11 y 16 se pegaban sin aviso a sus vecinos.
+- **Sugerencias.** Un número que leyó una sola pasada del lector no se asigna solo
+  (`lector_apoyo_min`, 2), pero se ofrece: **"¿8-03? Confirmar"**, y un clic lo pone en
+  su lote.
+- **Números que faltan.** Si la serie de un sector salta (1, 2, 4, 6…), se avisa qué
+  números faltan. Con el cuadro de superficies leído, los esperados salen del cuadro
+  (así aparece también el último, el 16). Sin cuadro, un salto se avisa solo si el
+  número anterior o el siguiente es vecino de un lote sin número; si no, suele ser un
+  lote que esa lámina no dibuja (Curicó mostraba 10 avisos así; ahora ninguno).
 
 ### Ubicar: cuadrícula o anclas
 
@@ -511,11 +541,40 @@ a 5–10 m.
 
 El huso UTM sale de las anclas o de la cuadrícula: no queda fijo en 19S.
 
+**Aviso de escala.** Si hay al menos 3 lotes con área oficial, se compara la escala
+que dan las anclas con la que implican las áreas del cuadro. Si difieren en más de
+**1,5 %** (3 % en área), Ubicar lo avisa: las anclas de Google Earth pueden encoger o
+agrandar el plano. En Caminos de Rapel lo encogían ~2,8 %, y eso explicaba buena parte
+de que los lotes midieran 5–10 % menos que el oficial (el resto era texto pegado a un
+deslinde que se tomaba por achurado: ahora solo cuentan como achurado las zonas de
+250 mm² o más). Lo que corrige es marcar mejor las anclas, más separadas.
+
 ### El lector de rótulos
 
 Tesseract (`tesseract-ocr` en la imagen, `pipeline/plano/rotulos.py`), con parámetros
-globales: 24 ángulos × 2 escalas × gris/Otsu, 96 pasadas por plano. Lee también las
+globales: hasta 24 ángulos × 2 escalas × gris/Otsu (96 pasadas). Lee también las
 marcas de la cuadrícula y el cuadro de superficies.
+
+Para que quepa en 4 GiB y termine:
+
+- **Por teselas.** Cada pasada lee la imagen en trozos de **hasta 14 Mpx**, ya
+  agrandada y girada, con solapamiento para no cortar rótulos. Las pasadas a la vez se
+  calculan con ese tamaño, no con el de la página. La caída de producción (una página de
+  5008×7038 px con texto de 15 px, que se agranda 1,6× y crece otra vez al girar) era
+  de memoria.
+- **Primero la orientación.** Un sondeo a 0°, 45°, 90°… (gris y Otsu) dice en qué
+  ángulos están los rótulos, y solo se leen esos: de 96 pasadas se baja a **26–46**
+  en el set. Si el sondeo no encuentra la orientación, se leen todas.
+- **Medido** con `--memory=4g --cpus=2`: el lector es **3 a 7 veces más rápido**; en la
+  página que reproduce la caída, la digitalización completa bajó de 697 s a 307 s y el
+  proceso queda en **~1,3 GiB** mientras lee. Ninguno de los 6 planos del set perdió
+  lecturas.
+
+Si el trabajo desaparece (el servidor se reinició o se cayó y el trabajo vivía en
+memoria), la pantalla ya no se queda pegada en "30 de 96": muestra **"La digitalización
+se interrumpió. Vuelve a intentarlo"** y habilita reintentar. Un 404 del trabajo lo da
+por interrumpido de inmediato; los errores de red o 502/503/504 se reintentan y, al
+quinto seguido, también.
 
 **Rinde bien con rótulos grandes** (`LOTE 12`, también rotados o en diagonal: 97–98 %
 de los lotes en Puente Negro e Hidango) y **mal con texto chico en cursiva o en foto**
@@ -584,7 +643,8 @@ con el KMZ que tenía. Tampoco se cambia mientras el master construye o publica.
   menos de un minuto; el lector es lo que pesa: corre tantas pasadas a la vez como
   núcleos tenga el contenedor (`LECTOR_HEBRAS` lo acota) y las que quepan en la
   memoria libre. Medido en la imagen con `--cpus=2 --memory=4g`: Puente Negro con
-  lector toma 3,6 min (3 de ellos, el lector) y el proceso llega a ~2,1 GiB.
+  lector toma ~4,6 min (3,6 de ellos, el lector) y el proceso llega a ~2,1 GiB
+(antes de las teselas, el plano grande de producción se caía).
   `--no-cpu-throttling` del cloudbuild es lo que deja avanzar el trabajo con la
   pestaña cerrada; `--timeout` no aplica, porque no hay petición abierta.
 
@@ -593,6 +653,9 @@ con el KMZ que tenía. Tampoco se cambia mientras el master construye o publica.
 Los planos de prueba con sus KMZ reales viven en `regresion/planos/<plano>/`
 (`plano.pdf`, `real.kmz`, `entradas.json`), **fuera de git**: traen nombres y RUT de
 propietarios. Hay que pedirlos aparte; sin la carpeta, las pruebas que la usan se saltan.
+Son 6: Algarrobo, Caminos de Rapel (el sexto, 16 lotes "8-01"…"8-16", del QA del
+2026-10-02), Curicó, El Arrayán, Hidango y Puente Negro. Los números se emparejan con
+el real normalizados ("8-01" calza con "Lote 8-01").
 
 ```bash
 python -m pipeline.plano.regresion                 # los 6 planos, ~1 min
@@ -617,6 +680,37 @@ docker build -t masterplan360 .
 docker run --rm -v "$PWD/regresion:/app/regresion" masterplan360 \
   python -m pipeline.plano.regresion --con-lector
 ```
+
+La tabla de `--con-lector` (en `regresion/resultados_con_lector.json`) dice, por plano:
+rótulos leídos, lotes (y cuántos de lote sin número), numeración correcta contra el real,
+errados, IoU y centroide, cuántas áreas del cuadro se leyeron y el error de área contra
+ellas, y los segundos del lector. La última corrida, al cerrar la tarea 4:
+
+| Plano | Lotes + sin número | Numeración correcta | Segundos (lector) |
+|---|---|---|---|
+| Puente Negro | 65 + 0 | 65 / 65 (100 %) | 275 (215) |
+| Hidango | 56 + 2 | 56 / 58 (97 %) | 177 (137) |
+| Algarrobo | 75 + 0 | 67 / 76 (88 %) | 265 (241) |
+| Caminos de Rapel | 12 + 4 | 12 / 16 (75 %) | 14 (14) |
+| El Arrayán | 58 + 52 | 52 / 183 (28 %) | 96 (84) |
+| Curicó | 14 + 13 | 8 / 87 (9 %) | 77 (57) |
+
+En Rapel, los 4 que el lector no lee ya no se pierden: salen sin número y en rojo, y el
+cuadro trae sus 16 áreas.
+
+**Correr las pruebas en Windows.** Con Smart App Control, las pruebas de la consola
+pueden no importar la DLL compilada de SQLAlchemy. Se corre la suite completa en
+Docker, con el código montado de solo lectura:
+
+```bash
+docker build -t masterplan360 .
+MSYS_NO_PATHCONV=1 docker run --rm -u root -w /app \
+  -v "$(pwd -W)/consola:/app/consola:ro" -v "$(pwd -W)/pipeline:/app/pipeline:ro" \
+  -v "$(pwd -W)/web:/app/web:ro" -v "$(pwd -W)/publicar.sh:/app/publicar.sh:ro" \
+  masterplan360 sh -c "pip install -q pytest httpx && python -m pytest -q -p no:cacheprovider"
+```
+
+(`pwd -W` y `MSYS_NO_PATHCONV=1` son de Git Bash; en Linux o macOS basta `$PWD`.)
 
 Ojo: El Arrayán se ajustó mirando su KMZ real, así que el set ya es de desarrollo. Lo
 que dice cómo le irá al método con un plano nuevo es la primera corrida de ese plano:

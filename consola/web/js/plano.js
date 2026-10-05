@@ -12,6 +12,7 @@ import { abrirElegirKmz } from './kmzs.js';
 import { pintarVuelo } from './vuelo.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
+import { textoInterrumpido, trasFalloDeSondeo } from './sondeo.js';
 
 let refrescar = async () => {};
 let actual = null;          // el slug que se está mirando
@@ -321,10 +322,29 @@ export const oyentes = new Map();
 export function seguir(slug, identificador) {
   clearTimeout(estado.sondeos.get(slug));
   let desde = (estado.registros.get(slug) ?? []).length;
+  let fallos = 0;
 
   const tic = async () => {
+    let trabajo;
     try {
-      const trabajo = await pedir(`/api/trabajos/${identificador}?desde=${desde}`);
+      trabajo = await pedir(`/api/trabajos/${identificador}?desde=${desde}`);
+    } catch (error) {
+      const decision = trasFalloDeSondeo(error, fallos);
+      fallos = decision.fallos;
+      if (decision.que === 'reintentar') {
+        estado.sondeos.set(slug, setTimeout(tic, decision.espera));
+        return;
+      }
+      estado.sondeos.delete(slug);
+      if (decision.que === 'interrumpido') {
+        await interrumpido(slug);
+      } else {
+        avisar(error.message);
+      }
+      return;
+    }
+    fallos = 0;
+    try {
       estado.trabajos.set(slug, {
         accion: trabajo.accion, estado: trabajo.estado, terminado: trabajo.terminado });
       if (trabajo.lineas.length || trabajo.terminado) {
@@ -354,6 +374,33 @@ export function seguir(slug, identificador) {
     estado.sondeos.set(slug, setTimeout(tic, 600));
   };
   estado.sondeos.set(slug, setTimeout(tic, 100));
+}
+
+/**
+ * El trabajo se perdió con el servidor (se reinició y no lo conoce): queda como
+ * fallido, con la causa al final del registro (la tarjeta la muestra), y quien lo
+ * escuchaba se entera de que terminó, para que vuelva a ofrecer el botón.
+ */
+async function interrumpido(slug) {
+  const previo = estado.trabajos.get(slug) ?? {};
+  const texto = textoInterrumpido(slug, previo.accion);
+  const registro = estado.registros.get(slug) ?? [];
+  registro.push(`Error: ${texto}`);
+  estado.registros.set(slug, registro);
+  const trabajo = {
+    accion: previo.accion, estado: 'falló', terminado: true, interrumpido: true,
+    lineas: [], total: registro.length,
+  };
+  estado.trabajos.set(slug, { accion: trabajo.accion, estado: trabajo.estado, terminado: true });
+  // Lo que se sabía del servidor ya no corre: si no contesta (todavía arrancando), los
+  // botones no pueden quedar apagados esperando un trabajo que no existe.
+  for (const item of [...estado.proyectos, ...estado.kmzs]) {
+    if ((item.slug === slug || `kmz:${item.slug}` === slug) && item.trabajo) item.trabajo = null;
+  }
+  if (slug === actual) pintarPlano(slug);
+  oyentes.get(slug)?.(trabajo);
+  avisar(texto);
+  await refrescar().catch(() => {});
 }
 
 function pintarRegistro(slug) {

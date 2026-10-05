@@ -19,8 +19,16 @@ Sin el ejecutable `tesseract` (o sin `pytesseract`) cada función avisa una lín
 devuelve vacío: digitalizar sigue con las semillas de la loteadora. Un error de
 Tesseract en una pasada se salta esa pasada; nunca se cae el trabajo por el lector.
 
-Costo: 96 pasadas por plano (24 ángulos × 2 escalas × gris/Otsu). Corren en hebras,
-tantas como núcleos (`LECTOR_HEBRAS` lo acota): el trabajo pesado es el subproceso
+Costo: hasta 96 pasadas por plano (24 ángulos × 2 escalas × gris/Otsu). Primero se
+sondean unas pocas orientaciones (`ANGULOS_SONDEO`) y después solo se leen los ángulos
+cercanos a las que dieron rótulos (`orientaciones`): de 96 a ~20–40 pasadas. Cada
+pasada lee la imagen **por teselas** de tamaño acotado (`teselas`), con un margen que
+no corta rótulos: la memoria de una pasada no crece con el plano (con texto de 15 px
+el dibujo se agranda 1,6× y, girado en diagonal, crece otra vez al doble; entero, una
+página de 5000×7000 px no cabía en 4 GiB).
+
+Las pasadas corren en hebras, tantas como núcleos del contenedor (`LECTOR_HEBRAS` lo
+acota) y que quepan en su memoria (`_hebras`): el trabajo pesado es el subproceso
 `tesseract`, con `OMP_THREAD_LIMIT=1` (sin eso las pasadas en paralelo se estorban y
 un plano tarda más de 10 min en vez de 1).
 """
@@ -53,7 +61,9 @@ VERSION = 3
 SIN_LECTOR = "sin lector de rótulos: tesseract no está instalado"
 
 # --- números de lote (parámetros globales de la tarea 1) -------------------------------
-CFG_ROTULOS = "--oem 1 --psm 11 -c tessedit_char_whitelist=LOTE0123456789-,."
+# tessedit_do_invert=0: Tesseract no vuelve a leer en negativo las líneas dudosas (un
+# plano no tiene texto blanco sobre negro). Mismas lecturas, ~10 % menos de tiempo.
+CFG_ROTULOS = "--oem 1 --psm 11 -c tessedit_char_whitelist=LOTE0123456789-,. -c tessedit_do_invert=0"
 PASO_GRADOS = 15          # 30° pierde los rótulos diagonales (Hidango cae a 24 %)
 ALTO_TEXTO_PX = 24.0      # el texto modal se lleva a este alto
 ESCALA_GRANDE = 2.5       # segunda escala, 2,5× más chica, para los rótulos grandes
@@ -62,9 +72,43 @@ ALTO_SUELTO = 1.4         # sin "LOTE", un número suelto debe medir esto × el 
 RADIO_ALTOS = 3.0         # radio de agrupación = esto × el alto mediano del rótulo
 APOYO_MIN = 2             # lo que `digitalizar` toma como semilla (apoyo ≥ 2: precisión)
 TIMEOUT_PASADA_S = 600
-# Memoria de una pasada por píxel de la imagen que se le da (Tesseract ~4,4 MB/Mpx más
-# las copias de Python): con 16 pasadas a la vez, Algarrobo llegó a 9,2 GB.
+# Memoria de una pasada por píxel de la imagen girada que se le da a Tesseract (Tesseract
+# ~4,4 MB/Mpx más las copias de Python: el recorte escalado, el girado y el PNG que
+# escribe pytesseract): con 16 pasadas a la vez, Algarrobo llegó a 9,2 GB.
 BYTES_POR_PIXEL = 6.0
+# Lo fijo de una pasada (el proceso de Tesseract con su modelo, las listas de Python).
+BYTES_FIJOS_PASADA = 60e6
+# De la memoria libre del contenedor, cuánto se reparte entre las pasadas.
+FRACCION_MEMORIA = 0.6
+
+# --- teselas ------------------------------------------------------------------------------
+# Una tesela, ya escalada y con su margen, tiene a lo más estos píxeles: girada en
+# diagonal llega al doble. Una página de 5000×7000 px con texto de 15 px son ~90 Mpx
+# escalados (y ~190 Mpx girada): no se lee de una vez.
+TESELA_MPX = 14.0
+# El margen de cada tesela, en altos de texto escalado (ALTO_TEXTO_PX): un rótulo
+# "LOTE 8-01" mide ~7 altos. Cada rótulo cae entero en la tesela cuyo núcleo tiene su
+# centro, y solo esa lo cuenta: dos teselas vecinas se traslapan 2 × MARGEN.
+MARGEN_TESELA_ALTOS = 10.0
+
+# --- orientaciones primero -----------------------------------------------------------------
+# El sondeo: las pasadas de la escala del texto (gris y Otsu) en estos ángulos. Son
+# parte de las pasadas finales (no se repiten).
+ANGULOS_SONDEO = tuple(range(0, 360, 45))
+# Un ángulo del sondeo es una orientación de los rótulos si da más "pares" (un número
+# de lote que leen igual, en el mismo lugar, el gris y el Otsu de ese ángulo) que el
+# ruido: la mediana de los pares de los ángulos sondeados más RUIDO_SIGMAS × su raíz,
+# y al menos MIN_SONDEO. Las lecturas sueltas no sirven: el ruido (cotas, pedazos de
+# línea) da tantas en todos los ángulos como los rótulos en el suyo; los pares no. En
+# el set de regresión, el 90 % o más de los pares del ángulo bueno son rótulos de
+# verdad; en los planos que dicen LOTE los otros ángulos no dan ni un par (basta uno),
+# y en Algarrobo (sin LOTE) dan 4–26 contra 73.
+RUIDO_SIGMAS = 3.0
+MIN_SONDEO = 1
+MIN_LOTE_SONDEO = 3       # con tantas lecturas "LOTE…" en el sondeo, solo cuentan esas
+# Después se leen los ángulos a ± esto de cada orientación encontrada (PASO_GRADOS
+# de 15: tres ángulos por orientación).
+VENTANA_ORIENTACION = 20
 
 # --- cuadrícula y cuadro -----------------------------------------------------------------
 CFG_CUADRICULA = "--oem 1 --psm 11 -c tessedit_char_whitelist=EN0123456789-"
@@ -113,21 +157,30 @@ def disponible() -> bool:
 
 
 def memoria_libre() -> int | None:
-    """Bytes que quedan para el lector: el límite del contenedor (cgroup v2) menos lo
-    usado o, si no hay límite, MemAvailable. None si no se sabe (Windows)."""
-    try:
-        limite = open("/sys/fs/cgroup/memory.max").read().strip()
-        if limite != "max":
-            return int(limite) - int(open("/sys/fs/cgroup/memory.current").read())
-    except (OSError, ValueError):
-        pass
-    try:
-        for linea in open("/proc/meminfo"):
-            if linea.startswith("MemAvailable:"):
-                return int(linea.split()[1]) * 1024
-    except (OSError, ValueError, IndexError):
-        pass
-    return None
+    """Bytes que quedan para el lector: el límite del contenedor (cgroup v2 `memory.max`
+    o v1 `memory.limit_in_bytes`) menos lo que ya usa el contenedor entero (en Cloud Run,
+    también la consola que lanzó este proceso) o, si no hay límite, MemAvailable (que
+    nunca es más que lo libre del contenedor). None si no se sabe (Windows)."""
+    meminfo = None
+    for linea in (_leer_archivo("/proc/meminfo") or "").splitlines():
+        if linea.startswith("MemAvailable:"):
+            try:
+                meminfo = int(linea.split()[1]) * 1024
+            except (ValueError, IndexError):
+                pass
+            break
+    for limite, usado in (("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+                          ("/sys/fs/cgroup/memory/memory.limit_in_bytes",
+                           "/sys/fs/cgroup/memory/memory.usage_in_bytes")):
+        tope, uso = _leer_archivo(limite), _leer_archivo(usado)
+        try:
+            # cgroup v1 sin límite dice un número enorme (2^63 redondeado a la página).
+            if tope and uso and tope != "max" and int(tope) < 1 << 60:
+                libre = max(0, int(tope) - int(uso))
+                return libre if meminfo is None else min(libre, meminfo)
+        except ValueError:
+            pass
+    return meminfo
 
 
 def _leer_archivo(ruta: str) -> str | None:
@@ -167,18 +220,34 @@ def nucleos() -> int:
     return max(1, n)
 
 
-def _hebras(hebras: int | None, trabajos: int, pixeles_por_pasada: float = 0) -> int:
+def pixeles_girada(ancho: float, alto: float, angulo: float) -> float:
+    """Píxeles de una imagen ancho×alto girada `angulo` grados sin recortar (`rotar`):
+    a 45° un cuadrado ocupa el doble."""
+    r = np.radians(angulo)
+    c, s = abs(np.cos(r)), abs(np.sin(r))
+    return float((ancho * c + alto * s) * (ancho * s + alto * c))
+
+
+def memoria_pasada(ancho: float, alto: float, angulo: float) -> float:
+    """Bytes que pide una pasada de Tesseract sobre una imagen (ya escalada) ancho×alto
+    girada `angulo`: lo fijo más BYTES_POR_PIXEL por píxel de la imagen girada."""
+    return BYTES_FIJOS_PASADA + BYTES_POR_PIXEL * pixeles_girada(ancho, alto, angulo)
+
+
+def _hebras(hebras: int | None, trabajos: int, bytes_por_pasada: float = 0) -> int:
     """Cuántas pasadas a la vez: tantas como núcleos del contenedor (`LECTOR_HEBRAS` lo
-    acota) y que quepan en la memoria (cada pasada pide ~BYTES_POR_PIXEL por píxel de su
-    imagen). Más hebras que núcleos no acelera Tesseract y sí multiplica la memoria."""
+    acota) y que quepan en FRACCION_MEMORIA de la memoria libre del contenedor, con
+    `bytes_por_pasada` la de la pasada más grande (`memoria_pasada`: cuenta el
+    agrandado y el giro). Más hebras que núcleos no acelera Tesseract y sí multiplica
+    la memoria. Nunca los núcleos ni la memoria del host: los del contenedor."""
     tope = nucleos()
     try:
         tope = min(tope, int(os.environ.get("LECTOR_HEBRAS") or tope))
     except ValueError:
         pass
     libre = memoria_libre()
-    if libre is not None and pixeles_por_pasada > 0:
-        tope = min(tope, int(0.7 * libre / (BYTES_POR_PIXEL * pixeles_por_pasada)))
+    if libre is not None and bytes_por_pasada > 0:
+        tope = min(tope, int(FRACCION_MEMORIA * libre / bytes_por_pasada))
     return max(1, min(trabajos, hebras or tope, tope))
 
 
@@ -228,24 +297,134 @@ def _otsu(g: np.ndarray) -> np.ndarray:
     return cv2.threshold(cv2.GaussianBlur(g, (3, 3), 0), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
 
 
-def _correr(tareas, hebras: int, avance, etiqueta: str) -> list:
-    """Corre las pasadas en hebras y avisa por tandas. Una pasada que falla se salta."""
-    salida, hechas, inicio = [], 0, time.time()
-    total = len(tareas)
-    tanda = max(1, min(hebras, total))
-    errores = 0
+def otsu_de_histograma(histograma: np.ndarray) -> float:
+    """El umbral de Otsu de un histograma de 256 niveles, como el de cv2.threshold con
+    THRESH_OTSU (el primer nivel que maximiza la varianza entre clases)."""
+    p = np.asarray(histograma, np.float64)
+    p = p / max(p.sum(), 1.0)
+    niveles = np.arange(len(p))
+    omega = np.cumsum(p)
+    mu = np.cumsum(p * niveles)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        entre = (mu[-1] * omega - mu) ** 2 / (omega * (1 - omega))
+    entre[~np.isfinite(entre)] = 0
+    return float(np.argmax(entre))
+
+
+def umbral_otsu(g: np.ndarray, escala: float, cortes: list[Tesela]) -> float:
+    """El umbral de Otsu de `g` escalada y suavizada como en `_otsu`, sin armar la
+    imagen escalada entera: se suma el histograma de los núcleos de las teselas
+    (`cortes`, que la parten). Así todas las teselas se binarizan con el mismo umbral
+    que tenía la imagen entera; uno por tesela, o el de `g` sin escalar, no sirve (con
+    el de `g` sin escalar Caminos de Rapel perdía la mitad de los rótulos del Otsu)."""
+    alto, ancho = g.shape[:2]
+    histograma = np.zeros(256, np.int64)
+    for t in cortes:
+        x0, y0, x1, y1 = t.nucleo
+        x0, y0 = int(max(0, x0)), int(max(0, y0))
+        x1, y1 = int(min(ancho, x1)), int(min(alto, y1))
+        if x1 > x0 and y1 > y0:
+            suave = cv2.GaussianBlur(_escalar(g[y0:y1, x0:x1], escala), (3, 3), 0)
+            histograma += np.bincount(suave.ravel(), minlength=256)
+    return otsu_de_histograma(histograma)
+
+
+def _binarizar(g: np.ndarray, umbral: float) -> np.ndarray:
+    return cv2.threshold(cv2.GaussianBlur(g, (3, 3), 0), umbral, 255, cv2.THRESH_BINARY)[1]
+
+
+# ------------------------------------------------------------------------- teselas
+@dataclass(frozen=True)
+class Tesela:
+    """Un trozo de la imagen, en px de la imagen (sin escalar). `recorte` es lo que se
+    lee; `nucleo`, lo que cuenta: los núcleos de todas las teselas parten la imagen sin
+    traslape (los de los bordes se abren hasta el infinito) y cada recorte es su núcleo
+    más un margen. Una lectura cuenta solo en la tesela cuyo núcleo tiene su centro:
+    un rótulo leído en dos teselas cuenta una vez, y el pedazo de un rótulo cortado en
+    el borde del recorte (su centro cae en el margen) no cuenta."""
+    nucleo: tuple[float, float, float, float]
+    recorte: tuple[int, int, int, int]
+
+    def tiene(self, x: float, y: float) -> bool:
+        x0, y0, x1, y1 = self.nucleo
+        return x0 <= x < x1 and y0 <= y < y1
+
+
+def _cortes(largo: int, partes: int) -> list[int]:
+    return [round(i * largo / partes) for i in range(partes + 1)]
+
+
+def teselas(alto: int, ancho: int, escala: float, mpx: float = TESELA_MPX,
+            margen_altos: float = MARGEN_TESELA_ALTOS) -> list[Tesela]:
+    """Las teselas para leer una imagen alto×ancho (px sin escalar) a `escala`: las
+    menos posibles cuyo recorte, ya escalado, tenga a lo más `mpx` Mpx **girado en
+    diagonal la mitad** (ancho + alto ≤ 2·√mpx: un recorte alargado crece mucho más
+    que el doble al girarlo). El margen es `margen_altos` × ALTO_TEXTO_PX px escalados
+    (a lo más 1/4 del lado de una tesela): un rótulo cuyo centro está en el núcleo cabe
+    entero en el recorte."""
+    lado = (mpx * 1e6) ** 0.5 / escala                   # px sin escalar
+    margen = min(margen_altos * ALTO_TEXTO_PX / escala, lado / 4)
+    mejor = None
+    for nx in range(1, max(1, ancho) + 1):
+        w = min(ancho, -(-ancho // nx) + 2 * margen)
+        h_max = 2 * lado - w
+        if h_max >= alto:
+            ny = 1
+        elif h_max - 2 * margen >= 1:
+            ny = int(np.ceil(alto / (h_max - 2 * margen)))
+        else:
+            continue
+        clave = (nx * ny, abs(np.log((ancho / nx) / (alto / ny))))
+        if mejor is None or clave < mejor[0]:
+            mejor = (clave, nx, ny)
+        if ny == 1:
+            break
+    _, nx, ny = mejor
+    xs, ys = _cortes(ancho, nx), _cortes(alto, ny)
+    salida = []
+    for j in range(ny):
+        for i in range(nx):
+            nucleo = (xs[i] if i else -np.inf, ys[j] if j else -np.inf,
+                      xs[i + 1] if i < nx - 1 else np.inf, ys[j + 1] if j < ny - 1 else np.inf)
+            recorte = (max(0, int(xs[i] - margen)), max(0, int(ys[j] - margen)),
+                       min(ancho, int(np.ceil(xs[i + 1] + margen))), min(alto, int(np.ceil(ys[j + 1] + margen))))
+            salida.append(Tesela(nucleo, recorte))
+    return salida
+
+
+def _correr(tareas, hebras: int, avance, etiqueta: str, pasadas=None, total: int | None = None,
+            previas: int = 0, inicio: float | None = None) -> list:
+    """Corre las tareas en hebras y avisa por tandas: "Rótulos: X de Y pasadas (N s)" (la
+    tarjeta del escáner lo lee). Una tarea que falla se salta.
+
+    `pasadas`: a qué pasada pertenece cada tarea (las teselas de una pasada); la pasada
+    cuenta como hecha cuando terminan todas sus teselas. Sin él, cada tarea es una
+    pasada. `previas` pasadas ya hechas se suman a X; `total` es Y (por omisión, las
+    previas más las de aquí); `inicio`, desde cuándo se cuentan los segundos."""
+    salida = []
+    inicio = time.time() if inicio is None else inicio
+    pasadas = list(range(len(tareas))) if pasadas is None else list(pasadas)
+    faltan = Counter(pasadas)
+    total = previas + len(faltan) if total is None else total
+    hechas = previas
+    tanda = max(1, min(hebras, len(faltan)))
+    malas = set()
     with ThreadPoolExecutor(hebras) as grupo:
-        futuros = [grupo.submit(f, *args) for f, *args in tareas]
+        futuros = {grupo.submit(f, *args): p for (f, *args), p in zip(tareas, pasadas)}
         for futuro in as_completed(futuros):
+            p = futuros[futuro]
             try:
                 salida.extend(futuro.result())
             except Exception:              # noqa: BLE001 - una pasada mala no tumba el lector
-                errores += 1
+                malas.add(p)
+            faltan[p] -= 1
+            if faltan[p]:
+                continue
             hechas += 1
-            if hechas % tanda == 0 or hechas == total:
+            if (hechas - previas) % tanda == 0 or not +faltan:
                 avance(f"{etiqueta}: {hechas} de {total} pasadas ({time.time() - inicio:.0f} s)")
-    if errores:
-        avance(f"{etiqueta}: {errores} pasadas fallaron y se saltaron")
+    if malas:
+        avance(f"{etiqueta}: {len(malas)} pasadas fallaron y se saltaron")
     return salida
 
 
@@ -293,13 +472,75 @@ def interpretar(datos: dict, inversa: np.ndarray, escala: float, angulo: float, 
     return salida
 
 
+def _para_tesseract(img: np.ndarray):
+    """La imagen como la guarda pytesseract para el subproceso: en PGM, sin comprimir
+    (Pillow escribe "PPM" en gris como PGM). Por omisión la escribe en PNG, y comprimir
+    una tesela girada de 28 Mpx toma más de lo que ahorra en disco: con PGM las mismas
+    lecturas en un 20 % menos de tiempo (la página grande de 5000×7000 px)."""
+    from PIL import Image
+    salida = Image.fromarray(img)
+    salida.format = "PPM"
+    return salida
+
+
 def _pasada_rotulos(imagen: np.ndarray, escala: float, angulo: float, variante: str) -> list[dict]:
     import pytesseract
     girada, m = rotar(imagen, angulo)
-    datos = pytesseract.image_to_data(girada, config=CFG_ROTULOS, output_type=pytesseract.Output.DICT,
-                                      timeout=TIMEOUT_PASADA_S)
+    datos = pytesseract.image_to_data(_para_tesseract(girada), config=CFG_ROTULOS,
+                                      output_type=pytesseract.Output.DICT, timeout=TIMEOUT_PASADA_S)
     del girada
     return interpretar(datos, cv2.invertAffineTransform(m), escala, angulo, variante)
+
+
+def _pasada_tesela(g: np.ndarray, tesela: Tesela, escala: float, angulo: float, variante: str,
+                   umbral: float) -> list[dict]:
+    """Una pasada sobre una tesela de `g` (gris sin escalar): se recorta, se escala, se
+    binariza si toca y se gira aquí, para que en memoria haya solo lo de las teselas que
+    se están leyendo. Devuelve las lecturas de su núcleo, en px de `g`."""
+    x0, y0, x1, y1 = tesela.recorte
+    img = _escalar(g[y0:y1, x0:x1], escala)
+    if variante == "bin":
+        img = _binarizar(img, umbral)
+    salida = []
+    for d in _pasada_rotulos(img, escala, angulo, variante):
+        d.update(x=d["x"] + x0, y=d["y"] + y0)
+        if tesela.tiene(d["x"], d["y"]):
+            salida.append(d)
+    return salida
+
+
+def orientaciones(lecturas: list[dict], alto_modal: float, sondeados=ANGULOS_SONDEO,
+                  paso: int = PASO_GRADOS, ventana: float = VENTANA_ORIENTACION) -> list[int] | None:
+    """Los ángulos (múltiplos de `paso`) que vale la pena leer, según las lecturas del
+    sondeo (`sondeados`, en gris y en Otsu). Cuentan las lecturas "de lote", como en
+    `seleccionar`: las que traen LOTE si hay al menos MIN_LOTE_SONDEO, si no los números
+    de alto ≥ ALTO_SUELTO × el texto modal. Por ángulo se cuentan los pares: una lectura
+    del gris con una del Otsu del mismo número a menos de RADIO_ALTOS altos. Un ángulo
+    es una orientación de los rótulos si sus pares pasan el ruido (la mediana de los
+    ángulos sondeados + RUIDO_SIGMAS × su raíz, y al menos MIN_SONDEO); se leen los
+    ángulos a ± `ventana` de cada una. None si ningún ángulo pasa: no se sabe, se leen
+    todos."""
+    con_lote = sum(1 for d in lecturas if d["lote"]) >= MIN_LOTE_SONDEO
+    utiles = [d for d in lecturas if (d["lote"] if con_lote else d["alto"] >= ALTO_SUELTO * alto_modal)]
+    por_angulo = defaultdict(lambda: defaultdict(list))
+    for d in utiles:
+        por_angulo[int(round(d["ang"])) % 360][d["var"]].append(d)
+    pares = Counter()
+    for a, variantes in por_angulo.items():
+        for d in variantes["gris"]:
+            radio = RADIO_ALTOS * max(d["alto"], 1.0)
+            if any(mismo_lote(d["numero"], o["numero"]) and hypot(d["x"] - o["x"], d["y"] - o["y"]) < radio
+                   for o in variantes["bin"]):
+                pares[a] += 1
+    if not sondeados:
+        return None
+    piso = float(np.median([pares[a % 360] for a in sondeados]))
+    umbral = max(MIN_SONDEO, piso + RUIDO_SIGMAS * piso ** 0.5)
+    modos = [a for a in sondeados if pares[a % 360] >= umbral]
+    if not modos:
+        return None
+    cerca = lambda a, b: min((a - b) % 360, (b - a) % 360) <= ventana
+    return [a for a in range(0, 360, paso) if any(cerca(a, m) for m in modos)]
 
 
 def seleccionar(lecturas: list[dict], alto_modal: float, pasadas: int, radio: float | None = None) -> list[Rotulo]:
@@ -353,10 +594,16 @@ def seleccionar(lecturas: list[dict], alto_modal: float, pasadas: int, radio: fl
 
 
 def leer(imagen: np.ndarray, ppmm: float | None = None, avance=print, hebras: int | None = None,
-         paso: int = PASO_GRADOS) -> list[Rotulo]:
+         paso: int = PASO_GRADOS, sondeo=ANGULOS_SONDEO) -> list[Rotulo]:
     """Los números de lote de `imagen` (RGB o gris: el dibujo, con las máscaras ya
     tapadas). Posiciones en px de `imagen`. `ppmm` no lo usa Tesseract (el método se
-    ajusta solo al alto del texto); está en la interfaz para otros lectores."""
+    ajusta solo al alto del texto); está en la interfaz para otros lectores.
+
+    Primero el sondeo (`sondeo`: ángulos que se leen a la escala del texto, en gris y
+    Otsu; vacío lo salta) dice en qué orientaciones están los rótulos (`orientaciones`);
+    después se leen solo los ángulos cercanos, a las dos escalas y en gris y Otsu. Cada
+    pasada va por teselas (`teselas`) y las hebras se cuentan con la tesela más grande
+    agrandada y girada a 45° (`memoria_pasada`)."""
     motivo = motivo_no_disponible()
     if motivo:
         avance(motivo)
@@ -366,19 +613,50 @@ def leer(imagen: np.ndarray, ppmm: float | None = None, avance=print, hebras: in
         g = gris_normalizado(imagen)
         alto = alto_caracter(g)
         e1 = ALTO_TEXTO_PX / alto
-        variantes = []
-        for escala in (e1, e1 / ESCALA_GRANDE):
-            gs = _escalar(g, escala)
-            variantes += [(escala, "gris", gs), (escala, "bin", _otsu(gs))]
-        del g
-        tareas = [(_pasada_rotulos, img, escala, float(a), var)
-                  for escala, var, img in variantes for a in range(0, 360, paso)]
-        # A 45° la imagen girada ocupa hasta el doble.
-        n = _hebras(hebras, len(tareas), 2.0 * max(img.size for _, _, img in variantes))
-        avance(f"Rótulos: texto típico de {alto:.0f} px; {len(tareas)} pasadas de Tesseract en {n} hebras")
-        lecturas = _correr(tareas, n, avance, "Rótulos")
-        del variantes, tareas
-        rotulos = seleccionar(lecturas, alto, len(range(0, 360, paso)) * 4)
+        escalas = (e1, e1 / ESCALA_GRANDE)
+        por_escala = {e: teselas(g.shape[0], g.shape[1], e, TESELA_MPX, MARGEN_TESELA_ALTOS) for e in escalas}
+        umbrales = {e: umbral_otsu(g, e, por_escala[e]) for e in escalas}
+        angulos = list(range(0, 360, paso))
+        todas = [(e, var, a) for e in escalas for var in ("gris", "bin") for a in angulos]
+        primero = [(e1, var, a) for var in ("gris", "bin") for a in angulos if a in set(sondeo)]
+
+        def tareas_de(pasadas):
+            tareas, grupos = [], []
+            for p in pasadas:
+                e, var, a = p
+                for t in por_escala[e]:
+                    tareas.append((_pasada_tesela, g, t, e, float(a), var, umbrales[e]))
+                    grupos.append(p)
+            return tareas, grupos
+
+        def memoria(e, t, a):
+            x0, y0, x1, y1 = t.recorte
+            return memoria_pasada((x1 - x0) * e, (y1 - y0) * e, a)
+
+        # La pasada más grande: la tesela más grande, girada a 45°.
+        pico = max(memoria(e, t, 45) for e in escalas for t in por_escala[e])
+        n = _hebras(hebras, len(todas) * len(por_escala[e1]), pico)
+        avance(f"Rótulos: texto típico de {alto:.0f} px; hasta {len(todas)} pasadas de Tesseract en {n} hebras,"
+               f" por teselas ({len(por_escala[e1])} por pasada, de hasta {TESELA_MPX:.0f} Mpx)")
+        lecturas = []
+        if primero:
+            tareas, grupos = tareas_de(primero)
+            lecturas = _correr(tareas, n, avance, "Rótulos", grupos, total=len(todas), inicio=inicio)
+            elegidos = orientaciones(lecturas, alto, sorted({a for _, _, a in primero}), paso)
+            if elegidos is None:
+                avance("Rótulos: el sondeo no encontró la orientación de los rótulos; se leen todos los ángulos")
+                elegidos = angulos
+            resto = [p for p in todas if p[2] in elegidos and p not in primero]
+            avance(f"Rótulos: orientaciones de los rótulos {', '.join(f'{a}°' for a in elegidos)};"
+                   f" se leen {len(primero) + len(resto)} pasadas de {len(todas)}")
+        else:
+            resto = todas
+        tareas, grupos = tareas_de(resto)
+        lecturas += _correr(tareas, n, avance, "Rótulos", grupos, previas=len(primero),
+                            inicio=inicio)
+        del tareas, g
+        hechas = len(primero) + len(resto)
+        rotulos = seleccionar(lecturas, alto, hechas)
         avance(f"Rótulos: {len(rotulos)} números leídos ({sum(r.apoyo >= APOYO_MIN for r in rotulos)}"
                f" con apoyo ≥ {APOYO_MIN}) en {time.time() - inicio:.0f} s")
         return rotulos
@@ -614,8 +892,9 @@ def leer_cuadricula(imagen: np.ndarray, ppmm: float, avance=print, hebras: int |
             del g
             tareas += [(_pasada_cuadricula, img, escala, float(a), (x0, y0))
                        for img in (gs, _otsu(gs)) for a in (0, 90, 180, 270)]
-        lecturas = _correr(tareas, _hebras(hebras, len(tareas), max(t[1].size for t in tareas) if tareas else 0),
-                           avance, "Cuadrícula")
+        # Las franjas se leen a 0/90/180/270°: girada, la imagen no crece.
+        pico = max((memoria_pasada(t[1].shape[1], t[1].shape[0], 0) for t in tareas), default=0)
+        lecturas = _correr(tareas, _hebras(hebras, len(tareas), pico), avance, "Cuadrícula")
         del tareas
         c = ajustar_cuadricula(lecturas, TOLERANCIA_CUADRICULA_MM * ppmm, SEPARACION_CUADRICULA_MM * ppmm)
         n = 0 if c is None else len(c["verticales"]) + len(c["horizontales"])

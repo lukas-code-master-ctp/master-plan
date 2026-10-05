@@ -1,3 +1,5 @@
+import math
+
 import cv2
 import numpy as np
 import pytest
@@ -344,3 +346,125 @@ def test_el_texto_que_cruza_el_lote_de_deslinde_a_deslinde_no_lo_parte():
     assert r.sin_numero == []
     for n, celda in celdas.items():
         assert iou(r.lotes[n], celda) > 0.97
+
+
+# ---------------------------------------------------------------- enderezado de los deslindes
+def _linea_temblorosa(img, p, q, rng, temblor_px=1, grosor=2):
+    """Una línea escaneada: el eje tiembla ±temblor_px cada ~1 mm."""
+    n = max(2, int(math.hypot(q[0] - p[0], q[1] - p[1]) / PPMM))
+    t = np.linspace(0, 1, n + 1)
+    normal = np.array((-(q[1] - p[1]), q[0] - p[0])) / math.hypot(q[0] - p[0], q[1] - p[1])
+    puntos = np.outer(1 - t, p) + np.outer(t, q)
+    puntos[1:-1] += np.outer(rng.integers(-temblor_px, temblor_px + 1, n - 1), normal)
+    cv2.polylines(img, [puntos.round().astype(np.int32)], False, NEGRO, grosor)
+
+
+@pytest.mark.parametrize("escala", [1.0, 4 / 3])
+def test_un_deslinde_recto_con_texto_y_achurado_pegados_sale_recto(escala):
+    # Caminos de Rapel: el borde exterior junto al camino trae "Servidumbre de tránsito"
+    # pegado, achurado y el temblor del escaneo; salía ondulado. Recto en el dibujo,
+    # recto en el polígono: 4 vértices por lote más el nodo del deslinde común.
+    px = lambda v: int(round(v * PPMM))
+    rng = np.random.default_rng(3)
+    img = np.full((px(80), px(150), 3), 245, np.uint8)
+    x0, x1, x2, y0, y1 = px(20), px(75), px(130), px(20), px(60)
+    for p, q in (((x0, y0), (x2, y0)), ((x2, y0), (x2, y1)), ((x2, y1), (x0, y1)), ((x0, y1), (x0, y0)),
+                 ((x1, y0), (x1, y1))):
+        _linea_temblorosa(img, p, q, rng)
+    # Texto en negrita pegado por dentro al borde de abajo, en los dos lotes.
+    for x in (x0 + px(3), x1 + px(3)):
+        cv2.putText(img, "SERVIDUMBRE 8M", (x, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.75, NEGRO, 2)
+    # Texto vertical pegado por dentro al borde izquierdo.
+    texto = np.full((px(6), px(32), 3), 245, np.uint8)
+    cv2.putText(texto, "CAMINO 10M", (2, px(6) - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.75, NEGRO, 2)
+    img[y0 + px(4):y0 + px(4) + px(32), x0 + 1:x0 + 1 + px(6)] = np.rot90(texto)
+    # Achurado (manchas) pegado por fuera al borde de arriba.
+    for x in range(x0 + px(5), x2 - px(5), px(4)):
+        cv2.circle(img, (x, y0 - 4), 4, NEGRO, -1)
+    semillas = [("1", (x0 + x1) / 2, (y0 + y1) / 2 - px(5)), ("2", (x1 + x2) / 2, (y0 + y1) / 2 - px(5))]
+    celdas = {"1": Polygon([(x0, y0), (x1, y0), (x1, y1), (x0, y1)]),
+              "2": Polygon([(x1, y0), (x2, y0), (x2, y1), (x1, y1)])}
+    if escala != 1:
+        # El mismo plano a 8 px/mm: los umbrales van en mm de papel, no en píxeles.
+        img = cv2.resize(img, None, fx=escala, fy=escala, interpolation=cv2.INTER_LINEAR)
+        semillas = [(n, x * escala, y * escala) for n, x, y in semillas]
+        celdas = {n: Polygon(np.asarray(c.exterior.coords) * escala) for n, c in celdas.items()}
+    alto, ancho = img.shape[:2]
+    r = digitalizar_imagen(img, PPMM * escala, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+    for n, celda in celdas.items():
+        lote = r.lotes[n]
+        # 4 esquinas y el nodo del deslinde común (arriba y abajo): cada lado, una recta.
+        assert len(lote.exterior.coords) - 1 <= 6, (n, list(lote.exterior.coords))
+        assert iou(lote, celda) > 0.98
+        # Ningún vértice del lote se aparta del rectángulo del dibujo más de 0,4 mm.
+        assert max(celda.exterior.distance(Point(c)) for c in lote.exterior.coords) < 0.4 * PPMM * escala
+    assert r.estadisticas["red"]["aristas_robustas"] >= 1
+
+
+def _cadena_y_tinta(puntos, ancho=200, alto=200):
+    """Una cadena de grietas (escalera de píxeles) que sigue `puntos` y la tinta de la
+    línea dibujada por `puntos`."""
+    tinta = np.zeros((alto, ancho), np.uint8)
+    cv2.polylines(tinta, [np.asarray(puntos).round().astype(np.int32)], False, 1, 2)
+    densa = []
+    for p, q in zip(puntos[:-1], puntos[1:]):
+        n = int(max(abs(q[0] - p[0]), abs(q[1] - p[1]))) + 1
+        densa += [tuple(v) for v in np.linspace(p, q, n, endpoint=False).round()]
+    densa.append(tuple(np.round(puntos[-1])))
+    cadena = [densa[0]]
+    for x, y in densa[1:]:
+        while cadena[-1] != (x, y):         # pasos de a un eje, como las grietas
+            cx, cy = cadena[-1]
+            cadena.append((cx + np.sign(x - cx), cy) if cx != x else (cx, cy + np.sign(y - cy)))
+    return np.array(cadena, float), tinta.astype(bool)
+
+
+def test_una_esquina_en_l_son_dos_tramos():
+    P, lineas = _cadena_y_tinta([(20, 30), (20, 160), (170, 160)])
+    tinta = particion._tinta_cercana(lineas, PPMM)
+    rs, idx = particion._poligonal(P, tinta, PPMM)
+    assert len(rs) == 2
+    V = particion._vertices(P, idx, rs, 10 * PPMM)
+    assert len(V) == 3
+    assert np.hypot(*(V[1] - (20, 160))) < 1.0
+
+
+def test_una_recta_con_un_bulto_de_texto_es_un_tramo():
+    # La cadena rodea un bloque de texto pegado a la línea (2 mm de alto); la tinta de
+    # la línea sigue debajo del texto.
+    P, _ = _cadena_y_tinta([(10, 100), (70, 100), (70, 88), (110, 88), (110, 100), (190, 100)])
+    lineas = np.zeros((200, 200), bool)
+    lineas[99:101, 10:191] = True
+    lineas[88:100, 70:111] = True                    # el texto también es tinta
+    rs, idx = particion._poligonal(P, particion._tinta_cercana(lineas, PPMM), PPMM)
+    assert len(rs) == 1 and idx == [0, len(P) - 1]
+    (m, u), = rs
+    assert abs(((10, 100) - m) @ (-u[1], u[0])) < 0.5 and abs(u[1]) < 0.01
+
+
+def test_un_estero_curvo_sigue_curvo_pero_simplificado():
+    # Un estero: la línea del dibujo es curva. Ni una recta ni pocos tramos van por la
+    # tinta: queda a Douglas-Peucker, con más vértices que una poligonal de 4 tramos y
+    # muchos menos que la escalera de píxeles.
+    t = np.linspace(0, np.pi, 60)
+    puntos = np.c_[20 + 160 * t / np.pi, 100 + 40 * np.sin(t) + 8 * np.sin(5 * t)]
+    P, lineas = _cadena_y_tinta(puntos)
+    assert particion._poligonal(P, particion._tinta_cercana(lineas, PPMM), PPMM) is None
+    idx = particion._douglas_peucker(P, particion.DP_MM * PPMM)
+    assert particion.TRAMOS_MAX + 1 < len(idx) < len(P) / 5
+
+
+def test_una_astilla_suelta_de_un_lote_pasa_al_vecino_y_no_deja_hueco():
+    # Dos aristas que se cruzan cerca de un nodo movido dejan una astilla de la región
+    # del lote "1" separada de él, pegada al "2". Botarla dejaba un hueco en el KMZ.
+    uno = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+    dos = Polygon([(10, 0), (20, 0), (20, 10), (11, 10), (10, 9)])
+    astilla = Polygon([(10, 9), (11, 10), (10, 10)])  # 0,5: más borde con el "2"
+    lejana = Polygon([(50, 50), (50.2, 50), (50, 50.2)])
+    lotes = particion._repartir_restos({"1": uno, "2": dos}, [astilla, lejana], 1.0)
+    assert lotes["2"].geom_type == "Polygon" and lotes["1"].equals(uno)
+    assert lotes["2"].area == pytest.approx(dos.area + astilla.area)
+    assert unary_union(list(lotes.values())).area == pytest.approx(200)
+    # Una grande no se reparte.
+    grande = Polygon([(-2, 0), (0, 0), (0, 2), (-2, 2)])
+    assert particion._repartir_restos({"1": uno}, [grande], 1.0)["1"].equals(uno)

@@ -375,6 +375,59 @@ export function claveLote(numero) {
   return t.replace(/\s+/g, '');
 }
 
+/** ["8-", 1] para "8-01", ["", 12] para "12" (como `numeros._serie`); null si no termina en número. */
+function serieDe(numero) {
+  const m = claveLote(numero).match(/^(.*?)(\d+)$/);
+  return m ? [m[1], Number(m[2])] : null;
+}
+
+/** Fracción de la serie con un mismo sector para que un número sin sector sea de ella. */
+export const SECTOR_MIN = 0.8;
+
+/**
+ * Como `pipeline.plano.numeros.sector_dominante`: un número de la serie con sector que
+ * llevan ≥ 80 % de `numeros` ("8-01", con ceros si alguno los trae), o null.
+ */
+export function sectorDominante(numeros) {
+  const lista = (numeros ?? []).map(String);
+  const series = lista.map((n) => [serieDe(n), n]);
+  const cuenta = new Map();
+  for (const [s] of series) if (s && s[0]) cuenta.set(s[0], (cuenta.get(s[0]) ?? 0) + 1);
+  if (!cuenta.size) return null;
+  const [sector, cuantos] = [...cuenta].sort((a, b) => b[1] - a[1])[0];
+  if (cuantos < SECTOR_MIN * lista.length) return null;
+  const delSector = series.filter(([s]) => s && s[0] === sector).map(([, n]) => n);
+  return delSector.find((n) => /(?:^|\D)0\d+\D*$/.test(n)) ?? delSector[0];
+}
+
+/**
+ * Como `numeros.con_sector`: "9" con la plantilla "8-01" → "8-09". Lo que ya trae
+ * sector, no es un número o es el sector mismo queda tal cual.
+ */
+export function conSector(numero, plantilla) {
+  const texto = String(numero ?? '').trim();
+  const c = claveLote(texto);
+  if (!plantilla || !/^\d+$/.test(c)) return texto;
+  const s = serieDe(plantilla);
+  if (!s || !s[0] || s[0].replace(/-+$/, '') === c) return texto;
+  const m = String(plantilla).match(/(\d+)\D*$/);
+  const n = String(Number(c));
+  const digitos = m[1];
+  return plantilla.slice(0, m.index) + (digitos.startsWith('0') ? n.padStart(digitos.length, '0') : n)
+    + plantilla.slice(m.index + digitos.length);
+}
+
+/**
+ * Cómo se guarda el número escrito en Numerar: con el sector de la serie si no lo trae
+ * y casi todos los lotes (los de la digitalización y los marcados) lo llevan. `numeros`:
+ * los que ya hay (un número que se repite cuenta una vez).
+ */
+export function numeroAGuardar(escrito, numeros) {
+  const lista = [...new Map((numeros ?? []).filter((n) => n != null && String(n).trim())
+    .map((n) => [claveLote(n), String(n)])).values()];
+  return conSector(escrito, sectorDominante(lista));
+}
+
 /**
  * Le pone `numero` al lote que contiene el clic. Devuelve las semillas nuevas:
  * - la semilla de la loteadora que ya estaba dentro de ese lote cambia de número
@@ -431,6 +484,65 @@ export function sinNumero(rasgos) {
 export function sugerencias(rasgos) {
   return sinNumero(rasgos).filter((r) => r.properties.sugerencia?.numero)
     .map((r) => ({ numero: String(r.properties.sugerencia.numero), rasgo: r }));
+}
+
+/**
+ * Las sugerencias con `confirmada`: su número ya está en las semillas de la loteadora
+ * (lo confirmó; queda así hasta digitalizar de nuevo). El orden es el de `sugerencias`.
+ */
+export function sugerenciasConEstado(rasgos, semillas) {
+  const marcados = new Set((semillas ?? []).map((s) => claveLote(s.numero)));
+  return sugerencias(rasgos).map((s) => ({ ...s, confirmada: marcados.has(claveLote(s.numero)) }));
+}
+
+// Escala de Ubicar que ya se avisa (como `georreferencia.ESCALA_CUADRO_MAX`, en %).
+const ESCALA_AVISO_PCT = 1.5;
+// Error de área "parejo": esta fracción de los lotes con el mismo signo, con un rango
+// intercuartil menor que DISPERSION_PAREJA puntos y una mediana fuera del verde (±2 %).
+const MISMO_SIGNO = 0.7;
+const DISPERSION_PAREJA = 3;
+const MEDIANA_MINIMA = 2;
+const LOTES_MINIMOS = 5;
+
+function cuantil(ordenados, q) {
+  const i = (ordenados.length - 1) * q;
+  const a = Math.floor(i);
+  return ordenados[a] + (ordenados[Math.min(a + 1, ordenados.length - 1)] - ordenados[a]) * (i - a);
+}
+
+/**
+ * Si el error de área de Revisar viene de la escala de la ubicación y no de los lotes:
+ * `{ pct, origen }` (pct: cuánto se corre el área, en %; origen: "anclas" o "cuadrícula"),
+ * o null. Es la escala si Ubicar ya la avisó (`parametros.escala_cuadro`) o si casi todos
+ * los lotes con área oficial se corren parejo (mismo signo, poca dispersión).
+ */
+export function explicacionAreas(rasgos, georreferencia) {
+  const errores = (rasgos ?? []).map((r) => r.properties?.error_area)
+    .filter((e) => typeof e === 'number' && Number.isFinite(e)).map((e) => e * 100).sort((a, b) => a - b);
+  const origen = georreferencia?.metodo === 'cuadricula' ? 'cuadrícula' : 'anclas';
+  const escala = georreferencia?.parametros?.escala_cuadro;
+  const avisada = (escala && Math.abs(escala.escala_pct) > ESCALA_AVISO_PCT)
+    || (georreferencia?.avisos ?? []).some((a) => /cuadro de superficies/.test(a) && /escala/.test(a));
+  if (avisada) {
+    const pct = escala?.area_pct ?? (errores.length ? cuantil(errores, 0.5) : null);
+    if (pct != null) return { pct, origen };
+  }
+  if (errores.length < LOTES_MINIMOS) return null;
+  const negativos = errores.filter((e) => e < 0).length;
+  const positivos = errores.filter((e) => e > 0).length;
+  const mediana = cuantil(errores, 0.5);
+  if (Math.max(negativos, positivos) < MISMO_SIGNO * errores.length) return null;
+  if (cuantil(errores, 0.75) - cuantil(errores, 0.25) >= DISPERSION_PAREJA) return null;
+  if (Math.abs(mediana) <= MEDIANA_MINIMA) return null;
+  return { pct: mediana, origen };
+}
+
+/** "El área de casi todos los lotes se corre parejo (−5,5 %): …" */
+export function textoEscala({ pct, origen }) {
+  const valor = `${pct < 0 ? '−' : pct > 0 ? '+' : ''}${Math.abs(pct).toFixed(1).replace('.', ',')} %`;
+  const quien = origen === 'cuadrícula' ? 'la cuadrícula encoja o agrande' : 'las anclas encojan o agranden';
+  const revisa = origen === 'cuadrícula' ? 'Revisa los valores de la cuadrícula en Ubicar.' : 'Revisa los puntos en Ubicar.';
+  return `El área de casi todos los lotes se corre parejo (${valor}): lo más probable es que ${quien} el plano. ${revisa}`;
 }
 
 /** "Faltan los números 8-03, 8-05 y 8-11." ("" si no falta ninguno). */
