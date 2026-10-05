@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 
 import { dinero, iniciales, ruta } from './js/comun.js';
 import { avance } from './js/vuelo.js';
+import { coincide } from './js/cierra.js';
 import { cuantosLotes, descargaDe, pasoEnPalabras, terminados, textoDeUso } from './js/kmzs.js';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -342,4 +343,13 @@ test('la tarjeta del escáner anuncia solo el texto y se ve aunque la animación
   const css = readFileSync(join(aqui, 'consola.css'), 'utf8');
   const entrada = css.match(/@keyframes escaner-hoja \{[^\n]*\}/)[0];
   assert.doesNotMatch(entrada, /opacity/);
+});
+
+// --- El buscador de proyectos de Cierra ---------------------------------------------
+
+test('el buscador de Cierra no mira tildes, mayúsculas ni el orden de las palabras', () => {
+  assert.ok(coincide('PRADERAS DE CAUQUENES ET2', 'Praderas de Cauquenes'));
+  assert.ok(coincide('Viñas de Cauquenes', 'cauquenes vinas'));
+  assert.ok(coincide('Alto Coquiao Quena', ''));
+  assert.ok(!coincide('Alto Cauquenes', 'praderas'));
 });
