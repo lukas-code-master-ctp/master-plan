@@ -9,6 +9,7 @@
  */
 import { $, $$, avisar, estado, pedir, ruta } from './comun.js';
 import { pintarBackOffice, prepararBackOffice } from './backoffice.js';
+import { pintarConfiguracion, prepararConfiguracion } from './configuracion.js';
 import { pintarCuenta, prepararCuenta, recordarClaveProvisional } from './cuenta.js';
 import { abrirNuevo, prepararNuevo } from './nuevo.js';
 import { abrirDiseno, pintarDisenos, prepararDisenos } from './disenos.js';
@@ -17,7 +18,7 @@ import { pintarKmzs, prepararKmzs } from './kmzs.js';
 import { cerrarDialogos, pintarPlano, prepararPlano, seguir } from './plano.js';
 import { pintarPlanos } from './planos.js';
 
-const PANTALLAS = ['planos', 'nuevo', 'plano', 'kmzs', 'kmz', 'disenos', 'diseno'];
+const PANTALLAS = ['planos', 'nuevo', 'plano', 'kmzs', 'kmz', 'disenos', 'diseno', 'configuracion'];
 
 let anterior = null;
 // Se llegó a un loteo que no estaba en la lista y se está trayendo: al pintarlo
@@ -65,11 +66,13 @@ function mostrar() {
   }
   document.title = {
     planos: 'Mis planos', nuevo: 'Nuevo master', kmzs: 'Mis KMZ', disenos: 'Mis diseños', diseno: 'Diseño',
+    configuracion: 'Configuración',
   }[destino.pantalla] + ' — Tu Masterplan';
   if (destino.pantalla === 'planos') pintarPlanos();
   if (destino.pantalla === 'kmzs') pintarKmzs();
   if (destino.pantalla === 'nuevo' && llegando) abrirNuevo({ kmz: destino.kmz });
   if (destino.pantalla === 'disenos') pintarDisenos();
+  if (destino.pantalla === 'configuracion' && llegando) pintarConfiguracion();
   // El editor se rellena al llegar: un refresco no pisa lo que se está escribiendo.
   if (destino.pantalla === 'diseno' && llegando) abrirDiseno(destino.id);
 }
@@ -101,6 +104,7 @@ async function arrancar() {
   prepararPlano({ refrescar });
   prepararBackOffice({ refrescar });
   prepararDisenos({ refrescar });
+  prepararConfiguracion();
   prepararKmz({ refrescar });
   prepararKmzs({ refrescar });
   prepararNuevo({

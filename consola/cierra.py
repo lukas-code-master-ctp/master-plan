@@ -233,6 +233,12 @@ class Conexiones:
         fila = self._fila_clave(cliente_id)
         return fila.pista if fila else None
 
+    def guardada_en(self, cliente_id: int) -> datetime | None:
+        fila = self._fila_clave(cliente_id)
+        if fila is None:
+            return None
+        return fila.creado_en if fila.creado_en.tzinfo else fila.creado_en.replace(tzinfo=timezone.utc)
+
     def olvidar_clave(self, cliente_id: int) -> None:
         """Sin clave no hay qué leer: los loteos de esa loteadora se desconectan."""
         self._desconectar_todos(cliente_id)

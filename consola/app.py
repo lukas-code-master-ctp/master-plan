@@ -79,7 +79,7 @@ WEB = Path(__file__).resolve().parent / "web"
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
-           "vuelo.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "lienzo_plano.js",
+           "vuelo.js", "configuracion.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "lienzo_plano.js",
            "mapa_kmz.js", "sondeo.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
@@ -848,7 +848,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                                                       proyecto.vercel_proyecto))
 
     app.include_router(rutas_de_cierra(cierra, conexiones, vista, ocupado=trabajos.corriendo,
-                                       publicar_en_linea=publicar_en_linea))
+                                       publicar_en_linea=publicar_en_linea, quien=quien))
 
     @app.post("/api/proyectos/{slug}/inventario/actualizar")
     def actualizar_inventario(slug: str, mios: Vista = Depends(vista)) -> dict:

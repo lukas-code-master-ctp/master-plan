@@ -566,3 +566,55 @@ def test_la_vuelta_salta_un_loteo_ocupado_sin_preguntarle_a_cierra(entorno):
 
     assert revisiones[0].resultado.startswith("ocupado")
     assert len(http.pedidos) == pedidos
+
+
+# --- desde Nuevo master: la clave y los proyectos de la loteadora, sin loteo -----------
+
+def test_nuevo_master_ve_si_hay_cierra_y_la_clave_de_su_loteadora(entorno):
+    ana, luis, _, slug, _, _, _, _ = entorno
+    assert ana.get("/api/cierra").json() == {"disponible": True, "pista": None, "desde": None,
+                                             "conectado": False, "proyectos": []}
+
+    assert ana.put("/api/cierra/clave", json={"clave": CLAVE_CIERRA}).json() == {"pista": "9876"}
+
+    assert ana.get("/api/cierra").json()["pista"] == "9876"
+    # Es la clave de Ana: la de Luis sigue vacía, y sirve para los loteos de Ana.
+    assert luis.get("/api/cierra").json()["pista"] is None
+    assert ana.get(f"/api/proyectos/{slug}/cierra").json()["pista"] == "9876"
+
+
+def test_nuevo_master_lista_los_proyectos_de_cierra_con_su_etapa(entorno):
+    ana, *_ = entorno
+    assert ana.get("/api/cierra/opciones").status_code == 409
+    ana.put("/api/cierra/clave", json={"clave": CLAVE_CIERRA})
+
+    opciones = ana.get("/api/cierra/opciones").json()["proyectos"]
+
+    assert [(p["nombre"], p["etapa_sugerida"]) for p in opciones][:2] == [
+        ("PRADERAS DE CAUQUENES", 1), ("PRADERAS DE CAUQUENES ET2", 2)]
+
+
+def test_una_clave_mala_desde_nuevo_master_no_se_guarda(entorno):
+    ana, *_ = entorno
+
+    assert ana.put("/api/cierra/clave", json={"clave": "cierra_live_clave_mala"}).status_code == 400
+    assert ana.get("/api/cierra").json()["pista"] is None
+
+
+def test_sin_cierra_configurado_nuevo_master_no_lo_ofrece(tmp_path):
+    app, *_ = montar(tmp_path, cierra=False)
+    ana = entrar(app, "ana@losrobles.cl")
+
+    assert ana.get("/api/cierra").json() == {"disponible": False}
+    assert ana.get("/api/cierra/opciones").status_code == 404
+
+
+def test_quitar_la_clave_desde_configuracion_desconecta_los_masters(entorno):
+    ana, _, _, slug, _, _, _, _ = entorno
+    conectar(ana, slug)
+    assert ana.get("/api/cierra").json()["desde"]
+
+    assert ana.delete("/api/cierra/clave").status_code == 204
+
+    assert ana.get("/api/cierra").json()["pista"] is None
+    assert ana.get(f"/api/proyectos/{slug}/cierra").json()["conectado"] is False
