@@ -38,3 +38,6 @@ publicacion.json
 trabajo_crea_kmz/rotulos/datos/
 # Set de regresión de Crea tu KMZ: planos y KMZ reales con nombres y RUT de propietarios.
 regresion/
+
+# QA local (npm run qa:levantar): base, buzón, publicados, PID y registros de prueba.
+.qa/
