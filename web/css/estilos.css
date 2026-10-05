@@ -62,14 +62,25 @@
 
   --sans: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-  --radio-sm: 0.375rem;
-  --radio-md: 0.5rem;
-  --radio-lg: 0.75rem;
+  /* Cuatro radios, como en un plano: 6 lo que se escribe o se rotula (campos,
+     insignias), 8 lo que se aprieta, 12 las tarjetas, 16 los paneles grandes.
+     En píxeles: la raíz mide 14 px y en rem quedaban todos un octavo más chicos. */
+  --radio-sm: 6px;
+  --radio-md: 8px;
+  --radio-lg: 12px;
+  --radio-xl: 16px;
   --radio-full: 999px;
 
-  --sombra-tarjeta: 0 1px 2px 0 rgb(0 0 0 / 0.03), 0 1px 3px 0 rgb(0 0 0 / 0.04);
-  --sombra-flotante: 0 1px 2px rgb(0 0 0 / 0.06), 0 10px 30px -10px rgb(0 0 0 / 0.35);
+  /* Dos alturas sobre la foto: los controles que flotan (nivel 2) y los paneles
+     que se abren encima de ellos (nivel 3). La sombra va teñida de zinc y no de
+     negro puro: sobre el pasto o la tierra el negro ensucia. */
+  --sombra-hud: 0 4px 12px -2px rgb(24 24 27 / 0.08), 0 2px 6px -1px rgb(24 24 27 / 0.04);
+  --sombra-panel: 0 10px 25px -5px rgb(24 24 27 / 0.15), 0 2px 6px -1px rgb(24 24 27 / 0.06);
   --curva: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Lo que se aprieta. También en píxeles: el mínimo táctil (48 px, ver el
+     bloque del final) es una medida del dedo, no del texto. */
+  --alto-control: 44px;
 
   --alto-cabecera: 4rem;
 }
@@ -126,7 +137,7 @@ button { cursor: pointer; }
 .acciones-rapidas, .puntos, .leyenda, .altimetro, .conmutador, .carta, .filtros, .ficha, .sugerencias {
   background: var(--papel);
   border: 1px solid var(--linea);
-  box-shadow: var(--sombra-tarjeta);
+  box-shadow: var(--sombra-hud);
 }
 
 /* --- Botón con borde ------------------------------------------------------- */
@@ -135,11 +146,11 @@ button { cursor: pointer; }
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  height: 2.5rem;
+  height: var(--alto-control);
   padding: 0 1rem;
   background: var(--papel);
   border: 1px solid var(--linea-fuerte);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio-md);
   color: var(--tinta);
   font: 500 0.875rem/1 var(--sans);
   transition: background 150ms, border-color 150ms;
@@ -243,7 +254,7 @@ button { cursor: pointer; }
 
 .buscador input {
   width: 100%;
-  height: 2.5rem;
+  height: var(--alto-control);
   padding: 0 0.75rem 0 2.25rem;
   background: var(--papel);
   border: 1px solid var(--linea-fuerte);
@@ -266,7 +277,7 @@ button { cursor: pointer; }
   max-height: 17rem;
   overflow-y: auto;
   border-radius: var(--radio-md);
-  box-shadow: var(--sombra-flotante);
+  box-shadow: var(--sombra-panel);
   animation: subir 200ms ease-out;
 }
 
@@ -298,10 +309,10 @@ button { cursor: pointer; }
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  height: 2.5rem;
+  height: var(--alto-control);
   padding: 0 1rem;
   border: 1px solid transparent;
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio-md);
   background: var(--marca-700);
   color: #fff;
   font: 500 0.875rem/1 var(--sans);
@@ -334,7 +345,7 @@ button { cursor: pointer; }
   width: min(20rem, calc(100vw - 2.5rem));
   padding: 1.25rem;
   border-radius: var(--radio-lg);
-  box-shadow: var(--sombra-flotante);
+  box-shadow: var(--sombra-panel);
   animation: subir 200ms ease-out;
 }
 
@@ -586,11 +597,11 @@ button { cursor: pointer; }
 .zoom button {
   display: grid;
   place-items: center;
-  width: 2.25rem; height: 2.25rem;
+  width: var(--alto-control); height: var(--alto-control);
   background: var(--papel);
   border: 1px solid var(--linea);
-  border-radius: var(--radio-sm);
-  box-shadow: var(--sombra-tarjeta);
+  border-radius: var(--radio-md);
+  box-shadow: var(--sombra-hud);
   color: var(--tinta-suave);
   font: 400 1.125rem/1 var(--sans);
   transition: background 150ms, color 150ms;
@@ -779,8 +790,8 @@ button { cursor: pointer; }
   right: 1.25rem;
   bottom: 1.25rem;
   width: 17.5rem;
-  border-radius: var(--radio-lg);
-  box-shadow: var(--sombra-flotante);
+  border-radius: var(--radio-xl);
+  box-shadow: var(--sombra-panel);
   overflow: hidden;
   transition: width 420ms var(--curva);
 }
@@ -837,7 +848,7 @@ button { cursor: pointer; }
   background: var(--papel) !important;
   border: 1px solid var(--linea) !important;
   border-radius: var(--radio-sm) !important;
-  box-shadow: var(--sombra-tarjeta);
+  box-shadow: var(--sombra-hud);
   color: var(--zinc-700) !important;
   font-size: 0.875rem !important;
 }
@@ -852,7 +863,7 @@ button { cursor: pointer; }
   background: var(--papel);
   border: 1.5px solid var(--linea-fuerte);
   border-radius: 50%;
-  box-shadow: var(--sombra-tarjeta);
+  box-shadow: var(--sombra-hud);
   color: var(--tinta);
   font: 700 0.625rem/1 var(--sans);
 }
@@ -863,7 +874,7 @@ button { cursor: pointer; }
   background: var(--papel) !important;
   border: 1px solid var(--linea) !important;
   border-radius: var(--radio-sm) !important;
-  box-shadow: var(--sombra-tarjeta) !important;
+  box-shadow: var(--sombra-hud) !important;
   color: var(--tinta) !important;
   font: 500 0.75rem var(--sans) !important;
 }
@@ -905,8 +916,8 @@ button { cursor: pointer; }
   max-height: min(29rem, 60vh);
   overflow-y: auto;
   padding: 1.25rem;
-  border-radius: var(--radio-lg);
-  box-shadow: var(--sombra-flotante);
+  border-radius: var(--radio-xl);
+  box-shadow: var(--sombra-panel);
   animation: subir 200ms ease-out;
 }
 
@@ -991,7 +1002,12 @@ button { cursor: pointer; }
 /* --- Móvil ------------------------------------------------------------------ */
 
 @media (max-width: 62rem) {
-  :root { --alto-cabecera: 6.75rem; }
+  /* Lo que ocupa abajo la pestaña Vista aérea / Plano, para que lo demás se
+     apoye encima en vez de adivinar cuánto mide. */
+  :root {
+    --alto-cabecera: 7rem;
+    --fondo-conmutador: calc(1.15rem + var(--alto-control) + 0.5rem + 2px);
+  }
 
   .cabecera { flex-wrap: wrap; align-content: center; gap: 0.5rem 0.75rem; padding: 0.6rem 0.9rem; }
   .marca__hito { width: 2rem; height: 2rem; padding: 0.35rem; }
@@ -1009,13 +1025,15 @@ button { cursor: pointer; }
   .altimetro__escala button { padding: 0.2rem 0.35rem 0.2rem 0.2rem; font-size: 0.75rem; }
   .altimetro__escala button[aria-pressed="true"] { font-size: 0.875rem; }
   .altimetro__unidad--pie { display: none; }
-  .zoom button { width: 2.125rem; height: 2.125rem; }
 
   .parcela__pastilla { transform-box: fill-box; }
 
-  .barra-inferior { left: 0.85rem; right: 0.85rem; bottom: 4.2rem; flex-wrap: wrap; }
+  .barra-inferior { left: 0.85rem; right: 0.85rem; bottom: calc(var(--fondo-conmutador) + 0.5rem); flex-wrap: wrap; }
   .accion__texto { display: none; }
   .accion { padding: 0 0.5rem; }
+  /* En el teléfono el plano ya tiene su pestaña abajo. Con los botones a 48 px,
+     el repetido hacía que la barra no cupiera en una línea y montara la pestaña. */
+  #accion-plano { display: none; }
 
   .leyenda {
     left: 0.85rem;
@@ -1032,7 +1050,7 @@ button { cursor: pointer; }
 
   /* El plano pasa a pantalla completa cuando se elige su pestaña. */
   .carta {
-    inset: var(--alto-cabecera) 0 4.4rem;
+    inset: var(--alto-cabecera) 0 calc(var(--fondo-conmutador) + 0.5rem);
     width: auto;
     border: 0;
     border-radius: 0;
@@ -1051,10 +1069,40 @@ button { cursor: pointer; }
     left: 0; right: 0; bottom: 0;
     width: auto;
     max-height: 68vh;
-    border-radius: var(--radio-lg) var(--radio-lg) 0 0;
+    border-radius: var(--radio-xl) var(--radio-xl) 0 0;
     padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
   }
   body:has(.ficha:not([hidden])) .conmutador,
   body:has(.ficha:not([hidden])) .barra-inferior,
   body:has(.ficha:not([hidden])) .instrumentos { display: none; }
+}
+
+/* --- Táctil ----------------------------------------------------------------- */
+
+/* Con el dedo, todo lo que se aprieta mide al menos 48 px por lado. Va por ancho
+   y también por puntero: una tableta apaisada pasa del corte de escritorio y se
+   sigue manejando con el dedo, en terreno y con sol. */
+@media (max-width: 62rem), (pointer: coarse) {
+  :root { --alto-control: 48px; }
+
+  .ficha__cerrar,
+  .carta__accion { width: var(--alto-control); height: var(--alto-control); }
+
+  .accion, .pestana { height: var(--alto-control); }
+  .accion { min-width: var(--alto-control); justify-content: center; }
+  .puntos__fila button { min-width: var(--alto-control); height: var(--alto-control); }
+  .altimetro__escala button { min-height: var(--alto-control); }
+
+  .chip { height: var(--alto-control); padding: 0 1rem; }
+  .rango input { height: var(--alto-control); }
+  .interruptor { min-height: var(--alto-control); }
+  .filtros__pie .boton { height: var(--alto-control); }
+  .sugerencias li { min-height: var(--alto-control); }
+
+  .leaflet-control-zoom a {
+    width: var(--alto-control) !important;
+    height: var(--alto-control) !important;
+    line-height: calc(var(--alto-control) - 2px) !important;
+    font-size: 1.125rem !important;
+  }
 }
