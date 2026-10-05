@@ -157,7 +157,8 @@ def test_el_rectangulo_no_puede_cruzar_el_horizonte_de_la_foto():
     img = np.full((600, 800, 3), 240, np.uint8)
     esquinas = [[250, 100], [550, 100], [700, 500], [100, 500]]
     e = pag.encuadrar(img, 4.0, [100, 100, 700, 500], esquinas=esquinas, marco_mm=[200, 200])
-    assert e.imagen.shape[:2] == (1202, 2401)
+    # El rectángulo rectificado va de x = -600 a 1800 y de y = 0 a 1200, exacto.
+    assert e.imagen.shape[:2] == (1200, 2400)
     for rect in ([0, -400, 800, 600],      # cruza el horizonte
                  [0, 0, 800, 600]):        # no lo cruza, pero rectificado sería enorme
         with pytest.raises(ValueError, match="se sale de la hoja"):
