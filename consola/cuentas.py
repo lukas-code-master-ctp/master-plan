@@ -28,6 +28,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Protocol
 
 from .datos import Base, EmailYaExiste, Usuario
@@ -100,11 +101,49 @@ class CorreoEnElRegistro:
             registro.error("no se envió el correo a %s (%s): falta SENDGRID_API_KEY", para, asunto)
 
 
+class CorreoEnCarpeta:
+    """Para probar en este computador: cada correo queda como un JSON en una carpeta.
+
+    Así una prueba (o `npm run qa:correos`) lee el enlace sin buscarlo en el
+    registro. El nombre del archivo empieza con la hora en nanosegundos, para
+    ordenarlos, y lleva un token corto: dos correos en el mismo instante no se pisan.
+    """
+
+    puede_enviar = True
+    ENLACE = re.compile(r"https?://[^\s<>\"']+")
+
+    def __init__(self, carpeta: Path):
+        self.carpeta = Path(carpeta)
+        self.enviados: list[tuple[str, str, str]] = []
+
+    def enviar(self, para: str, asunto: str, texto: str) -> None:
+        self.enviados.append((para, asunto, texto))
+        self.carpeta.mkdir(parents=True, exist_ok=True)
+        correo = {
+            "para": para, "asunto": asunto, "texto": texto,
+            # Sin el punto o el paréntesis que cierra la frase.
+            "enlaces": [e.rstrip(".,;:)") for e in self.ENLACE.findall(texto)],
+            "enviado_en": datetime.now(timezone.utc).isoformat(),
+        }
+        nombre = f"{time.time_ns():020d}-{secrets.token_hex(3)}.json"
+        # Primero a un temporal y después se renombra: quien lee la carpeta nunca
+        # ve un correo a medio escribir.
+        temporal = self.carpeta / f".{nombre}.tmp"
+        temporal.write_text(json.dumps(correo, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temporal, self.carpeta / nombre)
+        registro.warning("correo a %s — %s (en %s)\n%s", para, asunto, self.carpeta / nombre, texto)
+
+
 def correo_del_entorno(local: bool) -> Correo:
     clave = os.environ.get("SENDGRID_API_KEY", "").strip()
-    if not clave:
-        return CorreoEnElRegistro(local)
-    return CorreoSendGrid(clave, os.environ.get("EMAIL_FROM", "no-responder@tumasterplan.cl"))
+    if clave:
+        return CorreoSendGrid(clave, os.environ.get("EMAIL_FROM", "no-responder@tumasterplan.cl"))
+    # El buzón en disco, solo en este computador: desplegada serían correos que
+    # nadie recibe con el registro abierto.
+    buzon = os.environ.get("CONSOLA_BUZON", "").strip()
+    if local and buzon:
+        return CorreoEnCarpeta(Path(buzon))
+    return CorreoEnElRegistro(local)
 
 
 # --- topes -----------------------------------------------------------------------
