@@ -53,16 +53,21 @@ echo "$salida"
 # La URL de ESTE despliegue (`…-5huo5t5m5.vercel.app`): cambia en cada
 # publicación. `vercel deploy` imprime un JSON cuando el CLI no está en una
 # terminal; si no, la última línea con https.
-despliegue=$(printf '%s\n' "$salida" | grep -oE 'https://[^"[:space:]]+' | tail -1)
+#
+# Además de https se acepta http, pero solo a la propia máquina (127.0.0.1 o
+# localhost, con o sin puerto): es lo que imprime el `vercel` falso de QA local
+# (qa/bin/vercel). El real nunca devuelve http, así que en producción no cambia nada.
+url_valida='^(https://|http://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|$))'
+despliegue=$(printf '%s\n' "$salida" | grep -oE 'https?://[^"[:space:]]+' | grep -E "$url_valida" | tail -1)
 
 # La que hay que guardar es la fija del loteo: uno de los alias de producción.
 # Primero un dominio propio (<slug>.tumasterplan.cl) si lo tiene; si no, el
 # alias .vercel.app más corto, que es el nombre del proyecto (el otro lleva
 # pegado el nombre del equipo). Sin alias, queda la del despliegue.
 alias_=$(vercel inspect "$despliegue" --scope "$scope" ${token[@]+"${token[@]}"} 2>&1 \
-  | awk '/^ *Aliases/ {dentro=1; next} dentro && /https:\/\// {print $NF; next} dentro && /^ *[A-Z]/ {exit}' \
-  || true)
-propio=$(printf '%s\n' "$alias_" | grep -v '\.vercel\.app$' | grep '^https://' | head -1 || true)
+  | awk '/^ *Aliases/ {dentro=1; next} dentro && /https?:\/\// {print $NF; next} dentro && /^ *[A-Z]/ {exit}' \
+  | grep -E "$url_valida" || true)
+propio=$(printf '%s\n' "$alias_" | grep -v '\.vercel\.app$' | grep -E "$url_valida" | head -1 || true)
 corto=$(printf '%s\n' "$alias_" | grep '\.vercel\.app$' | awk '{print length, $0}' | sort -n | head -1 | cut -d' ' -f2- || true)
 url="${propio:-${corto:-$despliegue}}"
 

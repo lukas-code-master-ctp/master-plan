@@ -48,9 +48,8 @@ def test_crear_copia_el_sitio_y_anota_la_url_local(tmp_path):
     assert not (publicado / ".vercel").exists()
     datos = rastro(tmp_path)
     assert datos["proyecto"] == PROYECTO
-    # El fragmento no viaja al servidor: abre <base>/<proyecto>/ tal cual.
-    assert datos["url"] == f"{BASE}/{PROYECTO}/#.vercel.app"
-    assert datos["despliegue"] == f"https://{PROYECTO}-qa.vercel.local"
+    assert datos["url"] == f"{BASE}/{PROYECTO}/"
+    assert datos["despliegue"] == f"{BASE}/{PROYECTO}/"
 
 
 def test_publicar_de_nuevo_reemplaza_el_contenido(tmp_path):
@@ -66,7 +65,7 @@ def test_publicar_de_nuevo_reemplaza_el_contenido(tmp_path):
     publicado = tmp_path / "publicados" / PROYECTO
     assert (publicado / "index.html").read_text(encoding="utf-8") == "<html>segunda</html>"
     assert not (publicado / "viejo.js").exists()
-    assert rastro(tmp_path)["url"].split("#")[0] == f"{BASE}/{PROYECTO}/"
+    assert rastro(tmp_path)["url"] == f"{BASE}/{PROYECTO}/"
 
 
 def test_crear_dos_veces_el_mismo_proyecto_falla(tmp_path):
@@ -80,6 +79,16 @@ def test_crear_dos_veces_el_mismo_proyecto_falla(tmp_path):
     assert "already exists" in hecho.stderr
     publicado = tmp_path / "publicados" / PROYECTO / "index.html"
     assert publicado.read_text(encoding="utf-8") == "<html>primera</html>"
+
+
+def test_inspect_de_un_despliegue_que_no_existe_falla(tmp_path):
+    hecho = subprocess.run([str(BIN / "vercel"), "inspect", f"{BASE}/no-existe/"],
+                           capture_output=True, text=True,
+                           env={**os.environ, "QA_PUBLICADOS": str(tmp_path),
+                                "QA_URL_PUBLICADOS": BASE})
+
+    assert hecho.returncode == 1
+    assert "no se encontró" in hecho.stderr
 
 
 def test_otro_subcomando_falla(tmp_path):

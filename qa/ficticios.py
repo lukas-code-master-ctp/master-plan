@@ -23,8 +23,8 @@ from pathlib import Path
 
 from consola.cierra import COLUMNAS, ETIQUETAS
 from pipeline import geo
+from pipeline.sintetico import escribir_panorama
 from pipeline.solar import posicion_solar
-from pipeline.tests.test_panoramas import escribir_panorama
 
 from .cierra_falsa import PARCELAS
 

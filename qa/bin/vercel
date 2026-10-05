@@ -17,17 +17,10 @@ base de `QA_URL_PUBLICADOS` (por defecto `http://127.0.0.1:<puerto>`, con el pue
 de `QA_PUERTO_PUBLICADOS` o 8792). Servir esa carpeta no es cosa de este script:
 lo hace `qa:levantar`.
 
-Lo de la URL tiene su vuelta. `publicar.sh` solo reconoce URLs `https://`: la
-del despliegue la saca con `grep 'https://…'` y de los alias de `inspect` se
-queda con un dominio propio que empiece con `https://` o, si no hay, con el que
-termine en `.vercel.app` (ese sin mirar el esquema). La local es `http://`, así
-que por las buenas nunca llegaría a `publicacion.json`. Entonces:
-
-- `deploy` imprime un identificador `https://<proyecto>-qa.vercel.local`, que no
-  se abre en ningún lado pero que `inspect` sabe traducir al proyecto.
-- `inspect` lista como alias `http://127.0.0.1:8792/<proyecto>/#.vercel.app`: el
-  `.vercel.app` va en el fragmento, que el navegador no le manda al servidor y el
-  visor no lee (usa `location.search`), así que la URL abre el sitio tal cual.
+`deploy` imprime la URL local del sitio, `<base>/<proyecto>/`, y `inspect` la lista
+tal cual como alias. `publicar.sh` acepta `http://` solo hacia 127.0.0.1 o
+localhost (el real nunca devuelve http), así que es esa la que queda en
+`publicacion.json`.
 """
 from __future__ import annotations
 
@@ -38,9 +31,9 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 REPO = Path(__file__).resolve().parents[2]
-SUFIJO_DESPLIEGUE = "-qa.vercel.local"
 # Como el real: minúsculas, dígitos, punto, guion y guion bajo, hasta 100.
 NOMBRE_VALIDO = re.compile(r"^[a-z0-9][a-z0-9._-]{0,99}$")
 
@@ -141,29 +134,26 @@ def deploy(opciones: dict) -> None:
         nuevo.rename(destino)
     finally:
         shutil.rmtree(temporal, ignore_errors=True)
-    print(f"Production: {url_base()}/{nombre}/", file=sys.stderr)
-    print(f"https://{nombre}{SUFIJO_DESPLIEGUE}")
+    print(f"{url_base()}/{nombre}/")
 
 
 def inspect(posicionales: list[str]) -> None:
     despliegue = posicionales[0] if posicionales else ""
-    coincide = re.fullmatch(rf"https://(.+){re.escape(SUFIJO_DESPLIEGUE)}/?", despliegue)
-    if not coincide:
+    # El despliegue es la URL local; el proyecto es el último tramo de su ruta.
+    nombre = urlsplit(despliegue).path.strip("/").rsplit("/", 1)[-1]
+    if not despliegue.startswith(url_base() + "/") or not NOMBRE_VALIDO.match(nombre) \
+            or not carpeta_del_proyecto(nombre).is_dir():
         morir(f"no se encontró el despliegue «{despliegue}»")
-    nombre = coincide.group(1)
-    if not carpeta_del_proyecto(nombre).is_dir():
-        morir(f"no se encontró el despliegue «{despliegue}»")
-    # Ver el docstring: el `#.vercel.app` es para que `publicar.sh` elija esta.
-    local = f"{url_base()}/{nombre}/#.vercel.app"
+    local = f"{url_base()}/{nombre}/"
     print(f"""
   General
 
     id\t\tqa_{nombre}
-    url\t\t{despliegue}
+    url\t\t{local}
 
   Aliases
 
-    ╶ {despliegue} → {local}
+    ╶ {local}
 
   Builds
 
