@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {
   anclaDesde, aPagina, claveLote, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
-  puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, siguienteNombre, sinNumero, sugerencias,
+  puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias,
   tamanoRotado, textoHuecos, vistaAjustada, zoomEn,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
@@ -244,6 +244,16 @@ test('la revisión cuenta por color y marca los sin número y repetidos', () => 
   ];
   assert.deepEqual(resumenRevision(rasgos),
     { lotes: 4, verde: 2, ambar: 0, rojo: 1, gris: 1, sin_numero: 2, sin_numero_lote: 1, duplicados: 1 });
+});
+
+test('el sesgo de escala: casi todos los lotes hacia el mismo lado y más de 3 %', () => {
+  const con = (...errores) => errores.map((e) => ({ properties: { error_area: e } }));
+  cerca(sesgoDeEscala(con(0.06, 0.07, 0.05, 0.08, 0.06)), 0.06);
+  cerca(sesgoDeEscala(con(-0.05, -0.06, -0.04, -0.07)), -0.055);
+  assert.equal(sesgoDeEscala(con(0.02, 0.03, 0.01, 0.025)), null);         // dentro de lo normal
+  assert.equal(sesgoDeEscala(con(0.06, -0.06, 0.07, -0.08, 0.05)), null);  // unos y otros: el dibujo
+  assert.equal(sesgoDeEscala(con(0.06, 0.07)), null);                      // muy pocos
+  assert.equal(sesgoDeEscala([...con(0.06, 0.07, 0.08), { properties: {} }]), 0.07);
 });
 
 test('las partes sin número: primero los lotes, y entre ellos los que traen sugerencia', () => {
