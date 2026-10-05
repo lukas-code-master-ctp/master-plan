@@ -41,13 +41,13 @@ import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from math import gcd, hypot
 
 import cv2
 import numpy as np
 
-from .numeros import mismo_lote, ultimo
+from .numeros import mismo_lote, segun_cuadro, ultimo
 
 # Una hebra por proceso de Tesseract: las pasadas ya corren en paralelo. Antes de
 # lanzar el primer subproceso (lo heredan).
@@ -684,8 +684,13 @@ def combinar(usuario, lector: list[Rotulo], radio: float, apoyo_min: int = APOYO
       cuadro se leyó a medias. Si el cuadro dejaría fuera a más de la mitad de lo
       leído con apoyo, no se usa (no es el de superficies).
 
+    Con cuadro, un número leído con otro sector que el del cuadro se corrige antes
+    (`numeros.segun_cuadro`: "6-09" es el "8-09").
+
     Devuelve [{"numero", "x", "y", "origen": "usuario"|"lector", "confianza", "apoyo"}].
     """
+    if oficiales:
+        lector = [replace(r, numero=segun_cuadro(r.numero, oficiales)) for r in lector]
     salida = []
     for s in usuario:
         n, x, y = (s["numero"], s["x"], s["y"]) if isinstance(s, dict) else s

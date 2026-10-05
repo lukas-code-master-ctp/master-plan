@@ -51,6 +51,19 @@ def buscar(por_numero: dict, numero):
     return parecidos[0] if len(parecidos) == 1 else None
 
 
+def segun_cuadro(numero, oficiales) -> str:
+    """`numero` corregido con el cuadro de superficies (`oficiales`: sus números). Si no
+    está en el cuadro y el cuadro trae uno solo con el mismo número dentro del sector
+    pero otro sector, es ese: el lector confunde el 8 con el 6 o el 3 (Caminos de Rapel:
+    "6-09" por "8-09", y el lote quedaba sin área oficial). Si no, queda como viene."""
+    oficiales = [str(n) for n in oficiales]
+    if not oficiales or any(mismo_lote(numero, n) for n in oficiales) or "-" not in clave(numero):
+        return str(numero)
+    n = ultimo(numero)
+    parecidos = [o for o in oficiales if "-" in clave(o) and ultimo(o) == n]
+    return parecidos[0] if len(parecidos) == 1 else str(numero)
+
+
 def repetidos(numeros) -> list[str]:
     """Los números (como vienen) cuya clave aparece más de una vez."""
     numeros = [str(n) for n in numeros]
