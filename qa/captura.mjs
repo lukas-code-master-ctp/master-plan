@@ -314,7 +314,8 @@ async function principal() {
   const playwright = await cargarPlaywright();
   if (!playwright) {
     console.error('No encontré Playwright: ni en node_modules del repo ni el global (`npm root -g`).\n'
-      + 'Instálalo con `npm install -g playwright` y su Chromium con `npx playwright install chromium`.');
+      + 'Instálalo con `npm install -g playwright`. En los hilos en la nube el Chromium ya está en\n'
+      + '$PLAYWRIGHT_BROWSERS_PATH: no corras `playwright install`.');
     return 1;
   }
   let navegador;
