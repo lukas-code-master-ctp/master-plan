@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 
 import { dinero, iniciales, ruta } from './js/comun.js';
 import { avance } from './js/vuelo.js';
+import { coincide } from './js/cierra.js';
 import { cuantosLotes, descargaDe, pasoEnPalabras, terminados, textoDeUso } from './js/kmzs.js';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -352,4 +353,13 @@ test('actualizar desde Cierra cuenta los pasos de construir y de publicar', () =
   assert.equal(progreso.titulo, 'Subiendo a la web');
   assert.equal(avance([...lineas, '▶ URL publicada: https://masterplan-x.vercel.app'], 'actualizar', true).resumen,
     'Al día en línea: https://masterplan-x.vercel.app');
+});
+
+// --- El buscador de proyectos de Cierra ---------------------------------------------
+
+test('el buscador de Cierra no mira tildes, mayúsculas ni el orden de las palabras', () => {
+  assert.ok(coincide('PRADERAS DE CAUQUENES ET2', 'Praderas de Cauquenes'));
+  assert.ok(coincide('Viñas de Cauquenes', 'cauquenes vinas'));
+  assert.ok(coincide('Alto Coquiao Quena', ''));
+  assert.ok(!coincide('Alto Cauquenes', 'praderas'));
 });
