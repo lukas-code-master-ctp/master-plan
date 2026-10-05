@@ -43,8 +43,10 @@ export const PASOS = {
 
 /**
  * El avance dentro de un paso largo: las líneas "X de Y" que lo anuncian y qué tramo
- * del paso reparte cada una. Leer los números son 96 pasadas de Tesseract (casi todo
- * lo que tarda digitalizar) y después unas pocas de la cuadrícula.
+ * del paso reparte cada una. Leer los números son hasta 96 pasadas de Tesseract (casi
+ * todo lo que tarda digitalizar) y después unas pocas de la cuadrícula. Mientras se
+ * sondean las orientaciones, Y es 96; después, las que de verdad se leen (26–46): la
+ * barra salta adelante, nunca atrás.
  */
 const DENTRO = {
   'digitalizar-plano': {
@@ -143,7 +145,7 @@ function causaDe(lineas) {
     .filter((l) => /^(\w+Error|Error|error):|no pude|no encontré|falta/i.test(l));
   const ultima = errores.at(-1);
   if (!ultima) return 'Algo falló. El detalle está en el registro.';
-  return ultima.replace(/^\w+Error:\s*/, '');
+  return ultima.replace(/^(\w*Error|error):\s*/, '');
 }
 
 /**
