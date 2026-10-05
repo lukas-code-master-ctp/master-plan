@@ -2,7 +2,7 @@ import pytest
 
 from pipeline.construir import _revisar_ids_de_vista
 from pipeline.panoramas import buscar_panoramas, leer_panorama
-from pipeline.tests.test_panoramas import escribir_panorama
+from pipeline.sintetico import escribir_panorama
 
 
 def test_acepta_vistas_con_ids_distintos(tmp_path):
