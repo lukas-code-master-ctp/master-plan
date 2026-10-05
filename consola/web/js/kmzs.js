@@ -58,7 +58,6 @@ export const descargaDe = (slug) => `${rutaDelKmz(slug)}/descargar`;
 export function prepararKmzs(opciones) {
   refrescar = opciones.refrescar;
   $('#kmzs-nuevo').addEventListener('click', () => abrirNombre());
-  $('#planos-nuevo-kmz').addEventListener('click', () => abrirNombre());
 
   $('#kmzs').addEventListener('click', (evento) => {
     const nodo = evento.target.closest('[data-renombrar], [data-borrar], [data-usar]');
