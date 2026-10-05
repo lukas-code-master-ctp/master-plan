@@ -1,11 +1,9 @@
 /** Orquestador: conecta datos, visor, mapa, ficha y filtros. */
-import { Catalogo, ErrorDeDatos, buscar, filtrar } from './datos.js';
+import { Catalogo, ErrorDeDatos, buscar, filtrar, romano } from './datos.js';
 import { aplicarMarca, ponerLogo } from './marca.js';
 import { renderizarFicha } from './ficha.js';
 import { Mapa } from './mapa.js';
 import { Visor } from './visor.js';
-
-const ROMANOS = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -189,8 +187,8 @@ function construirControles() {
   $('#controles-posicion').replaceChildren(...posiciones.map(({ posicion }) => {
     const boton = document.createElement('button');
     boton.type = 'button';
-    boton.textContent = ROMANOS[posicion] ?? posicion;
-    boton.title = `Punto de vuelo ${posicion}`;
+    boton.textContent = romano(posicion);
+    boton.title = `${estado.catalogo.nombrePunto(posicion)} · ${estado.catalogo.alturasDePunto(posicion)}`;
     boton.addEventListener('click', () => irAPosicion(posicion));
     boton.dataset.posicion = posicion;
     return boton;

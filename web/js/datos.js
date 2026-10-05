@@ -2,6 +2,13 @@
 
 const RUTA_DATOS = 'datos';
 
+const ROMANOS = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
+
+/** El punto de vuelo en romanos, como se le dice en terreno; fuera de la tabla, el número. */
+export function romano(posicion) {
+  return ROMANOS[posicion] ?? String(posicion);
+}
+
 export class Catalogo {
   constructor(parcelas, vistas, diseno = null) {
     this.meta = parcelas;
@@ -58,6 +65,19 @@ export class Catalogo {
         posicion,
         alturas: lista.sort((a, b) => a.altura_m - b.altura_m),
       }));
+  }
+
+  /** "Punto II". */
+  nombrePunto(posicion) {
+    return `Punto ${romano(posicion)}`;
+  }
+
+  /** "210 m", o "40–120 m" si el punto se voló a varias alturas. Vacío si no hay vistas. */
+  alturasDePunto(posicion) {
+    const alturas = this.vistas.filter((v) => v.posicion === posicion).map((v) => v.altura_m);
+    if (!alturas.length) return '';
+    const [baja, alta] = [Math.min(...alturas), Math.max(...alturas)];
+    return baja === alta ? `${baja} m` : `${baja}–${alta} m`;
   }
 
   /** La vista de la misma posición cuya altura sea la más parecida a la pedida. */
