@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""Un `vercel` de mentira para QA local: publica en una carpeta de la máquina.
+
+Imita los cuatro subcomandos que usa `publicar.sh` (`project add`, `link`,
+`deploy --prod` e `inspect`) y nada más, para que el `publicar.sh` de verdad
+corra sin tocar el hosting:
+
+- `project add <nombre>` crea `<publicados>/<nombre>/`. Si ya existe falla, igual
+  que el real: es la protección contra colisiones que `--crear` tiene que probar.
+- `link --project <nombre> --cwd <sitio>` deja `<sitio>/.vercel/project.json`.
+- `deploy --prod --cwd <sitio>` copia el sitio (sin `.vercel`) a
+  `<publicados>/<proyecto>/`, reemplazando lo que había.
+- `inspect <despliegue>` lista los alias, entre ellos la URL local.
+
+La carpeta sale de `QA_PUBLICADOS` (por defecto `<repo>/.qa/publicados`) y la URL
+base de `QA_URL_PUBLICADOS` (por defecto `http://127.0.0.1:<puerto>`, con el puerto
+de `QA_PUERTO_PUBLICADOS` o 8792). Servir esa carpeta no es cosa de este script:
+lo hace `qa:levantar`.
+
+Lo de la URL tiene su vuelta. `publicar.sh` solo reconoce URLs `https://`: la
+del despliegue la saca con `grep 'https://…'` y de los alias de `inspect` se
+queda con un dominio propio que empiece con `https://` o, si no hay, con el que
+termine en `.vercel.app` (ese sin mirar el esquema). La local es `http://`, así
+que por las buenas nunca llegaría a `publicacion.json`. Entonces:
+
+- `deploy` imprime un identificador `https://<proyecto>-qa.vercel.local`, que no
+  se abre en ningún lado pero que `inspect` sabe traducir al proyecto.
+- `inspect` lista como alias `http://127.0.0.1:8792/<proyecto>/#.vercel.app`: el
+  `.vercel.app` va en el fragmento, que el navegador no le manda al servidor y el
+  visor no lee (usa `location.search`), así que la URL abre el sitio tal cual.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[2]
+SUFIJO_DESPLIEGUE = "-qa.vercel.local"
+# Como el real: minúsculas, dígitos, punto, guion y guion bajo, hasta 100.
+NOMBRE_VALIDO = re.compile(r"^[a-z0-9][a-z0-9._-]{0,99}$")
+
+
+def publicados() -> Path:
+    return Path(os.environ.get("QA_PUBLICADOS") or REPO / ".qa" / "publicados")
+
+
+def url_base() -> str:
+    # Si `qa:levantar` corrió con otro `QA_PUERTO_PUBLICADOS`, la URL lo sigue.
+    puerto = os.environ.get("QA_PUERTO_PUBLICADOS") or "8792"
+    return (os.environ.get("QA_URL_PUBLICADOS") or f"http://127.0.0.1:{puerto}").rstrip("/")
+
+
+def morir(mensaje: str) -> None:
+    print(f"Error: {mensaje}", file=sys.stderr)
+    sys.exit(1)
+
+
+def leer_opciones(argumentos: list[str]) -> tuple[list[str], dict[str, str | bool]]:
+    """Separa posicionales de opciones. Las que llevan valor son las que usa
+    `publicar.sh`; las demás (`--yes`, `--prod`) quedan como verdaderas."""
+    con_valor = {"--scope", "--token", "--cwd", "--project"}
+    posicionales: list[str] = []
+    opciones: dict[str, str | bool] = {}
+    i = 0
+    while i < len(argumentos):
+        arg = argumentos[i]
+        if arg.startswith("--") and "=" in arg:
+            nombre, valor = arg.split("=", 1)
+            opciones[nombre] = valor
+        elif arg in con_valor:
+            if i + 1 >= len(argumentos):
+                morir(f"falta el valor de {arg}")
+            opciones[arg] = argumentos[i + 1]
+            i += 1
+        elif arg.startswith("-"):
+            opciones[arg] = True
+        else:
+            posicionales.append(arg)
+        i += 1
+    return posicionales, opciones
+
+
+def carpeta_del_proyecto(nombre: str) -> Path:
+    if not NOMBRE_VALIDO.match(nombre):
+        morir(f"el nombre de proyecto «{nombre}» no es válido")
+    return publicados() / nombre
+
+
+def sitio_de(opciones: dict) -> Path:
+    return Path(str(opciones.get("--cwd") or "."))
+
+
+def project_add(posicionales: list[str], opciones: dict) -> None:
+    if not posicionales:
+        morir("uso: vercel project add <nombre>")
+    nombre = posicionales[0]
+    carpeta = carpeta_del_proyecto(nombre)
+    if carpeta.exists():
+        morir(f"Project already exists: «{nombre}» ya existe en {opciones.get('--scope', '')}")
+    carpeta.mkdir(parents=True)
+    print(f"Success! Project {nombre} added ({opciones.get('--scope', '')})")
+
+
+def link(opciones: dict) -> None:
+    nombre = opciones.get("--project")
+    if not isinstance(nombre, str):
+        morir("uso: vercel link --yes --project <nombre> --cwd <sitio>")
+    # El real enlaza a uno existente; acá, para no complicar, lo crea si falta.
+    carpeta_del_proyecto(nombre).mkdir(parents=True, exist_ok=True)
+    enlace = sitio_de(opciones) / ".vercel"
+    enlace.mkdir(parents=True, exist_ok=True)
+    (enlace / "project.json").write_text(json.dumps({
+        "projectId": f"qa_{nombre}",
+        "orgId": str(opciones.get("--scope", "")),
+        "projectName": nombre,
+    }), encoding="utf-8")
+    print(f"Linked to {opciones.get('--scope', '')}/{nombre}")
+
+
+def deploy(opciones: dict) -> None:
+    sitio = sitio_de(opciones)
+    enlace = sitio / ".vercel" / "project.json"
+    if not enlace.is_file():
+        morir(f"{sitio} no está enlazado: falta correr `vercel link`")
+    nombre = json.loads(enlace.read_text(encoding="utf-8"))["projectName"]
+    destino = carpeta_del_proyecto(nombre)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    # Se copia al lado y recién ahí se cambia con dos `rename`: nunca queda un
+    # sitio a medias, y si la copia falla no queda basura en los publicados.
+    temporal = Path(tempfile.mkdtemp(prefix=f".{nombre}-", dir=destino.parent))
+    try:
+        nuevo = temporal / "sitio"
+        shutil.copytree(sitio, nuevo, ignore=shutil.ignore_patterns(".vercel"))
+        if destino.exists():
+            destino.rename(temporal / "viejo")
+        nuevo.rename(destino)
+    finally:
+        shutil.rmtree(temporal, ignore_errors=True)
+    print(f"Production: {url_base()}/{nombre}/", file=sys.stderr)
+    print(f"https://{nombre}{SUFIJO_DESPLIEGUE}")
+
+
+def inspect(posicionales: list[str]) -> None:
+    despliegue = posicionales[0] if posicionales else ""
+    coincide = re.fullmatch(rf"https://(.+){re.escape(SUFIJO_DESPLIEGUE)}/?", despliegue)
+    if not coincide:
+        morir(f"no se encontró el despliegue «{despliegue}»")
+    nombre = coincide.group(1)
+    if not carpeta_del_proyecto(nombre).is_dir():
+        morir(f"no se encontró el despliegue «{despliegue}»")
+    # Ver el docstring: el `#.vercel.app` es para que `publicar.sh` elija esta.
+    local = f"{url_base()}/{nombre}/#.vercel.app"
+    print(f"""
+  General
+
+    id\t\tqa_{nombre}
+    url\t\t{despliegue}
+
+  Aliases
+
+    ╶ {despliegue} → {local}
+
+  Builds
+
+    ╶ .        [0ms]
+""")
+
+
+def main(argumentos: list[str]) -> None:
+    if not argumentos:
+        morir("falta el subcomando (este vercel de QA solo sabe project add, link, deploy e inspect)")
+    comando, resto = argumentos[0], argumentos[1:]
+    posicionales, opciones = leer_opciones(resto)
+    if comando == "project" and posicionales[:1] == ["add"]:
+        project_add(posicionales[1:], opciones)
+    elif comando == "link":
+        link(opciones)
+    elif comando == "deploy":
+        deploy(opciones)
+    elif comando == "inspect":
+        inspect(posicionales)
+    else:
+        morir(f"«{' '.join(argumentos)}» no existe en el vercel de QA "
+              "(solo project add, link, deploy e inspect)")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
