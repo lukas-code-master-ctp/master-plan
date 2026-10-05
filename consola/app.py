@@ -431,12 +431,25 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         # inventario por debajo a la que está leyendo.
         aviso = (None if trabajos.corriendo(slug)
                  else sincronizar_antes_de_construir(cierra, conexiones, proyecto))
-        # El control de calce va pegado a la construcción: es lo que hay que mirar
-        # antes de publicar, y pedirlo aparte se olvida.
-        lanzado = lanzar(proyecto, "construir", encadenar(
-            comandos.construir(proyecto, sin_imagenes=sin_imagenes),
-            comandos.control_de_calce(proyecto),
-        ), al_terminar=_aplicar_diseno(mios, disenos, slug))
+        pasos = [comandos.construir(proyecto, sin_imagenes=sin_imagenes),
+                 # El control de calce va pegado a la construcción: es lo que hay
+                 # que mirar antes de publicar, y pedirlo aparte se olvida.
+                 comandos.control_de_calce(proyecto)]
+        al_terminar = _aplicar_diseno(mios, disenos, slug)
+        accion = "construir"
+        # Con `publicar`, un loteo que ya está en línea queda al día en el sitio
+        # también (lo pide "Actualizar desde Cierra"): si no, la consola muestra
+        # los precios nuevos y el comprador sigue viendo los viejos. Solo si ya
+        # estaba publicado y pagado: la primera publicación se confirma a mano.
+        if opciones.get("publicar") and proyecto.publicado and proyecto.pagado and proyecto.vercel_proyecto:
+            # El diseño se escribe antes: la construcción no lo toca y la
+            # publicación tiene que salir con la marca puesta.
+            disenos.escribir_en_sitio(proyecto.diseno_id, proyecto.salida.datos)
+            pasos.append(comandos.publicar(proyecto, vercel_proyecto=proyecto.vercel_proyecto))
+            al_terminar = _en_orden(al_terminar,
+                                    _anotar_publicacion(mios, proyecto, proyecto.vercel_proyecto))
+            accion = "actualizar"
+        lanzado = lanzar(proyecto, accion, encadenar(*pasos), al_terminar=al_terminar)
         return {**lanzado, "aviso": aviso} if aviso else lanzado
 
     @app.post("/api/proyectos/{slug}/publicar", status_code=202)
@@ -894,6 +907,14 @@ def _aplicar_diseno(mios: Vista, disenos: Disenos, slug: str):
             disenos.escribir_en_sitio(proyecto.diseno_id, proyecto.salida.datos)
 
     return aplicar
+
+
+def _en_orden(*avisos):
+    """Varios `al_terminar` para un mismo trabajo, uno tras otro."""
+    def todos(trabajo) -> None:
+        for aviso in avisos:
+            aviso(trabajo)
+    return todos
 
 
 def _anotar_publicacion(mios: Vista, proyecto: Proyecto, nombre: str):

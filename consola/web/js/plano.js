@@ -27,18 +27,21 @@ export function prepararPlano(opciones) {
   prepararSubida();
   prepararPago();
   prepararInventario({ alSubir: actualizarInventario });
-  prepararCierra({ traido: actualizarInventario });
+  // Lo que llega de Cierra es lo que hay que vender: un loteo ya publicado se
+  // vuelve a publicar solo, para que el sitio no se quede con lo de ayer.
+  prepararCierra({ traido: (slug) => actualizarInventario(slug, { publicar: true }) });
 }
 
 /**
  * Con el inventario nuevo arriba, lo construido se pone al día. Las fotos no
  * cambiaron: se salta generarlas, que es lo que toma minutos.
  */
-async function actualizarInventario(slug) {
+async function actualizarInventario(slug, { publicar = false } = {}) {
   await refrescar();
   const proyecto = estado.proyectos.find((p) => p.slug === slug);
   if (proyecto?.construido && !proyecto.trabajo) {
-    await lanzar(proyecto, 'construir', { sin_imagenes: true });
+    // Con `publicar`, si ya está en línea el sitio también queda al día.
+    await lanzar(proyecto, 'construir', { sin_imagenes: true, publicar });
   }
 }
 

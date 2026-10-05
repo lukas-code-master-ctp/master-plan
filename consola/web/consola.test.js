@@ -345,6 +345,16 @@ test('la tarjeta del escáner anuncia solo el texto y se ve aunque la animación
   assert.doesNotMatch(entrada, /opacity/);
 });
 
+test('actualizar desde Cierra cuenta los pasos de construir y de publicar', () => {
+  const lineas = [...CONSTRUIR, 'Generando control de calce...', 'Visor copiado en /datos/x',
+    '▶ Publicando /datos/x como masterplan-x'];
+  const progreso = avance(lineas, 'actualizar');
+  assert.equal(progreso.total, 12);
+  assert.equal(progreso.titulo, 'Subiendo a la web');
+  assert.equal(avance([...lineas, '▶ URL publicada: https://masterplan-x.vercel.app'], 'actualizar', true).resumen,
+    'Al día en línea: https://masterplan-x.vercel.app');
+});
+
 // --- El buscador de proyectos de Cierra ---------------------------------------------
 
 test('el buscador de Cierra no mira tildes, mayúsculas ni el orden de las palabras', () => {
