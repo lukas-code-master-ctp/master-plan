@@ -233,6 +233,12 @@ class Conexiones:
         fila = self._fila_clave(cliente_id)
         return fila.pista if fila else None
 
+    def guardada_en(self, cliente_id: int) -> datetime | None:
+        fila = self._fila_clave(cliente_id)
+        if fila is None:
+            return None
+        return fila.creado_en if fila.creado_en.tzinfo else fila.creado_en.replace(tzinfo=timezone.utc)
+
     def olvidar_clave(self, cliente_id: int) -> None:
         """Sin clave no hay qué leer: los loteos de esa loteadora se desconectan."""
         self._desconectar_todos(cliente_id)
@@ -269,6 +275,14 @@ class Conexiones:
         with self.base.motor.begin() as con:
             con.execute(delete(cierra_loteos).where(
                 cierra_loteos.c.proyecto_id == self._id(con, slug)))
+
+    def loteos_conectados(self) -> list[str]:
+        """Los slugs de todos los loteos conectados a Cierra: para la revisión periódica."""
+        consulta = (select(proyectos.c.slug)
+                    .join(cierra_loteos, cierra_loteos.c.proyecto_id == proyectos.c.id)
+                    .order_by(proyectos.c.slug))
+        with self.base.motor.connect() as con:
+            return [fila.slug for fila in con.execute(consulta)]
 
     def anotar_sincronizacion(self, slug: str) -> datetime:
         momento = datetime.now(timezone.utc)

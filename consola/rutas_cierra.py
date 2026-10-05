@@ -20,6 +20,8 @@ from .cierra import (
     revisar_eleccion,
     sincronizar,
 )
+from .acceso import Sesion
+from .inventario import poner_al_dia
 from .proyectos import Proyecto, Vista
 
 SIN_CLAVE = ("La clave de Cierra de esta loteadora no está, o ya no se puede leer. "
@@ -27,8 +29,10 @@ SIN_CLAVE = ("La clave de Cierra de esta loteadora no está, o ya no se puede le
 
 
 def rutas_de_cierra(cierra: Cierra | None, conexiones: Conexiones | None, vista,
-                    ocupado=lambda slug: False) -> APIRouter:
-    """`ocupado(slug)`: si ese loteo tiene una construcción o publicación en curso."""
+                    ocupado=lambda slug: False, publicar_en_linea=None, quien=None) -> APIRouter:
+    """`ocupado(slug)`: si ese loteo tiene una construcción o publicación en curso.
+    `publicar_en_linea(proyecto)`: vuelve a publicar un loteo ya en línea y devuelve
+    el trabajo; sin ella, traer de Cierra no publica."""
     rutas = APIRouter()
 
     def configurado() -> tuple[Cierra, Conexiones]:
@@ -42,6 +46,46 @@ def rutas_de_cierra(cierra: Cierra | None, conexiones: Conexiones | None, vista,
         if not clave:
             raise HTTPException(409, SIN_CLAVE)
         return clave
+
+    # --- de la loteadora, sin loteo: lo que usa Nuevo master antes de existir ------
+
+    if quien is not None:
+        @rutas.get("/api/cierra")
+        def estado_propio(sesion: Sesion = Depends(quien)) -> dict:
+            if cierra is None or conexiones is None:
+                return {"disponible": False}
+            desde = conexiones.guardada_en(sesion.cliente_id)
+            return {"disponible": True, "pista": conexiones.pista(sesion.cliente_id),
+                    "desde": desde.isoformat() if desde else None,
+                    "conectado": False, "proyectos": []}
+
+        @rutas.delete("/api/cierra/clave", status_code=204)
+        def olvidar_clave_propia(sesion: Sesion = Depends(quien)) -> Response:
+            """Desde Configuración. Desconecta también los masters que la usaban."""
+            _, guardadas = configurado()
+            guardadas.olvidar_clave(sesion.cliente_id)
+            return Response(status_code=204)
+
+        @rutas.put("/api/cierra/clave")
+        async def guardar_clave_propia(campos: dict = Body(...), sesion: Sesion = Depends(quien)) -> dict:
+            api, guardadas = configurado()
+            try:
+                clave = limpiar_clave(campos.get("clave"))
+            except ValueError as error:
+                raise HTTPException(400, str(error)) from error
+            await _pedir(api.proyectos, clave)
+            return {"pista": guardadas.guardar_clave(sesion.cliente_id, clave)}
+
+        @rutas.get("/api/cierra/opciones")
+        async def opciones_propias(sesion: Sesion = Depends(quien)) -> dict:
+            api, guardadas = configurado()
+            clave = guardadas.clave(sesion.cliente_id)
+            if not clave:
+                raise HTTPException(409, SIN_CLAVE)
+            return {"proyectos": [{**p.__dict__, "etapa_sugerida": etapa_sugerida(p.nombre)}
+                                  for p in await _pedir(api.proyectos, clave)]}
+
+    # --- de un loteo ---------------------------------------------------------------
 
     @rutas.get("/api/proyectos/{slug}/cierra")
     def estado(slug: str, mios: Vista = Depends(vista)) -> dict:
@@ -100,7 +144,7 @@ def rutas_de_cierra(cierra: Cierra | None, conexiones: Conexiones | None, vista,
         if ocupado(proyecto.slug):
             raise HTTPException(409, "espera a que termine la construcción en curso")
         guardadas.conectar_loteo(proyecto.slug, elecciones)
-        return await _traer(api, guardadas, proyecto, clave)
+        return await _traer(api, guardadas, proyecto, clave, publicar_en_linea)
 
     @rutas.post("/api/proyectos/{slug}/cierra/actualizar")
     async def actualizar(slug: str, mios: Vista = Depends(vista)) -> dict:
@@ -110,7 +154,7 @@ def rutas_de_cierra(cierra: Cierra | None, conexiones: Conexiones | None, vista,
             raise HTTPException(409, "este loteo no está conectado con Cierra")
         if ocupado(proyecto.slug):
             raise HTTPException(409, "espera a que termine la construcción en curso")
-        return await _traer(api, guardadas, proyecto, clave_de(proyecto))
+        return await _traer(api, guardadas, proyecto, clave_de(proyecto), publicar_en_linea)
 
     @rutas.delete("/api/proyectos/{slug}/cierra", status_code=204)
     def desconectar(slug: str, mios: Vista = Depends(vista)) -> Response:
@@ -122,11 +166,27 @@ def rutas_de_cierra(cierra: Cierra | None, conexiones: Conexiones | None, vista,
     return rutas
 
 
-async def _traer(api: Cierra, guardadas: Conexiones, proyecto: Proyecto, clave: str) -> dict:
+async def _traer(api: Cierra, guardadas: Conexiones, proyecto: Proyecto, clave: str,
+                 publicar_en_linea=None) -> dict:
+    """Trae lo de Cierra y, si el loteo ya está construido, pone al día sus estados y
+    precios sin reconstruir; si además está en línea y algo cambió, lo publica."""
     conexion = guardadas.del_loteo(proyecto.slug)
     cuantas = await _pedir(sincronizar, api, clave, conexion, proyecto.fuentes)
     momento = guardadas.anotar_sincronizacion(proyecto.slug)
-    return {"parcelas": cuantas, "sincronizado_en": momento.isoformat()}
+    respuesta = {"parcelas": cuantas, "sincronizado_en": momento.isoformat()}
+    if not proyecto.construido:
+        return respuesta
+    try:
+        resultado = await run_in_threadpool(poner_al_dia, proyecto)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    if resultado.requiere_reconstruir:
+        # Lotes que no están en el sitio: eso pide leer el KMZ de nuevo.
+        return {**respuesta, "requiere_reconstruir": list(resultado.faltan)}
+    respuesta["cambiadas"] = len(resultado.cambiadas)
+    if resultado.cambiadas and publicar_en_linea and proyecto.publicado and proyecto.pagado:
+        respuesta["publicando"] = publicar_en_linea(proyecto)["id"]
+    return respuesta
 
 
 async def _pedir(funcion, *argumentos):

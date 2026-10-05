@@ -33,6 +33,7 @@
         <strong id="quien"></strong>
         <span id="rol"></span>
       </div>
+      <a role="menuitem" href="#/configuracion">Configuración</a>
       <button id="abrir-clave" role="menuitem" type="button">Cambiar contraseña</button>
       <button id="loteadoras" role="menuitem" type="button" hidden>Loteadoras</button>
       <button id="nuevo" role="menuitem" type="button" hidden>Habilitar loteo a una loteadora</button>
@@ -59,10 +60,6 @@
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           Nuevo master
         </a>
-        <button id="planos-nuevo-kmz" class="boton boton--contorno" type="button">
-          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-          Nuevo KMZ
-        </button>
       </div>
     </header>
     <ul id="planos" class="planos" aria-live="polite"></ul>
@@ -136,14 +133,31 @@
       <div class="renglon" id="nuevo-renglon-inventario">
         <span class="renglon__rotulo" id="rotulo-inventario">Inventario <i>opcional</i></span>
         <div>
+          <div id="nuevo-fuente" class="segmentado" role="radiogroup" aria-label="De dónde salen los estados y precios" hidden>
+            <button type="button" role="radio" data-fuente="planilla" aria-checked="true">Subir planilla</button>
+            <button type="button" role="radio" data-fuente="cierra" aria-checked="false">Desde Cierra</button>
+          </div>
           <label class="archivo" id="caja-inventario">
             <input id="nuevo-inventario" type="file" accept=".xlsx,.csv" aria-labelledby="rotulo-inventario">
             <span class="archivo__texto" id="texto-inventario">Subir la planilla de precios (.xlsx o .csv)</span>
           </label>
-          <p class="nota">Una fila por parcela con su estado y precio. Usa la
+          <div id="nuevo-cierra" class="archivo archivo--lleno nuevo-cierra" hidden>
+            <span id="nuevo-cierra-texto" class="archivo__texto"></span>
+            <span class="nuevo-cierra__acciones">
+              <button id="nuevo-cierra-cambiar" class="enlace" type="button">Cambiar</button>
+              <button id="nuevo-cierra-quitar" class="enlace" type="button">Quitar</button>
+            </span>
+          </div>
+          <p class="nota" id="nuevo-inventario-nota">Una fila por parcela con su estado y precio. Usa la
             <a class="enlace" href="/api/plantilla-inventario" download>plantilla</a>; después de
             construir la puedes bajar con tus parcelas ya puestas. Sin planilla, las parcelas
             quedan como no disponibles.</p>
+          <div id="nuevo-cierra-vacio" class="nuevo-cierra-vacio" hidden>
+            <button id="nuevo-cierra-elegir" class="boton boton--contorno" type="button">Elegir el proyecto de Cierra</button>
+            <p class="nota">Los estados y precios llegan solos de Cierra y se revisan cada 15 minutos.</p>
+          </div>
+          <p class="nota" id="nuevo-cierra-sin-clave" hidden>Para traer los precios de Cierra, conecta tu
+            cuenta una sola vez en <a class="enlace" href="#/configuracion">Configuración</a>.</p>
         </div>
       </div>
 
@@ -668,6 +682,44 @@
   </section>
 
   <!-- Mis diseños -->
+  <section id="pantalla-configuracion" class="pantalla pantalla--angosta" aria-labelledby="titulo-configuracion" hidden>
+    <header class="pantalla__cabecera">
+      <div>
+        <h1 id="titulo-configuracion">Configuración</h1>
+        <p class="guia">Lo que se deja listo una vez y vale para todos tus masters.</p>
+      </div>
+    </header>
+    <section class="configuracion" aria-labelledby="titulo-integraciones">
+      <h2 id="titulo-integraciones">Integraciones</h2>
+      <article class="integracion" id="config-cierra">
+        <header class="integracion__cabecera">
+          <div>
+            <h3>Cierra</h3>
+            <p class="nota">Los estados y precios de tus parcelas salen de Cierra: sin planillas,
+              y el sitio se pone al día solo cada 15 minutos.</p>
+          </div>
+          <span id="config-cierra-pastilla" class="pastilla"></span>
+        </header>
+        <p id="config-cierra-estado" class="nota"></p>
+        <div id="config-cierra-formulario" class="integracion__formulario">
+          <label class="campo campo--ancho"><span>Clave de API de Cierra</span>
+            <input id="config-cierra-clave" type="password" autocomplete="new-password" spellcheck="false"
+                   placeholder="Pégala acá"></label>
+          <p class="nota">En Cierra: Admin → Integraciones → nueva clave con el permiso
+            <b>parcelas:read</b>. Se guarda cifrada y nunca se vuelve a mostrar.</p>
+          <div class="integracion__acciones">
+            <button id="config-cierra-guardar" class="boton" type="button">Conectar</button>
+            <button id="config-cierra-cancelar" class="boton boton--texto" type="button" hidden>Cancelar</button>
+          </div>
+        </div>
+        <div id="config-cierra-conectada" class="integracion__acciones" hidden>
+          <button id="config-cierra-cambiar" class="boton boton--contorno" type="button">Cambiar la clave</button>
+          <button id="config-cierra-quitar" class="boton boton--texto boton--peligro" type="button">Quitar</button>
+        </div>
+      </article>
+    </section>
+  </section>
+
   <section id="pantalla-disenos" class="pantalla pantalla--angosta" aria-labelledby="titulo-disenos" hidden>
     <header class="pantalla__cabecera">
       <div>
@@ -877,15 +929,11 @@
   <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
   <h2>Conectar con Cierra</h2>
   <div id="cierra-paso-clave">
-    <p class="ayuda">Crea una clave en Cierra → Admin → Integraciones, con el permiso
-      <b>parcelas:read</b>, y pégala acá. Se guarda cifrada y sirve para todos tus loteos.</p>
-    <label class="campo">
-      <span>Clave de API de Cierra</span>
-      <input id="cierra-clave" type="password" autocomplete="new-password" spellcheck="false">
-    </label>
+    <p class="ayuda">Primero conecta tu cuenta de Cierra en <b>Configuración</b>: se hace una
+      sola vez y sirve para todos tus masters. Después, acá solo eliges el proyecto.</p>
     <div class="modal__pie">
       <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
-      <button id="cierra-guardar-clave" class="boton" type="button">Seguir</button>
+      <a class="boton" href="#/configuracion">Ir a Configuración</a>
     </div>
   </div>
   <div id="cierra-paso-proyectos" hidden>
@@ -897,7 +945,7 @@
     <p class="ayuda cierra-cuenta" id="cierra-cuenta" aria-live="polite"></p>
     <p class="ayuda" id="cierra-pista"></p>
     <div class="modal__pie">
-      <button id="cierra-otra-clave" class="boton boton--texto" type="button">Usar otra clave</button>
+      <a class="boton boton--texto" href="#/configuracion">Cambiar la clave</a>
       <button id="cierra-listo" class="boton" type="button">Conectar</button>
     </div>
   </div>

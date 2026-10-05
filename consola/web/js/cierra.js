@@ -10,18 +10,35 @@ import { $, abrirDialogo, avisar, fecha, json, pedir } from './comun.js';
 const estados = new Map();   // slug → lo que contestó GET /api/proyectos/{slug}/cierra
 let slugActual = null;
 let nombreDelLoteo = '';
+/**
+ * Para qué se abrió el diálogo. Con un loteo: su clave y sus proyectos, y
+ * "Conectar" lo deja conectado. En Nuevo master el loteo todavía no existe: la
+ * clave es la de la loteadora y "Conectar" solo devuelve lo elegido.
+ */
+let modo = { base: '', elegidos: new Map(), alElegir: async () => {} };
 let alTraer = async () => {};
+const resultados = new Map();   // slug → qué pasó la última vez que se trajo, en palabras
 
-/** `traido(slug)` se llama con el inventario nuevo ya en la carpeta del loteo. */
+/** Lo que se le dice a la persona después de traer de Cierra. */
+export function resumenDeTraer(respuesta) {
+  if (respuesta.requiere_reconstruir?.length) {
+    return `Cierra trae ${respuesta.requiere_reconstruir.length} parcela(s) que el plano no tiene: se reconstruye.`;
+  }
+  if (respuesta.cambiadas === undefined) return '';
+  if (!respuesta.cambiadas) return 'Sin cambios desde la última vez.';
+  const cuantas = respuesta.cambiadas === 1 ? '1 parcela cambió' : `${respuesta.cambiadas} parcelas cambiaron`;
+  return respuesta.publicando ? `${cuantas}: publicando el sitio.` : `${cuantas}.`;
+}
+
+/** `traido(slug, respuesta)` se llama con el inventario nuevo ya en la carpeta del
+ * loteo; `respuesta` dice qué cambió y si ya se está publicando. */
 export function prepararCierra({ traido }) {
   alTraer = traido;
-  $('#cierra-guardar-clave').addEventListener('click', guardarClave);
-  $('#cierra-otra-clave').addEventListener('click', () => mostrarPaso('clave'));
+
   $('#cierra-listo').addEventListener('click', conectar);
   $('#cierra-buscar').addEventListener('input', filtrar);
   $('#cierra-lista').addEventListener('change', filtrar);
-  // La clave no se queda en la página: ni tras un error ni al cerrar con la ✕.
-  $('#cierra').addEventListener('close', () => { $('#cierra-clave').value = ''; });
+
 }
 
 /** Pinta el bloque con lo que se sabe; la primera vez por loteo lo pregunta. */
@@ -43,7 +60,11 @@ export function pintarCierra(proyecto) {
   $('#cierra-estado').textContent = conectado
     ? `Conectado a Cierra: ${estado.proyectos.map((p) => `${p.nombre} (etapa ${p.etapa})`).join(', ')}.`
       + (estado.sincronizado_en ? ` Actualizado ${fecha(estado.sincronizado_en)}.` : '')
-    : '¿Llevas las parcelas en Cierra? Conéctalo y los estados y precios llegan solos.';
+      + ' Se revisa solo cada 15 minutos.'
+      + (resultados.has(proyecto.slug) ? ` ${resultados.get(proyecto.slug)}` : '')
+    : estado.pista
+      ? '¿Llevas este loteo en Cierra? Elige su proyecto y los estados y precios llegan solos.'
+      : '¿Llevas las parcelas en Cierra? Conecta tu cuenta una vez en Configuración y acá eliges el proyecto.';
   const boton = (accion) => $(`[data-accion="${accion}"]`, bloque);
   boton('cierra-conectar').textContent = conectado ? 'Cambiar proyectos' : 'Conectar con Cierra';
   boton('cierra-actualizar').hidden = !conectado;
@@ -55,13 +76,19 @@ export function pintarCierra(proyecto) {
   $('#inventario-subir').hidden = conectado;
 }
 
+/** Recuerda qué pasó al traer, para decirlo junto al estado de la conexión. */
+export function anotarResultado(slug, respuesta) {
+  const texto = resumenDeTraer(respuesta);
+  if (texto) resultados.set(slug, texto); else resultados.delete(slug);
+}
+
 export async function manejarCierra(accion, proyecto) {
   if (accion === 'cierra-conectar') return abrir(proyecto);
   if (accion === 'cierra-actualizar') {
-    const { parcelas } = await pedir(`/api/proyectos/${proyecto.slug}/cierra/actualizar`, json({}));
+    const respuesta = await pedir(`/api/proyectos/${proyecto.slug}/cierra/actualizar`, json({}));
     avisar(null);
     await cargar(proyecto.slug);
-    await alTraer(proyecto.slug, parcelas);
+    await alTraer(proyecto.slug, respuesta);
     return undefined;
   }
   if (accion === 'cierra-desconectar') {
@@ -85,10 +112,45 @@ async function cargar(slug) {
 // --- El diálogo ------------------------------------------------------------------
 
 async function abrir(proyecto) {
-  $('#cierra-clave').value = '';
-  nombreDelLoteo = proyecto.nombre ?? '';
+  const slug = proyecto.slug;
+  const estado = estados.get(slug);
+  modo = {
+    base: `/api/proyectos/${slug}/cierra`,
+    elegidos: new Map((estado?.proyectos ?? []).map((p) => [p.id, p.etapa])),
+    alElegir: async (proyectos) => {
+      const respuesta = await pedir(`/api/proyectos/${slug}/cierra`, json({ proyectos }, 'PUT'));
+      await cargar(slug);
+      await alTraer(slug, respuesta);
+    },
+  };
+  return abrirDialogoCierra(proyecto.nombre, estado);
+}
+
+/** Si la consola tiene Cierra y si la loteadora ya dejó su clave: {disponible, pista}. */
+export async function estadoDeCierra() {
+  try {
+    return await pedir('/api/cierra');
+  } catch {
+    return { disponible: false, pista: null };
+  }
+}
+
+/**
+ * Elegir proyectos de Cierra para un master que todavía no existe.
+ * `alElegir(proyectos)` recibe [{id, etapa, nombre}].
+ */
+export async function elegirParaNuevo({ nombre, elegidos = [], alElegir }) {
+  modo = {
+    base: '/api/cierra',
+    elegidos: new Map(elegidos.map((p) => [p.id, p.etapa])),
+    alElegir: async (proyectos) => alElegir(proyectos),
+  };
+  return abrirDialogoCierra(nombre, await pedir('/api/cierra'));
+}
+
+async function abrirDialogoCierra(nombre, estado) {
+  nombreDelLoteo = nombre ?? '';
   abrirDialogo($('#cierra'));
-  const estado = estados.get(proyecto.slug);
   if (!estado?.pista) return mostrarPaso('clave');
   return mostrarProyectos(estado);
 }
@@ -96,27 +158,9 @@ async function abrir(proyecto) {
 function mostrarPaso(paso) {
   $('#cierra-paso-clave').hidden = paso !== 'clave';
   $('#cierra-paso-proyectos').hidden = paso !== 'proyectos';
-  if (paso === 'clave') $('#cierra-clave').focus();
+
 }
 
-async function guardarClave() {
-  const clave = $('#cierra-clave').value.trim();
-  if (!clave) return avisar('Pega la clave de API de Cierra.');
-  const boton = $('#cierra-guardar-clave');
-  boton.disabled = true;
-  try {
-    avisar(null);
-    await pedir(`/api/proyectos/${slugActual}/cierra/clave`, json({ clave }, 'PUT'));
-    await cargar(slugActual);
-    await mostrarProyectos(estados.get(slugActual));
-  } catch (error) {
-    avisar(error.message);
-  } finally {
-    $('#cierra-clave').value = '';
-    boton.disabled = false;
-  }
-  return undefined;
-}
 
 async function mostrarProyectos(estado) {
   const lista = $('#cierra-lista');
@@ -125,11 +169,11 @@ async function mostrarProyectos(estado) {
   mostrarPaso('proyectos');
   let opciones;
   try {
-    ({ proyectos: opciones } = await pedir(`/api/proyectos/${slugActual}/cierra/opciones`));
+    ({ proyectos: opciones } = await pedir(`${modo.base}/opciones`));
   } catch (error) {
     return avisar(error.message);
   }
-  const elegidos = new Map(estado.proyectos.map((p) => [p.id, p.etapa]));
+  const elegidos = modo.elegidos;
   if (!opciones.length) return avisar('Esa clave no ve ningún proyecto en Cierra.');
   lista.replaceChildren(...opciones.map((opcion) => fila(opcion, elegidos)));
   // Se abre ya buscando el loteo: en Cierra hay decenas de proyectos y los de
@@ -200,17 +244,15 @@ function fila(opcion, elegidos) {
 async function conectar() {
   const proyectos = [...$('#cierra-lista').children]
     .filter((li) => $('input[type=checkbox]', li).checked)
-    .map((li) => ({ id: Number(li.dataset.id), etapa: Number($('input[type=number]', li).value) }));
+    .map((li) => ({ id: Number(li.dataset.id), etapa: Number($('input[type=number]', li).value),
+      nombre: li.dataset.nombre }));
   if (!proyectos.length) return avisar('Marca al menos un proyecto de Cierra.');
   const boton = $('#cierra-listo');
   boton.disabled = true;
-  const slug = slugActual;
   try {
     avisar(null);
-    const { parcelas } = await pedir(`/api/proyectos/${slug}/cierra`, json({ proyectos }, 'PUT'));
+    await modo.alElegir(proyectos);
     $('#cierra').close();
-    await cargar(slug);
-    await alTraer(slug, parcelas);
   } catch (error) {
     avisar(error.message);
   } finally {

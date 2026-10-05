@@ -435,3 +435,186 @@ def test_cierra_sin_https_no_se_acepta(monkeypatch):
 def test_una_redireccion_no_se_sigue_con_la_clave():
     from consola.cierra import _SinRedirecciones
     assert _SinRedirecciones().redirect_request(None, None, 302, "Found", {}, "https://otro.cl") is None
+
+
+
+# --- sin reconstruir: estados y precios al día, y la revisión periódica -------------------
+
+def construir_sitio(registro, slug, ids=("1-7", "1-8", "1-9", "2-7", "2-8")):
+    """Un sitio ya construido, con las parcelas que manda Cierra y su dibujo."""
+    from pipeline import config
+    carpeta = registro.subidas / slug
+    (carpeta / "fotos").mkdir(parents=True, exist_ok=True)
+    (carpeta / "loteo.kmz").write_bytes(b"kmz")
+    (carpeta / "fotos" / "a.JPG").write_bytes(b"jpg")
+    salida = config.Salida(registro.salidas / slug)
+    salida.datos.mkdir(parents=True, exist_ok=True)
+    parcelas = [{"id": i, "estado": "no_disponible", "superficie_m2": 5000, "servidumbre_m": None,
+                 "servidumbre_m2": None, "precio": None, "moneda": "CLP", "link_pago": None,
+                 "en_planilla": False, "area_kmz_m2": 5000, "poligono": [[0, 0], [0, 1], [1, 1]],
+                 "mejor_vista": "p01", "vistas": ["p01"]} for i in ids]
+    (salida.datos / "parcelas.json").write_text(json.dumps({
+        "resumen": {"total": len(ids), "por_estado": {"no_disponible": len(ids)}},
+        "parcelas": parcelas}))
+    (salida.datos / "vistas.json").write_text('{"vistas": []}')
+    return salida
+
+
+def publicado(base, slug):
+    base.anotar_publicacion(slug, f"masterplan-{slug}", f"https://masterplan-{slug}.vercel.app")
+
+
+def test_actualizar_desde_cierra_pone_al_dia_sin_reconstruir(entorno):
+    ana, _, _, slug, _, registro, _, comandos = entorno
+    salida = construir_sitio(registro, slug)
+
+    respuesta = conectar(ana, slug).json()
+
+    assert respuesta["cambiadas"] == 5 and "publicando" not in respuesta
+    datos = json.loads((salida.datos / "parcelas.json").read_text())
+    assert {p["id"]: p["estado"] for p in datos["parcelas"]}["1-7"] == "disponible"
+    assert datos["resumen"]["por_estado"]["vendido"] == 1
+    assert comandos.pedidos == []   # ni construir ni publicar
+
+
+def test_un_loteo_en_linea_se_publica_solo_si_algo_cambio(entorno):
+    ana, _, ctp, slug, base, registro, _, comandos = entorno
+    construir_sitio(registro, slug)
+    ctp.post(f"/api/plataforma/proyectos/{slug}/pago", json={"nota_cobro": "ok"})
+    publicado(base, slug)
+
+    primera = conectar(ana, slug).json()
+    esperar_trabajo(ana, primera["publicando"])
+    segunda = ana.post(f"/api/proyectos/{slug}/cierra/actualizar").json()
+
+    assert ("publicar", slug, f"masterplan-{slug}", False) in comandos.pedidos
+    assert segunda["cambiadas"] == 0 and "publicando" not in segunda
+
+
+def test_si_cierra_trae_un_lote_que_el_plano_no_tiene_pide_reconstruir(entorno):
+    ana, _, _, slug, _, registro, _, _ = entorno
+    construir_sitio(registro, slug, ids=("1-7", "1-8", "2-7", "2-8"))
+
+    respuesta = conectar(ana, slug).json()
+
+    assert respuesta["requiere_reconstruir"] == ["1-9"]
+
+
+def test_la_planilla_subida_a_mano_se_pone_al_dia_sin_publicar(entorno):
+    ana, _, ctp, slug, base, registro, _, comandos = entorno
+    construir_sitio(registro, slug, ids=("1", "2"))
+    ctp.post(f"/api/plataforma/proyectos/{slug}/pago", json={"nota_cobro": "ok"})
+    publicado(base, slug)
+    (registro.subidas / slug / "inventario.csv").write_text("Parcela,Estado\n1,Disponible\n2,Vendido\n")
+
+    respuesta = ana.post(f"/api/proyectos/{slug}/inventario/actualizar")
+
+    assert respuesta.json() == {"cambiadas": 2}
+    assert comandos.pedidos == []
+
+
+def test_la_tarea_no_existe_sin_su_clave(entorno, monkeypatch):
+    ana, *_ = entorno
+    monkeypatch.delenv("CONSOLA_TAREAS_CLAVE", raising=False)
+    anonimo = TestClient(ana.app)
+
+    assert anonimo.post("/api/tareas/cierra").status_code == 404
+
+
+def test_la_tarea_rechaza_una_clave_equivocada(entorno, monkeypatch):
+    ana, *_ = entorno
+    monkeypatch.setenv("CONSOLA_TAREAS_CLAVE", "la-clave-de-la-tarea")
+    anonimo = TestClient(ana.app)
+
+    assert anonimo.post("/api/tareas/cierra", headers={"X-Tarea-Clave": "otra"}).status_code == 401
+    assert anonimo.post("/api/tareas/cierra").status_code == 401
+
+
+def test_la_tarea_publica_solo_los_loteos_en_linea_que_cambiaron(entorno, monkeypatch):
+    ana, _, ctp, slug, base, registro, _, comandos = entorno
+    construir_sitio(registro, slug)
+    ctp.post(f"/api/plataforma/proyectos/{slug}/pago", json={"nota_cobro": "ok"})
+    conectar(ana, slug)           # sin publicar todavía: queda al día, sin publicar
+    publicado(base, slug)
+    monkeypatch.setenv("CONSOLA_TAREAS_CLAVE", "la-clave-de-la-tarea")
+    anonimo = TestClient(ana.app)
+    tarea = lambda: anonimo.post("/api/tareas/cierra", headers={"X-Tarea-Clave": "la-clave-de-la-tarea"})
+
+    sin_cambios = tarea().json()["loteos"]
+    PARCELAS[0]["estado"] = "vendido"          # en Cierra se vendió la 1-7
+    try:
+        con_cambios = tarea().json()["loteos"]
+    finally:
+        PARCELAS[0]["estado"] = "disponible"
+
+    assert sin_cambios == [{"slug": slug, "resultado": "sin cambios", "cambiadas": 0}]
+    assert con_cambios == [{"slug": slug, "resultado": "publicando", "cambiadas": 1}]
+    assert [p for p in comandos.pedidos if p[0] == "publicar"] == [
+        ("publicar", slug, f"masterplan-{slug}", False)]
+
+
+def test_la_vuelta_salta_un_loteo_ocupado_sin_preguntarle_a_cierra(entorno):
+    from consola.inventario import revisar_cierra
+    ana, _, _, slug, base, registro, http, _ = entorno
+    construir_sitio(registro, slug)
+    conectar(ana, slug)
+    pedidos = len(http.pedidos)
+    conexiones = Conexiones(base, Cifrador("un-secreto"))
+
+    revisiones = revisar_cierra(registro.todos(), Cierra("https://cierra.test", http=http),
+                                conexiones, ocupado=lambda s: True, publicar_en_linea=None)
+
+    assert revisiones[0].resultado.startswith("ocupado")
+    assert len(http.pedidos) == pedidos
+
+
+# --- desde Nuevo master: la clave y los proyectos de la loteadora, sin loteo -----------
+
+def test_nuevo_master_ve_si_hay_cierra_y_la_clave_de_su_loteadora(entorno):
+    ana, luis, _, slug, _, _, _, _ = entorno
+    assert ana.get("/api/cierra").json() == {"disponible": True, "pista": None, "desde": None,
+                                             "conectado": False, "proyectos": []}
+
+    assert ana.put("/api/cierra/clave", json={"clave": CLAVE_CIERRA}).json() == {"pista": "9876"}
+
+    assert ana.get("/api/cierra").json()["pista"] == "9876"
+    # Es la clave de Ana: la de Luis sigue vacía, y sirve para los loteos de Ana.
+    assert luis.get("/api/cierra").json()["pista"] is None
+    assert ana.get(f"/api/proyectos/{slug}/cierra").json()["pista"] == "9876"
+
+
+def test_nuevo_master_lista_los_proyectos_de_cierra_con_su_etapa(entorno):
+    ana, *_ = entorno
+    assert ana.get("/api/cierra/opciones").status_code == 409
+    ana.put("/api/cierra/clave", json={"clave": CLAVE_CIERRA})
+
+    opciones = ana.get("/api/cierra/opciones").json()["proyectos"]
+
+    assert [(p["nombre"], p["etapa_sugerida"]) for p in opciones][:2] == [
+        ("PRADERAS DE CAUQUENES", 1), ("PRADERAS DE CAUQUENES ET2", 2)]
+
+
+def test_una_clave_mala_desde_nuevo_master_no_se_guarda(entorno):
+    ana, *_ = entorno
+
+    assert ana.put("/api/cierra/clave", json={"clave": "cierra_live_clave_mala"}).status_code == 400
+    assert ana.get("/api/cierra").json()["pista"] is None
+
+
+def test_sin_cierra_configurado_nuevo_master_no_lo_ofrece(tmp_path):
+    app, *_ = montar(tmp_path, cierra=False)
+    ana = entrar(app, "ana@losrobles.cl")
+
+    assert ana.get("/api/cierra").json() == {"disponible": False}
+    assert ana.get("/api/cierra/opciones").status_code == 404
+
+
+def test_quitar_la_clave_desde_configuracion_desconecta_los_masters(entorno):
+    ana, _, _, slug, _, _, _, _ = entorno
+    conectar(ana, slug)
+    assert ana.get("/api/cierra").json()["desde"]
+
+    assert ana.delete("/api/cierra/clave").status_code == 204
+
+    assert ana.get("/api/cierra").json()["pista"] is None
+    assert ana.get(f"/api/proyectos/{slug}/cierra").json()["conectado"] is False

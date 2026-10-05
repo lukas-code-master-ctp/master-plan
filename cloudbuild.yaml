@@ -21,6 +21,10 @@
 #   # Entrar con Google: el secreto del cliente OAuth web (su ID va en _GOOGLE_CLIENT_ID,
 #   # que no es secreto). URI de redirección: <_CONSOLA_URL>/entrar/google/vuelta
 #   printf '%s' "<secreto del cliente>" | gcloud secrets create google-client-secret --data-file=-
+#   # La revisión de Cierra cada 15 minutos: Cloud Scheduler manda esta clave en la
+#   # cabecera X-Tarea-Clave de POST <_CONSOLA_URL>/api/tareas/cierra.
+#   python3 -c "import secrets,sys; sys.stdout.write(secrets.token_urlsafe(40))" \
+#     | gcloud secrets create consola-tareas-clave --data-file=-
 steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', '${_IMAGEN}:$BUILD_ID', '-t', '${_IMAGEN}:latest', '.']
@@ -57,7 +61,7 @@ steps:
       - '--add-volume=name=datos,type=cloud-storage,bucket=${_BUCKET}'
       - '--add-volume-mount=volume=datos,mount-path=/datos'
       - '--add-cloudsql-instances=${PROJECT_ID}:${_REGION}:${_INSTANCIA_BD}'
-      - '--set-secrets=CONSOLA_SECRETO=consola-secreto:latest,MASTERPLAN_BD=masterplan-bd:latest,VERCEL_TOKEN=vercel-token:latest,GOOGLE_CLIENT_SECRET=google-client-secret:latest'
+      - '--set-secrets=CONSOLA_SECRETO=consola-secreto:latest,MASTERPLAN_BD=masterplan-bd:latest,VERCEL_TOKEN=vercel-token:latest,GOOGLE_CLIENT_SECRET=google-client-secret:latest,CONSOLA_TAREAS_CLAVE=consola-tareas-clave:latest'
       # _DOMINIO vacío deja los loteos en masterplan-<slug>.vercel.app; con
       # tumasterplan.cl pasan a <slug>.tumasterplan.cl.
       # CONSOLA_URL: de ahí sale la vuelta de Google; desplegada no se arma con la

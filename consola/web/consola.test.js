@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 
 import { dinero, iniciales, ruta } from './js/comun.js';
 import { avance } from './js/vuelo.js';
-import { coincide } from './js/cierra.js';
+import { coincide, resumenDeTraer } from './js/cierra.js';
 import { cuantosLotes, descargaDe, pasoEnPalabras, terminados, textoDeUso } from './js/kmzs.js';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -127,9 +127,13 @@ test('la navegación tiene la pestaña Mis KMZ, entre Mis planos y Mis diseños'
   assert.deepEqual(pestanas, ['planos', 'kmz', 'disenos']);
 });
 
-test('Nuevo KMZ va a la derecha de Nuevo master en Mis planos', () => {
+test('Nuevo KMZ está solo en Mis KMZ, no en Mis planos', () => {
   const planos = html.slice(html.indexOf('id="pantalla-planos"'), html.indexOf('id="planos"'));
-  assert.ok(planos.indexOf('Nuevo master') < planos.indexOf('id="planos-nuevo-kmz"'));
+  assert.ok(planos.includes('Nuevo master'));
+  assert.ok(!planos.includes('Nuevo KMZ'));
+  const kmzs = html.slice(html.indexOf('id="pantalla-kmzs"'), html.indexOf('id="kmzs"'));
+  assert.ok(kmzs.includes('id="kmzs-nuevo"'));
+  assert.ok(!guion.includes('planos-nuevo-kmz'));
 });
 
 test('ya no queda el flujo del KMZ dentro del master', () => {
@@ -362,4 +366,12 @@ test('el buscador de Cierra no mira tildes, mayúsculas ni el orden de las palab
   assert.ok(coincide('Viñas de Cauquenes', 'cauquenes vinas'));
   assert.ok(coincide('Alto Coquiao Quena', ''));
   assert.ok(!coincide('Alto Cauquenes', 'praderas'));
+});
+
+test('después de traer de Cierra se dice qué pasó en palabras', () => {
+  assert.equal(resumenDeTraer({ cambiadas: 0 }), 'Sin cambios desde la última vez.');
+  assert.equal(resumenDeTraer({ cambiadas: 1 }), '1 parcela cambió.');
+  assert.equal(resumenDeTraer({ cambiadas: 3, publicando: 'x' }), '3 parcelas cambiaron: publicando el sitio.');
+  assert.match(resumenDeTraer({ requiere_reconstruir: ['1-9'] }), /se reconstruye/);
+  assert.equal(resumenDeTraer({ parcelas: 5 }), '');
 });
