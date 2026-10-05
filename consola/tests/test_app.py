@@ -463,6 +463,8 @@ RUTAS = {
     ("GET", "/api/proyectos/{slug}/portada"): AJENO_404,
     ("GET", "/api/proyectos/{slug}/plantilla"): AJENO_404,
     ("GET", "/api/plantilla-inventario"): SOLO_SUYO,
+    ("POST", "/api/proyectos/{slug}/inventario/actualizar"): AJENO_404,
+    ("POST", "/api/tareas/cierra"): SIN_SESION,
     ("GET", "/api/proyectos/{slug}/cierra"): AJENO_404,
     ("PUT", "/api/proyectos/{slug}/cierra"): AJENO_404,
     ("DELETE", "/api/proyectos/{slug}/cierra"): AJENO_404,
