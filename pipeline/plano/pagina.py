@@ -45,6 +45,9 @@ COBERTURA_MINIMA = 0.8
 
 MM_POR_PUNTO = 25.4 / 72
 
+# Distancia bajo la cual una coordenada rectificada se considera entera.
+TOLERANCIA_PX = 1e-6
+
 
 @dataclass
 class Pagina:
@@ -227,6 +230,10 @@ def _rectificar(imagen, ppmm_pagina, rectangulo, esquinas, marco_mm, papel) -> E
         # El rectángulo cruza el horizonte de la foto: rectificado sería infinito.
         raise ValueError("el rectángulo del dibujo se sale de la hoja fotografiada: ajústalo al marco")
     c4 = _aplicar(h, c4)
+    # Una esquina que cae en un entero llega con ruido de redondeo (±1e-13) que cambia
+    # según la versión de OpenCV; sin pegarla al entero, floor/ceil suman un píxel.
+    cerca = np.round(c4)
+    c4 = np.where(np.abs(c4 - cerca) < TOLERANCIA_PX, cerca, c4)
     rx0, ry0 = np.floor(c4.min(0)).astype(int)
     rx1, ry1 = np.ceil(c4.max(0)).astype(int)
     if (rx1 - rx0) * (ry1 - ry0) > 4 * ancho_mm * alto_mm * ppmm * ppmm:
