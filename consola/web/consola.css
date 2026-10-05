@@ -388,6 +388,7 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
   padding-top: 1.25rem; border-top: 1px solid var(--zinc-200); text-align: center;
 }
 .publicar .nota { margin: 0; max-width: 32rem; }
+.publicar__botones { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.625rem; }
 
 .pastilla {
   display: inline-flex; align-items: center; gap: 0.35rem;

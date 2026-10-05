@@ -196,6 +196,12 @@ function pintarPublicar(proyecto) {
   const equipo = estado.sesion?.rol === 'plataforma';
   boton.textContent = proyecto.publicado ? 'Volver a publicar' : 'Publicar';
   boton.disabled = Boolean(proyecto.trabajo) || !proyecto.construido || !proyecto.pagado;
+  // Ya en línea, lo que más se hace es ir a verlo: ese pasa a ser el botón
+  // principal, y volver a publicar queda al lado, en segundo plano.
+  const ver = $('#plano-ver-sitio');
+  ver.hidden = !proyecto.publicado;
+  if (proyecto.publicado) ver.href = proyecto.url;
+  boton.classList.toggle('boton--contorno', proyecto.publicado);
   pago.hidden = !(equipo && !proyecto.pagado);
 
   if (!proyecto.pagado) {
