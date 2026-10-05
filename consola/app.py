@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 import os
 import re
+import sys
 import threading
 import traceback
 import unicodedata
@@ -118,6 +120,24 @@ TAREAS = ("/api/tareas/cierra",)
 LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2", *LIBRES_DE_CUENTAS, *TAREAS)
 
 
+def mostrar_registro() -> None:
+    """Los avisos de `consola.*` llegan a la salida estándar, desde INFO.
+
+    Sin esto Python solo deja pasar WARNING o más (hypercorn configura sus propios
+    registros, no los nuestros), y la línea `[cierra] <slug>: …` de cada revisión
+    periódica nunca llegaba a los logs de Cloud Run: el job respondía 200 y no había
+    forma de saber qué masters revisó ni si publicó alguno. Se llama en cada
+    `crear_app`, así que no agrega un segundo manejador si ya tiene uno.
+    """
+    consola = logging.getLogger("consola")
+    consola.setLevel(logging.INFO)
+    if not any(getattr(m, "_de_la_consola", False) for m in consola.handlers):
+        manejador = logging.StreamHandler(sys.stdout)
+        manejador.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        manejador._de_la_consola = True
+        consola.addHandler(manejador)
+
+
 def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None,
               comandos=None, acceso: Acceso | None = None, base: Base | None = None,
               disenos: Disenos | None = None, cuentas: Cuentas | None = None,
@@ -125,6 +145,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
               republicar_al_arrancar: bool | None = None,
               cierra: Cierra | None | bool = True, conexiones: Conexiones | None = None,
               kmzs: RegistroKmz | None = None) -> FastAPI:
+    mostrar_registro()
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
     cuentas = cuentas or Cuentas(base=base, correo=correo_del_entorno(acceso.local),
