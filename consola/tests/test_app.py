@@ -1377,3 +1377,50 @@ def test_sin_construir_la_plantilla_del_loteo_es_la_de_ejemplo(ana_y_luis):
     assert en_blanco.status_code == del_loteo.status_code == 200
     hoja = openpyxl.load_workbook(io.BytesIO(del_loteo.content)).active
     assert (hoja["A2"].value, hoja["B2"].value) == ("MI LOTEO", "1")
+
+
+def test_construir_con_publicar_deja_al_dia_un_loteo_publicado(entorno, tmp_path):
+    """Lo pide "Actualizar desde Cierra": los precios nuevos llegan también al sitio."""
+    cliente, registro, comandos = entorno
+    cliente.post("/api/proyectos/vincular", json={"ruta": str(carpeta_de_loteo(tmp_path))})
+    construir_a_mano(registro, registro.salidas, "loteo")
+    registro.base.anotar_publicacion("loteo", "masterplan-loteo", "https://masterplan-loteo.vercel.app")
+    (registro.salidas / "loteo" / "sitio" / "datos" / "diseno.json").unlink(missing_ok=True)
+
+    respuesta = cliente.post("/api/proyectos/loteo/construir",
+                             json={"sin_imagenes": True, "publicar": True})
+    trabajo = esperar_trabajo(cliente, respuesta.json()["id"])
+
+    assert trabajo["accion"] == "actualizar"
+    assert comandos.pedidos == [("construir", "loteo", True), ("calce", "loteo", None),
+                                ("publicar", "loteo", "masterplan-loteo", False)]
+    # Sale con la marca escrita antes de subir, no después.
+    assert (registro.salidas / "loteo" / "sitio" / "datos" / "diseno.json").is_file()
+
+
+def test_construir_con_publicar_no_publica_lo_que_nunca_se_publico(entorno, tmp_path):
+    """La primera publicación se confirma a mano: no la dispara una actualización."""
+    cliente, registro, comandos = entorno
+    cliente.post("/api/proyectos/vincular", json={"ruta": str(carpeta_de_loteo(tmp_path))})
+    construir_a_mano(registro, registro.salidas, "loteo")
+
+    respuesta = cliente.post("/api/proyectos/loteo/construir",
+                             json={"sin_imagenes": True, "publicar": True})
+    trabajo = esperar_trabajo(cliente, respuesta.json()["id"])
+
+    assert trabajo["accion"] == "construir"
+    assert not any(p[0] == "publicar" for p in comandos.pedidos)
+
+
+def test_construir_con_publicar_no_publica_sin_pago(ana_y_luis):
+    _, ana, _, registro, comandos = ana_y_luis
+    slug = ana.post("/api/proyectos", json={"nombre": "Sin pagar"}).json()["slug"]
+    (registro.subidas / slug).mkdir(parents=True, exist_ok=True)
+    (registro.subidas / slug / "loteo.kmz").write_bytes(b"kmz")
+    construir_a_mano(registro, registro.salidas, slug)
+    registro.base.anotar_publicacion(slug, f"masterplan-{slug}", f"https://masterplan-{slug}.vercel.app")
+
+    respuesta = ana.post(f"/api/proyectos/{slug}/construir", json={"publicar": True})
+    esperar_trabajo(ana, respuesta.json()["id"])
+
+    assert not any(p[0] == "publicar" for p in comandos.pedidos)

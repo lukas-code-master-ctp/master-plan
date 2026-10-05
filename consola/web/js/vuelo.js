@@ -41,6 +41,9 @@ export const PASOS = {
   ],
 };
 
+// "Actualizar desde Cierra" en un loteo publicado: construir y publicar de una.
+PASOS.actualizar = [...PASOS.construir, ...PASOS.publicar];
+
 /**
  * El avance dentro de un paso largo: las líneas "X de Y" que lo anuncian y qué tramo
  * del paso reparte cada una. Leer los números son hasta 96 pasadas de Tesseract (casi
@@ -59,6 +62,10 @@ const DENTRO = {
 
 /** El resultado de los trabajos que no son construir ni publicar. */
 const RESUMENES = {
+  actualizar: (lineas) => {
+    const url = [...lineas].reverse().find((l) => /URL publicada/.test(l));
+    return url ? `Al día en línea: ${url.split(': ').pop().trim()}` : 'Sitio al día';
+  },
   'digitalizar-plano': (lineas) => {
     const lotes = lineas.map((l) => String(l).trim()).find((l) => /^Lotes: \d+/.test(l));
     return lotes ? `Plano digitalizado: ${lotes.match(/^Lotes: (\d+)/)[1]} lotes` : 'Plano digitalizado';
@@ -69,6 +76,7 @@ const RESUMENES = {
 const NOMBRES = {
   construir: ['Construyendo', 'construir'],
   publicar: ['Publicando', 'publicar'],
+  actualizar: ['Actualizando el sitio', 'actualizar el sitio'],
   'digitalizar-plano': ['Digitalizando el plano', 'digitalizar el plano'],
 };
 
