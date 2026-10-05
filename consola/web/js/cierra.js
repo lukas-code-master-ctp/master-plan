@@ -9,6 +9,7 @@ import { $, abrirDialogo, avisar, fecha, json, pedir } from './comun.js';
 
 const estados = new Map();   // slug → lo que contestó GET /api/proyectos/{slug}/cierra
 let slugActual = null;
+let nombreDelLoteo = '';
 let alTraer = async () => {};
 
 /** `traido(slug)` se llama con el inventario nuevo ya en la carpeta del loteo. */
@@ -17,6 +18,8 @@ export function prepararCierra({ traido }) {
   $('#cierra-guardar-clave').addEventListener('click', guardarClave);
   $('#cierra-otra-clave').addEventListener('click', () => mostrarPaso('clave'));
   $('#cierra-listo').addEventListener('click', conectar);
+  $('#cierra-buscar').addEventListener('input', filtrar);
+  $('#cierra-lista').addEventListener('change', filtrar);
   // La clave no se queda en la página: ni tras un error ni al cerrar con la ✕.
   $('#cierra').addEventListener('close', () => { $('#cierra-clave').value = ''; });
 }
@@ -83,6 +86,7 @@ async function cargar(slug) {
 
 async function abrir(proyecto) {
   $('#cierra-clave').value = '';
+  nombreDelLoteo = proyecto.nombre ?? '';
   abrirDialogo($('#cierra'));
   const estado = estados.get(proyecto.slug);
   if (!estado?.pista) return mostrarPaso('clave');
@@ -128,12 +132,47 @@ async function mostrarProyectos(estado) {
   const elegidos = new Map(estado.proyectos.map((p) => [p.id, p.etapa]));
   if (!opciones.length) return avisar('Esa clave no ve ningún proyecto en Cierra.');
   lista.replaceChildren(...opciones.map((opcion) => fila(opcion, elegidos)));
+  // Se abre ya buscando el loteo: en Cierra hay decenas de proyectos y los de
+  // este casi siempre llevan su nombre. Si nada calza, se ven todos.
+  const nombres = opciones.map((o) => o.nombre);
+  $('#cierra-buscar').value = nombres.some((n) => coincide(n, nombreDelLoteo)) ? nombreDelLoteo : '';
+  filtrar();
   return undefined;
+}
+
+/** Sin tildes ni mayúsculas: "Praderas de Cauquenes" encuentra "PRADERAS DE CAUQUENES ET2". */
+export function normalizar(texto) {
+  return String(texto ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+/** Cada palabra de la búsqueda tiene que estar en el nombre, en cualquier orden. */
+export function coincide(nombre, consulta) {
+  const donde = normalizar(nombre);
+  return normalizar(consulta).split(/\s+/).filter(Boolean).every((palabra) => donde.includes(palabra));
+}
+
+/** Muestra lo que calza con la búsqueda; lo marcado no se esconde nunca. */
+function filtrar() {
+  const consulta = $('#cierra-buscar').value;
+  let visibles = 0;
+  let marcados = 0;
+  for (const li of $('#cierra-lista').children) {
+    const marcado = $('input[type=checkbox]', li).checked;
+    li.hidden = !marcado && !coincide(li.dataset.nombre, consulta);
+    if (!li.hidden) visibles += 1;
+    if (marcado) marcados += 1;
+  }
+  const total = $('#cierra-lista').children.length;
+  const marcadosTexto = marcados ? `${marcados} marcado${marcados === 1 ? '' : 's'} · ` : '';
+  $('#cierra-cuenta').textContent = visibles === marcados && consulta.trim()
+    ? `${marcadosTexto}Ningún otro proyecto calza con "${consulta.trim()}".`
+    : `${marcadosTexto}${visibles} de ${total} proyectos`;
 }
 
 function fila(opcion, elegidos) {
   const li = document.createElement('li');
   li.dataset.id = opcion.id;
+  li.dataset.nombre = opcion.nombre;
   const etiqueta = document.createElement('label');
   const marca = document.createElement('input');
   marca.type = 'checkbox';
