@@ -91,6 +91,7 @@ NODE_MOV_MM = 0.5      # lo más que se mueve un nodo hacia la intersección de 
 ANCLA_MM = 8.0
 EXCURSION_MM = 6.0
 EXCURSION_FRAC = 0.15
+PUENTE_GRADOS = 10.0   # dos apoyos así de paralelos, con un diente entre medio, se unen por una recta
 SIGUE_DERECHO_GRADOS = 20.0  # en un nodo, dos aristas que siguen derecho son la misma línea
 
 # Etiquetas de la partición: 1 = relleno, 2.. = regiones sin número, LOTE0 + i = la
@@ -679,11 +680,16 @@ def _encadenar(aristas, caminos, grupo: dict, tolerancia: float, ppmm: float):
 
     def apoyo(P, desde_el_final):
         """La recta (punto, dirección hacia afuera del nodo) de la punta: el primer tramo
-        de Douglas-Peucker de al menos ANCLA_MM desde esa punta, o el más largo."""
+        de Douglas-Peucker de al menos ANCLA_MM desde esa punta, o el más largo. Una
+        arista de puros dientes cortos (el texto sobre el borde, de nodo a nodo) sigue su
+        cuerda si mide al menos la mitad de ANCLA_MM."""
         Q = P[::-1] if desde_el_final else P
         idx = _douglas_peucker(Q, tolerancia)
         pares = list(zip(idx[:-1], idx[1:]))
         largos = [math.hypot(*(Q[e] - Q[s])) for s, e in pares]
+        cuerda = math.hypot(*(Q[-1] - Q[0]))
+        if len(pares) >= 3 and max(largos) < ancla and cuerda >= ancla / 2:
+            return Q[0], _unitario(Q[-1] - Q[0]), cuerda
         k = next((k for k, l in enumerate(largos) if l >= ancla), int(np.argmax(largos)))
         s, e = pares[k]
         punto, u = _recta(Q[s:e + 1]) if e - s >= 2 else (Q[s:e + 1].mean(0), _unitario(Q[e] - Q[s]))
@@ -783,6 +789,7 @@ def _enderezar_cadena(miembros, cerrada: bool, caminos, tolerancia: float, ppmm:
 
     # Índices de la cadena girada, repetidos una vuelta más para las aristas que la cruzan.
     vueltas = 2 if cerrada else 1
+    holgura = EXCURSION_MM * ppmm
     segs = [(s + k * M, e + k * M, r, p) for k in range(vueltas) for s, e, r, p in segmentos]
     verts = sorted(((j + k * M, v) for k in range(vueltas) for j, v in vertices), key=lambda jv: jv[0])
     salida = []
@@ -791,8 +798,10 @@ def _enderezar_cadena(miembros, cerrada: bool, caminos, tolerancia: float, ppmm:
             a, b = (a - rotacion) % M, (a - rotacion) % M + (b - a)
         rs = [(r[0], r[1], p) for s, e, r, p in segs if e > a and s < b]
         V = [v for j, v in verts if a < j < b]
-        # ¿La punta cae en medio de un tramo enderezado? (un nodo dentro de un diente)
-        en_diente = [any(p and s < x < e for s, e, _, p in segs) for x in (a, b)]
+        # ¿La punta cae en medio de un tramo enderezado, o a menos de EXCURSION_MM de una
+        # de sus puntas? (un nodo dentro de un diente: el corte de Douglas-Peucker no
+        # siempre cae justo en el nodo)
+        en_diente = [any(p and s - holgura < x < e + holgura for s, e, _, p in segs) for x in (a, b)]
         if not al_derecho:
             rs, V, en_diente = rs[::-1], V[::-1], en_diente[::-1]
         Q = caminos[i]
@@ -916,6 +925,33 @@ def _enderezar(P: np.ndarray, tolerancia: float, ppmm: float, uniones=(), puntas
                 segs[k:j + 1] = [(A[0], m, A[2], True), (m, B[1], B[2], True)]
                 fijos[m] = x
                 k += 1
+                continue
+        k = j
+
+    # 4. Dos apoyos casi paralelos que no son la misma recta ni se cortan cerca (el
+    # deslinde cambia un poco de rumbo o se corre bajo el texto, como el borde de 8-04 en
+    # Caminos de Rapel): el diente entre ellos va a la recta que une sus puntas.
+    k = 0
+    while k < len(segs) - 2:
+        if not es_apoyo(k):
+            k += 1
+            continue
+        j = next((j for j in range(k + 1, len(segs)) if es_apoyo(j)), None)
+        if j is None:
+            break
+        A, B = segs[k], segs[j]
+        if j >= k + 2 and float(np.dot(A[2][1], B[2][1])) >= math.cos(math.radians(PUENTE_GRADOS)):
+            a, b = _proyectar(P[A[1]], A[2]), _proyectar(P[B[0]], B[2])
+            puente = (a, _unitario(b - a)) if math.hypot(*(b - a)) > 1e-9 else None
+            # De la misma recta, lo de entre medio es un escalón del dibujo (el paso 1 no lo
+            # enderezó); y el puente sigue el rumbo de los apoyos, hacia adelante (una
+            # punta en U no se corta).
+            if (puente is not None and _distancia_recta(b, A[2]) > 2 * tolerancia
+                    and float(np.dot(puente[1], A[2][1])) >= math.cos(math.radians(PUENTE_GRADOS))
+                    and zigzag(k, j)
+                    and se_aparta_poco(A[1], B[0], lambda Q: _distancia_recta(Q, puente))):
+                segs[k:j + 1] = [A, (A[1], B[0], puente, True), B]
+                k += 2
                 continue
         k = j
     return segs, fijos

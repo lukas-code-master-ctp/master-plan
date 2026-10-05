@@ -400,6 +400,20 @@ def test_enderezar_reemplaza_los_dientes_entre_dos_tramos_de_la_misma_recta():
     assert abs(p[1] - 100) < 0.5 and abs(u[1]) < 1e-3
 
 
+def test_enderezar_une_por_una_recta_dos_tramos_casi_paralelos_con_dientes_entre_medio():
+    # Caminos de Rapel, borde norte de 8-04: el deslinde se corre 1,5 mm bajo el texto y
+    # cambia unos grados de rumbo; entre los dos tramos quedaban dientes de hasta 2 mm.
+    tol = particion.DP_MM * PPMM
+    a = [(x, 100.0) for x in range(0, 200)]
+    b = [(x, 100.0 + 1.5 * PPMM + (x - 300) * np.tan(np.radians(3))) for x in range(300, 600)]
+    medio = _zigzag(np.array([(x, 100.0 + 0.75 * PPMM) for x in range(200, 300)]), 199, 300, 1.2 * PPMM, 12)
+    P = np.array(a + [tuple(q) for q in medio] + b)
+    segs, _ = particion._enderezar(P, tol, PPMM)
+    assert _tramos(segs) == [(0, 199), (199, 300), (300, len(P) - 1)]
+    assert segs[1][3]                               # el puente, enderezado
+    assert not segs[0][3] and not segs[2][3]
+
+
 def test_enderezar_respeta_un_escalon_y_una_esquina_de_verdad():
     tol = particion.DP_MM * PPMM
     # Un entrante de 4 × 8 mm entre dos tramos de la misma recta: es corto para lo que

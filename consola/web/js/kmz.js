@@ -13,7 +13,7 @@ import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
   anclaDesde, claveLote, dudosos, duplicados, empujar, girarEntradas, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo,
   nombreDelSistema, ordenarEsquinas, PASOS,
-  pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono,
+  pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono, sesgoDeEscala,
   resumenRevision, siguienteNombre, sinNumero, sugerencias, textoHuecos,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
@@ -1041,6 +1041,7 @@ function pintarRevisar() {
     return div;
   }));
   const problemas = cuenta.duplicados;
+  const sesgo = sesgoDeEscala(rasgosGeo?.features ?? []);
   $('#kmz-revision-nota').textContent = problemas
     ? 'Hay números repetidos: el KMZ no se puede crear así. Vuelve a Numerar.'
     : cuenta.sin_numero_lote
@@ -1054,7 +1055,13 @@ function pintarRevisar() {
       ? (entradas.cuadro ? 'No se leyó el cuadro de superficies: revisa a ojo que los lotes calcen con los caminos.'
         : 'Sin cuadro de superficies no hay áreas oficiales: si el plano lo trae, enciérralo en Marcar'
           + ' con "Cuadro de superficies". Si no, revisa a ojo que los lotes calcen con los caminos.')
-      : 'Los rojos tienen un área muy distinta a la oficial: suelen ser lotes mal separados.';
+      : sesgo != null
+      ? `Casi todos los lotes salen cerca de un ${Math.abs(sesgo * 100).toFixed(1).replace('.', ',')} %`
+        + ` ${sesgo > 0 ? 'más grandes' : 'más chicos'} que el oficial: suele ser la escala de los puntos de Ubicar,`
+        + ' no el dibujo. Vuelve a Ubicar y marca 3 o 4 esquinas con coordenadas exactas.'
+      : cuenta.rojo
+      ? 'Los rojos tienen un área muy distinta a la oficial: suelen ser lotes mal separados.'
+      : 'Ningún lote se aparta más de un 5 % del área oficial.';
   $('#kmz-panel-revisar [data-accion="kmz-siguiente"]').disabled = Boolean(problemas);
 }
 

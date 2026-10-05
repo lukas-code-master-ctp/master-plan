@@ -416,6 +416,24 @@ export function resumenRevision(rasgos) {
 }
 
 /**
+ * Si casi todos los lotes se desvían del área oficial hacia el mismo lado, lo más probable
+ * es la escala de los puntos de Ubicar y no el dibujo: un punto corrido unos metros agranda
+ * o achica todos los lotes por igual. Devuelve la mediana del error (+0.06 = 6 % más grande)
+ * o null si no hay sesgo: menos de 3 lotes con área oficial, una mediana de ±3 % o menos,
+ * o menos de 4 de cada 5 lotes hacia el lado de la mediana.
+ */
+export function sesgoDeEscala(rasgos, umbral = 0.03, parejo = 0.8) {
+  const errores = rasgos.map(({ properties: p }) => p?.error_area)
+    .filter((e) => typeof e === 'number' && Number.isFinite(e)).sort((a, b) => a - b);
+  if (errores.length < 3) return null;
+  const m = errores.length;
+  const mediana = m % 2 ? errores[(m - 1) / 2] : (errores[m / 2 - 1] + errores[m / 2]) / 2;
+  if (Math.abs(mediana) <= umbral) return null;
+  const mismoLado = errores.filter((e) => Math.sign(e) === Math.sign(mediana)).length;
+  return mismoLado >= parejo * m ? mediana : null;
+}
+
+/**
  * Las partes sin número, primero las del tamaño de un lote (un lote cuyo número no se
  * leyó) y, entre ellas, las que traen una lectura que confirmar.
  */
