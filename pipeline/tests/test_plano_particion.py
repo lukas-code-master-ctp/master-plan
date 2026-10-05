@@ -8,7 +8,7 @@ from shapely.ops import unary_union
 from pipeline.plano import particion
 from pipeline.plano.digitalizar import digitalizar_imagen
 from pipeline.plano.tinta import mascara
-from pipeline.tests.plano_sintetico import NEGRO, PPMM, ROJO, dibujar, iou
+from pipeline.tests.plano_sintetico import NEGRO, PPMM, ROJO, dibujar, dibujar_girado, iou
 
 # Medio píxel de tolerancia a lo largo de todo el contorno de un lote.
 EPSILON_PX2 = 1.0
@@ -344,3 +344,95 @@ def test_el_texto_que_cruza_el_lote_de_deslinde_a_deslinde_no_lo_parte():
     assert r.sin_numero == []
     for n, celda in celdas.items():
         assert iou(r.lotes[n], celda) > 0.97
+
+
+def _quiebres(lotes, celdas) -> float:
+    """El mayor giro (grados) de un lote en un vértice que no es esquina de su celda
+    ideal: lo que en el KMZ se ve como una línea quebrada."""
+    peor = 0.0
+    for n, celda in celdas.items():
+        cs = np.asarray(lotes[n].exterior.coords)[:-1]
+        esquinas = np.asarray(celda.exterior.coords)[:-1]
+        for i, b in enumerate(cs):
+            if np.hypot(*(esquinas - b).T).min() < PPMM:
+                continue
+            u, v = b - cs[i - 1], cs[(i + 1) % len(cs)] - b
+            giro = np.degrees(np.arctan2(u[0] * v[1] - u[1] * v[0], u @ v))
+            peor = max(peor, abs(giro))
+    return peor
+
+
+@pytest.mark.parametrize("texto", [False, True], ids=["limpio", "texto_pegado"])
+def test_los_deslindes_de_un_loteo_girado_salen_rectos(texto):
+    # Caminos de Rapel: el loteo va girado, las divisorias llegan en T al deslinde del
+    # medio y el borde norte tiene texto en negrita pegado a la línea. El borde salía en
+    # dientes a lo largo del texto (hasta 2,6 mm del deslinde y giros de 135°).
+    plano = dibujar_girado(texto=texto)
+    r = _digitalizar(plano)
+    assert set(r.lotes) == set(plano.celdas)
+    for n, celda in plano.celdas.items():
+        assert r.lotes[n].hausdorff_distance(celda) < 0.3 * PPMM, n
+        assert len(r.lotes[n].exterior.coords) - 1 <= 6, n
+    assert _quiebres(r.lotes, plano.celdas) < 1.0
+    _revisar_topologia(r.lotes, r.sin_numero, plano.contorno)
+
+
+def _zigzag(P, desde, hasta, alto_px, paso_px):
+    """Dientes de `alto_px` sobre el tramo horizontal de P entre `desde` y `hasta` (x)."""
+    P = P.copy()
+    dentro = (P[:, 0] > desde) & (P[:, 0] < hasta)
+    P[dentro, 1] += np.where((P[dentro, 0] // paso_px) % 2 == 0, alto_px, 0)
+    return P
+
+
+def _tramos(segs):
+    return [(s, e) for s, e, *_ in segs]
+
+
+def test_enderezar_reemplaza_los_dientes_entre_dos_tramos_de_la_misma_recta():
+    tol = particion.DP_MM * PPMM
+    P = np.array([(x, 100.0) for x in range(0, 600)])
+    P = _zigzag(P, 200, 400, 2.0 * PPMM, 25)
+    segs, _ = particion._enderezar(P, tol, PPMM)
+    assert _tramos(segs) == [(0, len(P) - 1)]
+    assert segs[0][3]                               # enderezado
+    p, u = segs[0][2]
+    assert abs(p[1] - 100) < 0.5 and abs(u[1]) < 1e-3
+
+
+def test_enderezar_respeta_un_escalon_y_una_esquina_de_verdad():
+    tol = particion.DP_MM * PPMM
+    # Un entrante de 4 × 8 mm entre dos tramos de la misma recta: es corto para lo que
+    # se aparta (la mitad de su largo), así que es del dibujo.
+    x0, x1, y0, h = 200, 200 + int(8 * PPMM), 100, int(4 * PPMM)
+    P = np.array([(x, y0) for x in range(0, x0)] + [(x0, y) for y in range(y0, y0 + h)]
+                 + [(x, y0 + h) for x in range(x0, x1)] + [(x1, y) for y in range(y0 + h, y0, -1)]
+                 + [(x, y0) for x in range(x1, 600)], float)
+    segs, _ = particion._enderezar(P, tol, PPMM)
+    assert len(segs) == 5 and not any(t[3] for t in segs)
+    # Un ochavo de 6 mm en una esquina en ángulo recto.
+    c = int(6 * PPMM / np.sqrt(2))
+    P = np.array([(x, 0) for x in range(0, 300 - c)] + [(300 - c + k, k) for k in range(c)]
+                 + [(300, y) for y in range(c, 300)], float)
+    segs, _ = particion._enderezar(P, tol, PPMM)
+    assert len(segs) == 3 and not any(t[3] for t in segs)
+
+
+def test_enderezar_respeta_un_lado_corto_en_la_punta_y_las_curvas():
+    tol = particion.DP_MM * PPMM
+    # Una esquina de verdad a 5 mm del nodo donde termina la línea.
+    P = np.array([(x, 0) for x in range(301)] + [(300, y) for y in range(1, 31)], float)
+    segs, _ = particion._enderezar(P, tol, PPMM)
+    assert _tramos(segs) == [(0, 300), (300, 330)] and not any(t[3] for t in segs)
+    # Una curva (una calle en arco, un retorno) no se toma por dientes ni se simplifica
+    # más que Douglas-Peucker; y cadenas largas no se demoran.
+    import time
+    for radio in (500, 2000):
+        t = np.linspace(0, np.pi, int(np.pi * radio))
+        P = np.c_[radio * np.cos(t), radio * np.sin(t)]
+        inicio = time.time()
+        segs, fijos = particion._enderezar(P, tol, PPMM)
+        assert time.time() - inicio < 2
+        assert not any(s[3] for s in segs)
+        vertices = [P[0]] + [P[s] for s, *_ in segs[1:]] + [P[-1]]
+        assert max(abs(np.hypot(*v) - radio) for v in vertices) < 2 * tol

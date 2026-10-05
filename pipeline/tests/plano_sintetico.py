@@ -116,3 +116,60 @@ def dibujar(color=NEGRO, grosor_px=2) -> Plano:
 
 def iou(a: Polygon, b: Polygon) -> float:
     return a.intersection(b).area / a.union(b).area
+
+
+# Loteo girado como Caminos de Rapel: dos filas de lotes con las divisorias desfasadas
+# (llegan en T al deslinde del medio) y, si `texto`, letras en negrita pegadas al borde
+# norte, por fuera y por dentro.
+GIRADO_MM = (260.0, 120.0)
+ARRIBA_MM = [0, 30, 62, 95, 128, 160, 193, 226, 260]
+ABAJO_MM = [0, 40, 75, 110, 145, 178, 212, 260]
+
+
+def dibujar_girado(giro: float = -14.0, texto: bool = True) -> Plano:
+    W, H = GIRADO_MM
+    m = 40.0
+    ancho, alto = int(round((W + 2 * m) * PPMM)), int(round((H + 2 * m) * PPMM)) + 300
+    rng = np.random.default_rng(1)
+    img = np.empty((alto, ancho, 3), np.uint8)
+    img[:] = PAPEL
+    img = np.clip(img.astype(np.int16) + rng.integers(-4, 5, img.shape), 0, 255).astype(np.uint8)
+    c, s = np.cos(np.radians(giro)), np.sin(np.radians(giro))
+
+    def P(x, y):                    # mm del loteo (origen arriba a la izquierda) -> px
+        u, v = (x - W / 2) * PPMM, (y - H / 2) * PPMM
+        return (ancho / 2 + c * u - s * v, alto / 2 + s * u + c * v)
+
+    def linea(a, b, g=2):
+        p, q = P(*a), P(*b)
+        cv2.line(img, (int(round(p[0])), int(round(p[1]))), (int(round(q[0])), int(round(q[1]))), NEGRO, g)
+
+    medio = H / 2
+    for a, b in (((0, 0), (W, 0)), ((W, 0), (W, H)), ((W, H), (0, H)), ((0, H), (0, 0))):
+        linea(a, b, 3)
+    linea((0, medio), (W, medio))
+    for x in ARRIBA_MM[1:-1]:
+        linea((x, 0), (x, medio))
+    for x in ABAJO_MM[1:-1]:
+        linea((x, medio), (x, H))
+    if texto:
+        for x, y, t in ((70, 1.2, "SERVIDUMBRE DE TRANSITO 10,00 m"), (165, 3.2, "CAMINO VECINAL")):
+            p = P(x, y)
+            letras = np.zeros((alto, ancho), np.uint8)
+            cv2.putText(letras, t, (int(p[0]), int(p[1])), cv2.FONT_HERSHEY_SIMPLEX, 1.1, 255, 3, cv2.LINE_AA)
+            letras = cv2.warpAffine(letras, cv2.getRotationMatrix2D(p, -giro, 1.0), (ancho, alto))
+            img[letras > 100] = NEGRO
+
+    semillas, celdas = [], {}
+    n = 0
+    for xs, (y0, y1) in ((ARRIBA_MM, (0, medio)), (ABAJO_MM, (medio, H))):
+        for a, b in zip(xs[:-1], xs[1:]):
+            n += 1
+            numero = f"8-{n:02d}"
+            semillas.append((numero, *P((a + b) / 2, (y0 + y1) / 2 + 6)))
+            celdas[numero] = Polygon([P(a, y0), P(b, y0), P(b, y1), P(a, y1)])
+            q = P((a + b) / 2 - 6, (y0 + y1) / 2 + 3)
+            cv2.putText(img, f"{n:02d}", (int(q[0]), int(q[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.6, NEGRO, 1,
+                        cv2.LINE_AA)
+    contorno = Polygon([P(0, 0), P(W, 0), P(W, H), P(0, H)])
+    return Plano(img, semillas, celdas, contorno, Polygon())
