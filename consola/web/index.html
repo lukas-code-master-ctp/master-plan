@@ -301,7 +301,11 @@
       </section>
 
       <footer class="publicar">
-        <button class="boton boton--grande" data-accion="publicar" type="button">Publicar</button>
+        <div class="publicar__botones">
+          <a id="plano-ver-sitio" class="boton boton--grande" target="_blank" rel="noopener" hidden>
+            Ver masterplan <span aria-hidden="true">↗</span></a>
+          <button class="boton boton--grande" data-accion="publicar" type="button">Publicar</button>
+        </div>
         <p id="plano-publicar-nota" class="nota"></p>
         <button class="boton boton--texto" data-accion="pago" type="button" hidden>Anotar pago</button>
       </footer>
