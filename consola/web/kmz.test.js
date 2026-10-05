@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   anclaDesde, aPagina, claveLote, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
+  conSector, explicacionAreas, numeroAGuardar, sectorDominante, sugerenciasConEstado, textoEscala,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, siguienteNombre, sinNumero, sugerencias,
   tamanoRotado, textoHuecos, vistaAjustada, zoomEn,
 } from './js/kmz_geometria.js';
@@ -221,6 +222,17 @@ test('el número va tal cual y se compara normalizado', () => {
   assert.equal(claveLote('#12'), '12');
   assert.equal(claveLote('12 .'), '12');
   assert.equal(claveLote('3A'), '3A');
+  assert.equal(claveLote('Parcela 4'), '4');
+  assert.equal(claveLote('PARCELA4'), '4');
+  assert.equal(claveLote('Sitio 5'), '5');
+  assert.equal(claveLote('SITIO05'), '5');
+  // La cola de una palabra no es letra de sector: no es un lote, va tal cual.
+  assert.equal(claveLote('ROL 273-15'), 'ROL273-15');
+  assert.equal(claveLote('Mz 3'), 'MZ3');
+  // LOTE pegado a la letra de sector pegada al número.
+  assert.equal(claveLote('LOTEA12'), 'A12');
+  assert.equal(claveLote('LOTES12'), '12');
+  assert.equal(claveLote('LOTEO 12'), 'LOTEO12');
   const a = [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]];
   const b = [[[10, 0], [20, 0], [20, 10], [10, 10], [10, 0]]];
   // Escribe "8-01" en a (con el cero: se guarda así) y luego "8-1" en b: es el mismo lote, pasa a b.
@@ -407,4 +419,76 @@ test('leerCoordenadas: comas decimales ambiguas y textos largos', () => {
     assert.equal(leerCoordenadas(largo), null);
     assert.ok(performance.now() - t0 < 500, `lento con ${largo.length} caracteres`);
   }
+});
+
+// --- sector de la serie, sugerencias confirmadas, escala en Revisar -------------------
+
+test('sectorDominante y conSector calzan con pipeline/plano/numeros', () => {
+  const serie = Array.from({ length: 16 }, (_, i) => `8-${String(i + 1).padStart(2, '0')}`);
+  assert.equal(sectorDominante([...serie, '9']), '8-01');
+  assert.equal(sectorDominante(['8-1', '8-2', '8-3', '8-4', '9']), '8-1');        // 4 de 5: 80 %
+  assert.equal(sectorDominante(['8-01', '8-02', '8-03', '7', '9']), null);        // 60 %
+  assert.equal(sectorDominante(['8-01', '8-02', '9-01', '9-02']), null);
+  assert.equal(sectorDominante(['1', '2', '3']), null);
+  assert.equal(sectorDominante([]), null);
+  for (const [numero, esperado] of [['9', '8-09'], ['09', '8-09'], ['Lote 9', '8-09'], ['16', '8-16'],
+    ['120', '8-120'], ['8-05', '8-05'], ['10-6', '10-6'], ['8', '8'], ['ROL 273', 'ROL 273']]) {
+    assert.equal(conSector(numero, '8-01'), esperado, numero);
+  }
+  assert.equal(conSector('9', '8-1'), '8-9');
+  assert.equal(conSector('9', null), '9');
+});
+
+test('numeroAGuardar: "9" en una serie 8-NN se guarda como 8-09; lo que trae sector, tal cual', () => {
+  const hay = ['8-01', '8-02', '8-03', '8-04', '8-05', '8-06', '8-07', '8-08', '8-10'];
+  assert.equal(numeroAGuardar('9', hay), '8-09');
+  assert.equal(numeroAGuardar(' 9 ', [...hay, null, '8-1']), '8-09');      // nulos y repetidos no cuentan
+  assert.equal(numeroAGuardar('7-09', hay), '7-09');
+  assert.equal(numeroAGuardar('9', ['8-01', '8-02', '1', '2']), '9');       // sin sector que domine
+  assert.equal(numeroAGuardar('', hay), '');
+});
+
+test('una sugerencia confirmada queda marcada hasta digitalizar de nuevo', () => {
+  const con = (numero) => lote(null, [], { banderas: ['sin_numero', 'de_lote'], de_lote: true,
+    sugerencia: { numero, confianza: 0.01, apoyo: 1 } });
+  const a = con('8-05');
+  const b = con('8-07');
+  const rasgos = [lote('8-01', []), a, b];
+  assert.deepEqual(sugerenciasConEstado(rasgos, []).map((s) => [s.numero, s.confirmada]),
+    [['8-05', false], ['8-07', false]]);
+  // Confirmó el 8-05 (escrito "8-5" da lo mismo): ese queda hecho; el orden no cambia.
+  const estado = sugerenciasConEstado(rasgos, [{ numero: '8-5', x: 1, y: 1 }]);
+  assert.deepEqual(estado.map((s) => [s.numero, s.confirmada]), [['8-05', true], ['8-07', false]]);
+  assert.equal(estado[0].rasgo, a);
+  assert.deepEqual(sugerencias(rasgos).map((s) => s.numero), estado.map((s) => s.numero));
+});
+
+test('Revisar: el área corrida pareja apunta a las anclas', () => {
+  const conError = (errores) => errores.map((e, i) => lote(String(i + 1), [], { error_area: e / 100 }));
+  // Rapel: 13 lotes, casi todos −5,5 % ± poco.
+  const rapel = conError([-5.9, -5.6, -5.5, -5.4, -5.8, -5.2, -5.5, -6.1, -5.0, -5.3, -5.7, -1.2, 0.5]);
+  const parejo = explicacionAreas(rapel, { metodo: 'anclas', parametros: {}, avisos: [] });
+  assert.equal(parejo.origen, 'anclas');
+  cerca(parejo.pct, -5.5, 1e-9);
+  assert.equal(textoEscala(parejo), 'El área de casi todos los lotes se corre parejo (−5,5 %): lo más probable'
+    + ' es que las anclas encojan o agranden el plano. Revisa los puntos en Ubicar.');
+  // Con el aviso de escala de Ubicar manda su cifra, aunque los lotes estén dispersos.
+  const disperso = conError([-12, 3, -8, 6, -1, 9, -15]);
+  assert.equal(explicacionAreas(disperso, { metodo: 'anclas', avisos: [] }), null);
+  assert.deepEqual(explicacionAreas(disperso,
+    { metodo: 'anclas', parametros: { escala_cuadro: { lotes: 7, area_pct: -5.5, escala_pct: -2.79 } } }),
+  { pct: -5.5, origen: 'anclas' });
+  // Una escala chica (dentro del 1,5 %) no se avisa: se mira si es pareja.
+  assert.equal(explicacionAreas(disperso, { parametros: { escala_cuadro: { area_pct: 1.8, escala_pct: 0.9 } } }), null);
+  // Solo el texto del aviso (una georreferencia vieja): la mediana de los lotes.
+  const aviso = 'Los lotes miden un 5,5 % menos que en el cuadro de superficies (mediana de 13 lotes):'
+    + ' la escala de las anclas parece 2,8 % menor que la del plano.';
+  cerca(explicacionAreas(disperso, { avisos: [aviso] }).pct, -1, 1e-9);
+  // Mitad y mitad, o parejo pero dentro del verde, o muy pocos lotes: son los lotes.
+  assert.equal(explicacionAreas(conError([-6, -6, -6, 6, 6, 6]), {}), null);
+  assert.equal(explicacionAreas(conError([-1, -1.2, -0.8, -1.1, -0.9]), {}), null);
+  assert.equal(explicacionAreas(conError([-6, -6, -6, -6]), {}), null);
+  assert.equal(explicacionAreas([], null), null);
+  // Con la cuadrícula impresa, se dice la cuadrícula.
+  assert.match(textoEscala({ pct: 4.25, origen: 'cuadrícula' }), /\(\+4,3 %\): lo más probable es que la cuadrícula/);
 });

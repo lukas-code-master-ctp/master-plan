@@ -241,6 +241,14 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     else:
         combinadas = rotulos.combinar(usuario, [], 0.0)
     del previo
+    # Un número sin sector en una serie que casi entera lo lleva ("9" entre "8-01" y
+    # "8-16") es de la serie ("8-09"), no otro lote.
+    cambios = numeros_lote.completar_sector([s["numero"] for s in combinadas])
+    for s in combinadas:
+        if s["numero"] in cambios:
+            s["escrito"], s["numero"] = s["numero"], cambios[s["numero"]]
+    if cambios:
+        avance("Sin sector: " + ", ".join(f"{a} → {b}" for a, b in cambios.items()))
     de_lector = sum(s["origen"] == "lector" for s in combinadas)
     avance(f"Semillas: {len(combinadas) - de_lector} de la loteadora y {de_lector} del lector"
            + (f" (apoyo ≥ {entradas['lector_apoyo_min']})" if lector else " (lector apagado)"))
@@ -257,6 +265,10 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     r.estadisticas.update(faltantes=faltantes, semillas_lector=de_lector)
     sugerencias = _sugerencias(r.sin_numero, r.sin_numero_lote, (lector or {}).get("rotulos") or [],
                                entradas["lector_apoyo_min"], [s["numero"] for s in combinadas])
+    plantilla = numeros_lote.sector_dominante([s["numero"] for s in combinadas])
+    for sugerencia in sugerencias:
+        if sugerencia:
+            sugerencia["numero"] = numeros_lote.con_sector(sugerencia["numero"], plantilla)
     # Los números que hay: los lotes y lo que marcó ella (aunque no haya caído en un lote).
     # Un número del lector sin polígono suele ser ruido: no cuenta.
     presentes = list(r.lotes) + [s["numero"] for s in combinadas if s["origen"] == "usuario"]

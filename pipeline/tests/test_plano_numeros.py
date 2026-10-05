@@ -24,6 +24,15 @@ def test_clave_y_repetidos():
     assert numeros.clave("A-3?") == "A-3?"                     # lo que no se reconoce, tal cual
     # "LOTE12" pegado: la E de LOTE no es letra de sector (como `claveLote` en la consola).
     assert numeros.clave("LOTE12") == numeros.clave("lote 012") == "12"
+    assert numeros.clave("Parcela 4") == numeros.clave("PARCELA4") == "4"
+    assert numeros.clave("Sitio 5") == numeros.clave("SITIO05") == "5"
+    # La cola de una palabra no es letra de sector: no es un lote, se compara tal cual.
+    assert numeros.clave("ROL 273-15") == "ROL273-15"
+    assert numeros.clave("Mz 3") == "MZ3"
+    # Igual que `claveLote` en la consola.
+    assert numeros.clave("LOTEA12") == "A12"
+    assert numeros.clave("LOTES12") == "12"
+    assert numeros.clave("LOTEO 12") == "LOTEO12"
     assert numeros.clave("A03") == "A3"
     assert numeros.repetidos(["8-01", "8-1", "8-02", "3", "03"]) == ["03", "3", "8-01", "8-1"]
     assert numeros.repetidos(["8-01", "8-02"]) == []
@@ -116,3 +125,35 @@ def test_huecos_con_el_cuadro_de_superficies():
     assert numeros.huecos(RAPEL_LEIDOS, [f"8-{n:02d}" for n in range(1, 17)])[-1] == "8-16"
     # Un cuadro que no calza con lo leído (otro cuadro: vértices, roles) no se usa.
     assert numeros.huecos(RAPEL_LEIDOS, ["101", "102", "103"]) == ["8-03", "8-05", "8-11"]
+
+
+def test_sector_dominante():
+    serie = [f"8-{n:02d}" for n in range(1, 17)]
+    assert numeros.sector_dominante(serie + ["9"]) == "8-01"
+    assert numeros.sector_dominante(["8-1", "8-2", "8-3", "8-4", "9"]) == "8-1"     # 4 de 5: 80 %
+    assert numeros.sector_dominante(["8-01", "8-02", "8-03", "7", "9"]) is None      # 60 %
+    assert numeros.sector_dominante(["8-01", "8-02", "9-01", "9-02"]) is None
+    assert numeros.sector_dominante(["1", "2", "3"]) is None
+    assert numeros.sector_dominante([]) is None
+
+
+@pytest.mark.parametrize("numero, esperado", [
+    ("9", "8-09"), ("09", "8-09"), ("Lote 9", "8-09"), ("16", "8-16"), ("120", "8-120"),
+    ("8-05", "8-05"), ("10-6", "10-6"), ("8", "8"), ("ROL 273", "ROL 273"),
+])
+def test_con_sector(numero, esperado):
+    assert numeros.con_sector(numero, "8-01") == esperado
+
+
+def test_con_sector_sin_ceros_y_sin_plantilla():
+    assert numeros.con_sector("9", "8-1") == "8-9"
+    assert numeros.con_sector("9", None) == "9"
+
+
+def test_completar_sector():
+    serie = [f"8-{n:02d}" for n in range(1, 17) if n != 9]
+    assert numeros.completar_sector(serie + ["9"]) == {"9": "8-09"}
+    # Lo que ya está con su sector no se pisa: "9" y "8-09" marcados quedan como vienen.
+    assert numeros.completar_sector(serie + ["8-09", "9"]) == {}
+    # Sin un sector que domine, nada cambia.
+    assert numeros.completar_sector(["8-01", "8-02", "1", "2"]) == {}

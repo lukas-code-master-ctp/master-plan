@@ -21,10 +21,15 @@
    lote cuyo número no se leyó, y queda como cara sin número "de lote" para que la
    loteadora lo numere. Pegarlo al vecino duplica ese lote sin aviso.
 4. Red de deslindes: las grietas entre etiquetas forman una red plana. Cada deslinde
-   entre dos regiones es UNA arista, compartida por ambas. Se endereza (recta si cabe
-   en DP_MM, si no Douglas-Peucker con cada tramo ajustado por mínimos cuadrados), los
-   nodos van a la intersección de sus rectas y `polygonize` da las caras. Como todas
-   las caras salen de la misma red, no hay traslapes ni huecos por construcción.
+   entre dos regiones es UNA arista, compartida por ambas. Se endereza: recta si cabe
+   en DP_MM; si no, una recta robusta o una poligonal de hasta TRAMOS_MAX tramos si va
+   por la tinta del dibujo (el texto o el achurado pegado a una línea mueven el límite
+   del watershed, no la línea); si no, Douglas-Peucker con cada tramo ajustado por
+   mínimos cuadrados (las curvas de verdad: esteros, caminos). Las aristas rectas de
+   lote seguidas y alineadas comparten una recta. Los nodos van a la intersección de
+   sus rectas (hasta NODE_MOV_RECTAS_MM entre rectas firmes: el texto también corre
+   los nodos) y `polygonize` da las caras. Como todas las caras salen de la misma red,
+   no hay traslapes ni huecos por construcción.
 """
 from __future__ import annotations
 
@@ -72,6 +77,30 @@ CORTE_ROTULO_MM = 2.0
 BLUR_MM = 0.25         # suavizado de la tinta para el watershed
 DP_MM = 0.34           # tolerancia del enderezado (≈ 2 px a 6 px/mm: el ancho de la línea)
 NODE_MOV_MM = 0.5      # lo más que se mueve un nodo hacia la intersección de sus rectas
+# Enderezado robusto: un deslinde que no cabe en DP_MM pero es una recta (o una
+# poligonal de pocos tramos) con ruido encima: texto o achurado pegado, el temblor del
+# escaneo. Ver `_es_recta`. Del set de regresión (QA de Caminos de Rapel, 2026-10-05):
+# a 6 px/mm, las aristas limpias se apartan de su recta ≤ 0,1 mm en el p90 y ≤ 0,3 mm
+# en el máximo; las tapadas por texto (los bordes exteriores de Rapel) 0,8–3,5 mm, con
+# solo 51–80 % de la cadena a ≤ 0,25 mm de la recta robusta, pero la línea del dibujo
+# sigue bajo el texto. Bajo los tramos apartados la recta va por la tinta ajustada en
+# ≥ 0,80 de su largo en Rapel; en las curvas suaves de Curicó (bordes de camino) que
+# se enderezaban, 0,50–0,53. Los esteros de Algarrobo y El Arrayán no pasan nunca la
+# prueba de la tinta y quedan con Douglas-Peucker. Los nodos de Rapel corridos por el
+# texto están a 1,1–3,6 mm de la esquina del dibujo.
+RECTA_BANDA_MM = 0.25  # semiancho de la banda de la recta robusta
+RECTA_DENTRO = 0.4     # fracción mínima de la cadena dentro de la banda
+RECTA_TRAMO = 0.6      # lo que cubren a lo largo los puntos dentro de la banda
+RECTA_TINTA = 0.9      # fracción mínima del largo de la recta que va sobre tinta
+RECTA_TINTA_PUNTA = 0.8  # y de cada cuarto de las puntas
+TINTA_MM = 0.35        # cuánto se engorda la tinta para eso
+TINTA_CORRIDA_MM = 0.17  # bajo los tramos donde la cadena se aparta, la tinta engordada solo esto
+RECTA_TINTA_CORRIDA = 0.75  # y la fracción mínima sobre ella
+NODE_MOV_RECTAS_MM = 4.0  # lo más que se mueve un nodo entre rectas firmes
+COLINEAL_GRADOS = 15.0  # aristas rectas seguidas así de alineadas pueden ser un mismo deslinde
+TRAMOS_MAX = 4         # tramos de la poligonal antes de volver a Douglas-Peucker
+TRAMO_MIN_MM = 1.5     # largo mínimo de un tramo
+RESTO_MM2 = 1.0        # un pedazo suelto de un lote hasta este tamaño pasa al vecino (ver red_de_deslindes)
 
 # Etiquetas de la partición: 1 = relleno, 2.. = regiones sin número, LOTE0 + i = la
 # semilla i-ésima.
@@ -84,6 +113,7 @@ class Particion:
     numeros: dict[int, str]               # etiqueta -> número del lote
     estadisticas: dict = field(default_factory=dict)
     de_lote: set[int] = field(default_factory=set)   # regiones sin número del tamaño de un lote
+    lineas: np.ndarray | None = None      # bool: la tinta de línea (sin rótulos), para el enderezado
 
 
 @dataclass
@@ -241,7 +271,7 @@ def particionar(tinta: Tinta, ppmm: float, semillas) -> Particion:
         especiales={n(i): v for i, v in especiales.items()},
     )
     return Particion(etiquetas.astype(np.int32, copy=False), {LOTE0 + i: numeros[i] for i in rotulos},
-                     estadisticas, set(de_lote))
+                     estadisticas, set(de_lote), lineas)
 
 
 def _sin_rotulos(lineas: np.ndarray, grueso: np.ndarray, rotulos, ppmm: float):
@@ -430,53 +460,78 @@ def red_de_deslindes(particion: Particion, ppmm: float) -> Red:
     aristas, nodos = _grietas(ws)
 
     tramos, polilineas = [], []
-    rectas = 0
+    rectas = robustas = 0
+    firmes, robusta, dp = [], [], {}
+    mov_rectas = NODE_MOV_RECTAS_MM * ppmm
+    banda = RECTA_BANDA_MM * ppmm
+    tinta = _tinta_cercana(particion.lineas, ppmm)
     for cadena, _ in aristas:
         P = np.array([(c[1] - 0.5, c[0] - 0.5) for c in cadena], float)
         idx = _douglas_peucker(P, tolerancia)
-        rs = []
-        for s, e in zip(idx[:-1], idx[1:]):
-            seg = P[s:e + 1]
-            if len(seg) >= 3:
-                rs.append(_recta(seg))
-            else:
-                dv = seg[-1] - seg[0]
-                rs.append((seg.mean(0), dv / max(1e-9, math.hypot(*dv))))
-        V = [P[0]]
-        for k in range(1, len(idx) - 1):
-            x = _cruce(rs[k - 1], rs[k])
-            V.append(x if x is not None and math.hypot(*(x - P[idx[k]])) < 3 * tolerancia else P[idx[k]])
-        V.append(P[-1])
+        rs = None
+        idx_dp = idx
+        if len(idx) > 2 and tinta is not None:
+            # No cabe en DP_MM: ¿es una recta (o pocas) con ruido encima?
+            rs, idx = _poligonal(P, tinta, ppmm) or (None, idx)
+            robustas += rs is not None
+        robusta.append(rs is not None)
+        # Las puntas de una arista recta (o de rectas robustas) sirven para mover los
+        # nodos más lejos (NODE_MOV_RECTAS_MM): el texto también corre los nodos.
+        firmes.append(rs is not None or len(idx) == 2)
+        lejos = mov_rectas if rs is not None else 3 * tolerancia
+        if rs is None:
+            rs = _rectas_dp(P, idx)
+        V = _vertices(P, idx, rs, lejos)
+        if robusta[-1]:
+            # Por si el nodo no llega a la recta robusta (ver abajo): la de Douglas-Peucker.
+            dp[len(polilineas)] = _polilinea_dp(P, idx_dp, tolerancia)
         rectas += len(idx) == 2
         tramos.append(rs)
         polilineas.append(np.array(V))
 
-    # Nodos: a la intersección por mínimos cuadrados de las rectas incidentes.
+    if tinta is not None:
+        _colineales(aristas, tramos, firmes, tinta, ppmm)
+
+    # Nodos: a la intersección por mínimos cuadrados de las rectas incidentes, si
+    # queda a menos de NODE_MOV_MM. Si no, a la de las rectas de los lotes, hasta
+    # NODE_MOV_RECTAS_MM, si son todas firmes y pasan a menos de RECTA_BANDA_MM de
+    # ella: es la esquina del dibujo, que el texto pegado corrió. Las aristas entre
+    # dos regiones sin número (el exterior, caminos) no votan: siguen al nodo.
     incidentes = defaultdict(list)
-    for (cadena, _), rs in zip(aristas, tramos):
+    for (cadena, par), rs, firme in zip(aristas, tramos, firmes):
         if cadena[0] == cadena[-1] and cadena[0] not in nodos:
             continue
-        incidentes[cadena[0]].append(rs[0])
-        incidentes[cadena[-1]].append(rs[-1])
+        de_lote = max(par) >= LOTE0
+        incidentes[cadena[0]].append((rs[0], firme, de_lote))
+        incidentes[cadena[-1]].append((rs[-1], firme, de_lote))
     nuevo = {}
     movidos = 0
     for c in nodos:
         p0 = np.array((c[1] - 0.5, c[0] - 0.5))
-        ls = incidentes[c]
-        if len(ls) >= 2:
-            M = np.zeros((2, 2))
-            b = np.zeros(2)
-            for p, u in ls:
-                nn = np.outer((-u[1], u[0]), (-u[1], u[0]))
-                M += nn
-                b += nn @ p
-            if np.linalg.cond(M) < 1e3:
-                x = np.linalg.solve(M, b)
-                if math.hypot(*(x - p0)) <= mov_maximo:
-                    nuevo[c] = x
-                    movidos += 1
-                    continue
+        x = _interseccion([l for l, _, _ in incidentes[c]])
+        if x is not None and math.hypot(*(x - p0)) <= mov_maximo:
+            nuevo[c] = x
+            movidos += 1
+            continue
+        lotes = [(l, f) for l, f, de_lote in incidentes[c] if de_lote]
+        x = _interseccion([l for l, _ in lotes]) if all(f for _, f in lotes) else None
+        if (x is not None and math.hypot(*(x - p0)) <= mov_rectas
+                and all(abs((x - p) @ (-u[1], u[0])) <= banda for (p, u), _ in lotes)):
+            nuevo[c] = x
+            movidos += 1
+            continue
         nuevo[c] = p0
+
+    # Una arista robusta cuyo nodo no se movió hasta su recta (a más de 2 RECTA_BANDA_MM)
+    # vuelve a Douglas-Peucker: unir el nodo con la recta cortaría la esquina.
+    revertidas = 0
+    for k, V_dp in dp.items():
+        cadena = aristas[k][0]
+        for c, (p, u) in ((cadena[0], tramos[k][0]), (cadena[-1], tramos[k][-1])):
+            if c in nuevo and abs((nuevo[c] - p) @ (-u[1], u[0])) > 2 * banda:
+                polilineas[k] = V_dp
+                revertidas += 1
+                break
 
     lineas, de_lote = [], []
     for (cadena, par), V in zip(aristas, polilineas):
@@ -495,7 +550,7 @@ def red_de_deslindes(particion: Particion, ppmm: float) -> Red:
         e = int(ws[min(alto - 1, max(0, int(round(p.y)))), min(ancho - 1, max(0, int(round(p.x))))])
         por_etiqueta[e].append(cara)
 
-    lotes, multicara = {}, {}
+    lotes, multicara, restos = {}, {}, []
     for e, fs in por_etiqueta.items():
         if e < LOTE0 or e not in particion.numeros:
             continue
@@ -503,8 +558,11 @@ def red_de_deslindes(particion: Particion, ppmm: float) -> Red:
         u = unary_union(fs)
         if u.geom_type == "MultiPolygon":
             multicara[numero] = len(u.geoms)
-            u = max(u.geoms, key=lambda g: g.area)
+            mayor = max(u.geoms, key=lambda g: g.area)
+            restos += [g for g in u.geoms if g is not mayor]
+            u = mayor
         lotes[numero] = u
+    lotes = _repartir_restos(lotes, restos, RESTO_MM2 * ppmm ** 2)
     lotes = _rellenar_huecos(lotes)
 
     original = particion.etiquetas
@@ -516,7 +574,8 @@ def red_de_deslindes(particion: Particion, ppmm: float) -> Red:
     sin_numero_lote = [e in particion.de_lote for e, _ in interiores]
 
     estadisticas = dict(
-        nodos=len(nodos), aristas=len(aristas), aristas_rectas=int(rectas), nodos_movidos=movidos,
+        nodos=len(nodos), aristas=len(aristas), aristas_rectas=int(rectas),
+        aristas_robustas=int(robustas) - revertidas, nodos_movidos=movidos,
         caras=len(caras), lotes_multicara=multicara,
         vertices_mediana=float(np.median([len(p.exterior.coords) - 1 for p in lotes.values()])) if lotes else 0.0,
     )
@@ -533,6 +592,26 @@ def _caras_interiores(caras: list[tuple[int, Polygon]], lotes: list[Polygon], af
     union = unary_union(lotes)
     return [(e, c) for e, c in caras
             if e not in afuera and c.distance(marco) >= 1.5 and not union.contains(c.representative_point())]
+
+
+def _repartir_restos(lotes: dict[str, Polygon], restos: list[Polygon], area_maxima: float) -> dict[str, Polygon]:
+    """Un pedazo suelto y chico de un lote (una astilla entre dos aristas que se cruzan
+    cerca de un nodo movido) pasa al lote vecino con el que comparte más borde. Si se
+    botara, quedaría como un hueco entre lotes en el KMZ. Los grandes se siguen botando
+    (se avisan en `lotes_multicara`)."""
+    for resto in restos:
+        if resto.area > area_maxima:
+            continue
+        borde = {n: resto.boundary.intersection(p.boundary).length for n, p in lotes.items()
+                 if p.distance(resto) < 1e-6}
+        for n in sorted(borde, key=borde.get, reverse=True):
+            if borde[n] <= 0:
+                break
+            u = unary_union([lotes[n], resto])
+            if u.geom_type == "Polygon":
+                lotes[n] = u
+                break
+    return lotes
 
 
 def _rellenar_huecos(lotes: dict[str, Polygon]) -> dict[str, Polygon]:
@@ -606,6 +685,222 @@ def _grietas(ws: np.ndarray):
     return aristas, nodos
 
 
+def _rectas_dp(P: np.ndarray, idx: list[int]):
+    """La recta de mínimos cuadrados de cada tramo de Douglas-Peucker."""
+    rs = []
+    for s, e in zip(idx[:-1], idx[1:]):
+        seg = P[s:e + 1]
+        if len(seg) >= 3:
+            rs.append(_recta(seg))
+        else:
+            dv = seg[-1] - seg[0]
+            rs.append((seg.mean(0), dv / max(1e-9, math.hypot(*dv))))
+    return rs
+
+
+def _vertices(P: np.ndarray, idx: list[int], rs, lejos: float) -> np.ndarray:
+    """Los vértices de la poligonal: las puntas y, en cada corte, el cruce de las rectas
+    de los dos tramos (si está a menos de `lejos` del punto de corte)."""
+    V = [P[0]]
+    for k in range(1, len(idx) - 1):
+        x = _cruce(rs[k - 1], rs[k])
+        V.append(x if x is not None and math.hypot(*(x - P[idx[k]])) < lejos else P[idx[k]])
+    V.append(P[-1])
+    return np.array(V)
+
+
+def _polilinea_dp(P: np.ndarray, idx: list[int], tolerancia: float) -> np.ndarray:
+    return _vertices(P, idx, _rectas_dp(P, idx), 3 * tolerancia)
+
+
+def _interseccion(rectas) -> np.ndarray | None:
+    """El punto más cerca (mínimos cuadrados) de dos o más rectas (punto, dirección), si
+    no son casi paralelas."""
+    if len(rectas) < 2:
+        return None
+    M = np.zeros((2, 2))
+    b = np.zeros(2)
+    for p, u in rectas:
+        nn = np.outer((-u[1], u[0]), (-u[1], u[0]))
+        M += nn
+        b += nn @ p
+    if np.linalg.cond(M) >= 1e3:
+        return None
+    return np.linalg.solve(M, b)
+
+
+def _tinta_cercana(lineas: np.ndarray | None, ppmm: float):
+    """La tinta de línea engordada TINTA_MM (dónde una recta ajustada "va por la
+    línea") y TINTA_CORRIDA_MM (bajo un tramo donde la cadena se aparta de la recta),
+    o None."""
+    if lineas is None:
+        return None
+    base = lineas.astype(np.uint8)
+
+    def engordar(mm):
+        r = max(1, int(round(mm * ppmm)))
+        return cv2.dilate(base, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))) > 0
+
+    return engordar(TINTA_MM), engordar(TINTA_CORRIDA_MM)
+
+
+def _recta_robusta(P: np.ndarray, banda: float):
+    """La recta que deja más puntos de `P` a menos de `banda` (candidatas por pares de
+    puntos repartidos en la cadena), reajustada por mínimos cuadrados sobre esos
+    puntos. Devuelve ((punto, dirección), máscara de los puntos dentro de la banda)."""
+    n = len(P)
+    paso = max(1, n // 400)
+    Q = P[::paso]
+    k = np.unique(np.linspace(0, len(Q) - 1, min(len(Q), 14)).round().astype(int))
+    i, j = np.triu_indices(len(k), 1)
+    a, b = Q[k[i]], Q[k[j]]
+    d = b - a
+    largo = np.hypot(d[:, 0], d[:, 1])
+    ok = largo > 1e-9
+    a, d, largo = a[ok], d[ok], largo[ok]
+    if not len(a):
+        return _recta(P), np.ones(n, bool)
+    normal = np.stack([-d[:, 1], d[:, 0]], 1) / largo[:, None]
+    r = np.abs((Q[None, :, 0] - a[:, None, 0]) * normal[:, None, 0]
+               + (Q[None, :, 1] - a[:, None, 1]) * normal[:, None, 1])
+    mejor = int(np.argmax((r <= banda).sum(1)))
+    m, u = a[mejor], d[mejor] / largo[mejor]
+    for _ in range(2):
+        dentro = np.abs((P - m) @ np.array((-u[1], u[0]))) <= banda
+        if dentro.sum() < 2:
+            break
+        m, u = _recta(P[dentro])
+    dentro = np.abs((P - m) @ np.array((-u[1], u[0]))) <= banda
+    return (m, u), dentro
+
+
+def _es_recta(P: np.ndarray, tinta: tuple[np.ndarray, np.ndarray], ppmm: float, puntas=None):
+    """¿`P` es un deslinde recto con ruido encima (texto o achurado pegado, el escaneo)?
+    Sí, si la recta robusta deja a menos de RECTA_BANDA_MM al menos RECTA_DENTRO de los
+    puntos, esos puntos cubren RECTA_TRAMO del largo, las dos puntas de la cadena (los
+    nodos) quedan a menos de NODE_MOV_RECTAS_MM de la recta, y la recta va sobre la
+    tinta (`_tinta_cercana`): en RECTA_TINTA de su largo, en cada cuarto de las puntas
+    y, ajustada, bajo cada tramo donde la cadena se aparta. Debajo del texto la línea
+    del dibujo sigue; la cuerda de una curva de verdad sale de la tinta.
+    `puntas`: los nodos, si no son el primer y el último punto (varias cadenas juntas).
+    Devuelve la recta o None."""
+    (m, u), dentro = _recta_robusta(P, RECTA_BANDA_MM * ppmm)
+    if dentro.mean() < RECTA_DENTRO:
+        return None
+    normal = np.array((-u[1], u[0]))
+    holgada, ajustada = tinta
+    puntas = np.asarray(puntas if puntas is not None else [P[0], P[-1]], float)
+    if np.abs((puntas - m) @ normal).max() > NODE_MOV_RECTAS_MM * ppmm:
+        return None
+    t = (P - m) @ u
+    t0, t1 = t.min(), t.max()
+    if abs(t1 - t0) < 1 or np.ptp(t[dentro]) < RECTA_TRAMO * abs(t1 - t0):
+        return None
+    muestras = max(4, int(abs(t1 - t0)) + 1)
+    x, y = (m[None, :] + np.linspace(t0, t1, muestras)[:, None] * u[None, :]).T
+    alto, ancho = holgada.shape
+    xi, yi = np.clip(np.round(x).astype(int), 0, ancho - 1), np.clip(np.round(y).astype(int), 0, alto - 1)
+    sobre = holgada[yi, xi]
+    cuarto = max(1, muestras // 4)
+    if sobre.mean() < RECTA_TINTA or min(sobre[:cuarto].mean(), sobre[-cuarto:].mean()) < RECTA_TINTA_PUNTA:
+        return None
+    # Donde la cadena se aparta de la recta (una corrida de al menos 1 mm fuera de la
+    # banda), la recta tiene que ir por la línea misma: con texto encima la línea
+    # sigue debajo; en una curva suave la tinta se va con la cadena.
+    ajustada = ajustada[yi, xi]
+    cambios = np.flatnonzero(np.diff(np.r_[0, (~dentro).astype(np.int8), 0]))
+    for i, j in zip(cambios[::2], cambios[1::2]):
+        if j - i >= ppmm:
+            a, b = np.sort(t[[i, j - 1]]) - t0
+            trozo = ajustada[max(0, int(a)):int(b) + 1]
+            if trozo.size and trozo.mean() < RECTA_TINTA_CORRIDA:
+                return None
+    return m, u
+
+
+def _colineales(aristas, tramos, firmes, tinta: tuple[np.ndarray, np.ndarray], ppmm: float) -> None:
+    """Aristas rectas de lote seguidas y casi alineadas (menos de COLINEAL_GRADOS) pueden
+    ser un mismo deslinde del dibujo: el lado de un loteo partido por los nodos de los
+    deslindes que llegan a él. Si juntas siguen siendo una recta (`_es_recta`: la tinta
+    decide, no el ángulo), comparten la recta robusta: los tramos limpios corrigen a los
+    que tapa el texto, que también tuerce la recta propia de una arista corta (de ahí
+    el ángulo holgado). Se juntan primero los pares más alineados. Modifica `tramos`."""
+    cos_max = math.cos(math.radians(COLINEAL_GRADOS))
+    puntos = {}
+    for k, ((cadena, _), rs, firme) in enumerate(zip(aristas, tramos, firmes)):
+        if (firme and len(rs) == 1 and max(aristas[k][1]) >= LOTE0 and cadena[0] != cadena[-1]
+                and len(cadena) >= TRAMO_MIN_MM * ppmm):
+            puntos[k] = np.array([(c[1] - 0.5, c[0] - 0.5) for c in cadena], float)
+    por_nodo = defaultdict(list)
+    for k in puntos:
+        cadena = aristas[k][0]
+        por_nodo[cadena[0]].append(k)
+        por_nodo[cadena[-1]].append(k)
+    grupo = {k: k for k in puntos}
+
+    def raiz(k):
+        while grupo[k] != k:
+            grupo[k] = grupo[grupo[k]]
+            k = grupo[k]
+        return k
+
+    miembros = {k: [k] for k in puntos}
+    rectas = {}
+    # Primero los pares más alineados.
+    pares = sorted((-abs(tramos[i][0][1] @ tramos[j][0][1]), i, j)
+                   for ks in por_nodo.values() for x, i in enumerate(ks) for j in ks[x + 1:])
+    for coseno, i, j in pares:
+        if -coseno < cos_max:
+            break
+        a, b = raiz(i), raiz(j)
+        if a == b:
+            continue
+        todos = miembros[a] + miembros[b]
+        P = np.concatenate([puntos[k] for k in todos])
+        puntas = [puntos[k][e] for k in todos for e in (0, -1)]
+        r = _es_recta(P, tinta, ppmm, puntas)
+        if r is None:
+            continue
+        grupo[b] = a
+        miembros[a] = todos
+        del miembros[b]
+        rectas[a] = r
+    for a, ks in miembros.items():
+        if len(ks) > 1:
+            for k in ks:
+                tramos[k] = [rectas[a]]
+
+
+def _poligonal(P: np.ndarray, tinta: tuple[np.ndarray, np.ndarray], ppmm: float):
+    """La cadena como una poligonal de hasta TRAMOS_MAX tramos, cada uno recto según
+    `_es_recta`. Se parte donde más puntos quedan cerca de las dos rectas robustas (una
+    esquina, aunque haya texto encima), y luego cada lado que no sea recto.
+    Devuelve (rectas, índices de los cortes) o None."""
+    minimo = max(3, int(TRAMO_MIN_MM * ppmm))
+    banda = RECTA_BANDA_MM * ppmm
+
+    def partir(s, e, presupuesto):
+        r = _es_recta(P[s:e + 1], tinta, ppmm)
+        if r is not None:
+            return [r], [s, e]
+        if presupuesto < 2 or e - s < 2 * minimo:
+            return None
+        candidatos = np.unique(np.linspace(s + minimo, e - minimo, min(40, e - s - 2 * minimo + 1))
+                               .round().astype(int))
+        puntaje = [_recta_robusta(P[s:k + 1], banda)[1].sum() + _recta_robusta(P[k:e + 1], banda)[1].sum()
+                   for k in candidatos]
+        k = int(candidatos[int(np.argmax(puntaje))])
+        a = partir(s, k, presupuesto - 1)
+        if a is None:
+            return None
+        b = partir(k, e, presupuesto - len(a[0]))
+        if b is None:
+            return None
+        return a[0] + b[0], a[1] + b[1][1:]
+
+    return partir(0, len(P) - 1, TRAMOS_MAX)
+
+
 def _douglas_peucker(P: np.ndarray, tolerancia: float) -> list[int]:
     """Índices que conserva Douglas-Peucker."""
     conservar = [0, len(P) - 1]
@@ -633,7 +928,7 @@ def _douglas_peucker(P: np.ndarray, tolerancia: float) -> list[int]:
 def _recta(P: np.ndarray):
     """Recta por mínimos cuadrados: (punto, dirección unitaria)."""
     m = P.mean(0)
-    _, _, vt = np.linalg.svd(P - m)
+    _, _, vt = np.linalg.svd(P - m, full_matrices=False)
     return m, vt[0]
 
 

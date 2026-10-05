@@ -565,3 +565,15 @@ def test_un_camino_sin_numero_no_pide_confirmar(ana):
     assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
 
     assert web.post(f"/api/kmz/{slug}/crear").status_code == 201
+
+
+def test_el_resumen_de_la_ubicacion_lleva_la_escala_contra_el_cuadro():
+    """Revisar culpa a la escala (no a los lotes) con `parametros.escala_cuadro`: el
+    resumen que lee la pantalla (estado y georreferenciar) lo trae."""
+    from consola.plano import resumen_georreferencia
+    escala = dict(lotes=13, area_pct=-5.5, escala_pct=-2.79)
+    g = dict(metodo="anclas", epsg=32719, parametros=dict(n_anclas=4, rms_m=1.2, escala_cuadro=escala),
+             anclas=[], avisos=["Los lotes miden un 5,5 % menos que en el cuadro de superficies"])
+    resumen = resumen_georreferencia(g)
+    assert resumen["parametros"]["escala_cuadro"] == escala
+    assert resumen["metodo"] == "anclas" and resumen["avisos"] == g["avisos"]

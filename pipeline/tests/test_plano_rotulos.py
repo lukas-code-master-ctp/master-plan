@@ -342,6 +342,29 @@ def test_el_resto_de_la_propiedad_no_es_un_faltante(tmp_path, monkeypatch):
     assert {l["area_oficial"] for l in datos["lotes"]} == {5000.0}
 
 
+def test_un_numero_sin_sector_es_de_la_serie(tmp_path, monkeypatch, capsys):
+    """Caminos de Rapel en producción: un clic viejo "9" entre lecturas "8-01"… es el
+    "8-09", no otro lote, y el 8-09 no se avisa como faltante."""
+    plano, entradas = _carpeta_sin_semillas(tmp_path)
+    x0, y0 = entradas["rectangulo"][:2]
+    leidos = [Rotulo(f"8-{int(n):02d}", x - x0, y - y0, 0.4, 40, 12.0) for n, x, y in plano.semillas]
+    _, x9, y9 = next(s for s in plano.semillas if s[0] == "9")
+    entradas["semillas"] = [dict(numero="9", x=x9, y=y9)]
+    (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+    cuadro = {f"8-{n:02d}": 5000.0 for n in range(1, 13)}
+    _lector_falso(monkeypatch, cuadro, leidos)
+
+    assert main(["digitalizar", str(tmp_path)]) == 0
+
+    datos = json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))
+    numeros = {l["numero"]: l for l in datos["lotes"]}
+    assert "9" not in numeros and numeros["8-09"]["origen"] == "usuario"
+    assert numeros["8-09"]["area_oficial"] == 5000.0
+    assert len(numeros) == len(plano.semillas)
+    assert datos["huecos"] == [] and datos["faltantes"] == []
+    assert "Sin sector: 9 → 8-09" in capsys.readouterr().out
+
+
 def test_el_cuadro_dentro_del_dibujo_lo_tapa(tmp_path, monkeypatch):
     plano, entradas = _carpeta_sin_semillas(tmp_path)
     x0, y0 = entradas["rectangulo"][:2]
