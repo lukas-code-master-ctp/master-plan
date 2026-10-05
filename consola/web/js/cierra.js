@@ -34,13 +34,11 @@ export function resumenDeTraer(respuesta) {
  * loteo; `respuesta` dice qué cambió y si ya se está publicando. */
 export function prepararCierra({ traido }) {
   alTraer = traido;
-  $('#cierra-guardar-clave').addEventListener('click', guardarClave);
-  $('#cierra-otra-clave').addEventListener('click', () => mostrarPaso('clave'));
+
   $('#cierra-listo').addEventListener('click', conectar);
   $('#cierra-buscar').addEventListener('input', filtrar);
   $('#cierra-lista').addEventListener('change', filtrar);
-  // La clave no se queda en la página: ni tras un error ni al cerrar con la ✕.
-  $('#cierra').addEventListener('close', () => { $('#cierra-clave').value = ''; });
+
 }
 
 /** Pinta el bloque con lo que se sabe; la primera vez por loteo lo pregunta. */
@@ -64,7 +62,9 @@ export function pintarCierra(proyecto) {
       + (estado.sincronizado_en ? ` Actualizado ${fecha(estado.sincronizado_en)}.` : '')
       + ' Se revisa solo cada 15 minutos.'
       + (resultados.has(proyecto.slug) ? ` ${resultados.get(proyecto.slug)}` : '')
-    : '¿Llevas las parcelas en Cierra? Conéctalo y los estados y precios llegan solos.';
+    : estado.pista
+      ? '¿Llevas este loteo en Cierra? Elige su proyecto y los estados y precios llegan solos.'
+      : '¿Llevas las parcelas en Cierra? Conecta tu cuenta una vez en Configuración y acá eliges el proyecto.';
   const boton = (accion) => $(`[data-accion="${accion}"]`, bloque);
   boton('cierra-conectar').textContent = conectado ? 'Cambiar proyectos' : 'Conectar con Cierra';
   boton('cierra-actualizar').hidden = !conectado;
@@ -126,12 +126,12 @@ async function abrir(proyecto) {
   return abrirDialogoCierra(proyecto.nombre, estado);
 }
 
-/** ¿Se ofrece Cierra a esta loteadora? Para Nuevo master. */
-export async function cierraDisponible() {
+/** Si la consola tiene Cierra y si la loteadora ya dejó su clave: {disponible, pista}. */
+export async function estadoDeCierra() {
   try {
-    return (await pedir('/api/cierra')).disponible === true;
+    return await pedir('/api/cierra');
   } catch {
-    return false;
+    return { disponible: false, pista: null };
   }
 }
 
@@ -149,7 +149,6 @@ export async function elegirParaNuevo({ nombre, elegidos = [], alElegir }) {
 }
 
 async function abrirDialogoCierra(nombre, estado) {
-  $('#cierra-clave').value = '';
   nombreDelLoteo = nombre ?? '';
   abrirDialogo($('#cierra'));
   if (!estado?.pista) return mostrarPaso('clave');
@@ -159,26 +158,9 @@ async function abrirDialogoCierra(nombre, estado) {
 function mostrarPaso(paso) {
   $('#cierra-paso-clave').hidden = paso !== 'clave';
   $('#cierra-paso-proyectos').hidden = paso !== 'proyectos';
-  if (paso === 'clave') $('#cierra-clave').focus();
+
 }
 
-async function guardarClave() {
-  const clave = $('#cierra-clave').value.trim();
-  if (!clave) return avisar('Pega la clave de API de Cierra.');
-  const boton = $('#cierra-guardar-clave');
-  boton.disabled = true;
-  try {
-    avisar(null);
-    await pedir(`${modo.base}/clave`, json({ clave }, 'PUT'));
-    await mostrarProyectos(await pedir(modo.base));
-  } catch (error) {
-    avisar(error.message);
-  } finally {
-    $('#cierra-clave').value = '';
-    boton.disabled = false;
-  }
-  return undefined;
-}
 
 async function mostrarProyectos(estado) {
   const lista = $('#cierra-lista');

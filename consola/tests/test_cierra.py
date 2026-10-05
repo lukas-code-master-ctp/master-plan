@@ -572,7 +572,7 @@ def test_la_vuelta_salta_un_loteo_ocupado_sin_preguntarle_a_cierra(entorno):
 
 def test_nuevo_master_ve_si_hay_cierra_y_la_clave_de_su_loteadora(entorno):
     ana, luis, _, slug, _, _, _, _ = entorno
-    assert ana.get("/api/cierra").json() == {"disponible": True, "pista": None,
+    assert ana.get("/api/cierra").json() == {"disponible": True, "pista": None, "desde": None,
                                              "conectado": False, "proyectos": []}
 
     assert ana.put("/api/cierra/clave", json={"clave": CLAVE_CIERRA}).json() == {"pista": "9876"}
@@ -607,3 +607,14 @@ def test_sin_cierra_configurado_nuevo_master_no_lo_ofrece(tmp_path):
 
     assert ana.get("/api/cierra").json() == {"disponible": False}
     assert ana.get("/api/cierra/opciones").status_code == 404
+
+
+def test_quitar_la_clave_desde_configuracion_desconecta_los_masters(entorno):
+    ana, _, _, slug, _, _, _, _ = entorno
+    conectar(ana, slug)
+    assert ana.get("/api/cierra").json()["desde"]
+
+    assert ana.delete("/api/cierra/clave").status_code == 204
+
+    assert ana.get("/api/cierra").json()["pista"] is None
+    assert ana.get(f"/api/proyectos/{slug}/cierra").json()["conectado"] is False

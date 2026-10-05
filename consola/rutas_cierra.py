@@ -54,8 +54,17 @@ def rutas_de_cierra(cierra: Cierra | None, conexiones: Conexiones | None, vista,
         def estado_propio(sesion: Sesion = Depends(quien)) -> dict:
             if cierra is None or conexiones is None:
                 return {"disponible": False}
+            desde = conexiones.guardada_en(sesion.cliente_id)
             return {"disponible": True, "pista": conexiones.pista(sesion.cliente_id),
+                    "desde": desde.isoformat() if desde else None,
                     "conectado": False, "proyectos": []}
+
+        @rutas.delete("/api/cierra/clave", status_code=204)
+        def olvidar_clave_propia(sesion: Sesion = Depends(quien)) -> Response:
+            """Desde Configuración. Desconecta también los masters que la usaban."""
+            _, guardadas = configurado()
+            guardadas.olvidar_clave(sesion.cliente_id)
+            return Response(status_code=204)
 
         @rutas.put("/api/cierra/clave")
         async def guardar_clave_propia(campos: dict = Body(...), sesion: Sesion = Depends(quien)) -> dict:

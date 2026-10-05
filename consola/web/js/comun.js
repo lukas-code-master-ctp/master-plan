@@ -106,6 +106,7 @@ export function ruta(hash) {
   const partes = camino.split('/').filter(Boolean).map(decodeURIComponent);
   if (partes[0] === 'disenos' && partes[1]) return { pantalla: 'diseno', id: partes[1] };
   if (partes[0] === 'disenos') return { pantalla: 'disenos' };
+  if (partes[0] === 'configuracion') return { pantalla: 'configuracion' };
   if (partes[0] === 'kmz' && partes[1]) return { pantalla: 'kmz', slug: partes[1] };
   if (partes[0] === 'kmz') return { pantalla: 'kmzs' };
   if (partes[0] === 'planos' && partes[1] === 'nuevo') {
