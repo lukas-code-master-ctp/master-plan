@@ -12,9 +12,9 @@
 import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
   anclaDesde, claveLote, dudosos, duplicados, empujar, girarEntradas, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo,
-  nombreDelSistema, ordenarEsquinas, PASOS,
+  explicacionAreas, nombreDelSistema, textoEscala, numeroAGuardar, ordenarEsquinas, PASOS,
   pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono,
-  resumenRevision, siguienteNombre, sinNumero, sugerencias, textoHuecos,
+  resumenRevision, siguienteNombre, sinNumero, sugerencias, sugerenciasConEstado, textoHuecos,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
 import { abrirNombre, abrirUsarKmz, cuantosLotes, descargaDe } from './kmzs.js';
@@ -142,6 +142,7 @@ export function prepararKmz(opciones) {
     e.preventDefault();
     escribirNumero($('#kmz-numero-valor').value);
   });
+  $('#kmz-numero-valor').addEventListener('input', pintarPistaNumero);
   $('#kmz-numero-valor').addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.stopPropagation(); cerrarNumero(); }
   });
@@ -527,9 +528,27 @@ function abrirNumero(x, y) {
   const margen = 8;
   forma.style.left = `${Math.max(margen, Math.min(sx, caja.clientWidth - forma.offsetWidth - margen))}px`;
   forma.style.top = `${Math.max(margen, Math.min(sy + 12, caja.clientHeight - forma.offsetHeight - margen))}px`;
+  pintarPistaNumero();
   $('#kmz-numero-valor').focus();
   $('#kmz-numero-valor').select();
   lienzo.redibujar();
+}
+
+/** Los números que ya hay: los de los lotes digitalizados y los marcados por ella. */
+const numerosDelPlano = () => [...rasgos.map((r) => r.properties.numero), ...entradas.semillas.map((s) => s.numero)];
+
+/** Lo que escribió, limpio, y cómo se guarda (con el sector de la serie si no lo trae). */
+function numeroEscrito(valor) {
+  const limpio = valor.trim().replace(/^lote\s*/i, '');
+  return [limpio, limpio ? numeroAGuardar(limpio, numerosDelPlano()) : ''];
+}
+
+/** "9 → 8-09": antes de guardar, cómo queda un número sin sector en una serie con sector. */
+function pintarPistaNumero() {
+  const pista = $('#kmz-numero-pista');
+  const [limpio, guardar] = numeroEscrito($('#kmz-numero-valor').value);
+  pista.hidden = !limpio || guardar === limpio;
+  pista.textContent = pista.hidden ? '' : `${limpio} → ${guardar}: los demás lotes llevan su sector.`;
 }
 
 function cerrarNumero() {
@@ -541,7 +560,7 @@ function cerrarNumero() {
 
 function escribirNumero(valor) {
   if (!numerando) return;
-  const limpio = valor.trim().replace(/^lote\s*/i, '');
+  const [, limpio] = numeroEscrito(valor);
   const otra = entradas.semillas.find((s) => claveLote(s.numero) === claveLote(limpio)
     && !(numerando.anillos && puntoEnPoligono(s.x, s.y, numerando.anillos)));
   if (limpio && otra && !confirm(`El ${limpio} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
@@ -900,9 +919,17 @@ function pintarNumerar() {
   const huecos = textoHuecos(d?.huecos);
   $('#kmz-huecos').hidden = !huecos;
   $('#kmz-huecos').textContent = huecos ? `${huecos} Búscalos en el plano: suelen ser los lotes sin número.` : '';
-  const porConfirmar = sugerencias(rasgos);
+  // Una ya confirmada queda como "✓ 8-05" (no se puede volver a apretar) hasta digitalizar de nuevo.
+  const porConfirmar = sugerenciasConEstado(rasgos, entradas.semillas);
   $('#kmz-sugerencias-caja').hidden = !porConfirmar.length;
-  $('#kmz-sugerencias').replaceChildren(...porConfirmar.map(({ numero }, i) => {
+  $('#kmz-sugerencias').replaceChildren(...porConfirmar.map(({ numero, confirmada }, i) => {
+    if (confirmada) {
+      const hecha = document.createElement('span');
+      hecha.className = 'pastilla pastilla--ok';
+      hecha.textContent = `✓ ${numero}`;
+      hecha.title = 'Confirmado: queda al digitalizar de nuevo';
+      return hecha;
+    }
     const boton = document.createElement('button');
     boton.type = 'button';
     boton.className = 'pastilla pastilla--boton';
@@ -1041,7 +1068,10 @@ function pintarRevisar() {
     return div;
   }));
   const problemas = cuenta.duplicados;
-  $('#kmz-revision-nota').textContent = problemas
+  // Si el área se corre pareja (o Ubicar ya avisó la escala), son las anclas, no los lotes.
+  const escala = cuenta.rojo || cuenta.ambar ? explicacionAreas(rasgosGeo?.features ?? [], plano.georreferencia) : null;
+  const nota = $('#kmz-revision-nota');
+  nota.textContent = problemas
     ? 'Hay números repetidos: el KMZ no se puede crear así. Vuelve a Numerar.'
     : cuenta.sin_numero_lote
       ? (cuenta.sin_numero_lote === 1 ? 'Un lote quedó sin número y no iría al KMZ.'
@@ -1054,7 +1084,16 @@ function pintarRevisar() {
       ? (entradas.cuadro ? 'No se leyó el cuadro de superficies: revisa a ojo que los lotes calcen con los caminos.'
         : 'Sin cuadro de superficies no hay áreas oficiales: si el plano lo trae, enciérralo en Marcar'
           + ' con "Cuadro de superficies". Si no, revisa a ojo que los lotes calcen con los caminos.')
+      : escala ? textoEscala(escala)
       : 'Los rojos tienen un área muy distinta a la oficial: suelen ser lotes mal separados.';
+  if (escala && !problemas && !cuenta.sin_numero && cuenta.lotes !== cuenta.gris) {
+    const ir = document.createElement('button');
+    ir.type = 'button';
+    ir.className = 'boton boton--texto boton--chico';
+    ir.dataset.paso = 'ubicar';
+    ir.textContent = 'Ir a Ubicar';
+    nota.append(' ', ir);
+  }
   $('#kmz-panel-revisar [data-accion="kmz-siguiente"]').disabled = Boolean(problemas);
 }
 

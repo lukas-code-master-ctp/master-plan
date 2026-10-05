@@ -142,3 +142,59 @@ def huecos(numeros, esperados=(), junto=None) -> list[str]:
             if (sector, n) not in faltan:
                 faltan[(sector, n)] = _como(plantillas[sector], n) if sector in plantillas else e
     return [faltan[k] for k in sorted(faltan)]
+
+
+# Si al menos esta fracción de los números lleva el mismo sector ("8-NN"), un número sin
+# sector ("9") es de esa serie ("8-09") y no otro lote: un clic viejo o una lectura que
+# perdió el "8-" (Caminos de Rapel).
+SECTOR_MIN = 0.8
+
+_CEROS = re.compile(r"(?:^|\D)0\d+\D*$")
+
+
+def sector_dominante(numeros) -> str | None:
+    """Un número de la serie con sector que llevan ≥ SECTOR_MIN de `numeros` ("8-01"; con
+    ceros a la izquierda si alguno los trae), para escribir otros como él. None si no
+    hay sector que domine."""
+    numeros = [str(n) for n in numeros]
+    series = [(_serie(n), n) for n in numeros]
+    cuenta = Counter(s[0] for s, _ in series if s and s[0])
+    if not cuenta:
+        return None
+    sector, cuantos = cuenta.most_common(1)[0]
+    if cuantos < SECTOR_MIN * len(numeros):
+        return None
+    del_sector = [n for s, n in series if s and s[0] == sector]
+    return next((n for n in del_sector if _CEROS.search(n)), del_sector[0])
+
+
+def con_sector(numero, plantilla: str | None) -> str:
+    """`numero` con el sector de `plantilla` si no trae sector ("9", "8-01" → "8-09").
+    Lo que ya trae sector, no es un número o es el sector mismo ("8": el resto de la
+    propiedad) queda tal cual."""
+    texto = str(numero)
+    c = clave(texto)
+    if plantilla is None or not re.fullmatch(r"\d+", c):
+        return texto
+    s = _serie(plantilla)
+    if not s or not s[0] or s[0].rstrip("-") == c:
+        return texto
+    return _como(plantilla, int(c))
+
+
+def completar_sector(numeros) -> dict[str, str]:
+    """{como venía: con el sector}: los números sin sector cuando casi toda la serie lo
+    trae (`sector_dominante`). No se cambia uno si el resultado ya está ("9" y "8-09"
+    marcados los dos): quedan como vienen."""
+    numeros = [str(n) for n in numeros]
+    plantilla = sector_dominante(numeros)
+    if plantilla is None:
+        return {}
+    tomadas = {clave(n) for n in numeros}
+    cambios = {}
+    for n in numeros:
+        nuevo = con_sector(n, plantilla)
+        if nuevo != n and n not in cambios and clave(nuevo) not in tomadas:
+            cambios[n] = nuevo
+            tomadas.add(clave(nuevo))
+    return cambios
