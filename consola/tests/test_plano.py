@@ -101,10 +101,12 @@ def test_subir_el_plano_extrae_sus_paginas(ana):
     respuesta = subir(web, slug, pdf_del_plano(paginas=2))
 
     assert respuesta.status_code == 201, respuesta.text
-    assert respuesta.json() == {"paginas": [dict(n=1, ancho=1560, alto=1026), dict(n=2, ancho=1560, alto=1026)]}
+    assert respuesta.json() == {"paginas": [dict(n=1, ancho=1560, alto=1026, ppmm=pytest.approx(PPMM)),
+                                            dict(n=2, ancho=1560, alto=1026, ppmm=pytest.approx(PPMM))]}
     carpeta = carpeta_del_plano(raiz, slug)
     assert sorted(p.name for p in carpeta.iterdir()) == ["paginas", "plano.pdf"]       # sin temporales
-    assert sorted(p.name for p in (carpeta / "paginas").iterdir()) == ["1.jpg", "1_mini.jpg", "2.jpg", "2_mini.jpg"]
+    assert sorted(p.name for p in (carpeta / "paginas").iterdir()) == [
+        "1.jpg", "1_medio.jpg", "1_mini.jpg", "2.jpg", "2_medio.jpg", "2_mini.jpg", "info.json"]
 
 
 def test_la_pagina_se_sirve_como_jpeg_privado(ana):

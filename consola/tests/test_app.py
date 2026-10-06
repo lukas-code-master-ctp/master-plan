@@ -493,6 +493,7 @@ RUTAS = {
     ("DELETE", "/api/kmz/{slug}"): AJENO_404,
     ("POST", "/api/kmz/{slug}/plano"): AJENO_404,
     ("GET", "/api/kmz/{slug}/paginas/{n}"): AJENO_404,
+    ("POST", "/api/kmz/{slug}/union/afinar"): AJENO_404,
     ("PUT", "/api/kmz/{slug}/entradas"): AJENO_404,
     ("POST", "/api/kmz/{slug}/digitalizar"): AJENO_404,
     ("POST", "/api/kmz/{slug}/georreferenciar"): AJENO_404,
