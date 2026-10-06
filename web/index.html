@@ -85,6 +85,28 @@
 
 <main class="escena">
 
+  <!-- En el teléfono, las dos maneras de ver el loteo. En escritorio conviven. -->
+  <div class="conmutador" role="tablist" aria-label="Cómo ver el loteo">
+    <button class="pestana pestana--activa" role="tab" data-panel="visor"
+            aria-selected="true" aria-controls="visor">
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <ellipse cx="10" cy="10" rx="8" ry="3.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M14.5 5.2A8 8 0 0 0 10 3.5c-2.2 0-4 2.9-4 6.5s1.8 6.5 4 6.5" fill="none"
+              stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <path d="m12.6 14.6 1.9 1.9-1.9 1.9" fill="none" stroke="currentColor" stroke-width="1.5"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Panorámica 360°</span>
+    </button>
+    <button class="pestana" role="tab" data-panel="mapa" aria-selected="false" aria-controls="carta">
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M2.5 5 7.5 3l5 2 5-2v12l-5 2-5-2-5 2Z M7.5 3v12 M12.5 5v12" fill="none"
+              stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+      <span>Plano satelital</span>
+    </button>
+  </div>
+
   <section id="visor" class="visor" aria-label="Vista aérea 360">
     <canvas id="lienzo-360"></canvas>
     <svg id="overlay" class="overlay" xmlns="http://www.w3.org/2000/svg"
@@ -182,12 +204,6 @@
     </header>
     <div id="mapa" class="mapa" aria-label="Plano del loteo"></div>
   </section>
-
-  <div class="conmutador" role="tablist">
-    <button class="pestana pestana--activa" role="tab" data-panel="visor"
-            aria-selected="true">Vista aérea</button>
-    <button class="pestana" role="tab" data-panel="mapa" aria-selected="false">Plano</button>
-  </div>
 
   <aside id="ficha" class="ficha" aria-live="polite" hidden></aside>
 

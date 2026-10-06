@@ -1,4 +1,5 @@
 /** Plano del loteo sobre imagen satelital, sincronizado con el visor. */
+import { romano } from './datos.js';
 
 const TESELAS = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const ATRIBUCION = 'Imágenes © Esri, Maxar, Earthstar Geographics';
@@ -16,7 +17,11 @@ export class Mapa {
     this.seleccionada = null;
     this.estiloParcela = () => ({ color: '#ffffff', atenuada: false });
 
-    this.mapa = L.map(elemento, { zoomControl: true, attributionControl: true });
+    // El zoom abajo a la derecha, donde llega el pulgar. Arriba, en el teléfono,
+    // flotan el conmutador y la leyenda.
+    this.mapa = L.map(elemento, { zoomControl: false, attributionControl: true });
+    L.control.zoom({ position: 'bottomright', zoomInTitle: 'Acercar', zoomOutTitle: 'Alejar' })
+      .addTo(this.mapa);
     L.tileLayer(TESELAS, { maxZoom: 19, attribution: ATRIBUCION }).addTo(this.mapa);
 
     this._dibujarOtrosPoligonos();
@@ -56,14 +61,18 @@ export class Mapa {
       if (!porPosicion.has(vista.posicion)) porPosicion.set(vista.posicion, vista);
     }
     for (const [posicion, vista] of porPosicion) {
+      const nombre = this.catalogo.nombrePunto(posicion);
+      const alturas = this.catalogo.alturasDePunto(posicion);
+      // Sin tamaño: la pastilla mide lo que su texto. El disco del romano queda
+      // centrado donde estaba el dron al fotografiar (ver .punto-vuelo).
       const marcador = L.marker([vista.lat, vista.lon], {
         icon: L.divIcon({
-          className: '',
-          html: `<div class="punto-vuelo">${posicion}</div>`,
-          iconSize: [26, 26],
-          iconAnchor: [13, 13],
+          className: 'punto-vuelo-ancla',
+          html: `<div class="punto-vuelo"><span class="punto-vuelo__disco">${romano(posicion)}</span>`
+            + `<span class="punto-vuelo__rotulo">${alturas}</span></div>`,
+          iconSize: null,
         }),
-        title: `Posición de vuelo ${posicion}`,
+        title: `${nombre} · ${alturas}`,
       }).addTo(this.mapa);
       marcador.on('click', () => this.alElegirVista(posicion));
       this.marcadores.set(posicion, marcador);
