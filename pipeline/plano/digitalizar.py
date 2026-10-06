@@ -9,8 +9,15 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
 
     {
       "pdf": "plano.pdf",              ruta relativa a la carpeta
-      "pagina": 1,                     desde 1
-      "rotacion": 0,                   grados en sentido horario: 0, 90, 180 o 270
+      "pagina": 1,                     desde 1; 0 es la unión de hojas (y solo con «union»)
+      "rotacion": 0,                   grados en sentido horario: 0, 90, 180 o 270; con
+                                       la unión, 0 (cada hoja lleva su giro)
+      "union": null,                   varias páginas del PDF en un solo lienzo
+                                       (`union.py`): {"hojas": [{"n", "rotacion",
+                                       "angulo", "x", "y", "recorte"}], de abajo hacia
+                                       arriba, "cuadro": {"hoja": n, "rect": [x0, y0,
+                                       x1, y1]} | null}. El cuadro va en px de su hoja
+                                       (girada), no de la unión
       "rectangulo": [x0, y0, x1, y1],  el dibujo de la "situación propuesta"
       "mascaras": [[x0, y0, x1, y1]],  lo que no es dibujo: cuadros, cajetín, timbres
       "esquinas": null,                foto: [[x, y] × 4] del marco impreso, en orden
@@ -36,7 +43,8 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
                                        marca la loteadora); puede estar fuera de
                                        `rectangulo`: se lee igual. Dentro del dibujo
                                        tapa como una máscara. Sin él se prueba cada
-                                       máscara
+                                       máscara. Con la unión es null: va en
+                                       `union.cuadro`
       "anclas": [{"nombre": "roja", "x": 2533, "y": 8037,       punto del plano ↔ su lon/lat
                   "lon": -70.8240, "lat": -34.7240}],           WGS84 en grados decimales
       "ajuste": {"de": 0.0, "dn": 0.0}  traslación fina en metros (este, norte)
@@ -44,12 +52,17 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
 
 Todas las coordenadas van en **píxeles de página**: la imagen que trae el PDF, ya
 girada según `rotacion` (lo que ve la loteadora), con el centro del píxel en el
-entero. Si cambia la rotación, cambian las coordenadas.
+entero. Si cambia la rotación, cambian las coordenadas. Con la unión (`pagina: 0`), la
+página es la imagen compuesta de las hojas: sus px empiezan en (0, 0) como los de
+cualquier página.
 
 `<carpeta>/digitalizado.json`:
 
     {
-      "pagina": {"numero", "rotacion", "ancho", "alto", "ppmm", "fuente"},
+      "pagina": {"numero", "rotacion", "ancho", "alto", "ppmm", "fuente",
+                 "union"},                         huella de la unión (`union.huella`),
+                                                   o null; con ella numero es 0 y
+                                                   fuente "union"
       "trabajo": {"ancho", "alto", "ppmm", "modo", "homografia"},   página -> trabajo (3×3)
       "lotes": [{"numero", "semilla": [x, y], "poligono": [[x, y], ...],
                  "huecos": [[[x, y], ...]], "area_px", "vertices",
@@ -107,6 +120,7 @@ from shapely.ops import unary_union
 from . import pagina as pag
 from . import numeros as numeros_lote
 from . import particion, rotulos, tinta
+from . import union as union_hojas
 
 ENTRADAS = "entradas.json"
 SALIDA = "digitalizado.json"
@@ -223,20 +237,29 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     carpeta = Path(carpeta)
     entradas = leer_entradas(carpeta)
     numero, rotacion = entradas["pagina"], entradas["rotacion"]
-    hoja = pag.extraer(carpeta / entradas["pdf"], numero)
-    imagen = pag.rotar(hoja.imagen, rotacion)
-    hoja.imagen = None
-    avance(f"Página {numero} de {hoja.paginas}: {imagen.shape[1]}×{imagen.shape[0]} px,"
-           f" {hoja.ppmm:.2f} px/mm ({'imagen embebida' if hoja.fuente == 'embebida' else 'renderizada'}),"
-           f" rotación {rotacion}°")
-    previo = _previo(carpeta, numero, rotacion)
+    union = union_hojas.leer(entradas["union"]) if entradas["union"] else None
+    if union is not None:
+        imagen, ppmm = union_hojas.componer_desde_pdf(carpeta / entradas["pdf"], union)
+        fuente = "union"
+        avance(f"Hojas unidas {_lista([str(h.n) for h in union.hojas])}: {imagen.shape[1]}×{imagen.shape[0]} px,"
+               f" {ppmm:.2f} px/mm")
+    else:
+        hoja = pag.extraer(carpeta / entradas["pdf"], numero)
+        imagen = pag.rotar(hoja.imagen, rotacion)
+        hoja.imagen = None
+        ppmm, fuente = hoja.ppmm, hoja.fuente
+        avance(f"Página {numero} de {hoja.paginas}: {imagen.shape[1]}×{imagen.shape[0]} px,"
+               f" {ppmm:.2f} px/mm ({'imagen embebida' if fuente == 'embebida' else 'renderizada'}),"
+               f" rotación {rotacion}°")
+    huella_union = union_hojas.huella(union) if union is not None else None
+    previo = _previo(carpeta, numero, rotacion, huella_union)
     usuario = [(s["numero"], s["x"], s["y"]) for s in entradas["semillas"]]
     lector = None
     if entradas["lector"]:
-        lector = _leer_rotulos(carpeta, entradas, imagen, hoja.ppmm, previo, avance)
+        lector = _leer_rotulos(carpeta, entradas, imagen, ppmm, previo, avance)
         poligonos = ([l["poligono"] for l in previo.get("lotes") or []]
                      + [c["poligono"] for c in previo.get("sin_numero") or []]) if previo else []
-        combinadas = rotulos.combinar(usuario, lector["rotulos"], RADIO_CORRECCION_MM * hoja.ppmm,
+        combinadas = rotulos.combinar(usuario, lector["rotulos"], RADIO_CORRECCION_MM * ppmm,
                                       entradas["lector_apoyo_min"], poligonos, lector.get("cuadro") or {})
     else:
         combinadas = rotulos.combinar(usuario, [], 0.0)
@@ -245,7 +268,7 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     avance(f"Semillas: {len(combinadas) - de_lector} de la loteadora y {de_lector} del lector"
            + (f" (apoyo ≥ {entradas['lector_apoyo_min']})" if lector else " (lector apagado)"))
     semillas = [(s["numero"], s["x"], s["y"]) for s in combinadas]
-    r = digitalizar_imagen(imagen, hoja.ppmm, semillas, entradas.get("rectangulo"),
+    r = digitalizar_imagen(imagen, ppmm, semillas, entradas.get("rectangulo"),
                            _mascaras(entradas), entradas.get("esquinas"),
                            entradas.get("marco_mm"), entradas.get("cuadricula"), avance)
     posicion = {s["numero"]: s for s in combinadas}
@@ -264,13 +287,13 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     # (sea "de lote" o tenga deslinde firme): ahí suele estar el que falta.
     mediana = float(np.median([g.area for g in r.lotes.values()])) if r.lotes else 0.0
     grandes = [c for c in r.sin_numero if c.area >= particion.LOTE_FRAC * mediana]
-    junto = [n for n, g in r.lotes.items() if any(g.distance(c) <= 0.5 * hoja.ppmm for c in grandes)]
+    junto = [n for n, g in r.lotes.items() if any(g.distance(c) <= 0.5 * ppmm for c in grandes)]
     huecos = numeros_lote.huecos(presentes, numeros_lote.esperados(cuadro), junto)
     if huecos:
         avance(f"Faltan en la numeración: {', '.join(huecos)}")
     datos = dict(
         pagina=dict(numero=numero, rotacion=rotacion, ancho=int(imagen.shape[1]), alto=int(imagen.shape[0]),
-                    ppmm=hoja.ppmm, fuente=hoja.fuente),
+                    ppmm=ppmm, fuente=fuente, union=huella_union),
         trabajo=dict(ancho=int(r.encuadre.imagen.shape[1]), alto=int(r.encuadre.imagen.shape[0]),
                      ppmm=r.encuadre.ppmm, modo=r.encuadre.modo, homografia=r.encuadre.homografia.tolist()),
         lotes=[dict(numero=n, semilla=[posicion[n]["x"], posicion[n]["y"]], poligono=_anillo(g.exterior),
@@ -324,29 +347,43 @@ def _sugerencias(caras: list[Polygon], de_lote: list[bool], leidos, apoyo_min: i
 
 def _mascaras(entradas: dict) -> list[list[float]]:
     """Lo que no es dibujo: las máscaras y el cuadro de superficies (si cae dentro del
-    rectángulo del dibujo, sus números no son rótulos ni sus líneas deslindes)."""
+    rectángulo del dibujo, sus números no son rótulos ni sus líneas deslindes). El de la
+    unión (`union.cuadro`) no entra: está en px de su hoja, no de la unión, y lo que
+    quede de él en la unión lo tapa el recorte o una máscara."""
     return list(entradas.get("mascaras") or []) + ([entradas["cuadro"]] if entradas.get("cuadro") else [])
 
 
-def _previo(carpeta: Path, numero: int, rotacion: int) -> dict | None:
-    """La digitalización anterior, si es de la misma página y rotación (sus lotes dicen
-    dónde corrigió la loteadora; sus lecturas se reusan)."""
+def _lista(cosas: list[str]) -> str:
+    return cosas[0] if len(cosas) == 1 else f"{', '.join(cosas[:-1])} y {cosas[-1]}"
+
+
+def _previo(carpeta: Path, numero: int, rotacion: int, union: str | None = None) -> dict | None:
+    """La digitalización anterior, si es de la misma página, rotación y unión de hojas
+    (sus lotes dicen dónde corrigió la loteadora; sus lecturas se reusan). Con otra
+    unión los px de página son otros: sus lotes caerían en cualquier parte."""
     try:
         d = json.loads((Path(carpeta) / SALIDA).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     p = d.get("pagina") or {}
-    return d if (p.get("numero"), p.get("rotacion")) == (numero, rotacion) else None
+    return d if (p.get("numero"), p.get("rotacion"), p.get("union")) == (numero, rotacion, union) else None
 
 
 def huella_lector(carpeta: Path, entradas: dict) -> str:
-    """Lo que cambia lo que lee el lector: el PDF, la página, el dibujo y sus máscaras."""
+    """Lo que cambia lo que lee el lector: el PDF, la página (o la unión de hojas y su
+    cuadro), el dibujo y sus máscaras."""
     resumen = hashlib.sha1()
     with open(Path(carpeta) / entradas["pdf"], "rb") as f:
         for trozo in iter(lambda: f.read(1 << 20), b""):
             resumen.update(trozo)
     datos = dict(pdf=resumen.hexdigest(), version=rotulos.VERSION,
                  **{k: entradas.get(k) for k in ("pagina", "rotacion", "rectangulo", "mascaras", "cuadro")})
+    if entradas.get("union"):
+        # Solo con unión: sin ella la huella queda la de siempre y los KMZ que ya
+        # existen no vuelven a pasar por Tesseract. El cuadro va aparte porque
+        # `union.huella` no lo incluye (no cambia la imagen, pero sí lo que se lee).
+        u = union_hojas.leer(entradas["union"])
+        datos["union"] = dict(huella=union_hojas.huella(u), cuadro=u.cuadro)
     texto = json.dumps(datos, sort_keys=True, default=str)
     return hashlib.sha1(texto.encode("utf-8")).hexdigest()[:16]
 
@@ -379,15 +416,37 @@ def _leer_rotulos(carpeta: Path, entradas: dict, imagen: np.ndarray, ppmm: float
     # Siempre, aunque la loteadora ya haya dado la cuadrícula: así aceptar la propuesta
     # (que cambia las entradas) no obliga a leer todo de nuevo. Son solo franjas.
     cuadricula = rotulos.leer_cuadricula(imagen, ppmm, avance, rectangulo=[x0, y0, x1, y1])
-    # El cuadro marcado se lee de la página entera, aunque esté fuera del dibujo.
-    cuadro = rotulos.leer_cuadro(imagen, [entradas["cuadro"]] if entradas.get("cuadro")
-                                 else entradas.get("mascaras") or [], avance)
+    cuadro = _leer_cuadro(carpeta, entradas, imagen, avance)
     # Sin ningún rótulo no se guarda la huella: lo más probable es que el lector haya
     # fallado (memoria, tiempo) y `leer` devuelve vacío en vez de caerse. Si se
     # guardara, digitalizar de nuevo reusaría ese vacío para siempre.
     return dict(disponible=True, motivo=None, huella=huella if leidos else None, rotulos=leidos,
                 cuadricula=cuadricula,
                 cuadro=cuadro, segundos=round(time.time() - inicio, 1))
+
+
+def _leer_cuadro(carpeta: Path, entradas: dict, imagen: np.ndarray, avance) -> dict[str, float]:
+    """El cuadro de superficies. El marcado se lee de la página entera, aunque esté fuera
+    del dibujo. Con la unión se lee de su hoja original, girada como va en la unión: el
+    recorte de cada hoja suele dejarlo fuera de la unión, y su rectángulo está en px de
+    esa hoja. Sin cuadro marcado se prueba cada máscara de la página (o de la unión)."""
+    marcado = (entradas.get("union") or {}).get("cuadro")
+    if marcado:
+        if rotulos.motivo_no_disponible():
+            return {}
+        hoja = next(h for h in entradas["union"]["hojas"] if h["n"] == marcado["hoja"])
+        # Solo el trozo del cuadro, girado como vista y copiado: la hoja entera girada
+        # sería otra copia de la hoja al lado de la unión, que sigue en memoria.
+        girada = np.rot90(pag.extraer(Path(carpeta) / entradas["pdf"], hoja["n"]).imagen,
+                          k=-pag._cuartos(hoja["rotacion"]))
+        alto, ancho = girada.shape[:2]
+        x0, y0, x1, y1 = (int(round(v)) for v in marcado["rect"])
+        x0, x1, y0, y1 = max(0, x0), min(ancho, x1), max(0, y0), min(alto, y1)
+        trozo = np.ascontiguousarray(girada[y0:max(y0, y1), x0:max(x0, x1)])
+        del girada
+        return rotulos.leer_cuadro(trozo, [[0, 0, trozo.shape[1], trozo.shape[0]]], avance)
+    return rotulos.leer_cuadro(imagen, [entradas["cuadro"]] if entradas.get("cuadro")
+                               else entradas.get("mascaras") or [], avance)
 
 
 def _resumen_lector(lector: dict | None, entradas: dict, semillas: int, sin_poligono: list[str]) -> dict:
@@ -424,8 +483,24 @@ def leer_entradas(carpeta: Path) -> dict:
 
     salida = dict(e)
     salida["pdf"] = str(e.get("pdf") or "plano.pdf")
-    salida["pagina"] = entero("pagina", 1)
+    salida["union"] = None
+    if e.get("union") is not None:
+        # Solo la forma: las páginas y sus tamaños los revisa la consola contra el PDF,
+        # y lo que se escape lo dice `componer_desde_pdf` al extraer.
+        salida["union"] = union_hojas.leer(e["union"]).a_dic()
+    salida["pagina"] = entero("pagina", 0 if salida["union"] else 1)
     salida["rotacion"] = entero("rotacion", 0)
+    if salida["union"]:
+        if salida["pagina"] != 0:
+            raise ValueError(f"con las hojas unidas, «pagina» es 0 (la unión), no {salida['pagina']}")
+        if salida["rotacion"] != 0:
+            raise ValueError(f"con las hojas unidas, «rotacion» es 0 (cada hoja lleva su giro),"
+                             f" no {salida['rotacion']}")
+        if e.get("cuadro") is not None:
+            raise ValueError("con las hojas unidas, el cuadro de superficies va en «union.cuadro»"
+                             " (en px de su hoja), no en «cuadro»")
+    elif salida["pagina"] == 0:
+        raise ValueError("«pagina» 0 es la unión de hojas, y no hay hojas unidas: elige una página del PDF")
     if e.get("rectangulo") is not None:
         x0, y0, x1, y1 = salida["rectangulo"] = numeros(e["rectangulo"], 4, "rectangulo")
         if x1 <= x0 or y1 <= y0:

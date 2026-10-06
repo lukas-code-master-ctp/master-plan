@@ -70,7 +70,7 @@ CALIDAD = 90
 # Lo que cambia los lotes en píxeles. De la cuadrícula, solo dónde están las
 # líneas: su valor impreso se puede corregir sin volver a digitalizar.
 CLAVES_DIGITALIZAR = ("pdf", "pagina", "rotacion", "rectangulo", "mascaras", "esquinas", "marco_mm",
-                      "semillas", "lector", "lector_apoyo_min", "cuadro")
+                      "semillas", "lector", "lector_apoyo_min", "cuadro", "union")
 CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula")
 
 # Topes de lo que se marca a mano: muy por sobre un loteo real, y lejos de lo que
@@ -657,7 +657,9 @@ def _resumen_lector(lector: dict | None) -> dict | None:
 
 
 def huella_digitalizar(entradas: dict) -> str:
-    datos = {k: entradas.get(k) for k in CLAVES_DIGITALIZAR}
+    # Sin unión de hojas la clave no entra: así la huella de los KMZ que ya existen no
+    # cambia y lo que digitalizaron no queda atrasado.
+    datos = {k: entradas.get(k) for k in CLAVES_DIGITALIZAR if k != "union" or entradas.get(k)}
     cuadricula = entradas.get("cuadricula") or {}
     datos["cuadricula"] = {f: [m.get(eje) for m in cuadricula.get(f) or []]
                            for f, eje in (("verticales", "x"), ("horizontales", "y"))}
