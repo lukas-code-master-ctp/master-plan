@@ -3,10 +3,9 @@
  *
  * En el teléfono es un panel que sube desde abajo y se cierra arrastrándolo; en
  * escritorio, una tarjeta flotante. Lo que dice y en qué orden lo ofrece sale de
- * funciones puras (formatos, tarjetas, acciones, KML) que se prueban sin
- * navegador. Las tarjetas y bloques que dependen de datos que la planilla aún no
- * trae (topografía, rol, pie y cuotas, factibilidades) no se dibujan vacíos: se
- * agregan en atributosDe cuando lleguen esas columnas.
+ * funciones puras (formatos, tarjetas, financiamiento, acciones, KML) que se
+ * prueban sin navegador. Lo que depende de columnas opcionales de la planilla
+ * (topografía, rol, pie, cuotas, reserva) no se dibuja vacío: si no viene, no está.
  */
 import { TEXTOS_POR_DEFECTO } from './marca.js';
 
@@ -25,6 +24,8 @@ const ICONOS = {
   superficie: `<path d="M3.5 3.5v13h13Z M3.5 9.5l7 7 M6.5 13.5h3" ${TRAZO}/>`,
   servidumbre: `<path d="M10 17.5v-6.5L5 6 M10 11l5-5 M5 6V3.5 M5 6h2.5 M15 6V3.5 M15 6h-2.5" ${TRAZO}/>`,
   aire: `<ellipse cx="10" cy="10" rx="8" ry="3.4" ${TRAZO}/><path d="M14.5 5.2A8 8 0 0 0 10 3.5c-2.2 0-4 2.9-4 6.5s1.8 6.5 4 6.5 M12.6 14.6l1.9 1.9-1.9 1.9" ${TRAZO}/>`,
+  topografia: `<path d="M1.5 16.5 7 8l3.5 5 2.5-3.5 5.5 7Z" ${TRAZO}/>`,
+  rol: `<path d="M10 2.5 16 5v4.5c0 4-2.6 6.8-6 8-3.4-1.2-6-4-6-8V5Z M7.3 10l1.9 1.9 3.6-3.8" ${TRAZO}/>`,
   pago: `<rect x="4" y="9" width="12" height="8.5" rx="1.5" ${TRAZO}/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" ${TRAZO}/>`,
   deslindes: `<path d="M2.5 5 7.5 3l5 2 5-2v12l-5 2-5-2-5 2Z M7.5 3v12 M12.5 5v12" ${TRAZO}/>`,
   enlace: `<path d="M8.5 11.5a3 3 0 0 0 4.2 0l2.6-2.6a3 3 0 0 0-4.2-4.2l-.8.8 M11.5 8.5a3 3 0 0 0-4.2 0l-2.6 2.6a3 3 0 0 0 4.2 4.2l.8-.8" ${TRAZO}/>`,
@@ -62,9 +63,9 @@ export function escapar(texto) {
 // --- Qué dice y qué ofrece -------------------------------------------------------
 
 /**
- * Las tarjetas de la cuadrícula: { clave, rotulo, valor, detalle }. Hoy la
- * superficie y la servidumbre; aquí entran la topografía y el rol cuando la
- * planilla los traiga. Sin ninguna, la cuadrícula no se dibuja.
+ * Las tarjetas de la cuadrícula: { clave, rotulo, valor, detalle }, en el orden
+ * del diseño: superficie, topografía, servidumbre y rol. Cada una aparece solo si
+ * la planilla trae su dato; sin ninguna, la cuadrícula no se dibuja.
  */
 export function atributosDe(parcela) {
   const tarjetas = [];
@@ -76,9 +77,32 @@ export function atributosDe(parcela) {
       detalle: `${HECTAREAS.format(parcela.superficie_m2 / M2_POR_HECTAREA)} hectáreas`,
     });
   }
+  if (parcela.topografia) {
+    tarjetas.push({ clave: 'topografia', rotulo: 'Topografía', valor: parcela.topografia, detalle: null });
+  }
   const servidumbre = tarjetaServidumbre(parcela);
   if (servidumbre) tarjetas.push(servidumbre);
+  if (parcela.rol) tarjetas.push({ clave: 'rol', rotulo: 'Rol', valor: parcela.rol, detalle: null });
   return tarjetas;
+}
+
+/**
+ * Las filas bajo el precio: [rótulo, valor]. El pie y la cuota van en la moneda
+ * del precio. No se calcula ninguna cuota: se muestra lo que la planilla dice,
+ * porque sin la tasa cualquier cálculo sería inventar.
+ */
+export function financiamientoDe(parcela) {
+  const filas = [];
+  const moneda = parcela.moneda;
+  if (parcela.pie) {
+    const porcentaje = parcela.precio ? ` (${Math.round((parcela.pie / parcela.precio) * 100)}%)` : '';
+    filas.push(['Pie desde', `${formatearPrecio(parcela.pie, moneda)}${porcentaje}`]);
+  }
+  if (parcela.cuotas) {
+    const valor = parcela.valor_cuota ? ` de ${formatearPrecio(parcela.valor_cuota, moneda)}` : '';
+    filas.push(['Cuotas', `${parcela.cuotas} cuotas${valor}`]);
+  }
+  return filas;
 }
 
 /** La superficie de la servidumbre como valor y el ancho del camino como detalle, si están. */
@@ -116,12 +140,19 @@ export function accionesDe(parcela, catalogo) {
   if (vendible && parcela.link_pago) {
     acciones.push({
       tipo: 'pago',
-      texto: catalogo.diseno?.texto_pago || (parcela.precio != null ? 'Comprar' : 'Reservar parcela'),
+      texto: catalogo.diseno?.texto_pago || textoDePago(parcela),
       href: parcela.link_pago,
     });
   }
   if (parcela.mejor_vista) acciones.push({ tipo: 'aire', texto: 'Ver en 360°' });
   return acciones;
+}
+
+/** "Reservar parcela ($250.000)" si se sabe cuánto; si no, comprar o reservar. */
+function textoDePago(parcela) {
+  // La reserva va en pesos: así se cobra, aunque el loteo se venda en UF.
+  if (parcela.reserva) return `Reservar parcela (${formatearPrecio(parcela.reserva, 'CLP')})`;
+  return parcela.precio != null ? 'Comprar' : 'Reservar parcela';
 }
 
 /**
@@ -155,6 +186,7 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
   const estado = parcela.estado;
   const precio = formatearPrecio(parcela.precio, parcela.moneda);
   const atributos = atributosDe(parcela);
+  const financiamiento = financiamientoDe(parcela);
   const titulo = catalogo.titulo(parcela);
 
   contenedor.replaceChildren();
@@ -191,6 +223,8 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
       ${precio
         ? `<p class="precio__monto"><strong>${precio}</strong>${parcela.moneda === 'UF' ? '' : ' <small>CLP</small>'}</p>`
         : '<p class="precio__monto precio__monto--consultar">A consultar</p>'}
+      ${financiamiento.length ? `<dl class="precio__financiamiento">${financiamiento.map(([rotulo, valor]) => `
+        <div><dt>${escapar(rotulo)}</dt><dd>${escapar(valor)}</dd></div>`).join('')}</dl>` : ''}
     </div>
 
     <div class="acciones"></div>

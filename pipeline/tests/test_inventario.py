@@ -98,3 +98,17 @@ def test_lo_que_el_dibujo_dice_no_en_venta_se_mantiene_sin_ficha(tmp_path):
     actualizar(fuentes, proyecto(tmp_path), salida)
 
     assert {p["id"]: p["estado"] for p in leer(salida)["parcelas"]} == {"1": "disponible", "2": "no_en_venta"}
+
+
+def test_pone_al_dia_el_rol_la_topografia_el_financiamiento_y_la_reserva(tmp_path):
+    salida = sitio(tmp_path, [parcela("1", "disponible", en_planilla=True, precio=9990000.0)])
+    fuentes = fuentes_con(tmp_path, "Parcela,Estado,Precio,Superficie m2,Rol,Topografía,Pie,Cuotas,"
+                                    "Valor cuota,Reserva\n"
+                                    "1,Disponible,9990000,5000,8073-145,Plana,1998000,24,333000,250000\n")
+
+    resultado = actualizar(fuentes, proyecto(tmp_path), salida)
+
+    p = leer(salida)["parcelas"][0]
+    assert resultado.cambiadas == ("1",)
+    assert (p["rol"], p["topografia"], p["pie"], p["cuotas"], p["valor_cuota"], p["reserva"]) == (
+        "8073-145", "Plana", 1998000, 24, 333000, 250000)

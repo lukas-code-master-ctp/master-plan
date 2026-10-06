@@ -231,3 +231,57 @@ def test_la_etapa_puede_venir_en_su_propia_columna(tmp_path):
 
     assert {i: f.estado for i, f in leer_planilla(ruta).items()} == {
         "1-7": "disponible", "2-7": "vendido", "3-7": "reservado"}
+
+
+# --- Datos de la ficha: rol, topografía, financiamiento y reserva --------------
+
+def test_lee_el_rol_la_topografia_el_financiamiento_y_la_reserva(tmp_path):
+    ruta = planilla(tmp_path, [
+        ["Parcela", "Precio", "Rol", "Topografía", "Pie", "Cuotas", "Valor cuota", "Reserva"],
+        ["14", "24.990.000", "8073-145", "Plana y lomaje", "4.990.000", 48, "416.667", "250.000"],
+    ])
+
+    ficha = leer_excel(ruta)["14"]
+
+    assert (ficha.rol, ficha.topografia) == ("8073-145", "Plana y lomaje")
+    assert (ficha.pie, ficha.cuotas, ficha.valor_cuota, ficha.reserva) == (4_990_000, 48, 416_667, 250_000)
+
+
+def test_entiende_otros_nombres_para_las_columnas_nuevas(tmp_path):
+    ruta = planilla(tmp_path, [
+        ["Lote", "Rol de avalúo", "N° cuotas", "Valor de la cuota", "Monto reserva", "Pie mínimo"],
+        ["14", "8073-145", "36", "500000", "300000", "5000000"],
+    ])
+
+    ficha = leer_excel(ruta)["14"]
+
+    assert (ficha.rol, ficha.cuotas, ficha.valor_cuota, ficha.reserva, ficha.pie) == (
+        "8073-145", 36, 500_000, 300_000, 5_000_000)
+
+
+def test_un_pie_en_porcentaje_se_calcula_sobre_el_precio(tmp_path):
+    ruta = planilla(tmp_path, [["Parcela", "Precio", "Pie"], ["14", 24_990_000, "20%"]])
+
+    assert leer_excel(ruta)["14"].pie == pytest.approx(4_998_000)
+
+
+def test_un_pie_en_porcentaje_sin_precio_no_se_puede_calcular(tmp_path):
+    ruta = planilla(tmp_path, [["Parcela", "Pie"], ["14", "20%"]])
+
+    assert leer_excel(ruta)["14"].pie is None
+
+
+def test_los_ceros_del_financiamiento_son_datos_ausentes(tmp_path):
+    ruta = planilla(tmp_path, [["Parcela", "Pie", "Cuotas", "Valor cuota", "Reserva", "Rol"],
+                               ["14", 0, "0", 0, "0", " "]])
+
+    ficha = leer_excel(ruta)["14"]
+
+    assert (ficha.pie, ficha.cuotas, ficha.valor_cuota, ficha.reserva, ficha.rol) == (None,) * 5
+
+
+def test_sin_columnas_nuevas_las_fichas_las_traen_vacias(tmp_path):
+    ficha = leer_excel(planilla(tmp_path, [["Parcela", "Estado"], ["14", "Disponible"]]))["14"]
+
+    assert (ficha.rol, ficha.topografia, ficha.pie, ficha.cuotas, ficha.valor_cuota,
+            ficha.reserva) == (None,) * 6

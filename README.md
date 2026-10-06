@@ -760,6 +760,15 @@ distinguir tildes ni mayúsculas. Reconoce:
 | `Precio` | No | Si falta o es 0, la ficha dice "A consultar" |
 | `Moneda` | No | `CLP` (por defecto) o `UF` |
 | `Link de pago` | No | Puede ser distinto por parcela |
+| `Rol` (o `Rol de avalúo`) | No | Texto, como `8073-145`. La ficha lo muestra en una tarjeta |
+| `Topografía` | No | Texto corto: `Plana`, `Plana y lomaje`. La ficha lo muestra en una tarjeta |
+| `Pie` | No | En la moneda del precio. `20%` se calcula sobre el precio. La ficha dice el monto y el porcentaje |
+| `Cuotas` | No | Cuántas cuotas (también `N° cuotas`) |
+| `Valor cuota` | No | En la moneda del precio. No se calcula: sin la tasa sería inventar |
+| `Reserva` | No | Monto en pesos; el botón de pago dice "Reservar parcela ($250.000)" |
+
+Las seis últimas son opcionales y la ficha no deja huecos: lo que no viene, no aparece. Las
+parcelas que llegan desde Cierra no las traen. Un cero cuenta como celda vacía.
 
 Una planilla que repite una parcela se rechaza con un mensaje: casi siempre son etapas que
 numeran desde 1 sin decir cuál es cuál, y quedarse con una fila publicaría el precio de otra

@@ -34,6 +34,13 @@ ALIAS_COLUMNAS = {
     "precio": ("precio", "valor", "precio uf", "precio clp"),
     "moneda": ("moneda", "unidad"),
     "link_pago": ("link de pago", "link pago", "pago", "url de pago"),
+    # Lo que la ficha muestra en sus tarjetas y en el precio, si la planilla lo trae.
+    "rol": ("rol", "rol de avaluo", "rol avaluo", "rol sii", "rol de avaluo fiscal"),
+    "topografia": ("topografia", "relieve"),
+    "pie": ("pie", "pie minimo", "monto pie", "pie inicial"),
+    "cuotas": ("cuotas", "n cuotas", "numero de cuotas", "cantidad de cuotas", "nro cuotas"),
+    "valor_cuota": ("valor cuota", "valor de la cuota", "monto cuota", "cuota"),
+    "reserva": ("reserva", "monto reserva", "monto de reserva", "valor reserva"),
 }
 
 ALIAS_ESTADOS = {
@@ -74,6 +81,13 @@ class FichaComercial:
     precio: float | None = None
     moneda: str = "CLP"
     link_pago: str | None = None
+    rol: str | None = None
+    topografia: str | None = None
+    # El pie y la cuota van en la moneda del precio; la reserva, en pesos.
+    pie: float | None = None
+    cuotas: int | None = None
+    valor_cuota: float | None = None
+    reserva: float | None = None
 
 
 def leer_planilla(ruta: Path, parcelacion: str | None = None) -> dict[str, FichaComercial]:
@@ -151,6 +165,13 @@ def fichas_desde_filas(filas: list, parcelacion: str | None = None,
             precio=precio if precio else None,
             moneda=_texto(_valor(fila, indices.get("moneda"))) or "CLP",
             link_pago=_texto(_valor(fila, indices.get("link_pago"))),
+            rol=_texto(_valor(fila, indices.get("rol"))),
+            topografia=_texto(_valor(fila, indices.get("topografia"))),
+            pie=_pie(_valor(fila, indices.get("pie")), precio),
+            # Como el precio: un cero es una celda que nadie llenó.
+            cuotas=_entero(_valor(fila, indices.get("cuotas"))) or None,
+            valor_cuota=_numero(_valor(fila, indices.get("valor_cuota"))) or None,
+            reserva=_numero(_valor(fila, indices.get("reserva"))) or None,
         )
     # Una parcela dos veces es casi siempre dos etapas que numeran desde 1 sin decir
     # cuál es cuál. Quedarse con la última publicaría el precio de otra parcela.
@@ -257,6 +278,14 @@ def _numero(valor) -> float | None:
         return float(texto)
     except ValueError:
         return None
+
+
+def _pie(valor, precio: float | None) -> float | None:
+    """El pie como monto. "20%" se calcula sobre el precio; sin precio no se puede."""
+    if isinstance(valor, str) and "%" in valor:
+        porcentaje = _numero(valor.replace("%", ""))
+        return round(precio * porcentaje / 100) if porcentaje and precio else None
+    return _numero(valor) or None
 
 
 def _entero(valor) -> int | None:
