@@ -169,3 +169,11 @@ function normalizar(v) {
   const largo = Math.hypot(v[0], v[1], v[2]) || 1;
   return [v[0] / largo, v[1] / largo, v[2] / largo];
 }
+
+const RUMBOS = ['Norte', 'Noreste', 'Este', 'Sureste', 'Sur', 'Suroeste', 'Oeste', 'Noroeste'];
+
+/** "Noreste": el punto cardinal (de ocho) más cercano a un azimut en grados. */
+export function rumboCardinal(azimut) {
+  const normalizado = ((azimut % 360) + 360) % 360;
+  return RUMBOS[Math.round(normalizado / 45) % RUMBOS.length];
+}

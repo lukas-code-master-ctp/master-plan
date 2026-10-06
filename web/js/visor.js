@@ -38,7 +38,9 @@ const ANCHO_MINIMO_ETIQUETA_PX = 42;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export class Visor {
-  constructor(elemento, { alElegirParcela, alPasarSobreParcela, alMoverCamara, rotuloDe } = {}) {
+  constructor(elemento, {
+    alElegirParcela, alPasarSobreParcela, alMoverCamara, rotuloDe, rotuloSeleccionadoDe,
+  } = {}) {
     this.elemento = elemento;
     this.lienzo = elemento.querySelector('canvas');
     this.svg = elemento.querySelector('svg');
@@ -56,6 +58,8 @@ export class Visor {
     this.seleccionada = null;
     this.estiloParcela = () => ({ color: '#ffffff', texto: '#1c1a17', atenuada: false });
     this.rotuloDe = rotuloDe ?? ((id) => id.replace(/^A/, ''));
+    /** La elegida dice más (su precio): es la que la persona está mirando. */
+    this.rotuloSeleccionadoDe = rotuloSeleccionadoDe ?? this.rotuloDe;
     this.cargaEnCurso = 0;
     this.cuadroPedido = false;
 
@@ -206,13 +210,21 @@ export class Visor {
     return true;
   }
 
-  /** Centra la cámara en una parcela y ajusta el zoom para que llene el encuadre. */
-  enfocarParcela(id) {
+  /**
+   * Centra la cámara en una parcela y ajusta el zoom para que llene el encuadre.
+   *
+   * `subir` es qué fracción del alto del cuadro se corre la parcela hacia arriba:
+   * en el teléfono la ficha tapa la mitad de abajo, y una parcela centrada
+   * quedaba escondida justo detrás de ella.
+   */
+  enfocarParcela(id, { subir = 0 } = {}) {
     const parcela = this.overlay.get(id);
     if (!parcela) return false;
     const [azimut, elevacion] = parcela.centro;
     const diametro = 2 * Math.sqrt(Math.max(parcela.area_angular, 0.5) / Math.PI);
-    this.apuntarA(azimut, elevacion, acotar(diametro * 3.2, 25, 90));
+    const fov = acotar(diametro * 3.2, 25, 90);
+    // Mirar más abajo sube lo mirado en el cuadro; fov es el ángulo vertical.
+    this.apuntarA(azimut, elevacion - subir * fov, fov);
     return true;
   }
 
@@ -281,13 +293,16 @@ export class Visor {
       nodo.grupo.style.display = '';
       nodo.grupo.style.color = estilo.color;
       nodo.grupo.classList.toggle('parcela--atenuada', estilo.atenuada);
-      nodo.grupo.classList.toggle('parcela--seleccionada', id === this.seleccionada);
+      const elegida = id === this.seleccionada;
+      nodo.grupo.classList.toggle('parcela--seleccionada', elegida);
       nodo.forma.setAttribute('d', aRuta(pixeles));
+      ponerRotulo(nodo, elegida ? this.rotuloSeleccionadoDe(id) : this.rotuloDe(id));
 
       // La pastilla es el objetivo de clic real: un número redondo se acierta
-      // mucho mejor que el borde de un polígono, sobre todo con el dedo.
+      // mucho mejor que el borde de un polígono, sobre todo con el dedo. La de la
+      // elegida se muestra aunque la parcela se vea chica: es la que se busca.
       const anchoEnPantalla = extension(pixeles, 0);
-      if (anchoEnPantalla >= ANCHO_MINIMO_ETIQUETA_PX && !estilo.atenuada) {
+      if ((elegida || anchoEnPantalla >= ANCHO_MINIMO_ETIQUETA_PX) && !estilo.atenuada) {
         const [cx, cy] = centro(pixeles);
         nodo.pastilla.setAttribute('transform', `translate(${cx.toFixed(1)} ${cy.toFixed(1)})`);
         nodo.disco.style.fill = estilo.color;
@@ -522,10 +537,18 @@ function cargarImagen(ruta) {
   });
 }
 
+/** Cambia el texto de la pastilla, y la vuelve a medir solo si cambió. */
+function ponerRotulo(nodo, texto) {
+  if (nodo.numero.textContent === texto) return;
+  nodo.numero.textContent = texto;
+  dimensionarPastilla(nodo);
+}
+
 /**
  * Ajusta la pastilla al texto que lleva dentro.
  *
- * Se mide una vez, al crear el nodo: el rótulo no cambia después. Si el navegador
+ * Se mide al crear el nodo y cada vez que cambia el rótulo (al elegirla y al
+ * soltarla). Si el navegador
  * todavía no puede medir —el SVG oculto, la tipografía sin cargar— se estima por
  * cantidad de caracteres, que para "4-35" se equivoca en un par de píxeles.
  */

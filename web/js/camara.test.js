@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { Camara, anguloEntre, direccion, recortarCerca } from './camara.js';
+import { Camara, anguloEntre, direccion, recortarCerca, rumboCardinal } from './camara.js';
 
 const ANCHO = 1200;
 const ALTO = 800;
@@ -179,4 +179,19 @@ test('la matriz lleva derecha, arriba y adelante en ese orden', () => {
   const m = camara.matriz();
   assert.equal(m.length, 9);
   [...derecha, ...arriba, ...adelante].forEach((v, i) => cerca(m[i], v, 1e-6));
+});
+
+// --- rumboCardinal -----------------------------------------------------------
+
+test('el rumbo se nombra por el punto cardinal más cercano', () => {
+  assert.equal(rumboCardinal(0), 'Norte');
+  assert.equal(rumboCardinal(42), 'Noreste');
+  assert.equal(rumboCardinal(91), 'Este');
+  assert.equal(rumboCardinal(200), 'Sur');
+  assert.equal(rumboCardinal(300), 'Noroeste');
+});
+
+test('cerca de 360° el rumbo vuelve a ser norte', () => {
+  assert.equal(rumboCardinal(359), 'Norte');
+  assert.equal(rumboCardinal(-10), 'Norte');
 });

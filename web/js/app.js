@@ -1,12 +1,19 @@
 /** Orquestador: conecta datos, visor, mapa, ficha y filtros. */
-import { Catalogo, ErrorDeDatos, buscar, filtrar, romano } from './datos.js';
+import { rumboCardinal } from './camara.js';
+import { Catalogo, ErrorDeDatos, buscar, conteoPorEstado, filtrar, romano } from './datos.js';
 import { aplicarMarca, ponerLogo } from './marca.js';
-import { renderizarFicha } from './ficha.js';
+import { renderizarFicha, rotuloConPrecio } from './ficha.js';
 import { Mapa } from './mapa.js';
-import { construirPerspectivas, marcarPerspectiva, pintarMiniatura } from './perspectivas.js';
+import {
+  construirPerspectivas, marcarPerspectiva, pintarMiniPlano, pintarMiniatura,
+} from './perspectivas.js';
 import { Visor } from './visor.js';
 
 const $ = (selector) => document.querySelector(selector);
+
+// Cuánto del alto del cuadro se corre la parcela elegida hacia arriba cuando la
+// ficha del teléfono tapa la parte de abajo.
+const SUBIDA_CON_FICHA = 0.24;
 
 /** Centro del loteo en grados y minutos, para el rótulo de la marca. */
 function coordenadasDelLoteo(vistas) {
@@ -56,12 +63,15 @@ async function arrancar() {
 
   estado.visor = new Visor($('#visor'), {
     rotuloDe: (id) => catalogo.rotulo(id),
+    rotuloSeleccionadoDe: (id) => rotuloConPrecio(catalogo.porId.get(id), catalogo.rotulo(id)),
     alElegirParcela: (id) => seleccionar(id),
     alPasarSobreParcela: (id) => destacar(id),
     alMoverCamara: (camara) => {
       // Gira en torno al centro de la rosa (su viewBox es de 100 × 100).
       $('#brujula-aguja').setAttribute('transform', `rotate(${-camara.azimut} 50 50)`);
       estado.camara = camara;
+      $('#capsula-aguja').setAttribute('transform', `rotate(${camara.azimut} 10 10)`);
+      $('#capsula-texto').textContent = `${rumboCardinal(camara.azimut)} ${Math.round(camara.azimut)}°`;
       estado.mapa?.actualizarCono(estado.vista, camara);
     },
   });
@@ -76,9 +86,10 @@ async function arrancar() {
   construirFiltros();
   construirControles();
   construirPerspectivas($('#perspectivas-fila'), $('#perspectivas-conteo'), catalogo, irAPosicion);
+  pintarMiniPlano($('#ver-plano-miniatura'), catalogo);
   conectarAccionesRapidas();
   conectarBuscador();
-  conectarPestanas();
+  conectarPaneles();
   mostrarPanel('visor');
   refrescarEstilos();
 
@@ -161,7 +172,9 @@ async function verDesdeElAire(parcela) {
   if (!enLaVistaActual) {
     await cambiarVista(estado.catalogo.vistaPorId.get(parcela.mejor_vista));
   }
-  estado.visor.enfocarParcela(parcela.id);
+  // En el teléfono la ficha ocupa la mitad de abajo: la parcela se ve arriba.
+  const fichaAbierta = !ESCRITORIO.matches && !$('#ficha').hidden;
+  estado.visor.enfocarParcela(parcela.id, { subir: fichaAbierta ? SUBIDA_CON_FICHA : 0 });
   estado.visor.marcarSeleccionada(parcela.id);
 }
 
@@ -194,7 +207,16 @@ function construirControles() {
   $('#controles-posicion').replaceChildren(...posiciones.map(({ posicion }) => {
     const boton = document.createElement('button');
     boton.type = 'button';
-    boton.textContent = romano(posicion);
+    // "Punto II" en una línea y la altura debajo; en escritorio, solo el romano.
+    const nombre = document.createElement('span');
+    const palabra = document.createElement('span');
+    palabra.className = 'puntos__palabra';
+    palabra.textContent = 'Punto ';
+    nombre.append(palabra, romano(posicion));
+    const altura = document.createElement('small');
+    altura.className = 'puntos__altura';
+    altura.textContent = estado.catalogo.alturasDePunto(posicion);
+    boton.append(nombre, altura);
     boton.title = `${estado.catalogo.nombrePunto(posicion)} · ${estado.catalogo.alturasDePunto(posicion)}`;
     boton.addEventListener('click', () => irAPosicion(posicion));
     boton.dataset.posicion = posicion;
@@ -228,6 +250,12 @@ function construirControles() {
 
   $('#acercar').addEventListener('click', () => estado.visor.acercar(0.78));
   $('#alejar').addEventListener('click', () => estado.visor.acercar(1.28));
+  // Volver a la parcela elegida, o a todo el loteo si no hay una a la vista.
+  $('#centrar').addEventListener('click', () => {
+    const elegida = estado.catalogo.porId.get(estado.seleccionada);
+    if (elegida?.vistas?.includes(estado.vista?.id)) estado.visor.enfocarParcela(elegida.id);
+    else estado.visor.encuadrarParcelas();
+  });
 }
 
 function conectarAccionesRapidas() {
@@ -297,6 +325,8 @@ function actualizarControles() {
     boton.disabled = !disponibles.has(altura);
     boton.setAttribute('aria-pressed', String(altura === vista.altura_m));
   }
+  // Con una sola altura no hay nada que elegir: el altímetro solo ocupaba lugar.
+  $('.altimetro').hidden = disponibles.size < 2;
 }
 
 // --- Leyenda y filtros --------------------------------------------------------
@@ -309,13 +339,13 @@ function porOrdenDeEstado(a, b) {
 }
 
 function construirLeyenda() {
-  const presentes = new Set(estado.catalogo.parcelas.map((p) => p.estado));
-  $('#leyenda').replaceChildren(...[...presentes].sort(porOrdenDeEstado).map((clave) => {
+  const conteo = conteoPorEstado(estado.catalogo.parcelas);
+  $('#leyenda').replaceChildren(...[...conteo.keys()].sort(porOrdenDeEstado).map((clave) => {
     const span = document.createElement('span');
     // El color va solo en el punto: "Disponible" es blanco y como texto no se vería.
     const punto = document.createElement('i');
     punto.style.background = estado.catalogo.color(clave);
-    span.append(punto, estado.catalogo.etiquetaEstado(clave));
+    span.append(punto, `${estado.catalogo.etiquetaEstado(clave)} (${conteo.get(clave)})`);
     return span;
   }));
 }
@@ -445,12 +475,13 @@ function conectarBuscador() {
   entrada.addEventListener('blur', () => setTimeout(cerrar, 120));
 }
 
-// --- Pestañas (móvil) ---------------------------------------------------------
+// --- Paneles (móvil) ----------------------------------------------------------
 
-function conectarPestanas() {
-  for (const pestana of document.querySelectorAll('.pestana')) {
-    pestana.addEventListener('click', () => mostrarPanel(pestana.dataset.panel));
-  }
+function conectarPaneles() {
+  $('#ver-plano').addEventListener('click', () => {
+    mostrarPanel('mapa');
+    enfocarEnElPlano();
+  });
   $('#entrar-360').addEventListener('click', () => mostrarPanel('visor'));
   const pista = $('#pista');
   $('#visor').addEventListener('pointerdown', () => pista.classList.add('pista--oculta'),
@@ -481,11 +512,6 @@ function enfocarEnElPlano() {
 function mostrarPanel(nombre) {
   // En escritorio conviven los dos; en móvil el atributo del body decide cuál se ve.
   document.body.dataset.panel = nombre;
-  for (const pestana of document.querySelectorAll('.pestana')) {
-    const activa = pestana.dataset.panel === nombre;
-    pestana.classList.toggle('pestana--activa', activa);
-    pestana.setAttribute('aria-selected', String(activa));
-  }
   if (nombre === 'mapa') {
     estado.mapa?.refrescar();
     // La miniatura se recorta al entrar al plano, no a cada cuadro: mientras el

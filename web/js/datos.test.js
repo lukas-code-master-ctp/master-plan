@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Catalogo, romano } from './datos.js';
+import { Catalogo, conteoPorEstado, romano } from './datos.js';
 
 const vista = (id, posicion, altura_m) => ({ id, posicion, altura_m, lat: -35, lon: -72 });
 
@@ -39,4 +39,12 @@ test('las alturas de otro punto no se mezclan', () => {
 
 test('un punto sin vistas no inventa altura', () => {
   assert.equal(catalogoCon([vista('p01-120', 1, 120)]).alturasDePunto(9), '');
+});
+
+test('el conteo por estado cuenta todas las parcelas de cada estado', () => {
+  const parcelas = ['disponible', 'vendido', 'disponible', 'reservado', 'disponible'].map(
+    (estado, i) => ({ id: String(i), estado }));
+
+  assert.deepEqual(conteoPorEstado(parcelas),
+                   new Map([['disponible', 3], ['vendido', 1], ['reservado', 1]]));
 });

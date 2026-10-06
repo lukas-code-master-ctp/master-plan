@@ -85,26 +85,10 @@
 
 <main class="escena">
 
-  <!-- En el teléfono, las dos maneras de ver el loteo. En escritorio conviven. -->
-  <div class="conmutador" role="tablist" aria-label="Cómo ver el loteo">
-    <button class="pestana pestana--activa" role="tab" data-panel="visor"
-            aria-selected="true" aria-controls="visor">
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <ellipse cx="10" cy="10" rx="8" ry="3.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
-        <path d="M14.5 5.2A8 8 0 0 0 10 3.5c-2.2 0-4 2.9-4 6.5s1.8 6.5 4 6.5" fill="none"
-              stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        <path d="m12.6 14.6 1.9 1.9-1.9 1.9" fill="none" stroke="currentColor" stroke-width="1.5"
-              stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span>Panorámica 360°</span>
-    </button>
-    <button class="pestana" role="tab" data-panel="mapa" aria-selected="false" aria-controls="carta">
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M2.5 5 7.5 3l5 2 5-2v12l-5 2-5-2-5 2Z M7.5 3v12 M12.5 5v12" fill="none"
-              stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-      </svg>
-      <span>Plano satelital</span>
-    </button>
+  <!-- Hacia dónde mira la vista aérea, en palabras. En escritorio lo dice la brújula. -->
+  <div class="capsula-rumbo" aria-hidden="true">
+    <svg viewBox="0 0 20 20"><path id="capsula-aguja" d="M10 2.5 15.5 17 10 13.5 4.5 17Z" fill="currentColor"/></svg>
+    <span id="capsula-texto"></span>
   </div>
 
   <section id="visor" class="visor" aria-label="Vista aérea 360">
@@ -148,6 +132,14 @@
     <div class="zoom" role="group" aria-label="Acercar y alejar">
       <button id="acercar" type="button" aria-label="Acercar">+</button>
       <button id="alejar" type="button" aria-label="Alejar">−</button>
+      <button id="centrar" type="button" aria-label="Volver a encuadrar las parcelas">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <circle cx="10" cy="10" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <circle cx="10" cy="10" r="2" fill="currentColor"/>
+          <path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round"/>
+        </svg>
+      </button>
     </div>
   </div>
 
@@ -204,6 +196,15 @@
     </header>
     <div id="mapa" class="mapa" aria-label="Plano del loteo"></div>
   </section>
+
+  <!-- Sobre la vista aérea del teléfono: pasar al plano. Su pareja es Entrar a 360°. -->
+  <button id="ver-plano" class="ver-plano" type="button">
+    <svg id="ver-plano-miniatura" class="ver-plano__miniatura" viewBox="0 0 56 56" aria-hidden="true"></svg>
+    <span class="ver-plano__textos">
+      <strong>Ver plano</strong>
+      <span>Satelital 2D</span>
+    </span>
+  </button>
 
   <!-- Sobre el plano del teléfono: volver a la vista aérea, desde donde se
        estaba mirando o desde otro punto de vuelo. -->

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { Catalogo } from './datos.js';
 import {
   accionesDe, atributosDe, debeCerrarAlArrastrar, escapar,
-  formatearPrecio, formatearServidumbre, formatearSuperficie,
+  formatearPrecio, formatearServidumbre, formatearSuperficie, rotuloConPrecio,
 } from './ficha.js';
 
 const ESTADOS = {
@@ -152,4 +152,14 @@ test('un tirón rápido hacia abajo lo cierra aunque sea corto', () => {
 
 test('un temblor del dedo no cierra el panel por rápido que sea', () => {
   assert.equal(debeCerrarAlArrastrar(8, 400, 2), false);
+});
+
+// --- Pastilla de la parcela elegida ---------------------------------------------
+
+test('la pastilla de la parcela elegida suma el precio al número', () => {
+  assert.equal(rotuloConPrecio(parcela({ precio: 24990000 }), '14'), '14 · $24.990.000');
+});
+
+test('sin precio la pastilla elegida dice solo el número', () => {
+  assert.equal(rotuloConPrecio(parcela({ precio: null }), '14'), '14');
 });

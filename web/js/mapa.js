@@ -18,7 +18,7 @@ export class Mapa {
     this.estiloParcela = () => ({ color: '#ffffff', atenuada: false });
 
     // El zoom abajo a la derecha, donde llega el pulgar. Arriba, en el teléfono,
-    // flotan el conmutador y la leyenda.
+    // flota la leyenda.
     this.mapa = L.map(elemento, { zoomControl: false, attributionControl: true });
     L.control.zoom({ position: 'bottomright', zoomInTitle: 'Acercar', zoomOutTitle: 'Alejar' })
       .addTo(this.mapa);
