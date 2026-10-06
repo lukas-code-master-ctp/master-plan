@@ -156,7 +156,7 @@ async function correr() {
             $('.ficha__titulo')?.textContent.includes(idElegida),
             `la pastilla decía ${idElegida}, la ficha "${$('.ficha__titulo')?.textContent ?? '—'}"`);
     revisar('la ficha trae superficie y acciones',
-            $('.datos')?.textContent.includes('m²') && $('.acciones')?.children.length >= 1);
+            $('.ficha__superficie')?.textContent.includes('m²') && $('.acciones')?.children.length >= 1);
     // El resaltado se aplica en el siguiente repintado, no en el mismo clic.
     revisar('la parcela queda marcada como seleccionada',
             await esperarA(() => elegida.classList.contains('parcela--seleccionada'), 2000));
@@ -278,7 +278,7 @@ async function planoEnTelefono(html) {
     return;
   }
 
-  doc.querySelector('#accion-plano').click();
+  doc.querySelector('.pestana[data-panel="mapa"]').click();
   await esperarA(() => doc.querySelectorAll('img.leaflet-tile').length > 0, 8000);
   const zooms = [...doc.querySelectorAll('img.leaflet-tile')]
     .map((img) => Number(img.src.match(/\/tile\/(\d+)\//)?.[1]))
