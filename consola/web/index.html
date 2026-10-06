@@ -380,14 +380,18 @@
           <div id="kmz-unir-caja" hidden>
             <button class="boton boton--contorno" data-accion="kmz-unir" type="button">El loteo está en varias hojas: unirlas</button>
           </div>
-          <h3>Gírala hasta que se lea derecha</h3>
-          <div class="fila fila--envuelve">
-            <button class="boton boton--contorno" data-accion="kmz-girar-izq" type="button"
-                    aria-label="Girar 90 grados a la izquierda">↺ 90°</button>
-            <button class="boton boton--contorno" data-accion="kmz-girar-der" type="button"
-                    aria-label="Girar 90 grados a la derecha">↻ 90°</button>
-            <span class="nota">Girada <b id="kmz-rotacion">0°</b></span>
+          <div id="kmz-giro-caja">
+            <h3>Gírala hasta que se lea derecha</h3>
+            <div class="fila fila--envuelve">
+              <button class="boton boton--contorno" data-accion="kmz-girar-izq" type="button"
+                      aria-label="Girar 90 grados a la izquierda">↺ 90°</button>
+              <button class="boton boton--contorno" data-accion="kmz-girar-der" type="button"
+                      aria-label="Girar 90 grados a la derecha">↻ 90°</button>
+              <span class="nota">Girada <b id="kmz-rotacion">0°</b></span>
+            </div>
           </div>
+          <p id="kmz-giro-union" class="nota" hidden>Con las hojas unidas, cada hoja se gira en el editor:
+            usa <b>Editar la unión</b>.</p>
           <div class="kmz-panel__pie">
             <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: marcar el dibujo</button>
           </div>
@@ -694,6 +698,12 @@
             <button type="button" data-accion="kmz-acercar" aria-label="Acercar">+</button>
             <button type="button" data-accion="kmz-alejar" aria-label="Alejar">−</button>
             <button type="button" data-accion="kmz-ajustar" aria-label="Ver el plano entero">⤢</button>
+          </div>
+          <!-- Marcar con la unión de hojas: el cuadro de superficies se encierra en su hoja original. -->
+          <div id="kmz-cuadro-hoja" class="kmz-cuadro-hoja" role="group" aria-labelledby="kmz-cuadro-hoja-texto" hidden>
+            <p id="kmz-cuadro-hoja-texto"></p>
+            <div id="kmz-cuadro-hojas" class="fila fila--envuelve"></div>
+            <button class="boton boton--texto boton--chico" data-accion="kmz-volver-union" type="button">Volver a la unión</button>
           </div>
           <!-- Encima del plano y no arriba de la página: aparecer no corre lo que se está tocando. -->
           <div id="kmz-atrasado" class="kmz-atrasado" role="status" hidden>

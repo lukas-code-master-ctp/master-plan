@@ -230,6 +230,55 @@ export const aDic = (h) => ({ n: h.n, rotacion: h.rotacion, angulo: h.angulo, x:
 /** "0,35°", "−1,20°": como se lee en el panel. */
 export const textoGrados = (v) => `${v < -0.004 ? '−' : ''}${Math.abs(v).toFixed(2).replace('.', ',')}°`;
 
+// --- el cuadro de superficies de la unión ------------------------------------------------
+
+/**
+ * La hoja `n` de la unión tal como se muestra para encerrar su cuadro: la página sin
+ * girar (`ancho`, `alto`, lo que pide `LienzoPlano.cargar`) y su giro de 90° en la
+ * unión. null si no es una hoja usada.
+ */
+export function hojaDelCuadro(paginas, union, n) {
+  const hoja = union?.hojas?.find((h) => h.n === n);
+  const pagina = paginas?.find((p) => p.n === n);
+  if (!hoja || !pagina) return null;
+  return { n, ancho: pagina.ancho, alto: pagina.alto, rotacion: hoja.rotacion ?? 0 };
+}
+
+/**
+ * El rectángulo dibujado sobre una hoja girada de ancho×alto, como lo guarda el
+ * servidor: en enteros y dentro de la hoja (`union.leer` rechaza lo que se sale, y un
+ * arrastre que pasa del borde es lo normal). null si lo que queda dentro es muy chico.
+ */
+export function cuadroEnHoja(rect, ancho, alto) {
+  const [x0, y0, x1, y1] = rect.map((v) => Math.round(v));
+  const r = [Math.max(0, x0), Math.max(0, y0), Math.min(ancho, x1), Math.min(alto, y1)];
+  return r[2] - r[0] < 3 || r[3] - r[1] < 3 ? null : r;
+}
+
+/**
+ * El `confirm` antes de borrar lo marcado al pasar de la página `desde` a `hacia` (0 es
+ * la unión). Entre páginas sueltas, el de siempre; con la unión, lo que de verdad pasa.
+ */
+export function textoBorraLoMarcado(desde, hacia) {
+  if (desde === 0 && hacia === 0) {
+    return 'Cambiaste las hojas unidas: lo marcado (dibujo, números, puntos) se borra porque era'
+      + ' de la unión anterior. ¿Seguir?';
+  }
+  if (desde === 0) {
+    return 'Lo marcado (dibujo, números, puntos) es de las hojas unidas. Volver a una página suelta'
+      + ' lo borra y quita la unión. ¿Seguir?';
+  }
+  return 'Lo marcado es de otra página. Cambiar de página lo borra. ¿Seguir?';
+}
+
+/** "Hojas unidas (1, 2 y 3)": el nombre de la página 0. */
+export function textoHojasUnidas(hojas) {
+  const ns = [...(hojas ?? [])].map((h) => h.n).sort((a, b) => a - b).map(String);
+  if (!ns.length) return 'Hojas unidas';
+  const lista = ns.length === 1 ? ns[0] : `${ns.slice(0, -1).join(', ')} y ${ns.at(-1)}`;
+  return `Hojas unidas (${lista})`;
+}
+
 // --- el editor -------------------------------------------------------------------------
 
 const VIOLETA = '#7c3aed';

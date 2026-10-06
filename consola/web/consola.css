@@ -934,6 +934,16 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 #kmz-union-lienzo { display: none; }
 .visor-plano[data-modo="unir"] #kmz-lienzo { display: none; }
 .visor-plano[data-modo="unir"] #kmz-union-lienzo { display: block; }
+/* "¿En qué hoja está el cuadro?": abajo, como el aviso de atrasado, para no tapar las herramientas. */
+.kmz-cuadro-hoja {
+  position: absolute; left: 0.5rem; right: 0.5rem; bottom: 0.5rem; z-index: 4;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.875rem; border-radius: var(--radio-md); box-shadow: var(--sombra-alta); font-size: 0.8125rem;
+  background: #fff; border: 1px solid var(--zinc-300); color: var(--zinc-800);
+}
+.kmz-cuadro-hoja p { margin: 0; font-weight: 600; }
+.kmz-cuadro-hoja .fila { gap: 0.375rem; }
+.kmz-cuadro-hoja [data-accion="kmz-volver-union"] { margin-left: auto; }
 /* La columna es minmax(0, 1fr) y el campo parte de ancho 0: así el ancho intrínseco del
    <input> (unos 20 caracteres) no estira la grilla y el campo y el OK quedan dentro. */
 .kmz-numero {

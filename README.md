@@ -464,14 +464,17 @@ Specs: [`docs/specs/2026-10-01-crea-tu-kmz.md`](docs/specs/2026-10-01-crea-tu-km
 [`docs/specs/2026-10-02-kmz-independiente.md`](docs/specs/2026-10-02-kmz-independiente.md)
 (Mis KMZ) y
 [`docs/specs/2026-10-02-kmz-lotes-y-lector.md`](docs/specs/2026-10-02-kmz-lotes-y-lector.md)
-(lotes sin número, números como en el plano, cuadro de superficies y el lector por teselas).
+(lotes sin número, números como en el plano, cuadro de superficies y el lector por teselas) y
+[`docs/specs/2026-10-06-kmz-unir-hojas.md`](docs/specs/2026-10-06-kmz-unir-hojas.md)
+(unir las hojas de un plano).
 Resultados: [lectura de rótulos](docs/specs/2026-10-01-crea-tu-kmz-rotulos.md) y
 [set de regresión](docs/specs/2026-10-01-crea-tu-kmz-regresion.md).
 
 ### El flujo
 
 1. **Subir el plano** (PDF). De cada página se saca la imagen embebida **sin
-   rerasterizar**; si no hay, se renderiza a 200 dpi. Se elige la página y la rotación.
+   rerasterizar**; si no hay, se renderiza a 200 dpi. Se elige la página y la rotación,
+   o se **unen varias hojas** (ver abajo).
 2. **Marcar el dibujo**: un rectángulo alrededor de la situación propuesta, y máscaras
    sobre lo que no es dibujo (cuadros, cajetín, timbres, croquis). Si es una foto, las 4
    esquinas del marco impreso, para enderezar la perspectiva. Con la herramienta
@@ -497,6 +500,31 @@ Resultados: [lectura de rótulos](docs/specs/2026-10-01-crea-tu-kmz-rotulos.md) 
 Todo se puede retomar y rehacer: cambiar una entrada vuelve a calcular solo lo que
 depende de ella (`huellas.json` dice qué quedó atrasado). Si un lote sale mal se
 corrige con las entradas (una máscara, un número), no moviendo vértices.
+
+### Unir las hojas de un plano
+
+Hay planos que el CBR entrega partidos en varias láminas que se traslapan (Constitución:
+3 hojas a 1:1.000, con los lotes del borde repetidos). Si el PDF tiene más de una
+página, el paso 1 ofrece **"El loteo está en varias hojas: unirlas"**:
+
+- En el editor se usan las hojas que hagan falta (2 a 12), cada una con su giro de 90°,
+  un giro fino de ±5° y un **recorte** a su dibujo: lo que queda fuera (cuadros,
+  viñeta, timbres) no entra, y donde se traslapan manda la de más arriba en la lista.
+- Se arrastra cada hoja cerca de su lugar y **Afinar la alineación** la calza sola en
+  el traslape (puntos ORB con RANSAC y un ECC, solo giro y traslado: la escala es la
+  del PDF). En Constitución el residuo queda bajo 1 mm; una hoja que no calza queda
+  donde estaba, con aviso.
+- **Usar la unión** la guarda como la **página 0** (`entradas.union`, con `pagina: 0`
+  y `rotacion: 0`), y todo lo que sigue se marca en sus píxeles como en cualquier
+  página. Al volver al paso 1 aparece primera la miniatura "Hojas unidas", con
+  **Editar la unión**; elegir una página suelta la quita.
+- **El cuadro de superficies se lee de la hoja original**, porque el recorte suele
+  dejarlo fuera: en Marcar, la herramienta pregunta "¿En qué hoja está el cuadro?",
+  muestra esa hoja y lo guarda en `union.cuadro` (px de esa hoja).
+- Cambiar la unión deja atrasado lo digitalizado, como cambiar de página. Para
+  digitalizar se compone desde las imágenes del PDF (`pipeline/plano/union.py`), hasta
+  250 megapíxeles; la imagen de la pantalla se compone desde los JPEG y, si pasa de
+  60 MP, se sirve reducida y el lienzo la estira.
 
 ### Los números de lote
 
@@ -591,7 +619,8 @@ tabla `kmzs`, y su carpeta en `/datos/kmz/<slug>/`:
 | Archivo | Qué es |
 |---|---|
 | `plano.pdf` | El PDF tal como llegó |
-| `paginas/<n>.jpg`, `<n>_mini.jpg` | Cada página sin rotar, y su miniatura |
+| `paginas/<n>.jpg`, `<n>_mini.jpg`, `<n>_medio.jpg` | Cada página sin rotar, su miniatura y la de 2.400 px para el editor de la unión |
+| `paginas/union-<huella>*.jpg` | La unión de hojas para la pantalla, en caché por su huella |
 | `entradas.json` | Lo que marca la loteadora: página, rotación, rectángulos, esquinas, números, anclas, cuadrícula, ajuste fino |
 | `digitalizado.json` | Los lotes en píxeles, los rótulos leídos, la cuadrícula y las áreas oficiales |
 | `georreferencia.json` | La transformación, el residuo de cada ancla y el datum |
@@ -613,7 +642,8 @@ Todas bajo `/api/kmz`, y declaradas en el inventario de `consola/tests/test_app.
 | `GET /api/kmz/{slug}` | El estado: el paso que sigue, qué quedó atrasado y el último trabajo |
 | `PATCH /api/kmz/{slug} {nombre}`, `DELETE /api/kmz/{slug}` | Renombra; borra con su carpeta |
 | `POST /api/kmz/{slug}/plano` | Sube el PDF y saca las páginas |
-| `GET /api/kmz/{slug}/paginas/{n}` | La imagen de una página (`?mini=1`, la miniatura) |
+| `GET /api/kmz/{slug}/paginas/{n}` | La imagen de una página (`?mini=1`, la miniatura; `?medio=1`, la de 2.400 px). La 0 es la unión |
+| `POST /api/kmz/{slug}/union/afinar` | Calza las hojas de la unión como están en pantalla; no guarda nada |
 | `PUT /api/kmz/{slug}/entradas` | Guarda lo que marca la loteadora |
 | `POST /api/kmz/{slug}/digitalizar` | Trabajo de fondo, clave `kmz:<slug>` (no choca con el slug de un master) |
 | `POST /api/kmz/{slug}/georreferenciar` | Cuadrícula o anclas → UTM |

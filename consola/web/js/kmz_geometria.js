@@ -111,7 +111,9 @@ export function marcarRectangulo(entradas, herramienta, rect) {
   if (rect[2] - rect[0] < 3 || rect[3] - rect[1] < 3) return entradas;
   if (herramienta === 'dibujo') return { ...entradas, rectangulo: rect };
   if (herramienta === 'mascara') return { ...entradas, mascaras: [...(entradas.mascaras ?? []), rect] };
-  if (herramienta === 'cuadro') return { ...entradas, cuadro: rect };
+  // Con la unión, el cuadro va en px de su hoja (`union.cuadro`): uno en px de la unión
+  // no lo dibuja nadie y el servidor lo tomaría por el cuadro.
+  if (herramienta === 'cuadro') return entradas.pagina === 0 && entradas.union ? entradas : { ...entradas, cuadro: rect };
   return entradas;
 }
 
@@ -472,6 +474,19 @@ export function dudosos(rasgos, apoyoMinimo = 3) {
 // --- pasos ---------------------------------------------------------------------------
 
 export const PASOS = ['subir', 'marcar', 'digitalizar', 'numerar', 'ubicar', 'revisar', 'crear'];
+
+/**
+ * Si los lotes digitalizados (`digitalizado.pagina`) están en los px de la página que se
+ * ve. Con la unión de hojas no basta la página 0: otra unión tiene otros px, y por eso
+ * se compara también su huella (`huellaUnion`, la de `plano.union`). Sin `pagina` (lo
+ * digitalizado antes de anotarla), se supone que sí.
+ */
+export function calzaLoDigitalizado(pagina, entradas, huellaUnion = null) {
+  if (!pagina) return true;
+  const union = entradas.pagina === 0 ? huellaUnion ?? null : null;
+  return pagina.numero === entradas.pagina && pagina.rotacion === (entradas.rotacion ?? 0)
+    && (pagina.union ?? null) === union;
+}
 
 /** Qué pasos se pueden abrir con lo que ya hay en el servidor. */
 export function pasosHabilitados(e) {

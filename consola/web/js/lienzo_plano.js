@@ -37,6 +37,7 @@ export class LienzoPlano {
     this.espacio = false;
     this.pendiente = 0;
     this.url = null;
+    this.cargando = false;      // pedida la imagen y aún sin llegar
 
     new ResizeObserver(() => this.medir()).observe(contenedor);
     canvas.addEventListener('pointerdown', (e) => this.bajar(e));
@@ -63,6 +64,7 @@ export class LienzoPlano {
     }
     this.url = url;
     this.imagen = null;
+    this.cargando = true;
     this.redibujar();
     return new Promise((listo, fallo) => {
       const imagen = new Image();
@@ -70,11 +72,15 @@ export class LienzoPlano {
       imagen.onload = () => {
         if (this.url !== url) return listo();
         this.imagen = imagen;
+        this.cargando = false;
         this.ajustarSiHaceFalta();
         this.redibujar();
         listo();
       };
-      imagen.onerror = () => fallo(new Error('No se pudo cargar la imagen de la página.'));
+      imagen.onerror = () => {
+        if (this.url === url) { this.cargando = false; this.redibujar(); }
+        fallo(new Error('No se pudo cargar la imagen de la página.'));
+      };
       imagen.src = url;
     });
   }
@@ -144,10 +150,23 @@ export class LienzoPlano {
       ctx.transform(...matrizRotacion(this.rotacion, this.ancho, this.alto));
       // El centro del píxel está en el entero: el píxel i cubre [i − ½, i + ½].
       ctx.translate(-0.5, -0.5);
-      ctx.imageSmoothingEnabled = escala < 2;
-      ctx.drawImage(this.imagen, 0, 0);
+      // La unión de hojas grande llega reducida (ver `consola/plano.py`): se estira a
+      // los px de página, que son los de todo lo marcado encima.
+      const reducida = this.imagen.naturalWidth < this.ancho || this.imagen.naturalHeight < this.alto;
+      ctx.imageSmoothingEnabled = escala < 2 || reducida;
+      if (reducida) ctx.drawImage(this.imagen, 0, 0, this.ancho, this.alto);
+      else ctx.drawImage(this.imagen, 0, 0);
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (this.cargando) {
+      // La unión de hojas se compone en el servidor la primera vez: unos segundos con
+      // láminas grandes, y un lienzo gris sin nada parece roto.
+      ctx.font = '500 14px "Plus Jakarta Sans", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#52525b';
+      ctx.fillText('Cargando el plano…', this.contenedor.clientWidth / 2, this.contenedor.clientHeight / 2);
+    }
     this.alDibujar(ctx, (x, y) => this.aPantalla(x, y), this.vista);
     if (this.borrador) {
       const [x0, y0, x1, y1] = rectanguloDe(...this.borrador);

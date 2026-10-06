@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  aDic, aHoja, bordesRecorte, cajaDe, colocarAlLado, dentro, escala, esquinasRecorte, geometria, girarRecorte, hojaEn,
+  aDic, aHoja, bordesRecorte, cajaDe, colocarAlLado, cuadroEnHoja, dentro, hojaDelCuadro, textoBorraLoMarcado, textoHojasUnidas, escala, esquinasRecorte, geometria, girarRecorte, hojaEn,
   hojasColocadas, invertir, matrizHoja, aplicar, moverEnOrden, moverManilla, pegar, recorteNormal, tamanoGirado, textoGrados,
   transformarPunto,
 } from './js/kmz_union.js';
@@ -174,4 +174,40 @@ test('aDic deja la hoja como la guarda entradas.union y textoGrados la escribe e
   assert.equal(textoGrados(0.35), '0,35°');
   assert.equal(textoGrados(-1.2), '−1,20°');
   assert.equal(textoGrados(-0.001), '0,00°');
+});
+
+// --- el cuadro de superficies de la unión ------------------------------------------------
+
+test('hojaDelCuadro: la página sin girar con el giro de la hoja en la unión', () => {
+  const paginas = [{ n: 1, ancho: 4000, alto: 3000 }, { n: 2, ancho: 4100, alto: 2900 }, { n: 3, ancho: 10, alto: 10 }];
+  const union = { hojas: [{ n: 2, rotacion: 90 }, { n: 1, rotacion: 0 }], cuadro: null };
+  assert.deepEqual(hojaDelCuadro(paginas, union, 2), { n: 2, ancho: 4100, alto: 2900, rotacion: 90 });
+  assert.deepEqual(hojaDelCuadro(paginas, union, 1), { n: 1, ancho: 4000, alto: 3000, rotacion: 0 });
+  // Una página del PDF que no está en la unión, o sin unión: no hay hoja.
+  assert.equal(hojaDelCuadro(paginas, union, 3), null);
+  assert.equal(hojaDelCuadro(paginas, null, 1), null);
+});
+
+test('cuadroEnHoja: enteros y recortado a la hoja, como lo acepta union.leer', () => {
+  assert.deepEqual(cuadroEnHoja([10.4, 20.6, 300.5, 400.2], 1000, 800), [10, 21, 301, 400]);
+  // Un arrastre que pasa del borde queda en el borde.
+  assert.deepEqual(cuadroEnHoja([-50, -3, 1200, 900], 1000, 800), [0, 0, 1000, 800]);
+  // Lo que queda dentro es casi nada: no se marca.
+  assert.equal(cuadroEnHoja([998, 10, 1300, 200], 1000, 800), null);
+  assert.equal(cuadroEnHoja([-200, -200, -10, -10], 1000, 800), null);
+});
+
+test('textoHojasUnidas: las hojas en orden de página', () => {
+  assert.equal(textoHojasUnidas([{ n: 3 }, { n: 1 }, { n: 2 }]), 'Hojas unidas (1, 2 y 3)');
+  assert.equal(textoHojasUnidas([{ n: 2 }, { n: 1 }]), 'Hojas unidas (1 y 2)');
+  assert.equal(textoHojasUnidas([]), 'Hojas unidas');
+});
+
+test('textoBorraLoMarcado: con la unión dice que era de la unión; entre páginas, lo de siempre', () => {
+  const suelta = 'Lo marcado es de otra página. Cambiar de página lo borra. ¿Seguir?';
+  assert.equal(textoBorraLoMarcado(1, 2), suelta);
+  assert.equal(textoBorraLoMarcado(2, 0), suelta);
+  assert.match(textoBorraLoMarcado(0, 0), /^Cambiaste las hojas unidas: .*unión anterior\. ¿Seguir\?$/);
+  assert.match(textoBorraLoMarcado(0, 1), /hojas unidas.*quita la unión/);
+  assert.doesNotMatch(textoBorraLoMarcado(0, 0), /otra página/);
 });

@@ -11,13 +11,13 @@
  */
 import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
-  anclaDesde, claveLote, dudosos, duplicados, empujar, girarEntradas, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo,
+  anclaDesde, calzaLoDigitalizado, claveLote, dudosos, duplicados, empujar, girarEntradas, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo,
   nombreDelSistema, ordenarEsquinas, PASOS,
   pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono, sesgoDeEscala,
-  resumenRevision, siguienteNombre, sinNumero, sugerencias, textoHuecos, verticesDe,
+  resumenRevision, siguienteNombre, sinNumero, sugerencias, tamanoRotado, textoHuecos, verticesDe,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
-import { EditorUnion } from './kmz_union.js';
+import { cuadroEnHoja, EditorUnion, hojaDelCuadro, textoBorraLoMarcado, textoHojasUnidas } from './kmz_union.js';
 import { abrirNombre, abrirUsarKmz, descargaDe, textoDeCreado } from './kmzs.js';
 import { cargarLeaflet, COLORES, MapaKmz } from './mapa_kmz.js';
 import { oyentes, seguir } from './plano.js';
@@ -54,6 +54,10 @@ let corrigiendoYa = false;    // una corrección sin respuesta: los vértices de
 let esquinasMarcando = [];    // las esquinas del marco mientras faltan: el servidor pide 4 o ninguna
 let editorUnion = null;       // el editor de "Une las hojas" (paso 1), creado la primera vez que se abre
 const uniendo = () => Boolean(editorUnion?.abierto);
+// Marcar con la unión: el cuadro de superficies se lee de su hoja original, así que se
+// encierra en ella. `null` muestra la unión; un número, esa hoja (y solo se dibuja el cuadro).
+let cuadroHoja = null;
+const conUnion = () => entradas.pagina === 0 && Boolean(entradas.union);
 
 // --- guardar ---------------------------------------------------------------------------
 
@@ -103,9 +107,11 @@ export function prepararKmz(opciones) {
   refrescar = opciones.refrescar;
   const pantalla = $('#pantalla-kmz');
   pantalla.addEventListener('click', (evento) => {
-    const nodo = evento.target.closest('[data-accion], [data-paso], [data-pagina], [data-herramienta],'
+    // `button[...]`: el visor también lleva `data-herramienta` (para el cursor), y un clic en
+    // el plano no es elegir herramienta.
+    const nodo = evento.target.closest('[data-accion], [data-paso], [data-pagina], button[data-herramienta],'
       + ' [data-quitar-mascara], [data-quitar-cuadro], [data-quitar-semilla], [data-ancla-quitar], [data-ancla-rehacer],'
-      + ' [data-centrar],'
+      + ' [data-centrar], [data-cuadro-hoja],'
       + ' [data-confirmar]');
     if (!nodo || nodo.disabled) return;
     manejar(nodo).catch((error) => avisar(error.message));
@@ -158,6 +164,7 @@ export function prepararKmz(opciones) {
     if (e.key !== 'Escape' || pantalla.hidden || document.querySelector('dialog[open]')) return;
     if (pendiente) { cancelarAncla(); e.preventDefault(); }
     else if (numerando) { cerrarNumero(); e.preventDefault(); }
+    else if (cuadroHoja !== null || (herramienta === 'cuadro' && conUnion())) { elegirHerramienta('mover'); e.preventDefault(); }
   });
 
   lienzo = new LienzoPlano($('#kmz-plano'), $('#kmz-lienzo'));
@@ -187,6 +194,10 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
   rehacer = null;
   sucio = false;
   esquinasMarcando = [];
+  cuadroHoja = null;
+  // Otro KMZ parte moviendo: una herramienta del anterior (el cuadro de una página suelta)
+  // dejaría el lienzo dibujando rectángulos sobre una unión sin hoja elegida.
+  elegirHerramienta('mover');
   editorUnion?.cerrar();
   cerrarNumero();
   $('#kmz-guardado').textContent = '';
@@ -249,6 +260,11 @@ async function cargarLotes() {
 
 /** La página elegida, en el lienzo. */
 async function mostrarPagina() {
+  const original = cuadroHoja !== null ? hojaDelCuadro(plano?.paginas, entradas.union, cuadroHoja) : null;
+  if (original) {
+    await lienzo.cargar(`${api()}/paginas/${original.n}?v=${version}`, original.ancho, original.alto, original.rotacion);
+    return;
+  }
   const hoja = paginaActual();
   if (!hoja) return;
   // La imagen de la unión cambia con ella: su huella va en la URL para que se pida de nuevo.
@@ -276,7 +292,10 @@ async function manejar(nodo) {
   if (dataset.quitarMascara) {
     return cambiar({ ...entradas, mascaras: entradas.mascaras.filter((_, i) => i !== Number(dataset.quitarMascara)) });
   }
-  if (dataset.quitarCuadro) return cambiar({ ...entradas, cuadro: null });
+  if (dataset.quitarCuadro) {
+    return cambiar(conUnion() ? { ...entradas, union: { ...entradas.union, cuadro: null } } : { ...entradas, cuadro: null });
+  }
+  if (dataset.cuadroHoja) return verHojaDelCuadro(Number(dataset.cuadroHoja));
   if (dataset.quitarSemilla) {
     return cambiar({ ...entradas, semillas: entradas.semillas.filter((s) => s.numero !== dataset.quitarSemilla) });
   }
@@ -298,6 +317,7 @@ async function manejar(nodo) {
   if (accion === 'kmz-alejar') return visor.acercar(1 / 1.5);
   if (accion === 'kmz-ajustar') return visor.ajustar();
   if (accion === 'kmz-unir') return abrirUnion();
+  if (accion === 'kmz-volver-union') return elegirHerramienta('mover');
   if (accion === 'kmz-quitar-dibujo') return cambiar({ ...entradas, rectangulo: null });
   if (accion === 'kmz-borrar-esquinas') {
     esquinasMarcando = [];
@@ -377,6 +397,7 @@ function subirPdf(archivo) {
       version += 1;
       sucio = false;
       entradas = VACIAS();
+      cuadroHoja = null;
       editorUnion?.cerrar();
       try {
         await cargarTodo();
@@ -392,14 +413,18 @@ function subirPdf(archivo) {
   });
 }
 
-const hayMarcas = () => Boolean(entradas.rectangulo || entradas.mascaras.length || entradas.cuadro || entradas.esquinas
-  || entradas.semillas.length || entradas.anclas.length);
+const hayMarcas = () => Boolean(entradas.rectangulo || entradas.mascaras.length || entradas.cuadro || entradas.union?.cuadro
+  || entradas.esquinas || entradas.semillas.length || entradas.anclas.length);
 
 async function elegirPagina(n) {
   if (n === entradas.pagina && plano.entradas) return;
   if (n !== entradas.pagina && hayMarcas()
-    && !confirm('Lo marcado es de otra página. Cambiar de página lo borra. ¿Seguir?')) return;
+    && !confirm(textoBorraLoMarcado(entradas.pagina, n))) return;
+  // Sin nada marcado no hay qué perder, salvo la unión misma: armarla cuesta.
+  if (n !== entradas.pagina && !hayMarcas() && conUnion()
+    && !confirm('Elegir una página suelta quita la unión de las hojas. ¿Seguir?')) return;
   const limpio = n !== entradas.pagina;
+  cuadroHoja = null;
   cambiar({ ...(limpio ? VACIAS() : entradas), pagina: n, rotacion: limpio ? 0 : entradas.rotacion });
   await mostrarPagina();
   pintarPaso();
@@ -448,8 +473,9 @@ function cerrarUnion() {
 async function usarUnion(union) {
   const cambia = entradas.pagina !== 0 || JSON.stringify(entradas.union?.hojas ?? null) !== JSON.stringify(union.hojas);
   if (cambia && hayMarcas()
-    && !confirm('Lo marcado es de otra página. Cambiar de página lo borra. ¿Seguir?')) return;
+    && !confirm(textoBorraLoMarcado(entradas.pagina, 0))) return;
   const antes = entradas;
+  cuadroHoja = null;
   cambiar(cambia ? { ...VACIAS(), pagina: 0, rotacion: 0, union } : { ...entradas, union });
   try {
     await guardar();
@@ -470,8 +496,9 @@ async function usarUnion(union) {
 /** "Volver a una sola página": quita la unión (y lo marcado en ella) y vuelve a la página 1. */
 async function volverAUnaPagina() {
   if (entradas.pagina !== 0) return cerrarUnion();
-  if (hayMarcas() && !confirm('Lo marcado es de otra página. Cambiar de página lo borra. ¿Seguir?')) return undefined;
+  if (hayMarcas() && !confirm(textoBorraLoMarcado(0, 1))) return undefined;
   editorUnion.cerrar();
+  cuadroHoja = null;
   cambiar({ ...VACIAS(), pagina: 1 });
   await mostrarPagina();
   return pintarPaso();
@@ -481,16 +508,41 @@ async function volverAUnaPagina() {
 
 function elegirHerramienta(nombre) {
   herramienta = nombre;
-  lienzo.herramienta = HERRAMIENTAS_RECTANGULO.includes(nombre) ? 'rectangulo' : 'mover';
-  for (const boton of $$('[data-herramienta]')) {
+  // Con la unión, el cuadro se dibuja recién sobre su hoja: antes hay que elegirla.
+  const sinHoja = nombre === 'cuadro' && conUnion() && cuadroHoja === null;
+  lienzo.herramienta = HERRAMIENTAS_RECTANGULO.includes(nombre) && !sinHoja ? 'rectangulo' : 'mover';
+  for (const boton of $$('button[data-herramienta]')) {
     boton.setAttribute('aria-pressed', String(boton.dataset.herramienta === nombre));
   }
-  $('#kmz-plano').dataset.herramienta = nombre;
+  $('#kmz-plano').dataset.herramienta = sinHoja ? 'mover' : nombre;
+  if (nombre !== 'cuadro' && cuadroHoja !== null) {
+    cuadroHoja = null;
+    mostrarPagina().catch((error) => avisar(error.message));
+  }
   pintarPanel();
+  lienzo.redibujar();
+}
+
+/** Muestra la hoja `n` original, para encerrar en ella el cuadro de superficies. */
+async function verHojaDelCuadro(n) {
+  if (!conUnion() || !hojaDelCuadro(plano?.paginas, entradas.union, n)) return;
+  cuadroHoja = n;
+  elegirHerramienta('cuadro');
+  await mostrarPagina();
 }
 
 function rectangulo(rect) {
   if (paso !== 'marcar') return;
+  if (cuadroHoja !== null) {
+    const hoja = hojaDelCuadro(plano?.paginas, entradas.union, cuadroHoja);
+    if (!hoja) return;
+    const dentro = cuadroEnHoja(rect, ...tamanoRotado(hoja.ancho, hoja.alto, hoja.rotacion));
+    if (!dentro) return;
+    cambiar({ ...entradas, union: { ...entradas.union, cuadro: { hoja: hoja.n, rect: dentro } } });
+    // Listo el cuadro, de vuelta a la unión: todo lo demás se marca en ella.
+    elegirHerramienta('mover');
+    return;
+  }
   const nuevas = marcarRectangulo(entradas, herramienta, rect);
   if (nuevas !== entradas) cambiar(nuevas);
 }
@@ -886,6 +938,8 @@ function pintarPanel() {
   const d = plano.digitalizado;
   const atrasado = Boolean(d && !d.vigente) && ['digitalizar', 'numerar', 'ubicar'].includes(paso);
   $('#kmz-atrasado').hidden = !atrasado || Boolean(plano.trabajo && !plano.trabajo.terminado);
+  // Fuera de Marcar también: al cambiar de paso, la pregunta por la hoja se va.
+  pintarCuadroHoja();
   if (paso === 'subir') pintarSubir();
   if (paso === 'marcar') pintarMarcar();
   if (paso === 'digitalizar') pintarDigitalizar();
@@ -902,28 +956,40 @@ function pintarSubir() {
   $('#kmz-hojas-caja').hidden = !hay;
   if (!hay) return;
   const lista = $('#kmz-hojas');
-  lista.replaceChildren(...plano.paginas.map((hoja) => {
+  const miniatura = (n, src, texto) => {
     const boton = document.createElement('button');
     boton.type = 'button';
     boton.className = 'hoja';
-    boton.dataset.pagina = hoja.n;
-    boton.setAttribute('aria-pressed', String(hoja.n === entradas.pagina));
+    boton.dataset.pagina = n;
+    boton.setAttribute('aria-pressed', String(n === entradas.pagina));
     const imagen = document.createElement('img');
-    imagen.src = `${api()}/paginas/${hoja.n}?mini=1&v=${version}`;
+    imagen.src = src;
     imagen.alt = '';
     imagen.loading = 'lazy';
-    const texto = document.createElement('span');
-    texto.textContent = `Página ${hoja.n} · ${hoja.ancho}×${hoja.alto} px`;
-    boton.append(imagen, texto);
+    const span = document.createElement('span');
+    span.textContent = texto;
+    boton.append(imagen, span);
     return boton;
-  }));
+  };
+  // La unión guardada es la "página 0": va primera, y elegir otra la quita (`elegirPagina`).
+  const unida = conUnion() && plano.union;
+  const miniaturas = unida
+    ? [miniatura(0, `${api()}/paginas/0?mini=1&v=${version}-${plano.union.huella}`,
+      `${textoHojasUnidas(plano.union.hojas)} · ${plano.union.ancho}×${plano.union.alto} px`)]
+    : [];
+  lista.replaceChildren(...miniaturas, ...plano.paginas.map((hoja) => miniatura(hoja.n,
+    `${api()}/paginas/${hoja.n}?mini=1&v=${version}`, `Página ${hoja.n} · ${hoja.ancho}×${hoja.alto} px`)));
+  // La unión no se gira entera: cada hoja lleva su giro en el editor.
+  $('#kmz-giro-caja').hidden = Boolean(unida);
+  $('#kmz-giro-union').hidden = !unida;
   $('#kmz-rotacion').textContent = `${entradas.rotacion ?? 0}°`;
   $('#kmz-unir-caja').hidden = plano.paginas.length < 2;
+  $('[data-accion="kmz-unir"]').textContent = unida ? 'Editar la unión' : 'El loteo está en varias hojas: unirlas';
 }
 
 function pintarMarcar() {
   const foto = $('#kmz-es-foto').checked;
-  $('[data-herramienta="esquinas"]').hidden = !foto;
+  $('button[data-herramienta="esquinas"]').hidden = !foto;
   $('#kmz-foto').hidden = !foto;
   const [ancho, alto] = entradas.marco_mm ?? ['', ''];
   if (document.activeElement !== $('#kmz-marco-ancho')) $('#kmz-marco-ancho').value = ancho;
@@ -944,6 +1010,8 @@ function pintarMarcar() {
     entradas.rectangulo ? 'ok' : 'falta'));
   entradas.mascaras.forEach((_, i) => filas.push(fila(`Tapado ${i + 1}`, { quitarMascara: String(i) })));
   if (entradas.cuadro) filas.push(fila('Cuadro de superficies', { quitarCuadro: '1' }));
+  const cuadroUnion = conUnion() ? entradas.union.cuadro : null;
+  if (cuadroUnion) filas.push(fila(`Cuadro de superficies (hoja ${cuadroUnion.hoja})`, { quitarCuadro: '1' }));
   for (const s of entradas.semillas) filas.push(fila(`Lote ${s.numero}`, { quitarSemilla: s.numero }));
   lista.replaceChildren(...filas);
   const listo = Boolean(entradas.rectangulo) && (!sinLector || entradas.semillas.length > 0);
@@ -951,6 +1019,27 @@ function pintarMarcar() {
   $('#kmz-marcar-nota').textContent = listo ? '' : !entradas.rectangulo
     ? 'Encierra el dibujo del loteo con la herramienta "Encerrar el dibujo".'
     : 'Marca el número de al menos un lote antes de digitalizar.';
+}
+
+/** Con la unión y la herramienta del cuadro: la pregunta por la hoja, o la hoja que se ve. */
+function pintarCuadroHoja() {
+  const caja = $('#kmz-cuadro-hoja');
+  const visible = paso === 'marcar' && herramienta === 'cuadro' && conUnion();
+  caja.hidden = !visible;
+  if (!visible) return;
+  const eligiendo = cuadroHoja === null;
+  $('#kmz-cuadro-hoja-texto').textContent = eligiendo
+    ? '¿En qué hoja está el cuadro?'
+    : `Hoja ${cuadroHoja}: encierra el cuadro de superficies.`;
+  const hojas = [...entradas.union.hojas].map((h) => h.n).sort((a, b) => a - b);
+  $('#kmz-cuadro-hojas').replaceChildren(...(eligiendo ? hojas : []).map((n) => {
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = 'boton boton--contorno boton--chico';
+    boton.dataset.cuadroHoja = String(n);
+    boton.textContent = `Hoja ${n}`;
+    return boton;
+  }));
 }
 
 function fila(texto, quitar, tono) {
@@ -1177,9 +1266,11 @@ function pintarRevisar() {
         : `${cuenta.sin_numero} partes quedan sin número (rayadas en rojo) y no van al KMZ.`)
         + ' Si es un lote, vuelve a Numerar.'
       : cuenta.lotes === cuenta.gris
-      ? (entradas.cuadro ? 'No se leyó el cuadro de superficies: revisa a ojo que los lotes calcen con los caminos.'
+      ? (entradas.cuadro || entradas.union?.cuadro
+        ? 'No se leyó el cuadro de superficies: revisa a ojo que los lotes calcen con los caminos.'
         : 'Sin cuadro de superficies no hay áreas oficiales: si el plano lo trae, enciérralo en Marcar'
-          + ' con "Cuadro de superficies". Si no, revisa a ojo que los lotes calcen con los caminos.')
+          + ` con "Cuadro de superficies"${conUnion() ? ' (en la hoja donde está)' : ''}.`
+          + ' Si no, revisa a ojo que los lotes calcen con los caminos.')
       : sesgo != null
       ? `Casi todos los lotes salen cerca de un ${Math.abs(sesgo * 100).toFixed(1).replace('.', ',')} %`
         + ` ${sesgo > 0 ? 'más grandes' : 'más chicos'} que el oficial: suele ser la escala de los puntos de Ubicar,`
@@ -1303,6 +1394,13 @@ function dibujar(ctx, P) {
   if (!plano?.pdf) return;
   const [W, H] = [ctx.canvas.width, ctx.canvas.height];
 
+  // Una hoja original (para el cuadro de la unión): lo demás está en px de la unión.
+  if (cuadroHoja !== null) {
+    const c = entradas.union?.cuadro;
+    if (c?.hoja === cuadroHoja) pintarCuadro(ctx, P, c.rect, `Cuadro de superficies (hoja ${c.hoja})`);
+    return;
+  }
+
   // Lo que queda fuera del dibujo, en penumbra.
   if (entradas.rectangulo && ['marcar', 'digitalizar'].includes(paso)) {
     const [x0, y0, x1, y1] = entradas.rectangulo;
@@ -1331,18 +1429,9 @@ function dibujar(ctx, P) {
       ctx.strokeRect(a, b, c - a, d - b);
       etiqueta(ctx, `Tapado ${i + 1}`, a + 4, b + 4, '#dc2626', 'left');
     });
-    if (entradas.cuadro) {
-      // Puede estar fuera del dibujo: se lee igual (los lotes y sus áreas oficiales).
-      const [x0, y0, x1, y1] = entradas.cuadro;
-      const [a, b] = P(x0, y0);
-      const [c, d] = P(x1, y1);
-      ctx.fillStyle = 'rgb(217 119 6 / 0.14)';
-      ctx.fillRect(a, b, c - a, d - b);
-      ctx.strokeStyle = '#d97706';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(a, b, c - a, d - b);
-      etiqueta(ctx, 'Cuadro de superficies', a + 4, b + 4, '#b45309', 'left');
-    }
+    // Puede estar fuera del dibujo: se lee igual (los lotes y sus áreas oficiales). El de
+    // la unión no se pinta aquí: está en px de su hoja, no de la unión.
+    if (entradas.cuadro && !conUnion()) pintarCuadro(ctx, P, entradas.cuadro, 'Cuadro de superficies');
     const esquinas = esquinasMarcando.length ? esquinasMarcando : entradas.esquinas ?? [];
     if (esquinas.length) {
       ctx.strokeStyle = '#7c3aed';
@@ -1356,8 +1445,7 @@ function dibujar(ctx, P) {
   }
 
   // Los lotes digitalizados, si son de esta página y esta rotación.
-  const hoja = plano.digitalizado?.pagina;
-  const calzan = !hoja || (hoja.numero === entradas.pagina && hoja.rotacion === entradas.rotacion);
+  const calzan = calzaLoDigitalizado(plano.digitalizado?.pagina, entradas, plano.union?.huella);
   if (rasgos.length && paso !== 'subir' && calzan) {
     const tenue = paso === 'marcar';
     for (const r of rasgos) {
@@ -1419,6 +1507,17 @@ function dibujar(ctx, P) {
       etiqueta(ctx, `${pendiente.nombre} → mapa`, q[0] + 10, q[1] - 10, '#b45309', 'left');
     }
   }
+}
+
+function pintarCuadro(ctx, P, [x0, y0, x1, y1], texto) {
+  const [a, b] = P(x0, y0);
+  const [c, d] = P(x1, y1);
+  ctx.fillStyle = 'rgb(217 119 6 / 0.14)';
+  ctx.fillRect(a, b, c - a, d - b);
+  ctx.strokeStyle = '#d97706';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(a, b, c - a, d - b);
+  etiqueta(ctx, texto, a + 4, b + 4, '#b45309', 'left');
 }
 
 function punto(ctx, [a, b], color, texto) {
