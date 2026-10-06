@@ -7,6 +7,7 @@
  * así que imagen y polígonos no pueden desincronizarse.
  */
 import { Camara, acotar } from './camara.js';
+import { rotulosSinChoques } from './rotulos.js';
 
 const VERTICE = `
 attribute vec2 aPos;
@@ -33,6 +34,11 @@ void main() {
 }`;
 
 const ARRASTRE_MINIMO_PX = 5;
+const ALTO_PASTILLA = 26;
+// La elegida se dibuja agrandada (.parcela--seleccionada en estilos.css): ocupa más.
+const ESCALA_ELEGIDA = 1.22;
+// Aire mínimo entre dos pastillas para que cada número se lea por separado.
+const SEPARACION_PASTILLAS = 3;
 // Por debajo de esto las pastillas se amontonan y tapan el terreno.
 const ANCHO_MINIMO_ETIQUETA_PX = 42;
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -277,6 +283,7 @@ export class Visor {
     if (!ancho) return;
     this._dibujarReferencias(ancho, alto);
 
+    const candidatas = [];
     for (const [id, parcela] of this.overlay) {
       const nodo = this._nodoDe(id);
       if (!this.camara.puedeVerse(parcela.centro, ancho, alto)) {
@@ -302,15 +309,28 @@ export class Visor {
       // mucho mejor que el borde de un polígono, sobre todo con el dedo. La de la
       // elegida se muestra aunque la parcela se vea chica: es la que se busca.
       const anchoEnPantalla = extension(pixeles, 0);
+      nodo.pastilla.style.display = 'none';
       if ((elegida || anchoEnPantalla >= ANCHO_MINIMO_ETIQUETA_PX) && !estilo.atenuada) {
         const [cx, cy] = centro(pixeles);
         nodo.pastilla.setAttribute('transform', `translate(${cx.toFixed(1)} ${cy.toFixed(1)})`);
         nodo.disco.style.fill = estilo.color;
         nodo.numero.style.fill = estilo.texto;
-        nodo.pastilla.style.display = '';
-      } else {
-        nodo.pastilla.style.display = 'none';
+        const escala = elegida ? ESCALA_ELEGIDA : 1;
+        candidatas.push({
+          id, x: cx, y: cy,
+          ancho: Number(nodo.disco.getAttribute('width')) * escala,
+          alto: ALTO_PASTILLA * escala,
+          // Primero la elegida; después lo que se vende; después lo más cercano,
+          // que es lo que se ve más grande.
+          prioridad: (elegida ? 1e9 : 0) + (estilo.prioridad ?? 0) * 1e6 + anchoEnPantalla,
+        });
       }
+    }
+
+    // Solo las pastillas que caben sin encimarse: de lejos, las del fondo se
+    // apilaban y no se leía ninguna.
+    for (const id of rotulosSinChoques(candidatas, SEPARACION_PASTILLAS)) {
+      this.nodos.get(id).pastilla.style.display = '';
     }
   }
 
@@ -553,7 +573,7 @@ function ponerRotulo(nodo, texto) {
  * cantidad de caracteres, que para "4-35" se equivoca en un par de píxeles.
  */
 function dimensionarPastilla(nodo) {
-  const ALTO = 26;
+  const ALTO = ALTO_PASTILLA;
   const RESPIRO = 9;
   let ancho = 0;
   try {

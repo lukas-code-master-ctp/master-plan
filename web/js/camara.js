@@ -172,8 +172,16 @@ function normalizar(v) {
 
 const RUMBOS = ['Norte', 'Noreste', 'Este', 'Sureste', 'Sur', 'Suroeste', 'Oeste', 'Noroeste'];
 
+const RUMBOS_CORTOS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+
+const octante = (azimut) => Math.round((((azimut % 360) + 360) % 360) / 45) % RUMBOS.length;
+
 /** "Noreste": el punto cardinal (de ocho) más cercano a un azimut en grados. */
 export function rumboCardinal(azimut) {
-  const normalizado = ((azimut % 360) + 360) % 360;
-  return RUMBOS[Math.round(normalizado / 45) % RUMBOS.length];
+  return RUMBOS[octante(azimut)];
+}
+
+/** "NE": lo mismo, abreviado como en una brújula. */
+export function rumboCorto(azimut) {
+  return RUMBOS_CORTOS[octante(azimut)];
 }

@@ -18,6 +18,9 @@ const M2_POR_HECTAREA = 10000;
 const FRACCION_PARA_CERRAR = 1 / 3;
 const VELOCIDAD_PARA_CERRAR = 0.5;
 const ARRASTRE_MINIMO = 24;
+// Un toque en el asa (sin arrastrar) alterna entre media altura y entero.
+const TOQUE_MAXIMO_PX = 6;
+const TOQUE_MAXIMO_MS = 300;
 
 const TRAZO = 'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"';
 const ICONOS = {
@@ -174,10 +177,18 @@ export function kmlDeParcela(parcela, nombre, proyecto) {
 `;
 }
 
-/** ¿El panel bajó lo suficiente, o con suficiente decisión, para cerrarlo? */
-export function debeCerrarAlArrastrar(desplazamiento, alto, velocidad) {
-  if (desplazamiento < ARRASTRE_MINIMO) return false;
-  return desplazamiento > alto * FRACCION_PARA_CERRAR || velocidad > VELOCIDAD_PARA_CERRAR;
+/**
+ * Adónde va el panel al soltar el asa: 'expandir', 'contraer', 'cerrar' o
+ * 'quedar'. Abre a media altura para que la foto se siga viendo; subir lo abre
+ * entero. Entero, bajar lo devuelve a media altura; desde ahí, bajar con
+ * decisión lo cierra. `desplazamiento` es positivo hacia abajo.
+ */
+export function destinoDelArrastre(desplazamiento, alto, velocidad, entero) {
+  if (Math.abs(desplazamiento) < ARRASTRE_MINIMO) return 'quedar';
+  if (desplazamiento < 0) return entero ? 'quedar' : 'expandir';
+  if (entero) return 'contraer';
+  const decidido = desplazamiento > alto * FRACCION_PARA_CERRAR || velocidad > VELOCIDAD_PARA_CERRAR;
+  return decidido ? 'cerrar' : 'quedar';
 }
 
 // --- Dibujo --------------------------------------------------------------------
@@ -192,6 +203,8 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
   contenedor.replaceChildren();
   contenedor.hidden = false;
   contenedor.style.transform = '';
+  // Cada parcela abre a media altura, aunque la anterior haya quedado entera.
+  contenedor.classList.remove('ficha--entera');
   contenedor.innerHTML = `
     <div class="ficha__asa" aria-hidden="true"></div>
     <div class="ficha__cabecera">
@@ -316,8 +329,9 @@ async function compartir(contenedor, parcela, titulo) {
 }
 
 /**
- * Arrastrar el asa hacia abajo baja el panel con el dedo; al soltar, se cierra
- * o vuelve a su lugar. Solo hacia abajo: hacia arriba ya muestra todo.
+ * El asa: arrastrarla hacia abajo baja el panel con el dedo y, al soltar, decide
+ * destinoDelArrastre. Hacia arriba no se arrastra el dibujo: al soltar, el panel
+ * se abre entero. Un toque alterna entre media altura y entero.
  */
 function permitirArrastre(contenedor, alCerrar) {
   const asa = contenedor.querySelector('.ficha__asa');
@@ -335,12 +349,21 @@ function permitirArrastre(contenedor, alCerrar) {
   });
   const soltar = (evento) => {
     if (!inicio) return;
-    const bajada = Math.max(0, evento.clientY - inicio.y);
-    const velocidad = bajada / Math.max(1, evento.timeStamp - inicio.t);
+    const desplazamiento = evento.clientY - inicio.y;
+    const duracion = evento.timeStamp - inicio.t;
+    const velocidad = Math.max(0, desplazamiento) / Math.max(1, duracion);
     inicio = null;
     contenedor.classList.remove('ficha--arrastrando');
-    if (debeCerrarAlArrastrar(bajada, contenedor.offsetHeight, velocidad)) alCerrar();
-    else contenedor.style.transform = '';
+    contenedor.style.transform = '';
+    const entero = contenedor.classList.contains('ficha--entera');
+    if (Math.abs(desplazamiento) <= TOQUE_MAXIMO_PX && duracion <= TOQUE_MAXIMO_MS) {
+      contenedor.classList.toggle('ficha--entera', !entero);
+      return;
+    }
+    const destino = destinoDelArrastre(desplazamiento, contenedor.offsetHeight, velocidad, entero);
+    if (destino === 'cerrar') alCerrar();
+    else if (destino === 'expandir') contenedor.classList.add('ficha--entera');
+    else if (destino === 'contraer') contenedor.classList.remove('ficha--entera');
   };
   asa.addEventListener('pointerup', soltar);
   asa.addEventListener('pointercancel', soltar);

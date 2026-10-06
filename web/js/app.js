@@ -1,5 +1,5 @@
 /** Orquestador: conecta datos, visor, mapa, ficha y filtros. */
-import { rumboCardinal } from './camara.js';
+import { rumboCardinal, rumboCorto } from './camara.js';
 import { Catalogo, ErrorDeDatos, buscar, conteoPorEstado, filtrar, romano } from './datos.js';
 import { aplicarMarca, ponerLogo } from './marca.js';
 import { renderizarFicha, rotuloConPrecio } from './ficha.js';
@@ -13,7 +13,7 @@ const $ = (selector) => document.querySelector(selector);
 
 // Cuánto del alto del cuadro se corre la parcela elegida hacia arriba cuando la
 // ficha del teléfono tapa la parte de abajo.
-const SUBIDA_CON_FICHA = 0.24;
+const SUBIDA_CON_FICHA = 0.2;
 
 /** Centro del loteo en grados y minutos, para el rótulo de la marca. */
 function coordenadasDelLoteo(vistas) {
@@ -71,7 +71,9 @@ async function arrancar() {
       $('#brujula-aguja').setAttribute('transform', `rotate(${-camara.azimut} 50 50)`);
       estado.camara = camara;
       $('#capsula-aguja').setAttribute('transform', `rotate(${camara.azimut} 10 10)`);
-      $('#capsula-texto').textContent = `${rumboCardinal(camara.azimut)} ${Math.round(camara.azimut)}°`;
+      // En el teléfono la brújula es un botón redondo: cabe "SO", no "Suroeste 211°".
+      $('#capsula-texto').textContent = rumboCorto(camara.azimut);
+      $('.capsula-rumbo').title = `${rumboCardinal(camara.azimut)} ${Math.round(camara.azimut)}°`;
       estado.mapa?.actualizarCono(estado.vista, camara);
     },
   });
@@ -192,6 +194,8 @@ function estiloDe(id) {
     color: estado.catalogo.color(parcela?.estado),
     texto: estado.catalogo.contraste(parcela?.estado),
     atenuada: !estado.visibles.has(id),
+    // Cuando no caben todos los números, primero los de lo que se vende.
+    prioridad: estado.catalogo.estados[parcela?.estado]?.vendible ? 1 : 0,
   };
 }
 
@@ -297,11 +301,14 @@ function conectarAccionesRapidas() {
     }
   });
 
-  const whatsapp = $('#accion-whatsapp');
-  if (estado.catalogo.meta.whatsapp) {
-    whatsapp.href = enlaceWhatsapp();
-  } else {
-    whatsapp.hidden = true;
+  // El de la barra (escritorio) y el de la cabecera (teléfono) llevan al mismo chat.
+  for (const whatsapp of [$('#accion-whatsapp'), $('#cabecera-whatsapp')]) {
+    if (estado.catalogo.meta.whatsapp) {
+      whatsapp.href = enlaceWhatsapp();
+      whatsapp.hidden = false;
+    } else {
+      whatsapp.hidden = true;
+    }
   }
 }
 
@@ -426,6 +433,18 @@ function conectarBuscador() {
 
   const cerrar = () => { lista.hidden = true; resaltada = -1; };
 
+  // En el teléfono el buscador vive plegado tras la lupa y se abre sobre la cabecera.
+  const lupa = $('#abrir-buscador');
+  const plegar = () => {
+    document.body.classList.remove('buscando');
+    lupa.setAttribute('aria-expanded', 'false');
+  };
+  lupa.addEventListener('click', () => {
+    document.body.classList.add('buscando');
+    lupa.setAttribute('aria-expanded', 'true');
+    entrada.focus();
+  });
+
   const pintar = (resultados) => {
     lista.replaceChildren(...resultados.map((parcela, indice) => {
       const item = document.createElement('li');
@@ -448,6 +467,7 @@ function conectarBuscador() {
   const elegir = (id) => {
     entrada.value = '';
     cerrar();
+    plegar();
     seleccionar(id, { enfocarEnVisor: true });
   };
 
@@ -458,7 +478,11 @@ function conectarBuscador() {
 
   entrada.addEventListener('keydown', (evento) => {
     const items = [...lista.children];
-    if (evento.key === 'Escape') return cerrar();
+    if (evento.key === 'Escape') {
+      cerrar();
+      plegar();
+      return;
+    }
     if (!items.length) return;
     if (evento.key === 'ArrowDown' || evento.key === 'ArrowUp') {
       evento.preventDefault();
@@ -472,7 +496,10 @@ function conectarBuscador() {
     }
   });
 
-  entrada.addEventListener('blur', () => setTimeout(cerrar, 120));
+  entrada.addEventListener('blur', () => setTimeout(() => {
+    cerrar();
+    plegar();
+  }, 120));
 }
 
 // --- Paneles (móvil) ----------------------------------------------------------

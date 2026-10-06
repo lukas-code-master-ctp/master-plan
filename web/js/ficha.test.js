@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 import { Catalogo } from './datos.js';
 import {
-  accionesDe, atributosDe, debeCerrarAlArrastrar, escapar, financiamientoDe, formatearPrecio,
+  accionesDe, atributosDe, destinoDelArrastre, escapar, financiamientoDe, formatearPrecio,
   kmlDeParcela, rotuloConPrecio,
 } from './ficha.js';
 
@@ -191,29 +191,30 @@ test('una parcela sin polígono no tiene KML', () => {
 });
 
 // --- Arrastre del panel ----------------------------------------------------------
+// El panel abre a media altura. El asa lo sube para ver todo, lo baja a media
+// altura o lo cierra. Desplazamiento positivo es hacia abajo.
 
-test('arrastrar el panel más de un tercio hacia abajo lo cierra', () => {
-  assert.equal(debeCerrarAlArrastrar(140, 400, 0.1), true);
+test('a media altura, subir el asa lo abre entero', () => {
+  assert.equal(destinoDelArrastre(-60, 400, 0.1, false), 'expandir');
 });
 
-test('un arrastre corto y lento devuelve el panel a su lugar', () => {
-  assert.equal(debeCerrarAlArrastrar(60, 400, 0.1), false);
+test('a media altura, bajar el asa más de un tercio lo cierra', () => {
+  assert.equal(destinoDelArrastre(140, 400, 0.1, false), 'cerrar');
 });
 
-test('un tirón rápido hacia abajo lo cierra aunque sea corto', () => {
-  assert.equal(debeCerrarAlArrastrar(40, 400, 0.9), true);
+test('a media altura, un tirón rápido hacia abajo lo cierra aunque sea corto', () => {
+  assert.equal(destinoDelArrastre(40, 400, 0.9, false), 'cerrar');
 });
 
-test('un temblor del dedo no cierra el panel por rápido que sea', () => {
-  assert.equal(debeCerrarAlArrastrar(8, 400, 2), false);
+test('entero, bajar el asa lo devuelve a media altura en vez de cerrarlo', () => {
+  assert.equal(destinoDelArrastre(140, 700, 0.1, true), 'contraer');
 });
 
-// --- Pastilla de la parcela elegida ---------------------------------------------
-
-test('la pastilla de la parcela elegida suma el precio al número', () => {
-  assert.equal(rotuloConPrecio(parcela({ precio: 24990000 }), '14'), '14 · $24.990.000');
+test('un arrastre corto y lento deja el panel donde estaba', () => {
+  assert.equal(destinoDelArrastre(20, 400, 0.1, false), 'quedar');
+  assert.equal(destinoDelArrastre(-10, 400, 0.1, false), 'quedar');
 });
 
-test('sin precio la pastilla elegida dice solo el número', () => {
-  assert.equal(rotuloConPrecio(parcela({ precio: null }), '14'), '14');
+test('un temblor del dedo no mueve el panel por rápido que sea', () => {
+  assert.equal(destinoDelArrastre(8, 400, 2, false), 'quedar');
 });

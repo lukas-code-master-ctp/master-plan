@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { Camara, anguloEntre, direccion, recortarCerca, rumboCardinal } from './camara.js';
+import { Camara, anguloEntre, direccion, recortarCerca, rumboCardinal, rumboCorto } from './camara.js';
 
 const ANCHO = 1200;
 const ALTO = 800;
@@ -194,4 +194,8 @@ test('el rumbo se nombra por el punto cardinal más cercano', () => {
 test('cerca de 360° el rumbo vuelve a ser norte', () => {
   assert.equal(rumboCardinal(359), 'Norte');
   assert.equal(rumboCardinal(-10), 'Norte');
+});
+
+test('el rumbo abreviado cabe en un botón redondo', () => {
+  assert.deepEqual([0, 42, 90, 135, 211, 270, 300].map(rumboCorto), ['N', 'NE', 'E', 'SE', 'SO', 'O', 'NO']);
 });
