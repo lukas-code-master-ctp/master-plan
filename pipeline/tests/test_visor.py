@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from pipeline import config, visor
@@ -145,3 +147,46 @@ def test_copiar_funciona_donde_no_se_pueden_cambiar_permisos(plantilla, tmp_path
     visor.copiar(sitio)   # y encima de un sitio que ya lo tiene, como al republicar
 
     assert (sitio / "js" / "visor.js").read_text(encoding="utf-8") == "export const a = 1;"
+
+
+# --- conexión con la consola -------------------------------------------------
+
+POLITICA = "default-src 'self'; connect-src 'self'; worker-src 'self' blob:"
+
+
+def _con_politica(raiz):
+    (raiz / "vercel.json").write_text(json.dumps({"headers": [{"source": "/(.*)", "headers": [
+        {"key": "Content-Security-Policy", "value": POLITICA}]}]}), encoding="utf-8")
+
+
+def _politica(sitio):
+    return json.loads((sitio / "vercel.json").read_text())["headers"][0]["headers"][0]["value"]
+
+
+def test_copiar_el_visor_no_le_quita_al_sitio_la_conexion_con_su_consola(plantilla, tmp_path):
+    """Publicar anota la consola y después copia el visor encima: la copia trae el
+    vercel.json de la plantilla, que solo deja conectar con el propio sitio. Sin
+    volver a abrirla, el formulario de reserva no llegaba nunca a la consola."""
+    _con_politica(plantilla)
+    sitio = tmp_path / "sitio"
+    (sitio / "datos").mkdir(parents=True)
+    (sitio / "datos" / "parcelas.json").write_text(
+        json.dumps({"parcelas": [], "consola": "https://consola.tumasterplan.cl/"}), encoding="utf-8")
+
+    visor.copiar(sitio)
+    visor.copiar(sitio)
+
+    assert _politica(sitio) == ("default-src 'self'; connect-src 'self' https://consola.tumasterplan.cl; "
+                                "worker-src 'self' blob:")
+
+
+def test_un_sitio_sin_consola_solo_se_conecta_consigo_mismo(plantilla, tmp_path):
+    _con_politica(plantilla)
+    sitio = tmp_path / "sitio"
+    (sitio / "datos").mkdir(parents=True)
+    (sitio / "datos" / "parcelas.json").write_text(json.dumps({"parcelas": [], "consola": ""}),
+                                                   encoding="utf-8")
+
+    visor.copiar(sitio)
+
+    assert _politica(sitio) == POLITICA

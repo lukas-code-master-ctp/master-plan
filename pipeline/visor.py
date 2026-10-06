@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from . import config
 
@@ -39,6 +41,44 @@ def copiar(sitio: Path) -> None:
         for nombre in nombres:
             if nombre not in ignorados:
                 shutil.copyfile(Path(carpeta, nombre), destino / nombre)
+    # La copia trae el vercel.json de la plantilla, que solo deja conectar con el
+    # propio sitio: si el sitio ya sabe a qué consola pedir las reservas, se vuelve
+    # a abrir. Publicar anota la consola antes de copiar el visor encima.
+    consola = _consola_del_sitio(Path(sitio))
+    if consola:
+        permitir_conexion(Path(sitio), consola)
+
+
+def _consola_del_sitio(sitio: Path) -> str:
+    archivo = sitio / "datos" / "parcelas.json"
+    if not archivo.is_file():
+        return ""
+    datos = json.loads(archivo.read_text(encoding="utf-8"))
+    return datos.get("consola", "") if isinstance(datos, dict) else ""
+
+
+def permitir_conexion(sitio: Path, url: str) -> None:
+    """Deja que el sitio publicado le hable a `url` (la consola), y a nada más.
+
+    El visor pide ahí las parcelas apartadas y manda las solicitudes de reserva.
+    La política de seguridad del sitio (`vercel.json`) solo deja conectar con el
+    propio sitio: se le suma el origen de la consola, el que sea en cada despliegue.
+    Escribirlo dos veces deja lo mismo.
+    """
+    archivo = sitio / "vercel.json"
+    if not archivo.is_file():
+        return
+    partes = urlsplit(url)
+    origen = f"{partes.scheme}://{partes.netloc}"
+    datos = json.loads(archivo.read_text(encoding="utf-8"))
+    for regla in datos.get("headers", []):
+        for encabezado in regla.get("headers", []):
+            if encabezado.get("key") == "Content-Security-Policy":
+                directivas = [d.strip() for d in encabezado["value"].split(";")]
+                encabezado["value"] = "; ".join(
+                    f"connect-src 'self' {origen}" if d.startswith("connect-src") else d
+                    for d in directivas)
+    archivo.write_text(json.dumps(datos, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def huella(origen: Path | None = None) -> str:
