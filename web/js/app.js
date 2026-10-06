@@ -58,7 +58,8 @@ async function arrancar() {
     alElegirParcela: (id) => seleccionar(id),
     alPasarSobreParcela: (id) => destacar(id),
     alMoverCamara: (camara) => {
-      $('#brujula-aguja').setAttribute('transform', `rotate(${-camara.azimut} 20 20)`);
+      // Gira en torno al centro de la rosa (su viewBox es de 100 × 100).
+      $('#brujula-aguja').setAttribute('transform', `rotate(${-camara.azimut} 50 50)`);
       estado.mapa?.actualizarCono(estado.vista, camara);
     },
   });
