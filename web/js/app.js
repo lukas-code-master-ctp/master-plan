@@ -3,6 +3,7 @@ import { Catalogo, ErrorDeDatos, buscar, filtrar, romano } from './datos.js';
 import { aplicarMarca, ponerLogo } from './marca.js';
 import { renderizarFicha } from './ficha.js';
 import { Mapa } from './mapa.js';
+import { construirPerspectivas, marcarPerspectiva, pintarMiniatura } from './perspectivas.js';
 import { Visor } from './visor.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -27,6 +28,8 @@ const estado = {
   visor: null,
   mapa: null,
   vista: null,
+  /** Hacia dónde mira la vista aérea: lo que muestra la miniatura de Entrar a 360°. */
+  camara: null,
   seleccionada: null,
   destacada: null,
   visibles: null,
@@ -58,6 +61,7 @@ async function arrancar() {
     alMoverCamara: (camara) => {
       // Gira en torno al centro de la rosa (su viewBox es de 100 × 100).
       $('#brujula-aguja').setAttribute('transform', `rotate(${-camara.azimut} 50 50)`);
+      estado.camara = camara;
       estado.mapa?.actualizarCono(estado.vista, camara);
     },
   });
@@ -71,6 +75,7 @@ async function arrancar() {
   construirLeyenda();
   construirFiltros();
   construirControles();
+  construirPerspectivas($('#perspectivas-fila'), $('#perspectivas-conteo'), catalogo, irAPosicion);
   conectarAccionesRapidas();
   conectarBuscador();
   conectarPestanas();
@@ -105,6 +110,8 @@ async function cambiarVista(vista) {
   estado.visor.aplicarEstilos(estiloDe);
   estado.visor.marcarSeleccionada(estado.seleccionada);
   estado.mapa.marcarVista(vista);
+  marcarPerspectiva($('#perspectivas-fila'), vista.posicion);
+  $('#entrar-360-punto').textContent = `${estado.catalogo.nombrePunto(vista.posicion)} · ${vista.altura_m} m`;
   actualizarControles();
   sincronizarUrl();
 }
@@ -444,6 +451,7 @@ function conectarPestanas() {
   for (const pestana of document.querySelectorAll('.pestana')) {
     pestana.addEventListener('click', () => mostrarPanel(pestana.dataset.panel));
   }
+  $('#entrar-360').addEventListener('click', () => mostrarPanel('visor'));
   const pista = $('#pista');
   $('#visor').addEventListener('pointerdown', () => pista.classList.add('pista--oculta'),
                                { once: true });
@@ -478,8 +486,14 @@ function mostrarPanel(nombre) {
     pestana.classList.toggle('pestana--activa', activa);
     pestana.setAttribute('aria-selected', String(activa));
   }
-  if (nombre === 'mapa') estado.mapa?.refrescar();
-  else estado.visor?.redimensionar();
+  if (nombre === 'mapa') {
+    estado.mapa?.refrescar();
+    // La miniatura se recorta al entrar al plano, no a cada cuadro: mientras el
+    // plano está a la vista, la cámara no se mueve.
+    pintarMiniatura($('#entrar-360-miniatura'), estado.vista, estado.camara);
+  } else {
+    estado.visor?.redimensionar();
+  }
 }
 
 // --- URL ----------------------------------------------------------------------

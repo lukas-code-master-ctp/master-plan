@@ -1089,6 +1089,116 @@ button { cursor: pointer; }
   color: var(--tinta-tenue);
 }
 
+/* --- Perspectivas y Entrar a 360° (plano del teléfono) ------------------------ */
+
+.perspectivas, .entrar-360 { display: none; }
+
+.perspectivas {
+  position: fixed;
+  z-index: 24;
+  left: 0; right: 0; bottom: 0;
+  height: var(--alto-perspectivas);
+  padding: 0.75rem 0.85rem env(safe-area-inset-bottom);
+  background: var(--papel);
+  border-top: 1px solid var(--linea);
+  border-radius: var(--radio-xl) var(--radio-xl) 0 0;
+  box-shadow: var(--sombra-panel);
+}
+.perspectivas__cabecera {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+.perspectivas__cabecera h2 {
+  margin: 0;
+  font: 700 0.6875rem/1 var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-tenue);
+}
+#perspectivas-conteo { font: 600 0.75rem/1 var(--sans); color: var(--tinta-suave); }
+
+/* Una fila que se desliza con el dedo y se detiene en cada punto. */
+.perspectivas__fila {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0 -0.85rem;
+  padding: 0 0.85rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 0.85rem;
+  scrollbar-width: none;
+}
+.perspectivas__fila::-webkit-scrollbar { display: none; }
+
+.perspectiva {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 56px;
+  padding: 0.5rem 1rem 0.5rem 0.5rem;
+  background: var(--zinc-100);
+  border: 0;
+  border-radius: var(--radio-lg);
+  scroll-snap-align: start;
+  text-align: left;
+  transition: background 150ms;
+}
+.perspectiva:hover { background: var(--zinc-200); }
+.perspectiva__disco {
+  display: grid;
+  place-items: center;
+  width: 2.5rem; height: 2.5rem;
+  border-radius: 50%;
+  background: var(--zinc-900);
+  color: #fff;
+  font: 700 0.8125rem/1 var(--sans);
+}
+.perspectiva__textos { display: grid; gap: 0.15rem; }
+.perspectiva__textos strong { font: 700 0.875rem/1.1 var(--sans); color: var(--tinta); }
+.perspectiva__textos small { font: 500 0.75rem/1.1 var(--sans); font-variant-numeric: tabular-nums; color: var(--tinta-suave); }
+.perspectiva[aria-pressed="true"] { background: var(--marca-700); }
+.perspectiva[aria-pressed="true"] .perspectiva__disco { background: #fff; color: var(--marca-700); }
+.perspectiva[aria-pressed="true"] strong,
+.perspectiva[aria-pressed="true"] small { color: #fff; }
+
+.entrar-360 {
+  position: fixed;
+  z-index: 24;
+  left: 0.85rem;
+  bottom: calc(var(--alto-perspectivas) + 0.75rem);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 1rem 0.4rem 0.4rem;
+  background: var(--papel);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio-lg);
+  box-shadow: var(--sombra-hud);
+  text-align: left;
+  transition: background 150ms;
+}
+.entrar-360:hover { background: var(--papel-suave); }
+/* La panorámica liviana (la que el visor ya bajó), recortada por perspectivas.js
+   donde se estaba mirando; repetida a lo ancho porque da la vuelta completa. */
+.entrar-360__miniatura {
+  width: 64px; height: 64px;
+  flex: none;
+  border-radius: var(--radio-md);
+  background-color: var(--zinc-800);
+  background-repeat: repeat-x;
+}
+.entrar-360__textos { display: grid; gap: 0.15rem; }
+.entrar-360__textos small {
+  font: 700 0.6875rem/1 var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-tenue);
+}
+.entrar-360__textos strong { font: 700 1rem/1.15 var(--sans); color: var(--tinta); }
+.entrar-360__textos span { font: 500 0.75rem/1.2 var(--sans); color: var(--tinta-suave); }
+
 /* --- Móvil ------------------------------------------------------------------ */
 
 @media (max-width: 62rem) {
@@ -1097,6 +1207,8 @@ button { cursor: pointer; }
   :root {
     --alto-cabecera: 7rem;
     --tope-hud: calc(var(--alto-cabecera) + 0.5rem + var(--alto-control) + 0.5rem + 2px);
+    /* La franja de perspectivas: cabecera, una fila de 56 px y el área segura. */
+    --alto-perspectivas: calc(112px + env(safe-area-inset-bottom));
   }
 
   .cabecera { flex-wrap: wrap; align-content: center; gap: 0.5rem 0.75rem; padding: 0.6rem 0.9rem; }
@@ -1165,11 +1277,12 @@ button { cursor: pointer; }
   .carta__barra { display: none; }
   .mapa { height: 100%; }
 
-  body[data-panel="mapa"] .carta { display: flex; flex-direction: column; }
+  body[data-panel="mapa"] .carta { display: flex; flex-direction: column; bottom: var(--alto-perspectivas); }
+  body[data-panel="mapa"] .perspectivas { display: block; }
+  body[data-panel="mapa"] .entrar-360 { display: flex; }
   body[data-panel="mapa"] .mapa { flex: 1; }
   body[data-panel="mapa"] .instrumentos,
   body[data-panel="mapa"] .barra-inferior { display: none; }
-  body[data-panel="mapa"] .leaflet-bottom { bottom: env(safe-area-inset-bottom); }
 
   .ficha {
     left: 0; right: 0; bottom: 0;
@@ -1202,6 +1315,8 @@ button { cursor: pointer; }
     background: var(--zinc-300);
   }
   .ficha__titulo { font-size: 22px; }
+  body:has(.ficha:not([hidden])) .perspectivas,
+  body:has(.ficha:not([hidden])) .entrar-360,
   body:has(.ficha:not([hidden])) .barra-inferior,
   body:has(.ficha:not([hidden])) .instrumentos { display: none; }
 }

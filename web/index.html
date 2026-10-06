@@ -205,6 +205,26 @@
     <div id="mapa" class="mapa" aria-label="Plano del loteo"></div>
   </section>
 
+  <!-- Sobre el plano del teléfono: volver a la vista aérea, desde donde se
+       estaba mirando o desde otro punto de vuelo. -->
+  <button id="entrar-360" class="entrar-360" type="button">
+    <span id="entrar-360-miniatura" class="entrar-360__miniatura" aria-hidden="true"></span>
+    <span class="entrar-360__textos">
+      <small>Vista inmersiva</small>
+      <strong>Entrar a 360°</strong>
+      <span id="entrar-360-punto"></span>
+    </span>
+  </button>
+
+  <section id="perspectivas" class="perspectivas" aria-labelledby="perspectivas-titulo">
+    <header class="perspectivas__cabecera">
+      <h2 id="perspectivas-titulo">Perspectivas aéreas</h2>
+      <span id="perspectivas-conteo"></span>
+    </header>
+    <div id="perspectivas-fila" class="perspectivas__fila" role="group"
+         aria-labelledby="perspectivas-titulo"></div>
+  </section>
+
   <aside id="ficha" class="ficha" aria-live="polite" hidden></aside>
 
 </main>
