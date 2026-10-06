@@ -238,6 +238,35 @@
 
   <aside id="ficha" class="ficha" aria-live="polite" hidden></aside>
 
+  <!-- Antes de ir a pagar: los datos para apartar la parcela (js/reserva.js). -->
+  <dialog id="reserva" class="reserva" aria-labelledby="reserva-titulo">
+    <form id="reserva-formulario" novalidate>
+      <h2 id="reserva-titulo" class="reserva__titulo">Reservar parcela</h2>
+      <p id="reserva-explicacion" class="reserva__explicacion"></p>
+      <div class="reserva__campos">
+        <label class="reserva__campo"><span>Nombre</span>
+          <input name="nombre" autocomplete="name" required minlength="2" maxlength="120"></label>
+        <label class="reserva__campo"><span>Teléfono</span>
+          <input name="telefono" type="tel" inputmode="tel" autocomplete="tel" required
+                 placeholder="+56 9 1234 5678" maxlength="20"></label>
+        <label class="reserva__campo"><span>Correo</span>
+          <input name="email" type="email" autocomplete="email" required maxlength="160"></label>
+        <!-- Trampa para robots: una persona no lo ve ni llega con el tabulador. -->
+        <div class="reserva__trampa" aria-hidden="true">
+          <label>Sitio web <input name="sitio" tabindex="-1" autocomplete="off"></label>
+        </div>
+      </div>
+      <p class="reserva__privacidad">Tus datos solo se usan para esta reserva: le llegan a la
+        loteadora para que te contacte.</p>
+      <p id="reserva-error" class="reserva__error" role="alert" hidden></p>
+      <p id="reserva-listo" class="reserva__listo" role="status" hidden></p>
+      <div class="reserva__acciones">
+        <button type="button" class="boton boton--texto" data-accion="cancelar">Cancelar</button>
+        <button type="submit" class="boton" id="reserva-enviar">Apartar e ir a pagar</button>
+      </div>
+    </form>
+  </dialog>
+
 </main>
 
 <script src="vendor/leaflet.js"></script>

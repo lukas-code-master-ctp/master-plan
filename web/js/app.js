@@ -3,6 +3,7 @@ import { rumboCardinal, rumboCorto } from './camara.js';
 import { Catalogo, ErrorDeDatos, buscar, conteoPorEstado, filtrar, romano } from './datos.js';
 import { aplicarMarca, ponerLogo } from './marca.js';
 import { mensajeWhatsapp, renderizarFicha, rotuloConPrecio } from './ficha.js';
+import { abrirFormulario } from './reserva.js';
 import { Mapa } from './mapa.js';
 import {
   construirPerspectivas, marcarPerspectiva, pintarMiniPlano, pintarMiniatura,
@@ -160,6 +161,12 @@ function seleccionar(id, { enfocarEnVisor = false, silencioso = false } = {}) {
   renderizarFicha($('#ficha'), parcela, estado.catalogo, {
     alCerrar: () => seleccionar(null),
     alVerDesdeAire: () => verDesdeElAire(parcela),
+    alReservar: (elegida) => abrirFormulario($('#reserva'), {
+      catalogo: estado.catalogo,
+      parcela: elegida,
+      // Apartada: al pago. Sin link, el formulario ya le dijo que la contactarán.
+      alTerminar: (link) => { if (link) location.assign(link); },
+    }),
   });
   estado.mapa.refrescar();
 

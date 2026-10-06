@@ -178,6 +178,23 @@ test('el monto de reserva de la planilla manda sobre el del loteo', () => {
   assert.equal(pago.texto, 'Reservar parcela ($300.000)');
 });
 
+test('con consola, reservar abre el formulario en vez de ir directo al pago', () => {
+  const p = parcela();
+  const reserva = { ...RESERVA, consola: 'https://consola.cl', loteo: 'praderas' };
+
+  const pago = accionesDe(p, catalogoCon(p, { reserva })).find((a) => a.tipo === 'pago');
+
+  assert.equal(pago.formulario, true);
+});
+
+test('sin consola, reservar sigue yendo directo al link de pago', () => {
+  const p = parcela();
+
+  const pago = accionesDe(p, catalogoCon(p, { reserva: RESERVA })).find((a) => a.tipo === 'pago');
+
+  assert.equal(pago.formulario, false);
+});
+
 test('una parcela vendida no ofrece la reserva del loteo', () => {
   const p = parcela({ estado: 'vendido' });
 

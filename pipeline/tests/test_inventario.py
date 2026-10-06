@@ -166,3 +166,20 @@ def test_la_actualizacion_liviana_no_borra_la_consola_que_dejo_la_publicacion(tm
     actualizar(fuentes, proyecto(tmp_path), salida)
 
     assert leer(salida)["consola"] == "https://consola.cl"
+
+
+def test_al_publicar_el_sitio_puede_conectarse_solo_con_su_consola(tmp_path):
+    """La política de seguridad del sitio deja hablar con la consola, y con nada más."""
+    salida = sitio(tmp_path, [parcela("1")])
+    politica = ("default-src 'self'; connect-src 'self'; worker-src 'self' blob:")
+    (salida.web / "vercel.json").write_text(json.dumps({"headers": [{"source": "/(.*)", "headers": [
+        {"key": "Content-Security-Policy", "value": politica}]}]}), encoding="utf-8")
+
+    poner_datos_del_loteo(config.Proyecto(nombre="Loteo"), salida,
+                          consola="https://consola.tumasterplan.cl/")
+    poner_datos_del_loteo(config.Proyecto(nombre="Loteo"), salida,
+                          consola="https://consola.tumasterplan.cl/")
+
+    escrita = json.loads((salida.web / "vercel.json").read_text())["headers"][0]["headers"][0]["value"]
+    assert escrita == ("default-src 'self'; connect-src 'self' https://consola.tumasterplan.cl; "
+                       "worker-src 'self' blob:")
