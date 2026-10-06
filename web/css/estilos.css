@@ -315,7 +315,7 @@ button { cursor: pointer; }
   border-radius: var(--radio-md);
   background: var(--marca-700);
   color: #fff;
-  font: 500 0.875rem/1 var(--sans);
+  font: 600 0.875rem/1 var(--sans);
   text-decoration: none;
   transition: background 150ms, border-color 150ms, color 150ms;
 }
@@ -330,8 +330,10 @@ button { cursor: pointer; }
 .boton--texto:hover { background: var(--zinc-100); color: var(--tinta); }
 .boton--texto:active { background: var(--zinc-200); }
 
-.boton--whatsapp { background: var(--marca-700); }
-.boton--whatsapp:hover { background: var(--marca-800); }
+.boton--suave { background: var(--zinc-100); color: var(--tinta); }
+.boton--suave:hover { background: var(--zinc-200); }
+.boton--suave:active { background: var(--zinc-300); }
+
 
 .boton[disabled] { background: var(--zinc-300); border-color: transparent; color: #fff; cursor: not-allowed; }
 
@@ -961,8 +963,10 @@ button { cursor: pointer; }
   z-index: 28;
   left: 1.25rem;
   bottom: 5rem;
-  width: 20.5rem;
-  max-height: min(29rem, 60vh);
+  /* Con las acciones en dos columnas, a 287 px la fila se partía y el panel
+     pedía scroll. 360 px es el ancho del inspector del diseño, menos el margen. */
+  width: 360px;
+  max-height: min(36rem, calc(100vh - var(--alto-cabecera) - 6.5rem));
   overflow-y: auto;
   padding: 1.25rem;
   border-radius: var(--radio-xl);
@@ -970,11 +974,16 @@ button { cursor: pointer; }
   animation: subir 200ms ease-out;
 }
 
+/* El asa solo existe donde el panel se arrastra: en el teléfono (ver Móvil). */
+.ficha__asa { display: none; }
+.ficha--arrastrando { transition: none !important; animation: none; }
+.ficha:not(.ficha--arrastrando) { transition: transform 220ms var(--curva); }
+
 .ficha__cabecera { display: flex; align-items: flex-start; gap: 0.75rem; }
 .ficha__titulo {
   margin: 0 0 0.5rem;
-  font: 700 1.125rem/1.2 var(--sans);
-  letter-spacing: -0.01em;
+  font: 700 20px/1.2 var(--sans);
+  letter-spacing: -0.015em;
   color: var(--tinta);
 }
 .ficha__cerrar {
@@ -985,7 +994,7 @@ button { cursor: pointer; }
   width: 2rem; height: 2rem;
   background: transparent;
   border: 0;
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio-md);
   color: var(--zinc-500);
   font-size: 0.875rem;
   transition: background 150ms, color 150ms;
@@ -1000,44 +1009,76 @@ button { cursor: pointer; }
   align-items: center;
   gap: 0.35rem;
   padding: 0.125rem 0.625rem;
-  border-radius: var(--radio-full);
+  border-radius: var(--radio-sm);
   background: var(--zinc-100);
   color: var(--zinc-700);
   box-shadow: inset 0 0 0 1px var(--zinc-200);
-  font: 500 0.75rem/1.25rem var(--sans);
+  font: 600 0.75rem/1.25rem var(--sans);
 }
-.insignia i { display: none; }
 .insignia--disponible { background: var(--verde-50); color: var(--verde-800); box-shadow: inset 0 0 0 1px var(--verde-100); }
 .insignia--reservado { background: var(--ambar-50); color: var(--ambar-800); box-shadow: inset 0 0 0 1px var(--ambar-200); }
 .insignia--vendido { background: var(--azul-50); color: var(--azul-700); box-shadow: inset 0 0 0 1px var(--azul-200); }
 .insignia--no_disponible { background: var(--zinc-900); color: #fff; box-shadow: inset 0 0 0 1px var(--zinc-900); }
+.insignia--no_en_venta { background: var(--zinc-100); color: var(--zinc-600); }
 
-.datos {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.875rem 0.625rem;
+/* Superficie a la izquierda, precio grande a la derecha: las dos cifras que el
+   comprador compara entre parcelas, en la misma línea de lectura. */
+.ficha__resumen {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
   margin: 1rem 0;
-  padding: 1rem 0;
-  border-top: 1px solid var(--linea);
-  border-bottom: 1px solid var(--linea);
 }
-.dato__rotulo {
-  display: block;
-  margin-bottom: 0.25rem;
-  font: 600 0.625rem/1 var(--sans);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--tinta-tenue);
+.ficha__resumen p { margin: 0; }
+.ficha__superficie {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--tinta-suave);
 }
-.dato__valor {
-  font: 600 1rem/1.2 var(--sans);
+.ficha__superficie svg { width: 1.1rem; height: 1.1rem; flex: none; color: var(--zinc-500); }
+.ficha__superficie strong { color: var(--tinta); font-weight: 700; font-variant-numeric: tabular-nums; }
+.ficha__precio { margin-left: auto !important; text-align: right; }
+.ficha__precio strong {
+  font: 700 24px/1.1 var(--sans);
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   color: var(--tinta);
 }
-.dato__valor small { display: block; font: 400 0.6875rem var(--sans); color: var(--tinta-tenue); }
+.ficha__consultar { font: 600 0.875rem var(--sans); color: var(--tinta-tenue); }
+
+.atributos {
+  display: grid;
+  /* auto-fill y no auto-fit: una sola tarjeta conserva su ancho en vez de
+     estirarse a todo el panel. */
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+.atributo {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  padding: 0.75rem 0.5rem;
+  background: var(--zinc-100);
+  border-radius: var(--radio-lg);
+  text-align: center;
+}
+.atributo svg { width: 1.15rem; height: 1.15rem; color: var(--zinc-600); margin-bottom: 0.15rem; }
+.atributo__rotulo { font: 600 0.75rem/1.2 var(--sans); color: var(--tinta); }
+.atributo__valor { font: 400 0.75rem/1.2 var(--sans); font-variant-numeric: tabular-nums; color: var(--tinta-suave); }
 
 .acciones { display: grid; gap: 0.5rem; }
 .acciones .boton { width: 100%; }
+.acciones__fila { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 0.5rem; }
+.acciones .boton svg { width: 1.15rem; height: 1.15rem; flex: none; }
+/* El texto del contacto lo escribe la loteadora y puede no caber en media fila:
+   el botón crece en alto en vez de cortarlo. */
+.acciones__fila .boton { height: auto; min-height: var(--alto-control); padding: 0.5rem 0.75rem; line-height: 1.2; }
 
 .nota {
   margin: 1rem 0 0;
@@ -1133,10 +1174,34 @@ button { cursor: pointer; }
   .ficha {
     left: 0; right: 0; bottom: 0;
     width: auto;
-    max-height: 68vh;
+    max-height: 72vh;
+    padding-top: 0;
     border-radius: var(--radio-xl) var(--radio-xl) 0 0;
     padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
   }
+  /* El asa: una franja de 28 px a todo el ancho que se arrastra hacia abajo
+     (touch-action: none para que el navegador no la tome como scroll). */
+  .ficha__asa {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    height: 28px;
+    margin: 0 -1.25rem 0.25rem;
+    background: var(--papel);
+    cursor: grab;
+    touch-action: none;
+  }
+  .ficha__asa::before {
+    content: '';
+    position: absolute;
+    left: 50%; top: 12px;
+    width: 36px; height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: var(--zinc-300);
+  }
+  .ficha__titulo { font-size: 22px; }
   body:has(.ficha:not([hidden])) .barra-inferior,
   body:has(.ficha:not([hidden])) .instrumentos { display: none; }
 }
