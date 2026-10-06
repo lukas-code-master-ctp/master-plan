@@ -425,7 +425,8 @@
         <button class="boton boton--texto boton--chico" data-accion="kmz-quitar-dibujo" type="button" hidden>Quitar el rectángulo del dibujo</button>
         <p id="kmz-marcar-nota" class="nota" role="status"></p>
         <div class="kmz-panel__pie">
-          <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: digitalizar</button>
+          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-marcar">Seguir: digitalizar</button>
+          <p id="kmz-por-que-marcar" class="kmz-por-que nota" role="status" hidden></p>
         </div>
       </div>
 
@@ -527,7 +528,8 @@
         </section>
         <dl id="kmz-cifras" class="kmz-cifras" hidden></dl>
         <div class="kmz-panel__pie">
-          <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: numerar</button>
+          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-digitalizar">Seguir: numerar</button>
+          <p id="kmz-por-que-digitalizar" class="kmz-por-que nota" role="status" hidden></p>
         </div>
       </div>
 
@@ -539,11 +541,11 @@
           <span class="kmz-muestra kmz-muestra--lector">azul</span> los leídos del plano (más claros
           cuanto menos seguros; con "?" los de pocas lecturas) y en
           <span class="kmz-muestra kmz-muestra--malo">rojo</span> los sin número o repetidos.</p>
-        <p id="kmz-sin-numero" class="kmz-nota-fuerte"></p>
+        <p id="kmz-sin-numero" class="kmz-nota-fuerte" role="status"></p>
+        <p id="kmz-actualizando" class="kmz-actualizando" role="status" hidden>Actualizando los lotes…</p>
         <button class="boton boton--contorno boton--chico" data-accion="kmz-siguiente-sin-numero" type="button">Ir al siguiente sin número</button>
-        <p id="kmz-huecos" class="kmz-nota-fuerte" hidden></p>
         <div id="kmz-sugerencias-caja" hidden>
-          <h3>Leídos con muy pocas lecturas: confírmalos</h3>
+          <h3>Números por confirmar</h3>
           <div id="kmz-sugerencias" class="kmz-pastillas"></div>
         </div>
         <p id="kmz-faltantes" class="kmz-nota-fuerte" hidden></p>
@@ -552,12 +554,12 @@
           <div id="kmz-duplicados" class="kmz-pastillas"></div>
         </div>
         <div id="kmz-dudosos-caja" hidden>
-          <h3>Leídos con pocas lecturas: míralos</h3>
+          <h3>Revisa estos números</h3>
           <div id="kmz-dudosos" class="kmz-pastillas"></div>
         </div>
-        <p class="nota">Cuando cambias números, vuelve a digitalizar para separar bien los lotes.</p>
         <div class="kmz-panel__pie">
-          <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: ubicar en el mapa</button>
+          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-numerar">Seguir: ubicar en el mapa</button>
+          <p id="kmz-por-que-numerar" class="kmz-por-que nota" role="status" hidden></p>
         </div>
       </div>
 
@@ -613,7 +615,8 @@
         </fieldset>
         <div class="kmz-panel__pie">
           <button class="boton boton--contorno" data-accion="kmz-georreferenciar" type="button">Ubicar de nuevo</button>
-          <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: revisar</button>
+          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-ubicar">Seguir: revisar</button>
+          <p id="kmz-por-que-ubicar" class="kmz-por-que nota" role="status" hidden></p>
         </div>
       </div>
 
@@ -635,7 +638,8 @@
           <p id="kmz-corregir-lejos" class="nota" hidden>Acércate al mapa para ver los vértices.</p>
         </div>
         <div class="kmz-panel__pie">
-          <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: crear el KMZ</button>
+          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-revisar">Seguir: crear el KMZ</button>
+          <p id="kmz-por-que-revisar" class="kmz-por-que nota" role="status" hidden></p>
         </div>
       </div>
 
@@ -682,7 +686,9 @@
           <form id="kmz-numero" class="kmz-numero" hidden>
             <label for="kmz-numero-valor" id="kmz-numero-rotulo">Número del lote</label>
             <div class="fila">
-              <input id="kmz-numero-valor" type="text" autocomplete="off" spellcheck="false" maxlength="20">
+              <input id="kmz-numero-valor" type="text" autocomplete="off" spellcheck="false" maxlength="20"
+                     list="kmz-numeros-faltan">
+              <datalist id="kmz-numeros-faltan"></datalist>
               <button class="boton boton--chico" type="submit">OK</button>
             </div>
           </form>

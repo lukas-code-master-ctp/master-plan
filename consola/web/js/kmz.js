@@ -11,10 +11,10 @@
  */
 import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
-  anclaDesde, claveLote, dudosos, duplicados, empujar, girarEntradas, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo,
-  nombreDelSistema, ordenarEsquinas, PASOS,
-  pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono, sesgoDeEscala,
-  resumenRevision, siguienteNombre, sinNumero, sugerencias, textoHuecos, verticesDe,
+  anclaDesde, aplicarNumero, claveLote, conSemillas, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
+  HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, nombreDelSistema, numerosQueFaltan,
+  ordenarEsquinas, PASOS, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puntoDeRotulo,
+  puntoEnPoligono, sesgoDeEscala, resumenRevision, siguienteNombre, sinNumero, sugerencias, verticesDe,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
 import { abrirNombre, abrirUsarKmz, descargaDe, textoDeCreado } from './kmzs.js';
@@ -53,6 +53,7 @@ let arrastrar = false;
 let corrigiendo = false;      // Revisar: los vértices se arrastran o se borran a mano
 let corrigiendoYa = false;    // una corrección sin respuesta: los vértices del mapa están viejos
 let esquinasMarcando = [];    // las esquinas del marco mientras faltan: el servidor pide 4 o ninguna
+let ubicandoYa = false;       // se está calculando la ubicación: "Seguir" espera eso, no más puntos
 
 // --- guardar ---------------------------------------------------------------------------
 
@@ -94,6 +95,63 @@ async function guardar() {
   })();
   try { await enVuelo; } finally { enVuelo = null; }
   pintar();
+}
+
+// --- releer solo --------------------------------------------------------------------------
+//
+// Al cambiar un número en Numerar, los lotes se separan de nuevo con él (la semilla manda
+// en el reparto), así que el digitalizado queda atrasado. En vez de pedirle que vuelva a
+// digitalizar, se relee el plano solo, un momento después del último cambio: una ráfaga
+// de números es una sola lectura. El cambio ya se ve al tiro (`aplicarNumero`); esto es
+// para que los lotes queden bien separados y "Seguir" se habilite.
+
+let releerLuego = 0;          // el temporizador: se reinicia con cada cambio
+let releyendo = null;         // el KMZ (slug) cuya relectura sola se está lanzando o corre
+let releerFallo = false;      // la relectura sola falló: no se insiste hasta el próximo cambio
+const RELEER_MS = 1500;
+
+const trabajando = () => Boolean(plano?.trabajo && !plano.trabajo.terminado);
+/** "Seguir" en Numerar espera: hay una relectura por lanzar, corriendo o un cambio sin guardar. */
+const actualizando = () => Boolean(releerLuego) || releyendo === slug || trabajando() || (paso === 'numerar' && sucio);
+
+function programarRelectura() {
+  clearTimeout(releerLuego);
+  releerFallo = false;
+  const mio = slug;
+  releerLuego = setTimeout(() => {
+    releerLuego = 0;
+    // Si salió de Numerar no se lee a sus espaldas: al volver, `releerSiHaceFalta` la programa.
+    if (paso !== 'numerar') return;
+    releerSolo(mio).catch((error) => {
+      if (mio === slug) {
+        releyendo = null;
+        releerFallo = true;
+        pintarPanel();
+      }
+      avisar(error.message);
+    });
+  }, RELEER_MS);
+}
+
+/** En Numerar, con el digitalizado atrasado y nada en camino, se programa la relectura. */
+function releerSiHaceFalta() {
+  const d = plano?.digitalizado;
+  if (paso !== 'numerar' || !d || d.vigente || releerLuego || releyendo === slug || releerFallo || trabajando()) return;
+  programarRelectura();
+}
+
+async function releerSolo(mio) {
+  if (mio !== slug) return;
+  // Se marca antes de guardar: el guardado repinta y no debe programar otra.
+  releyendo = mio;
+  await guardar();
+  // Con un trabajo corriendo no se lanza otro: al terminar ese, si sigue atrasado, se relanza.
+  if (mio !== slug || trabajando() || !plano?.digitalizado || plano.digitalizado.vigente) {
+    if (releyendo === mio) releyendo = null;
+    if (mio === slug) pintarPanel();
+    return;
+  }
+  await digitalizar({ solo: true });
 }
 
 // --- preparar --------------------------------------------------------------------------
@@ -177,6 +235,11 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
       .catch((error) => avisar(error.message));
   }
   slug = nuevoSlug;
+  // La relectura programada era del KMZ anterior.
+  clearTimeout(releerLuego);
+  releerLuego = 0;
+  releyendo = null;
+  releerFallo = false;
   corrigiendo = false;
   plano = null;
   entradas = VACIAS();
@@ -238,8 +301,13 @@ async function cargarLotes() {
   rasgosGeo = null;
   if (plano?.digitalizado) {
     const px = await pedir(`${api(mio)}/lotes?en=px`);
-    rasgos = px.features;
-    for (const r of rasgos) r.rotulo = puntoDeRotulo(r);
+    for (const r of px.features) r.rotulo = puntoDeRotulo(r);
+    // Si se está releyendo el plano, los números escritos desde la última lectura siguen
+    // viéndose puestos: si no, el lote recién numerado volvería a rojo hasta que termine.
+    // También con un número escrito que aún no llega al servidor (`sucio` o guardándose):
+    // para el servidor los lotes siguen al día, pero no tienen ese número.
+    const alDia = plano.digitalizado.vigente && !sucio && !enVuelo;
+    rasgos = alDia ? px.features : conSemillas(px.features, entradas.semillas);
   }
   if (plano?.georreferencia) {
     rasgosGeo = await pedir(`${api(mio)}/lotes?en=lonlat`);
@@ -459,10 +527,12 @@ function escuchar() {
   });
 }
 
-async function digitalizar() {
-  if (!entradas.rectangulo
+/** Con `solo`, es la relectura de Numerar: sin preguntar y sin cambiar de paso. */
+async function digitalizar({ solo = false } = {}) {
+  if (!solo && !entradas.rectangulo
     && !confirm('No encerraste el dibujo: se va a digitalizar la página entera, con cuadros y cajetín. ¿Seguir?')) return;
   await guardar();
+  const mio = slug;
   estado.registros.set(clave(), []);
   // La tarjeta aparece al tiro, en "Abriendo el plano", sin esperar la primera línea.
   estado.trabajos.set(clave(), { accion: 'digitalizar-plano', estado: 'corriendo', terminado: false });
@@ -477,16 +547,31 @@ async function digitalizar() {
     pintarRegistro();
     throw error;
   }
-  paso = 'digitalizar';
+  if (mio !== slug) return;
   plano = { ...plano, trabajo: { id, terminado: false } };
-  pintarPaso();
+  if (solo) {
+    pintar();
+  } else {
+    paso = 'digitalizar';
+    pintarPaso();
+  }
   seguir(clave(), id);
   refrescar().catch(() => {});
 }
 
 async function terminoDigitalizar(trabajo) {
+  const sola = releyendo === slug;
+  releyendo = null;
+  // Antes de cargar: `cargarTodo` repinta el paso y, con el fallo sin anotar, programaría
+  // otra relectura que vuelve a fallar. Una lectura que salió bien borra un fallo anterior.
+  if (trabajo.estado === 'listo') releerFallo = false;
+  else if (sola || paso === 'numerar') releerFallo = true;
   await cargarTodo();
-  if (trabajo.estado === 'listo') {
+  if (sola || paso === 'numerar') {
+    // La relectura de Numerar (o una que terminó mientras numeraba) no la saca de ahí.
+    pintar();
+    releerSiHaceFalta();
+  } else if (trabajo.estado === 'listo') {
     await irAlPaso(plano.digitalizado?.sin_numero || plano.digitalizado?.faltantes?.length || plano.digitalizado?.huecos?.length ? 'numerar' : 'ubicar');
   } else {
     pintarPaso();
@@ -554,14 +639,34 @@ function cerrarNumero() {
   lienzo?.redibujar();
 }
 
+/** Los números del cuadro de superficies, tal como los escribe el cuadro. */
+const numerosCuadro = () => plano?.digitalizado?.lector?.numeros_cuadro ?? [];
+
+/**
+ * Pone el número: en las semillas (lo que se guarda) y, en Numerar, también en los lotes
+ * que se ven, para que el lote pase a verde al tiro. Después se relee el plano solo.
+ */
+function ponerEnLote(numero, punto, anillos) {
+  const semillas = ponerNumero(entradas.semillas, numero, punto, anillos);
+  if (paso === 'numerar') {
+    // Donde quedó la semilla (si el lote ya tenía una, ahí): ahí va el rótulo.
+    const puesta = numero ? semillas.find((s) => s.numero === numero) : null;
+    if (puesta) rasgos = aplicarNumero(rasgos, numero, [puesta.x, puesta.y]);
+    programarRelectura();
+  }
+  cambiar({ ...entradas, semillas });
+}
+
 function escribirNumero(valor) {
   if (!numerando) return;
-  const limpio = valor.trim().replace(/^lote\s*/i, '');
+  // Como lo dice el cuadro: "8-8" queda "8-08", que es como sale en el KMZ.
+  const limpio = formaDelCuadro(valor, numerosCuadro());
   const otra = entradas.semillas.find((s) => claveLote(s.numero) === claveLote(limpio)
     && !(numerando.anillos && puntoEnPoligono(s.x, s.y, numerando.anillos)));
   if (limpio && otra && !confirm(`El ${limpio} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
-  cambiar({ ...entradas, semillas: ponerNumero(entradas.semillas, limpio, [numerando.x, numerando.y], numerando.anillos) });
+  const { x, y, anillos } = numerando;
   cerrarNumero();
+  ponerEnLote(limpio, [x, y], anillos);
   lienzo.canvas.focus({ preventScroll: true });
 }
 
@@ -569,9 +674,10 @@ function escribirNumero(valor) {
 function confirmarSugerencia(i) {
   const s = sugerencias(rasgos)[i];
   if (!s) return;
-  const otra = entradas.semillas.find((x) => claveLote(x.numero) === claveLote(s.numero));
-  if (otra && !confirm(`El ${s.numero} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
-  cambiar({ ...entradas, semillas: ponerNumero(entradas.semillas, s.numero, s.rasgo.rotulo, s.rasgo.geometry.coordinates) });
+  const numero = formaDelCuadro(s.numero, numerosCuadro());
+  const otra = entradas.semillas.find((x) => claveLote(x.numero) === claveLote(numero));
+  if (otra && !confirm(`El ${numero} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
+  ponerEnLote(numero, s.rasgo.rotulo, s.rasgo.geometry.coordinates);
 }
 
 function siguienteSinNumero() {
@@ -647,7 +753,13 @@ async function usarCuadricula(si) {
     // `ubicar` no corre si el digitalizado está atrasado: eso no es culpa de la cuadrícula.
     if (!await ubicar()) return;
     sirvio = plano?.georreferencia?.metodo === 'cuadricula';
-  } catch {
+  } catch (error) {
+    // Sin conexión o con el servidor caído no se sabe si sirve: se avisa y queda elegida,
+    // para reintentar con "Ubicar de nuevo". Solo un "no" del servidor la descarta.
+    if (esFalloPasajero(error)) {
+      if (mio === slug) avisar(error.message);
+      return;
+    }
     sirvio = false;
   }
   // Si en la espera se pasó a otro KMZ, `entradas` y `plano` ya son de ese: no se toca.
@@ -687,6 +799,8 @@ async function ubicar() {
   if (!plano?.digitalizado?.vigente) return false;
   if (entradas.anclas.length < 2 && !entradas.cuadricula) return false;
   $('#kmz-ancla-estado').textContent = 'Ubicando…';
+  ubicandoYa = true;
+  pintarPorQue();
   try {
     const georreferencia = await pedir(`${api(mio)}/georreferenciar`, json({}));
     if (mio !== slug) return false;
@@ -694,7 +808,11 @@ async function ubicar() {
   } catch (error) {
     if (mio !== slug) return false;
     $('#kmz-ancla-estado').textContent = '';
+    ubicandoYa = false;
+    pintarPorQue();
     throw error;
+  } finally {
+    ubicandoYa = false;
   }
   const nuevo = await pedir(api(mio));
   const geo = await pedir(`${api(mio)}/lotes?en=lonlat`);
@@ -825,6 +943,8 @@ async function pintarPaso() {
   $('#kmz-cuerpo').classList.toggle('kmz-cuerpo--solo', paso === 'subir' && !plano?.pdf || paso === 'crear');
   if (paso !== 'marcar') elegirHerramienta('mover');
   pintar();
+  // Llegar a Numerar con los lotes atrasados (se cambió algo antes): se releen solos.
+  releerSiHaceFalta();
   if (conMapa) {
     await prepararMapa();
     pintarMapa(true);
@@ -846,8 +966,9 @@ function pintarPasos() {
 function pintarPanel() {
   if (!plano) return;
   const d = plano.digitalizado;
-  const atrasado = Boolean(d && !d.vigente) && ['digitalizar', 'numerar', 'ubicar'].includes(paso);
-  $('#kmz-atrasado').hidden = !atrasado || Boolean(plano.trabajo && !plano.trabajo.terminado);
+  // En Numerar no: ahí los lotes se releen solos y el panel dice "Actualizando los lotes…".
+  const atrasado = Boolean(d && !d.vigente) && ['digitalizar', 'ubicar'].includes(paso);
+  $('#kmz-atrasado').hidden = !atrasado || trabajando();
   if (paso === 'subir') pintarSubir();
   if (paso === 'marcar') pintarMarcar();
   if (paso === 'digitalizar') pintarDigitalizar();
@@ -855,6 +976,23 @@ function pintarPanel() {
   if (paso === 'ubicar') pintarUbicar();
   if (paso === 'revisar') pintarRevisar();
   if (paso === 'crear') pintarCrear();
+  pintarPorQue();
+}
+
+/** El "Seguir" del paso abierto: se apaga con su motivo debajo, en una línea. */
+function pintarPorQue() {
+  const panel = $(`#kmz-panel-${paso}`);
+  const boton = panel?.querySelector('[data-accion="kmz-siguiente"]');
+  if (!plano || !boton) return;
+  const motivo = porQueNoSigue(paso, plano, {
+    entradas, actualizando: actualizando(), releerFallo, ubicando: ubicandoYa,
+    duplicados: paso === 'revisar' ? resumenRevision(rasgosGeo?.features ?? []).duplicados : 0,
+  });
+  boton.disabled = Boolean(motivo);
+  const linea = panel.querySelector('.kmz-por-que');
+  if (!linea) return;
+  linea.textContent = motivo;
+  linea.hidden = !motivo;
 }
 
 function pintarSubir() {
@@ -908,7 +1046,6 @@ function pintarMarcar() {
   for (const s of entradas.semillas) filas.push(fila(`Lote ${s.numero}`, { quitarSemilla: s.numero }));
   lista.replaceChildren(...filas);
   const listo = Boolean(entradas.rectangulo) && (!sinLector || entradas.semillas.length > 0);
-  $('#kmz-panel-marcar [data-accion="kmz-siguiente"]').disabled = !pasosHabilitados(plano).digitalizar;
   $('#kmz-marcar-nota').textContent = listo ? '' : !entradas.rectangulo
     ? 'Encierra el dibujo del loteo con la herramienta "Encerrar el dibujo".'
     : 'Marca el número de al menos un lote antes de digitalizar.';
@@ -940,8 +1077,6 @@ function pintarDigitalizar() {
   boton.disabled = trabajando || !pasosHabilitados(plano).digitalizar;
   boton.textContent = trabajando ? 'Digitalizando…' : d ? 'Digitalizar de nuevo' : 'Digitalizar';
   pintarRegistro();
-  // Antes del `return` de abajo: sin digitalizar también hay que apagarlo.
-  $('#kmz-panel-digitalizar [data-accion="kmz-siguiente"]').disabled = !puedeSeguirANumerar(plano);
   const cifras = $('#kmz-cifras');
   cifras.hidden = !d;
   if (!d) return;
@@ -970,22 +1105,22 @@ function pintarDigitalizar() {
 function pintarNumerar() {
   const d = plano.digitalizado;
   const partes = sinNumero(rasgos);
-  const deLote = partes.filter((r) => r.properties.de_lote).length;
-  const repetidos = duplicados(rasgos);
   const dudas = dudosos(rasgos);
-  const lotesSin = deLote === 1 ? 'Un lote quedó sin número' : `${deLote} lotes quedaron sin número`;
-  $('#kmz-sin-numero').textContent = deLote
-    ? `${lotesSin} (en rojo, con "?"): no se leyó su número. Haz clic y escríbelo; si no, no va al KMZ.`
-      + (partes.length > deLote ? ` Además hay ${partes.length - deLote} ${partes.length - deLote === 1 ? 'parte' : 'partes'}`
-        + ' sin número más chicas: si son caminos o áreas comunes, se dejan así.' : '')
-    : partes.length
-      ? `${partes.length} ${partes.length === 1 ? 'parte sin número' : 'partes sin número'} (en rojo, con "?"). `
-        + 'Si es un lote, haz clic y escribe su número. Los caminos y áreas comunes se dejan así: no van al KMZ.'
-      : 'Todos los lotes tienen número.';
+  const repetidos = duplicados(rasgos);
+  // Un solo mensaje: cuántos faltan y qué hacer. Los huecos de la numeración van ahí cuando
+  // no queda ningún lote rojo (si no, son esos mismos lotes).
+  $('#kmz-sin-numero').textContent = mensajeNumerar(rasgos, numerosQueFaltan(d?.huecos, rasgos));
+  $('#kmz-actualizando').hidden = !actualizando() || Boolean(releerFallo && !trabajando());
   $('[data-accion="kmz-siguiente-sin-numero"]').hidden = !partes.length;
-  const huecos = textoHuecos(d?.huecos);
-  $('#kmz-huecos').hidden = !huecos;
-  $('#kmz-huecos').textContent = huecos ? `${huecos} Búscalos en el plano: suelen ser los lotes sin número.` : '';
+  // El campo del número ofrece los que faltan: los del cuadro de superficies o, sin cuadro,
+  // los huecos de la numeración.
+  const cuadro = numerosCuadro();
+  $('#kmz-numeros-faltan').replaceChildren(...numerosQueFaltan(cuadro.length ? cuadro : d?.huecos, rasgos)
+    .map((numero) => {
+      const opcion = document.createElement('option');
+      opcion.value = numero;
+      return opcion;
+    }));
   const porConfirmar = sugerencias(rasgos);
   $('#kmz-sugerencias-caja').hidden = !porConfirmar.length;
   $('#kmz-sugerencias').replaceChildren(...porConfirmar.map(({ numero }, i) => {
@@ -1014,9 +1149,7 @@ function pintarNumerar() {
   $('#kmz-duplicados-caja').hidden = !repetidosRasgos.length;
   $('#kmz-duplicados').replaceChildren(...botones(repetidosRasgos, (p) => `Lote ${p.numero}`));
   $('#kmz-dudosos-caja').hidden = !dudas.length;
-  $('#kmz-dudosos').replaceChildren(...botones(dudas,
-    (p) => `${p.numero} · ${p.apoyo ?? 0} lect.${p.confianza != null ? ` · ${Math.round(p.confianza * 100)} %` : ''}`));
-  $('#kmz-panel-numerar [data-accion="kmz-siguiente"]').disabled = !d?.vigente;
+  $('#kmz-dudosos').replaceChildren(...botones(dudas, (p) => p.numero));
 }
 
 function pintarUbicar() {
@@ -1099,7 +1232,6 @@ function pintarUbicar() {
   for (const b of $$('#kmz-ajuste-fino button')) b.disabled = !g;
   $('[data-accion="kmz-georreferenciar"]').disabled = !plano.digitalizado?.vigente
     || (entradas.anclas.length < 2 && !entradas.cuadricula);
-  $('#kmz-panel-ubicar [data-accion="kmz-siguiente"]').disabled = !vigente;
 }
 
 function pintarRevisar() {
@@ -1151,7 +1283,6 @@ function pintarRevisar() {
       : cuenta.rojo
       ? 'Los rojos tienen un área muy distinta a la oficial: suelen ser lotes mal separados.'
       : 'Ningún lote se aparta más de un 5 % del área oficial.';
-  $('#kmz-panel-revisar [data-accion="kmz-siguiente"]').disabled = Boolean(problemas);
   const boton = $('[data-accion="kmz-corregir"]');
   boton.setAttribute('aria-pressed', String(corrigiendo));
   boton.textContent = corrigiendo ? 'Listo, dejar de corregir' : 'Corregir vértices a mano';

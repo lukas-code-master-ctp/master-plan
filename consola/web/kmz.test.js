@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  anclaDesde, aPagina, claveLote, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
+  anclaDesde, aPagina, aplicarNumero, claveLote, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
   tamanoRotado, textoHuecos, vistaAjustada, zoomEn,
@@ -283,6 +283,101 @@ test('los leídos con poco apoyo se señalan para mirarlos', () => {
   assert.deepEqual(dudosos(rasgos).map((r) => r.properties.numero), ['1']);
 });
 
+test('un número puesto se ve al tiro: el lote queda verde y sin su lectura por confirmar', () => {
+  const rojo = lote(null, [cuadro(0, 0, 10, 10)], { banderas: ['sin_numero', 'de_lote'], de_lote: true,
+    sugerencia: { numero: '8-16', apoyo: 1 } });
+  const otro = lote('8-02', [cuadro(10, 0, 20, 10)], { origen: 'lector', apoyo: 5 });
+  const rasgos = [rojo, otro];
+  const copia = structuredClone(rasgos);
+  const nuevos = aplicarNumero(rasgos, '8-16', [5, 5]);
+
+  const p = nuevos[0].properties;
+  assert.equal(p.numero, '8-16');
+  assert.equal(p.origen, 'usuario');
+  assert.deepEqual(p.banderas, []);
+  assert.equal(p.sugerencia, undefined);
+  assert.deepEqual(nuevos[0].rotulo, [5, 5]);
+  assert.equal(nuevos[1], otro);
+  assert.deepEqual(sinNumero(nuevos), []);
+  assert.deepEqual(sugerencias(nuevos), []);
+  // Los rasgos de antes quedan como estaban.
+  assert.deepEqual(rasgos, copia);
+  // Un clic fuera de todo lote, o un número vacío, no cambia nada.
+  assert.equal(aplicarNumero(rasgos, '8-16', [50, 50]), rasgos);
+  assert.equal(aplicarNumero(rasgos, ' ', [5, 5]), rasgos);
+});
+
+test('un número que estaba en otro lote pasa al nuevo y el otro queda sin número', () => {
+  const a = lote('8-1', [cuadro(0, 0, 10, 10)], { origen: 'lector', semilla: [5, 5] });
+  const b = lote('8-01', [cuadro(10, 0, 20, 10)], { banderas: ['duplicado'] });
+  const c = lote(null, [cuadro(20, 0, 30, 10)], { banderas: ['sin_numero', 'de_lote'], de_lote: true });
+  const nuevos = aplicarNumero([a, b, c], '8-01', [25, 5]);
+  assert.deepEqual(nuevos.map((r) => r.properties.numero), [null, null, '8-01']);
+  assert.deepEqual(nuevos[0].properties.banderas, ['sin_numero', 'de_lote']);
+  assert.deepEqual(nuevos[0].rotulo, [5, 5]);
+  assert.deepEqual(nuevos[2].properties.banderas, []);
+  assert.equal(mensajeNumerar(nuevos), 'Faltan 2 números: haz clic en cada lote rojo y elige su número.');
+  // Dos lotes con el mismo número quedan repetidos; al corregir uno, el otro deja de estarlo.
+  const d = lote('5', [cuadro(30, 0, 40, 10)]);
+  const repetidos = aplicarNumero([d, c], '5', [25, 5]);
+  assert.ok(repetidos[0].properties.numero === null);
+  const dos = aplicarNumero(aplicarNumero([d, c, lote('6', [cuadro(40, 0, 50, 10)])], '6', [25, 5]), '7', [25, 5]);
+  assert.deepEqual(dos.map((r) => r.properties.numero), ['5', '7', null]);
+});
+
+test('las semillas que el digitalizado no tiene todavía se ponen encima al recargar', () => {
+  const rasgos = [lote(null, [cuadro(0, 0, 10, 10)], { banderas: ['sin_numero', 'de_lote'], de_lote: true }),
+    lote('2', [cuadro(10, 0, 20, 10)])];
+  const nuevos = conSemillas(rasgos, [{ numero: '1', x: 5, y: 5 }, { numero: '2', x: 15, y: 5 }]);
+  assert.deepEqual(nuevos.map((r) => r.properties.numero), ['1', '2']);
+  assert.equal(nuevos[1], rasgos[1]);
+  assert.equal(conSemillas(rasgos, []), rasgos);
+});
+
+test('lo escrito se guarda como lo dice el cuadro de superficies', () => {
+  const cuadroSup = ['8-01', '8-08', '8-16'];
+  assert.equal(formaDelCuadro('8-8', cuadroSup), '8-08');
+  assert.equal(formaDelCuadro(' lote 8-8 ', cuadroSup), '8-08');
+  assert.equal(formaDelCuadro('LOTE 8-16', cuadroSup), '8-16');
+  // No está en el cuadro (o no hay cuadro): como lo escribió, sin "lote".
+  assert.equal(formaDelCuadro('8-17', cuadroSup), '8-17');
+  assert.equal(formaDelCuadro('Lote 12', undefined), '12');
+  assert.equal(formaDelCuadro('  ', cuadroSup), '');
+});
+
+test('los números que faltan según el cuadro', () => {
+  const rasgos = [lote('8-1', []), lote(null, [], { banderas: ['sin_numero'] }), lote('8-03', [])];
+  assert.deepEqual(numerosQueFaltan(['8-01', '8-02', '8-03', '8-04'], rasgos), ['8-02', '8-04']);
+  assert.deepEqual(numerosQueFaltan(undefined, rasgos), []);
+});
+
+test('Numerar dice una sola cosa: cuántos números faltan', () => {
+  const rojo = (extra = {}) => lote(null, [], { banderas: ['sin_numero', 'de_lote'], de_lote: true, ...extra });
+  const camino = lote(null, [], { banderas: ['sin_numero'] });
+  const siete = Array.from({ length: 7 }, () => rojo());
+  assert.equal(mensajeNumerar([lote('1', []), ...siete]),
+    'Faltan 7 números: haz clic en cada lote rojo y elige su número.');
+  assert.equal(mensajeNumerar([rojo({ sugerencia: { numero: '8-16' } })]),
+    'Falta 1 número: haz clic en cada lote rojo y elige su número.');
+  assert.equal(mensajeNumerar([lote('1', [])]), 'Todos los lotes tienen número.');
+  assert.equal(mensajeNumerar([lote('1', []), camino]),
+    'Todos los lotes tienen número. Queda 1 parte chica sin número: si es un camino o un área común, se deja así.');
+  assert.equal(mensajeNumerar([rojo(), camino, camino]),
+    'Falta 1 número: haz clic en cada lote rojo y elige su número.'
+    + ' Quedan 2 partes chicas sin número: si son caminos o áreas comunes, se dejan así.');
+  // Sin lotes rojos pero con un número que no tiene ningún lote.
+  assert.equal(mensajeNumerar([lote('1', [])], ['8-04']),
+    'Falta el 8-04 en el plano: búscalo; puede que dos lotes hayan quedado juntos.');
+  assert.match(mensajeNumerar([lote('1', [])], ['8-04', '8-07']), /^Faltan 8-04 y 8-07 en el plano: búscalos/);
+});
+
+test('un error de red o del servidor es pasajero; uno que responde, no', () => {
+  assert.ok(esFalloPasajero(new TypeError('Failed to fetch')));
+  assert.ok(esFalloPasajero(Object.assign(new Error('x'), { estado: 502 })));
+  assert.ok(!esFalloPasajero(Object.assign(new Error('x'), { estado: 409 })));
+  assert.ok(!esFalloPasajero(Object.assign(new Error('x'), { estado: 400 })));
+});
+
 // --- pasos ------------------------------------------------------------------------------------
 
 test('los pasos se abren según lo que ya hay', () => {
@@ -425,4 +520,33 @@ test('los vértices para corregir: uno por punto, aunque lo compartan dos lotes'
   assert.deepEqual(verticesDe(rasgos).map((p) => [p.lon, p.lat]),
     [[0, 0], [1, 0], [1, 1], [0, 1], [2, 0], [2, 1]]);
   assert.deepEqual(verticesDe(null), []);
+});
+
+test('bajo un "Seguir" apagado va por qué, en cada paso', () => {
+  const pdf = { pdf: true };
+  assert.equal(porQueNoSigue('marcar', pdf, { entradas: { rectangulo: null } }), 'Falta encerrar el dibujo del loteo.');
+  assert.equal(porQueNoSigue('marcar', { pdf: true, entradas: {} }, {}), '');
+
+  assert.equal(porQueNoSigue('digitalizar', { pdf: true, entradas: {} }), 'Falta leer el plano.');
+  assert.equal(porQueNoSigue('digitalizar', { trabajo: { terminado: false }, digitalizado: { vigente: true } }), 'Leyendo el plano…');
+  assert.match(porQueNoSigue('digitalizar', { digitalizado: { vigente: false } }), /de nuevo/);
+  assert.equal(porQueNoSigue('digitalizar', { digitalizado: { vigente: true } }), '');
+
+  const vigente = { digitalizado: { vigente: true } };
+  assert.equal(porQueNoSigue('numerar', vigente), '');
+  assert.equal(porQueNoSigue('numerar', vigente, { actualizando: true }), 'Actualizando los lotes…');
+  assert.equal(porQueNoSigue('numerar', { digitalizado: { vigente: false } }), 'Actualizando los lotes…');
+  assert.equal(porQueNoSigue('numerar', { ...vigente, trabajo: { terminado: false } }), 'Actualizando los lotes…');
+  assert.match(porQueNoSigue('numerar', { digitalizado: { vigente: false } }, { releerFallo: true }), /^No se pudieron/);
+  // Falló una relectura y después se leyó bien en el paso 3: no queda trabado.
+  assert.equal(porQueNoSigue('numerar', vigente, { releerFallo: true }), '');
+
+  assert.equal(porQueNoSigue('ubicar', { ...vigente, georreferencia: { vigente: true } }), '');
+  assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [{}] } }),
+    'Marca al menos 2 puntos en el plano y en el mapa.');
+  assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [{}, {}] }, ubicando: true }), 'Ubicando el plano…');
+  assert.match(porQueNoSigue('ubicar', { digitalizado: { vigente: false } }, { entradas: { anclas: [] } }), /Numerar/);
+
+  assert.equal(porQueNoSigue('revisar', vigente, { duplicados: 2 }), 'Hay números repetidos: corrígelos en Numerar.');
+  assert.equal(porQueNoSigue('revisar', vigente, { duplicados: 0 }), '');
 });

@@ -469,6 +469,126 @@ export function dudosos(rasgos, apoyoMinimo = 3) {
     && ((p.apoyo ?? 0) < apoyoMinimo || (p.confianza ?? 1) < 0.6));
 }
 
+/**
+ * El número escrito con la forma del cuadro de superficies: si el cuadro trae el mismo
+ * lote ("8-8" y "8-08" tienen la misma `claveLote`), va como lo dice el cuadro, que es
+ * como sale en el KMZ. Si no, como lo escribió, sin "lote" adelante.
+ */
+export function formaDelCuadro(numero, cuadro) {
+  const limpio = String(numero ?? '').trim().replace(/^lotes?\s*/i, '');
+  if (!limpio) return '';
+  const clave = claveLote(limpio);
+  const delCuadro = (cuadro ?? []).map(String).find((n) => claveLote(n) === clave);
+  return delCuadro ?? limpio;
+}
+
+/**
+ * Los lotes con un número nuevo puesto al tiro, sin esperar a que se lea el plano de
+ * nuevo: el lote que contiene `punto` queda con `numero` (de la loteadora, sin bandera
+ * de sin número ni lectura que confirmar) y, si ese número estaba en otro lote, ese otro
+ * lo pierde, como hará el servidor. Los repetidos se cuentan de nuevo. No toca los
+ * rasgos que recibe: devuelve otros.
+ */
+export function aplicarNumero(rasgos, numero, punto) {
+  const limpio = String(numero ?? '').trim();
+  const lote = limpio ? loteEn(rasgos, punto[0], punto[1]) : null;
+  if (!lote) return rasgos;
+  const clave = claveLote(limpio);
+  const fuera = (banderas, ...quitar) => (banderas ?? []).filter((b) => !quitar.includes(b));
+  const salida = rasgos.map((r) => {
+    const p = r.properties;
+    if (r === lote) {
+      const { sugerencia: _s, ...resto } = p;
+      const nuevo = { ...r, properties: { ...resto, numero: limpio, origen: 'usuario', de_lote: false,
+        confianza: null, apoyo: null, semilla: [punto[0], punto[1]], banderas: fuera(p.banderas, 'sin_numero', 'de_lote') } };
+      return { ...nuevo, rotulo: [punto[0], punto[1]] };
+    }
+    if (p.numero != null && claveLote(p.numero) === clave) {
+      // Era un lote con número: queda como un lote sin número (rojo), no como un camino.
+      const nuevo = { ...r, properties: { ...p, numero: null, semilla: null, de_lote: true, origen: null,
+        banderas: ['sin_numero', 'de_lote'] } };
+      return { ...nuevo, rotulo: puntoDeRotulo(nuevo) };
+    }
+    return r;
+  });
+  // Un número que estaba repetido puede dejar de estarlo (o al revés).
+  const cuenta = new Map();
+  for (const { properties: p } of salida) {
+    if (p.numero != null) cuenta.set(claveLote(p.numero), (cuenta.get(claveLote(p.numero)) ?? 0) + 1);
+  }
+  return salida.map((r) => {
+    const p = r.properties;
+    if (p.numero == null) return r;
+    const repetido = cuenta.get(claveLote(p.numero)) > 1;
+    const tenia = (p.banderas ?? []).includes('duplicado');
+    if (repetido === tenia) return r;
+    const banderas = repetido ? [...fuera(p.banderas), 'duplicado'] : fuera(p.banderas, 'duplicado');
+    return { ...r, properties: { ...p, banderas } };
+  });
+}
+
+/**
+ * Las semillas de la loteadora que el último digitalizado todavía no tiene (las puso
+ * después), puestas encima de los lotes: así un número recién escrito no se borra al
+ * recargar los lotes mientras se vuelve a leer el plano.
+ */
+export function conSemillas(rasgos, semillas) {
+  let salida = rasgos;
+  for (const s of semillas ?? []) {
+    const lote = loteEn(salida, s.x, s.y);
+    if (lote && claveLote(lote.properties.numero ?? '') !== claveLote(s.numero)) {
+      salida = aplicarNumero(salida, s.numero, [s.x, s.y]);
+    }
+  }
+  return salida;
+}
+
+/**
+ * Los números de `lista` (los del cuadro de superficies o, sin cuadro, los huecos de la
+ * numeración) que ningún lote tiene todavía: los que ofrece el campo del número.
+ */
+export function numerosQueFaltan(lista, rasgos) {
+  const puestos = new Set(rasgos.filter((r) => r.properties.numero != null).map((r) => claveLote(r.properties.numero)));
+  return (lista ?? []).map(String).filter((n) => !puestos.has(claveLote(n)));
+}
+
+/**
+ * El mensaje único de Numerar: cuántos lotes faltan por numerar y qué hacer. Las partes
+ * sin número que no son del tamaño de un lote (caminos, áreas comunes) van en una frase
+ * corta. `faltan`: los números que ningún lote tiene (para cuando no queda ningún lote
+ * rojo pero falta un número, p. ej. dos lotes que quedaron juntos).
+ */
+export function mensajeNumerar(rasgos, faltan = []) {
+  const partes = sinNumero(rasgos);
+  const lotes = partes.filter((r) => r.properties.de_lote).length;
+  const otras = partes.length - lotes;
+  const otrasTexto = otras === 1
+    ? ' Queda 1 parte chica sin número: si es un camino o un área común, se deja así.'
+    : otras ? ` Quedan ${otras} partes chicas sin número: si son caminos o áreas comunes, se dejan así.` : '';
+  if (lotes) {
+    const cuantos = lotes === 1 ? 'Falta 1 número' : `Faltan ${lotes} números`;
+    return `${cuantos}: haz clic en cada lote rojo y elige su número.${otrasTexto}`;
+  }
+  const lista = (faltan ?? []).map(String);
+  if (lista.length) {
+    if (lista.length === 1) {
+      return `Falta el ${lista[0]} en el plano: búscalo; puede que dos lotes hayan quedado juntos.${otrasTexto}`;
+    }
+    const cuales = `${lista.slice(0, -1).join(', ')} y ${lista[lista.length - 1]}`;
+    return `Faltan ${cuales} en el plano: búscalos; puede que haya lotes que quedaron juntos.${otrasTexto}`;
+  }
+  return `Todos los lotes tienen número.${otrasTexto}`;
+}
+
+/**
+ * ¿Un error de `pedir` es de la conexión o del servidor caído (sin respuesta o 5xx), y no
+ * una respuesta que dice que algo no sirve? Lo pasajero se avisa y se puede reintentar.
+ */
+export function esFalloPasajero(error) {
+  const estado = error?.estado;
+  return estado == null || estado >= 500;
+}
+
 // --- pasos ---------------------------------------------------------------------------
 
 export const PASOS = ['subir', 'marcar', 'digitalizar', 'numerar', 'ubicar', 'revisar', 'crear'];
@@ -495,6 +615,47 @@ export function pasosHabilitados(e) {
 export function puedeSeguirANumerar(e) {
   const trabajando = Boolean(e?.trabajo && !e.trabajo.terminado);
   return Boolean(e?.digitalizado?.vigente) && !trabajando;
+}
+
+/**
+ * Por qué no se puede seguir desde `paso` ("" si se puede): va en una línea bajo el
+ * "Seguir" deshabilitado, que si no se ve apagado sin explicación. Es también lo que
+ * lo deshabilita, para que el motivo y el botón no se contradigan.
+ * `e`: el estado del servidor. `local`: lo que sabe solo la pantalla —
+ * `entradas`, `actualizando` (se está por volver a leer el plano, o se está leyendo),
+ * `releerFallo` (la relectura sola falló), `ubicando` (se está calculando la ubicación)
+ * y `duplicados` (cuántos números repetidos).
+ */
+export function porQueNoSigue(paso, e, local = {}) {
+  const trabajando = Boolean(e?.trabajo && !e.trabajo.terminado);
+  const d = e?.digitalizado;
+  switch (paso) {
+    case 'marcar':
+      if (pasosHabilitados(e).digitalizar) return '';
+      return local.entradas?.rectangulo ? 'Guardando lo marcado…' : 'Falta encerrar el dibujo del loteo.';
+    case 'digitalizar':
+      if (puedeSeguirANumerar(e)) return '';
+      if (trabajando) return 'Leyendo el plano…';
+      return d ? 'Cambiaste lo marcado: lee el plano de nuevo.' : 'Falta leer el plano.';
+    case 'numerar':
+      if (!d) return 'Falta leer el plano.';
+      if (trabajando || local.actualizando) return 'Actualizando los lotes…';
+      // Al día gana sobre un fallo anterior: si después se leyó bien (en el paso 3), se sigue.
+      if (d.vigente) return '';
+      return local.releerFallo ? 'No se pudieron actualizar los lotes: lee el plano de nuevo en el paso 3.'
+        : 'Actualizando los lotes…';
+    case 'ubicar': {
+      if (e?.georreferencia?.vigente) return '';
+      if (d && !d.vigente) return 'Los lotes están desactualizados: vuelve a Numerar.';
+      const anclas = local.entradas?.anclas?.length ?? 0;
+      if (anclas < 2 && !local.entradas?.cuadricula) return 'Marca al menos 2 puntos en el plano y en el mapa.';
+      return local.ubicando ? 'Ubicando el plano…' : 'Aprieta "Ubicar de nuevo" para ubicar los lotes.';
+    }
+    case 'revisar':
+      return local.duplicados ? 'Hay números repetidos: corrígelos en Numerar.' : '';
+    default:
+      return '';
+  }
 }
 
 /** El paso donde conviene abrir la pantalla, según `estado.paso` del servidor. */

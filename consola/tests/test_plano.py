@@ -672,3 +672,20 @@ def test_un_camino_sin_numero_no_pide_confirmar(ana):
     assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
 
     assert web.post(f"/api/kmz/{slug}/crear").status_code == 201
+
+
+def test_el_estado_trae_los_numeros_del_cuadro_de_superficies(ana):
+    """La pantalla los usa para escribir el número como en el cuadro y ofrecer los que faltan."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    con_propuesta(carpeta, None)
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["lector"]["numeros_cuadro"] == []
+
+    ruta = carpeta / "digitalizado.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["lector"]["cuadro"] = {"8-01": 5000.0, "8-08": 5000.0, "8-16": 5000.0}
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+
+    lector = web.get(f"/api/kmz/{slug}").json()["digitalizado"]["lector"]
+    assert lector["numeros_cuadro"] == ["8-01", "8-08", "8-16"] and lector["areas"] == 3

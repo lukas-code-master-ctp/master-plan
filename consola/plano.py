@@ -677,7 +677,10 @@ def _resumen_lector(lector: dict | None) -> dict | None:
     return dict(disponible=lector.get("disponible"), motivo=lector.get("motivo"),
                 rotulos=len(lector.get("rotulos") or []), semillas=lector.get("semillas"),
                 apoyo_min=lector.get("apoyo_min"), sin_poligono=lector.get("sin_poligono") or [],
-                cuadricula=cuadricula, areas=len(lector.get("cuadro") or {}))
+                cuadricula=cuadricula, areas=len(lector.get("cuadro") or {}),
+                # Los números tal como los dice el cuadro de superficies: la pantalla guarda
+                # lo escrito con esa forma ("8-8" → "8-08") y ofrece los que faltan.
+                numeros_cuadro=[str(n) for n in lector.get("cuadro") or {}])
 
 
 def _posiciones(cuadricula: dict | None) -> dict:
