@@ -76,14 +76,20 @@ export class MapaKmz {
   /** Encuadra los lotes y las anclas que haya. */
   encuadrar() {
     const caja = this.L.latLngBounds([]);
-    for (const grupo of [this.lotes, this.anclas]) {
-      grupo.eachLayer((capa) => {
-        if (capa.getBounds) caja.extend(capa.getBounds());
-        else if (capa.getLatLng) caja.extend(capa.getLatLng());
-      });
-    }
-    if (caja.isValid()) this.mapa.fitBounds(caja, { padding: [24, 24], maxZoom: 18 });
-    return caja.isValid();
+    const fuera = this.L.latLngBounds([]);
+    // Lo dejado fuera del KMZ (el resto de la propiedad) no entra al encuadre: es decenas
+    // de veces más grande que los lotes y los deja chicos en una esquina. Solo si no hay
+    // nada más se encuadra en él.
+    const sumar = (capa) => {
+      if (capa.eachLayer && !capa.feature) { capa.eachLayer(sumar); return; }
+      const destino = capa.feature?.properties?.fuera ? fuera : caja;
+      if (capa.getBounds) destino.extend(capa.getBounds());
+      else if (capa.getLatLng) destino.extend(capa.getLatLng());
+    };
+    for (const grupo of [this.lotes, this.anclas]) grupo.eachLayer(sumar);
+    const final = caja.isValid() ? caja : fuera;
+    if (final.isValid()) this.mapa.fitBounds(final, { padding: [24, 24], maxZoom: 18 });
+    return final.isValid();
   }
 
   /** Las anclas marcadas: un punto con su nombre; las atípicas, en rojo. */
