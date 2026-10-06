@@ -617,6 +617,14 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def lotes_del_kmz(slug: str, en: str = "px", mis: VistaKmz = Depends(mis_kmz)) -> dict:
         return mis.plano(slug).lotes(en)
 
+    @app.post("/api/kmz/{slug}/corregir")
+    async def corregir_kmz(slug: str, campos: dict = Body(...), mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        """Corrección a mano de un vértice en Revisar: `{"accion": "mover", "punto": [lon, lat],
+        "a": [lon, lat]}`, `{"accion": "borrar", "punto": [...]}` o `{"accion": "deshacer"}`."""
+        plano = mis.plano(slug)
+        kmz_libre(slug)
+        return await run_in_threadpool(plano.corregir, campos.get("accion"), campos.get("punto"), campos.get("a"))
+
     @app.post("/api/kmz/{slug}/crear", status_code=201)
     async def escribir_kmz(slug: str, campos: dict | None = Body(None),
                            mis: VistaKmz = Depends(mis_kmz)) -> dict:

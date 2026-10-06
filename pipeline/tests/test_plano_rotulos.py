@@ -576,3 +576,15 @@ def test_nucleos_respeta_la_cuota_del_contenedor(monkeypatch, archivos, esperado
     monkeypatch.setattr(rotulos.os, "sched_getaffinity", lambda pid: set(range(16)), raising=False)
     monkeypatch.setattr(rotulos, "_leer_archivo", archivos.get)
     assert rotulos.nucleos() == esperado
+
+
+def test_combinar_corrige_el_sector_con_el_cuadro():
+    """Caminos de Rapel: el lector leía "6-09" en el lote 8-09, que quedaba sin área
+    oficial. Con el cuadro, el sector que no está se corrige al único que calza."""
+    lector = [Rotulo("6-09", 100, 100, 0.5, 48), Rotulo("8-10", 300, 100, 0.5, 48)]
+    cuadro = {"8-09": 5000.0, "8-10": 5000.0, "8": 760000.0}
+    assert [s["numero"] for s in rotulos.combinar([], lector, radio=20, oficiales=cuadro)] == ["8-09", "8-10"]
+    # Sin cuadro, o si el cuadro no trae ese número en un solo sector, queda como viene.
+    assert [s["numero"] for s in rotulos.combinar([], lector, radio=20)] == ["6-09", "8-10"]
+    ambiguo = {"8-09": 5000.0, "7-09": 5000.0, "8-10": 5000.0}
+    assert rotulos.combinar([], lector[:1], radio=20, oficiales=ambiguo)[0]["numero"] == "6-09"

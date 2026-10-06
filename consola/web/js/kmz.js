@@ -14,7 +14,7 @@ import {
   anclaDesde, claveLote, dudosos, duplicados, empujar, girarEntradas, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo,
   nombreDelSistema, ordenarEsquinas, PASOS,
   pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono, sesgoDeEscala,
-  resumenRevision, siguienteNombre, sinNumero, sugerencias, textoHuecos,
+  resumenRevision, siguienteNombre, sinNumero, sugerencias, textoHuecos, verticesDe,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
 import { abrirNombre, abrirUsarKmz, cuantosLotes, descargaDe } from './kmzs.js';
@@ -48,6 +48,8 @@ let lienzo = null;
 let mapa = null;
 let version = 0;              // cambia al subir otro PDF: la imagen se pide de nuevo
 let arrastrar = false;
+let corrigiendo = false;      // Revisar: los vértices se arrastran o se borran a mano
+let corrigiendoYa = false;    // una corrección sin respuesta: los vértices del mapa están viejos
 let esquinasMarcando = [];    // las esquinas del marco mientras faltan: el servidor pide 4 o ninguna
 
 // --- guardar ---------------------------------------------------------------------------
@@ -173,6 +175,7 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
       .catch((error) => avisar(error.message));
   }
   slug = nuevoSlug;
+  corrigiendo = false;
   plano = null;
   entradas = VACIAS();
   rasgos = [];
@@ -301,6 +304,12 @@ async function manejar(nodo) {
     if (mapa) mapa.arrastrable = arrastrar;
     return pintarPanel();
   }
+  if (accion === 'kmz-corregir') {
+    corrigiendo = !corrigiendo;
+    pintarPanel();
+    return pintarMapa();
+  }
+  if (accion === 'kmz-deshacer') return corregir({ accion: 'deshacer' });
   if (accion === 'kmz-georreferenciar') return ubicar();
   if (accion === 'kmz-crear') return crearKmz();
   if (accion === 'kmz-renombrar') return renombrar();
@@ -311,6 +320,7 @@ async function manejar(nodo) {
 async function irAlPaso(destino) {
   if (!destino || !pasosHabilitados(plano)[destino]) return;
   if (paso === 'ubicar' && destino !== 'ubicar') pendiente = null;
+  if (destino !== 'revisar') corrigiendo = false;
   cerrarNumero();
   paso = destino;
   await guardar();
@@ -1063,6 +1073,42 @@ function pintarRevisar() {
       ? 'Los rojos tienen un área muy distinta a la oficial: suelen ser lotes mal separados.'
       : 'Ningún lote se aparta más de un 5 % del área oficial.';
   $('#kmz-panel-revisar [data-accion="kmz-siguiente"]').disabled = Boolean(problemas);
+  const boton = $('[data-accion="kmz-corregir"]');
+  boton.setAttribute('aria-pressed', String(corrigiendo));
+  boton.textContent = corrigiendo ? 'Listo, dejar de corregir' : 'Corregir vértices a mano';
+  const correcciones = plano.digitalizado?.correcciones ?? 0;
+  const deshacer = $('[data-accion="kmz-deshacer"]');
+  deshacer.hidden = !correcciones;
+  deshacer.textContent = `Deshacer (${correcciones})`;
+  $('#kmz-corregir-ayuda').hidden = !corrigiendo;
+  $('#kmz-corregir-lejos').hidden = !corrigiendo || Boolean(mapa?.verticesVisibles());
+}
+
+/** Una corrección a mano: la manda, y trae los lotes y el estado al día. */
+async function corregir(cuerpo) {
+  // Con una en vuelo, los puntos del mapa todavía son los de antes: otra corrección
+  // apuntaría a un vértice que ya no está ahí.
+  if (corrigiendoYa) { pintarMapa(); return; }
+  const mio = slug;
+  corrigiendoYa = true;
+  try {
+    await pedir(`${api(mio)}/corregir`, json(cuerpo));
+  } finally {
+    // También si falló: el mapa vuelve a dejar el vértice donde estaba. Si la recarga
+    // falla, se avisa aparte para no tapar el error de la corrección.
+    try {
+      if (mio === slug) {
+        plano = await pedir(api(mio));
+        await cargarLotes();
+        pintar();
+        pintarMapa();
+      }
+    } catch (error) {
+      avisar(error.message);
+    } finally {
+      corrigiendoYa = false;
+    }
+  }
 }
 
 function pintarCrear() {
@@ -1094,6 +1140,8 @@ async function prepararMapa() {
     mapa = new MapaKmz(L, $('#kmz-mapa'));
     mapa.alTocar = marcarEnMapa;
     mapa.alArrastrar = arrastreDelMapa;
+    // Al acercarse aparecen los vértices: el aviso de "acércate" se va.
+    mapa.mapa.on('zoomend', () => { if (paso === 'revisar') pintarPanel(); });
   }
   mapa.arrastrable = arrastrar;
   requestAnimationFrame(() => mapa.invalidar());
@@ -1103,7 +1151,14 @@ function pintarMapa(encuadrar = false) {
   if (!mapa) return;
   const g = plano?.georreferencia;
   mapa.ponerAnclas(paso === 'ubicar' ? entradas.anclas : [], g?.vigente ? g.atipicas ?? [] : []);
-  mapa.ponerLotes(rasgosGeo, paso === 'revisar' ? 'nivel' : 'contorno', paso === 'revisar' ? ficha : null);
+  const revisando = paso === 'revisar';
+  mapa.ponerLotes(rasgosGeo, revisando ? 'nivel' : 'contorno', revisando && !corrigiendo ? ficha : null);
+  mapa.ponerVertices(revisando && corrigiendo ? verticesDe(rasgosGeo?.features) : [], {
+    mover: (punto, a) => corregir({ accion: 'mover', punto: [punto.lon, punto.lat], a: [a.lon, a.lat] })
+      .catch((error) => avisar(error.message)),
+    borrar: (punto) => corregir({ accion: 'borrar', punto: [punto.lon, punto.lat] })
+      .catch((error) => avisar(error.message)),
+  });
   if (encuadrar) requestAnimationFrame(() => { mapa.invalidar(); mapa.encuadrar(); });
 }
 

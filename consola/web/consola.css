@@ -877,6 +877,13 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 #kmz-mapa { position: absolute; inset: 0; }
 .kmz-etiqueta { padding: 0 0.35rem; font: 700 0.75rem/1.4 var(--sans); color: #1d4ed8; }
 .kmz-etiqueta--mala { color: var(--rojo-700); }
+.kmz-corregir { display: grid; gap: 0.5rem; margin-top: 0.75rem; }
+/* El vértice que se arrastra: se toca en 32 px, se ve de 16, con borde para verse sobre el satélite. */
+.kmz-vertice { cursor: grab; }
+.kmz-vertice::after { content: ''; position: absolute; inset: 8px; box-sizing: border-box;
+  border: 2px solid #1d4ed8; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35); }
+.kmz-vertice.leaflet-drag-target, .kmz-vertice:active { cursor: grabbing; }
+.kmz-vertice.leaflet-drag-target::after, .kmz-vertice:active::after { background: #bfdbfe; }
 .kmz-ficha { display: grid; gap: 0.15rem; font: 400 0.8125rem/1.4 var(--sans); }
 
 @media (max-width: 70rem) {

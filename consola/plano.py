@@ -11,6 +11,7 @@ Un plano vive en la carpeta de un KMZ de Mis KMZ (`kmz/<slug>/`):
     georreferencia.json  la ubicación en el mapa, con residuo por ancla
     lotes.geojson        los lotes en lon/lat
     huellas.json         con qué entradas se hizo cada paso: dice qué quedó atrasado
+    ediciones.json       los lotes antes de cada corrección a mano, para deshacer
 
 El KMZ que sale de acá va a `destino_kmz` (`kmz/<slug>/<slug>.kmz`), que se rehace
 sin preguntar porque es su propio archivo. Llevarlo a un master es otra cosa:
@@ -49,12 +50,13 @@ from pipeline.kmz import normalizar_id
 from pipeline.plano import pagina as pag
 from pipeline.plano import rotulos
 from pipeline.plano.digitalizar import ENTRADAS, SALIDA as DIGITALIZADO, escribir_json, leer_entradas
-from pipeline.plano.georreferencia import GEOJSON, SALIDA as GEORREFERENCIA, Transformacion, georreferenciar
-from pipeline.plano.salida import escribir_kmz, lotes_utm
+from pipeline.plano.georreferencia import GEOJSON, SALIDA as GEORREFERENCIA, Transformacion, a_utm, georreferenciar
+from pipeline.plano.salida import escribir_kmz, geojson, lotes_utm
 
 PDF = "plano.pdf"
 PAGINAS = "paginas"
 HUELLAS = "huellas.json"
+EDICIONES = "ediciones.json"
 
 # Un plano del CBR trae una o dos láminas; más es otro documento.
 MAX_PAGINAS = 12
@@ -75,6 +77,12 @@ CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula")
 # atora la revisión (las semillas repetidas se buscan de a pares).
 TOPES = dict(semillas=2000, mascaras=200, anclas=50)
 TOPE_CUADRICULA = 200
+
+# Corrección a mano de los vértices en Revisar: cuántas versiones se guardan para
+# deshacer, y a qué distancia (px de página) de un vértice cae el punto que se tocó.
+# La pantalla manda el vértice tal como lo recibió en lon/lat: vuelve casi exacto.
+TOPE_DESHACER = 20
+TOLERANCIA_VERTICE_PX = 0.5
 
 # Error de área contra el cuadro de superficies: verde ±2 %, ámbar ±5 %, rojo más.
 VERDE, AMBAR = 0.02, 0.05
@@ -201,7 +209,7 @@ class Plano:
         return hechas
 
     def _borrar_lo_derivado(self) -> None:
-        for nombre in (PDF, ENTRADAS, DIGITALIZADO, GEORREFERENCIA, GEOJSON, HUELLAS):
+        for nombre in (PDF, ENTRADAS, DIGITALIZADO, GEORREFERENCIA, GEOJSON, HUELLAS, EDICIONES):
             (self.carpeta / nombre).unlink(missing_ok=True)
         shutil.rmtree(self.carpeta / PAGINAS, ignore_errors=True)
 
@@ -291,6 +299,74 @@ class Plano:
         huellas = self._huellas()
         huellas[paso] = huella
         escribir_json(self.carpeta / HUELLAS, huellas)
+        if paso == "digitalizado":
+            # Lotes nuevos: deshacer volvería a los de la digitalización anterior.
+            (self.carpeta / EDICIONES).unlink(missing_ok=True)
+            huellas.pop("correcciones", None)
+            escribir_json(self.carpeta / HUELLAS, huellas)
+
+    @_a_solas
+    def corregir(self, accion: str, punto=None, a=None) -> dict:
+        """Corrección a mano en Revisar, sobre el mapa (`punto` y `a` en [lon, lat]):
+
+        - "mover": el vértice en `punto` va a `a`, en todos los lotes que lo tienen (un
+          vértice compartido se mueve en los vecinos: no quedan traslapes ni huecos);
+        - "borrar": se quita el vértice en `punto`, si cada lote que lo tiene lo tiene
+          entre los mismos dos vecinos (un vértice sobre el lado común). Una esquina donde
+          llega una divisoria no se borra: los dos lotes quedarían cortados distinto;
+        - "deshacer": vuelve a los lotes de antes de la última corrección.
+
+        Escribe digitalizado.json y lotes.geojson; el KMZ creado queda atrasado. Volver a
+        digitalizar descarta las correcciones."""
+        if accion not in ("mover", "borrar", "deshacer"):
+            raise PlanoInvalido("la corrección es mover, borrar o deshacer")
+        entradas = self._entradas_o_409()
+        if not (self.carpeta / GEORREFERENCIA).is_file() or not self._georreferencia_vigente(entradas):
+            raise PlanoNoListo("primero hay que ubicar el plano en el mapa")
+        t = Transformacion.desde_dict(self._leer(GEORREFERENCIA))
+        d = self._leer(DIGITALIZADO)
+        ruta = self.carpeta / EDICIONES
+        historia = json.loads(ruta.read_text(encoding="utf-8")) if ruta.is_file() else []
+        if accion == "deshacer":
+            if not historia:
+                raise PlanoNoListo("no hay correcciones que deshacer")
+            previo = historia.pop()
+            d["lotes"], d["sin_numero"] = previo["lotes"], previo["sin_numero"]
+        else:
+            antes = dict(lotes=json.loads(json.dumps(d.get("lotes") or [])),
+                         sin_numero=json.loads(json.dumps(d.get("sin_numero") or [])))
+            p = self._a_pagina(t, punto)
+            if accion == "mover":
+                _mover_vertice(d, p, self._a_pagina(t, a))
+            else:
+                _borrar_vertice(d, p)
+            historia = (historia + [antes])[-TOPE_DESHACER:]
+        escribir_json(self.carpeta / DIGITALIZADO, d)
+        escribir_json(ruta, historia)
+        escribir_json(self.carpeta / GEOJSON, geojson(d, t))
+        huellas = self._huellas()
+        # Cualquier valor distinto de la huella de la georreferencia deja el KMZ atrasado,
+        # también cuando la georreferencia no tiene huella anotada (la hizo otro, a mano).
+        huellas["kmz"] = "corregido"
+        # El conteo va acá para que el estado no lea el historial entero en cada consulta.
+        huellas["correcciones"] = len(historia)
+        escribir_json(self.carpeta / HUELLAS, huellas)
+        return dict(deshacer=len(historia))
+
+    @staticmethod
+    def _a_pagina(t: Transformacion, lonlat) -> np.ndarray:
+        if (not isinstance(lonlat, (list, tuple)) or len(lonlat) != 2
+                or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in lonlat)):
+            raise PlanoInvalido("el punto va como [lon, lat]")
+        try:
+            lon, lat = (float(v) for v in lonlat)
+        except (TypeError, ValueError) as error:
+            raise PlanoInvalido("el punto va como [lon, lat]") from error
+        if not (np.isfinite(lon) and np.isfinite(lat) and -180 <= lon <= 180 and -90 <= lat <= 90):
+            raise PlanoInvalido("el punto va como [lon, lat]")
+        e, n = a_utm(lon, lat, t.epsg)
+        x, y, w = np.linalg.solve(t.matriz, np.array([float(e), float(n), 1.0]))
+        return np.array([x / w, y / w])
 
     @_a_solas
     def georreferenciar(self) -> dict:
@@ -359,6 +435,8 @@ class Plano:
                 cuadricula=d.get("cuadricula") is not None,
                 segundos=(d.get("estadisticas") or {}).get("segundos"),
                 lector=_resumen_lector(d.get("lector")),
+                # Cuántas correcciones a mano se pueden deshacer.
+                correcciones=self._correcciones(),
                 vigente=entradas is not None and self._digitalizado_vigente(entradas))
         if (self.carpeta / GEORREFERENCIA).is_file():
             georreferencia = dict(resumen_georreferencia(self._leer(GEORREFERENCIA)),
@@ -440,6 +518,9 @@ class Plano:
     def _leer(self, nombre: str) -> dict:
         return json.loads((self.carpeta / nombre).read_text(encoding="utf-8"))
 
+    def _correcciones(self) -> int:
+        return int(self._huellas().get("correcciones") or 0) if (self.carpeta / EDICIONES).is_file() else 0
+
     def _huellas(self) -> dict:
         ruta = self.carpeta / HUELLAS
         return json.loads(ruta.read_text(encoding="utf-8")) if ruta.is_file() else {}
@@ -465,6 +546,99 @@ class Plano:
             return False
         anotada = self._huellas().get("georreferencia")
         return anotada is None or anotada == huella_ubicar(entradas, self._huella_digitalizado(entradas))
+
+
+def _anillos(d: dict):
+    """Cada anillo de los lotes y de las caras sin número, con el dueño que hay que
+    poner al día (área, vértices) si cambia: el de un hueco es el lote que lo tiene."""
+    for duenio in [*(d.get("lotes") or []), *(d.get("sin_numero") or [])]:
+        yield duenio, duenio["poligono"]
+        for hueco in duenio.get("huecos") or []:
+            yield duenio, hueco
+
+
+def _vertices_en(d: dict, p: np.ndarray) -> list[tuple[dict, list, int]]:
+    """Los (dueño, anillo, índice) del vértice más cercano a `p`. Un vértice
+    compartido es el mismo punto en cada anillo (salen de la misma red)."""
+    mejor, cerca = None, []
+    for duenio, anillo in _anillos(d):
+        # El último repite el primero: se mira hasta el penúltimo.
+        for i, (x, y) in enumerate(anillo[:-1]):
+            dist = float(np.hypot(x - p[0], y - p[1]))
+            if dist <= TOLERANCIA_VERTICE_PX and (mejor is None or dist < mejor - 1e-9):
+                mejor, cerca = dist, []
+            if mejor is not None and dist <= TOLERANCIA_VERTICE_PX and abs(dist - mejor) <= 1e-6:
+                cerca.append((duenio, anillo, i))
+    if not cerca:
+        raise PlanoInvalido("no hay un vértice en ese punto: vuelve a cargar los lotes")
+    return cerca
+
+
+def _poligono(duenio: dict) -> Polygon:
+    return Polygon(duenio["poligono"], duenio.get("huecos") or [])
+
+
+def _sin_repetidos(anillo: list) -> None:
+    """Quita los puntos seguidos iguales (un vértice soltado sobre su vecino), cuidando
+    que el anillo siga cerrado: si no, ese punto doble no se podría borrar después."""
+    puntos = [q for k, q in enumerate(anillo[:-1]) if k == 0 or q != anillo[k - 1]]
+    while len(puntos) > 1 and puntos[-1] == puntos[0]:
+        puntos.pop()
+    anillo[:] = puntos + [list(puntos[0])]
+
+
+# Lo que dos lotes pueden encimarse por redondeo sin que sea un traslape (px²).
+TRASLAPE_MAX_PX2 = 1.0
+
+
+def _poner_al_dia(d: dict, tocados: list, error: str) -> None:
+    """Revisa cada lote o cara que cambió (con sus huecos y contra los demás) y le pone
+    al día el área y los vértices. Un vértice de un hueco cambia al lote que lo tiene."""
+    duenios = list({id(t[0]): t[0] for t in tocados}.values())
+    for duenio in duenios:
+        for anillo in [duenio["poligono"], *(duenio.get("huecos") or [])]:
+            _sin_repetidos(anillo)
+            if len(anillo) - 1 < 3:
+                raise PlanoInvalido("un lote necesita al menos tres vértices")
+        if not _poligono(duenio).is_valid:
+            raise PlanoInvalido(error)
+    tocados_id = {id(x) for x in duenios}
+    otros = [x for x in [*(d.get("lotes") or []), *(d.get("sin_numero") or [])] if id(x) not in tocados_id]
+    for duenio in duenios:
+        forma = _poligono(duenio)
+        for otro in otros:
+            if forma.intersection(_poligono(otro)).area > TRASLAPE_MAX_PX2:
+                raise PlanoInvalido("así el lote se monta sobre otro: suelta el vértice más cerca")
+        duenio["area_px"] = round(forma.area, 1)
+        if "vertices" in duenio:
+            duenio["vertices"] = len(duenio["poligono"]) - 1
+
+
+def _mover_vertice(d: dict, p: np.ndarray, a: np.ndarray) -> None:
+    nuevo = [round(float(a[0]), 2), round(float(a[1]), 2)]
+    tocados = _vertices_en(d, p)
+    for _, anillo, i in tocados:
+        anillo[i] = list(nuevo)
+        if i == 0:
+            anillo[-1] = list(nuevo)
+    _poner_al_dia(d, tocados, "así el lote se cruza consigo mismo: suelta el vértice más cerca")
+
+
+def _borrar_vertice(d: dict, p: np.ndarray) -> None:
+    tocados = _vertices_en(d, p)
+    vecinos = []
+    for _, anillo, i in tocados:
+        n = len(anillo) - 1
+        if n <= 3:
+            raise PlanoInvalido("un lote necesita al menos tres vértices")
+        vecinos.append({tuple(anillo[(i - 1) % n]), tuple(anillo[(i + 1) % n])})
+    if any(v != vecinos[0] for v in vecinos):
+        raise PlanoInvalido("ese vértice es una esquina entre lotes: muévelo en vez de borrarlo")
+    for _, anillo, i in tocados:
+        del anillo[i]
+        if i == 0:
+            anillo[-1] = list(anillo[0])
+    _poner_al_dia(d, tocados, "sin ese vértice el lote se cruza consigo mismo")
 
 
 def _con_lector(entradas: dict) -> bool:

@@ -282,6 +282,19 @@ def test_las_lecturas_con_poco_apoyo_se_sugieren_en_su_lote_sin_numero():
     assert _sugerencias(caras, de_lote, [], 2, []) == [None, None, None]
 
 
+def test_con_cuadro_la_sugerencia_se_corrige_o_no_se_ofrece():
+    """Caminos de Rapel: en 8-09 el lector leía "6-48" o "6-09". Con el cuadro, "6-09" se
+    sugiere como 8-09 y "6-48" (más que todo el cuadro) no se sugiere."""
+    from pipeline.plano.digitalizar import _sugerencias
+    from pipeline.plano.rotulos import Rotulo
+    caras = [Polygon([(0, 0), (10, 0), (10, 10), (0, 10)]), Polygon([(10, 0), (20, 0), (20, 10), (10, 10)])]
+    cuadro = {"8-08": 5000.0, "8-09": 5000.0, "8-10": 5000.0}
+    leidos = [Rotulo("6-09", 5, 5, 0.04, 1), Rotulo("6-48", 15, 5, 0.04, 1)]
+    s = _sugerencias(caras, [True, True], leidos, 2, ["8-08"], cuadro)
+    assert s == [dict(numero="8-09", confianza=0.04, apoyo=1), None]
+    assert _sugerencias(caras, [True, True], leidos, 2, ["8-08"])[1]["numero"] == "6-48"
+
+
 def _lotes_con_texto_en_el_borde():
     """Dos lotes de 50 × 35 mm; sobre el deslinde exterior de arriba, por dentro, un
     texto en negrita pegado a la línea ("Servidumbre de tránsito 10 m", como en Caminos

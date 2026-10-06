@@ -621,6 +621,16 @@
           plano. Toca un lote para ver sus números.</p>
         <dl id="kmz-revision" class="kmz-cifras"></dl>
         <p id="kmz-revision-nota" class="nota"></p>
+        <div class="kmz-corregir">
+          <div class="fila fila--envuelve">
+            <button class="boton boton--contorno" data-accion="kmz-corregir" aria-pressed="false" type="button">Corregir vértices a mano</button>
+            <button class="boton boton--contorno" data-accion="kmz-deshacer" type="button" hidden>Deshacer</button>
+          </div>
+          <p id="kmz-corregir-ayuda" class="nota" hidden>Arrastra un vértice para moverlo, o tócalo para
+            borrarlo. Un vértice que comparten dos lotes se mueve en los dos. Si vuelves a
+            digitalizar, estas correcciones se pierden.</p>
+          <p id="kmz-corregir-lejos" class="nota" hidden>Acércate al mapa para ver los vértices.</p>
+        </div>
         <div class="kmz-panel__pie">
           <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: crear el KMZ</button>
         </div>

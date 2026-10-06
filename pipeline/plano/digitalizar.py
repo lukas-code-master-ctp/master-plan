@@ -256,7 +256,7 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     sin_poligono = [n for n in r.estadisticas["faltantes"] if posicion[n]["origen"] == "lector"]
     r.estadisticas.update(faltantes=faltantes, semillas_lector=de_lector)
     sugerencias = _sugerencias(r.sin_numero, r.sin_numero_lote, (lector or {}).get("rotulos") or [],
-                               entradas["lector_apoyo_min"], [s["numero"] for s in combinadas])
+                               entradas["lector_apoyo_min"], [s["numero"] for s in combinadas], cuadro)
     # Los números que hay: los lotes y lo que marcó ella (aunque no haya caído en un lote).
     # Un número del lector sin polígono suele ser ruido: no cuenta.
     presentes = list(r.lotes) + [s["numero"] for s in combinadas if s["origen"] == "usuario"]
@@ -293,21 +293,31 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
 
 
 def _sugerencias(caras: list[Polygon], de_lote: list[bool], leidos, apoyo_min: int,
-                 usados: list[str]) -> list[dict | None]:
+                 usados: list[str], cuadro=None) -> list[dict | None]:
     """Por cara sin número: lo que el lector leyó dentro con menos apoyo que `apoyo_min`
     (no alcanzó a ser semilla), si es un lote y el número no lo tiene ya otro. La mejor
     lectura (más apoyo, más confianza) va primero, y un número no se sugiere dos veces.
-    La loteadora lo confirma con un clic."""
+    La loteadora lo confirma con un clic.
+
+    Con cuadro de superficies, el número se corrige con él (`numeros.segun_cuadro`) y lo
+    que no está en el cuadro y es mayor que todos los suyos no se sugiere (la misma regla
+    de `rotulos.combinar`): en Caminos de Rapel el lector leía "6-48" en 8-09."""
     from shapely.geometry import Point
     salida: list[dict | None] = [None] * len(caras)
     tomados = list(usados)
+    oficiales = list(cuadro or {})
+    tope = max((numeros_lote.ultimo(n) or 0 for n in oficiales), default=None)
     for r in sorted((r for r in leidos if r.apoyo < apoyo_min), key=lambda r: (-r.apoyo, -r.confianza)):
-        if any(numeros_lote.mismo_lote(r.numero, n) for n in tomados):
+        numero = numeros_lote.segun_cuadro(r.numero, oficiales)
+        if (tope is not None and not any(numeros_lote.mismo_lote(numero, n) for n in oficiales)
+                and (numeros_lote.ultimo(numero) or tope + 1) > tope):
+            continue
+        if any(numeros_lote.mismo_lote(numero, n) for n in tomados):
             continue
         for i, (cara, es) in enumerate(zip(caras, de_lote)):
             if es and salida[i] is None and cara.contains(Point(r.x, r.y)):
-                salida[i] = dict(numero=r.numero, confianza=round(r.confianza, 4), apoyo=r.apoyo)
-                tomados.append(r.numero)
+                salida[i] = dict(numero=numero, confianza=round(r.confianza, 4), apoyo=r.apoyo)
+                tomados.append(numero)
                 break
     return salida
 

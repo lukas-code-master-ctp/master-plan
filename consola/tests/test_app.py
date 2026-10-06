@@ -497,6 +497,7 @@ RUTAS = {
     ("POST", "/api/kmz/{slug}/digitalizar"): AJENO_404,
     ("POST", "/api/kmz/{slug}/georreferenciar"): AJENO_404,
     ("GET", "/api/kmz/{slug}/lotes"): AJENO_404,
+    ("POST", "/api/kmz/{slug}/corregir"): AJENO_404,
     ("POST", "/api/kmz/{slug}/crear"): AJENO_404,
     ("GET", "/api/kmz/{slug}/descargar"): AJENO_404,
     ("POST", "/api/proyectos/vincular"): SOLO_CTP,

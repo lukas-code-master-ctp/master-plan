@@ -10,6 +10,9 @@ import { metrosDe } from './kmz_geometria.js';
 const TESELAS = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const ATRIBUCION = 'Imágenes © Esri, Maxar, Earthstar Geographics';
 const SANTIAGO = [-33.45, -70.66];
+// Desde este zoom se ven los vértices para corregirlos (a 17, un lote de 5.000 m² mide
+// unos 60 px de lado).
+const ZOOM_VERTICES = 17;
 
 export const COLORES = {
   verde: '#16a34a', ambar: '#f59e0b', rojo: '#dc2626', gris: '#a1a1aa', contorno: '#facc15',
@@ -47,6 +50,14 @@ export class MapaKmz {
     this.panel.style.zIndex = 450;
     this.lotes = L.layerGroup().addTo(this.mapa);
     this.anclas = L.layerGroup().addTo(this.mapa);
+    this.vertices = L.layerGroup().addTo(this.mapa);
+    this.puntos = [];
+    this.marcas = new Map();   // clave del punto → su marcador en el mapa
+    this.arrastrada = null;
+    this.alCorregir = null;
+    // Al mover el mapa solo entran y salen los de la vista: recrear los que están
+    // cortaría un arrastre con autoPan o cerraría la ventanita de borrar.
+    this.mapa.on('moveend', () => this.pintarVertices(false));
     this.alTocar = () => {};
     this.alArrastrar = () => {};
     this.arrastrable = false;
@@ -120,6 +131,70 @@ export class MapaKmz {
         if (alElegir) capa.bindPopup(() => alElegir(rasgo.properties));
       },
     }).addTo(this.lotes);
+  }
+
+  // --- corrección de vértices en Revisar ------------------------------------------
+
+  /**
+   * Los vértices que se pueden corregir: `puntos` [{lon, lat}], `alCorregir` con
+   * `mover(punto, a)` y `borrar(punto)`. Sin puntos, se quitan.
+   */
+  ponerVertices(puntos, alCorregir = null) {
+    this.puntos = puntos ?? [];
+    this.alCorregir = alCorregir;
+    this.pintarVertices(true);
+  }
+
+  /** ¿Se ven los vértices? De lejos son demasiados y se tapan entre sí. */
+  verticesVisibles() { return this.mapa.getZoom() >= ZOOM_VERTICES; }
+
+  /** `todo`: los puntos cambiaron y se rehacen todos; si no, solo los que entran o
+   * salen de la vista. */
+  pintarVertices(todo) {
+    if (todo) { this.vertices.clearLayers(); this.marcas.clear(); }
+    const visibles = this.puntos.length && this.verticesVisibles();
+    // Solo los de la vista: un loteo grande tiene miles.
+    const vista = visibles ? this.mapa.getBounds().pad(0.2) : null;
+    const quedan = new Set();
+    for (const punto of visibles ? this.puntos : []) {
+      if (!vista.contains([punto.lat, punto.lon])) continue;
+      const clave = `${punto.lon.toFixed(9)},${punto.lat.toFixed(9)}`;
+      quedan.add(clave);
+      if (!this.marcas.has(clave)) this.marcas.set(clave, this.marcaDe(punto).addTo(this.vertices));
+    }
+    for (const [clave, marca] of this.marcas) {
+      // El que se está arrastrando no se saca aunque salga de la vista.
+      if (quedan.has(clave) || marca === this.arrastrada) continue;
+      this.vertices.removeLayer(marca);
+      this.marcas.delete(clave);
+    }
+  }
+
+  marcaDe(punto) {
+    const L = this.L;
+    // El círculo se ve de 16 px, pero se toca en 32: el dedo tapa más que eso.
+    const icono = L.divIcon({ className: 'kmz-vertice', iconSize: [32, 32] });
+    const marca = L.marker([punto.lat, punto.lon], {
+      icon: icono, draggable: true, keyboard: false, autoPan: true, title: 'Arrastra para mover',
+    });
+    marca.on('dragstart', () => { this.arrastrada = marca; });
+    marca.on('dragend', () => {
+      this.arrastrada = null;
+      const { lat, lng } = marca.getLatLng();
+      this.alCorregir?.mover(punto, { lon: lng, lat });
+    });
+    marca.bindPopup(() => {
+      const boton = document.createElement('button');
+      boton.type = 'button';
+      boton.className = 'boton boton--contorno boton--chico';
+      boton.textContent = 'Borrar este vértice';
+      boton.addEventListener('click', () => {
+        this.mapa.closePopup();
+        this.alCorregir?.borrar(punto);
+      });
+      return boton;
+    });
+    return marca;
   }
 
   // --- arrastre del ajuste fino ---------------------------------------------------
