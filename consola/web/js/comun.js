@@ -12,6 +12,8 @@ export const estado = {
   proyectos: [],
   disenos: [],
   kmzs: [],
+  // Las solicitudes de reserva de los loteos publicados (js/reservas.js).
+  reservas: [],
   // Las líneas del último trabajo de cada loteo, y el temporizador que las sondea.
   // La clave es el slug del master, o `kmz:<slug>` para un KMZ de Mis KMZ (la misma
   // clave que usa el servidor): un slug nunca lleva ":", así que no chocan.
@@ -106,6 +108,7 @@ export function ruta(hash) {
   const partes = camino.split('/').filter(Boolean).map(decodeURIComponent);
   if (partes[0] === 'disenos' && partes[1]) return { pantalla: 'diseno', id: partes[1] };
   if (partes[0] === 'disenos') return { pantalla: 'disenos' };
+  if (partes[0] === 'reservas') return { pantalla: 'reservas' };
   if (partes[0] === 'configuracion') return { pantalla: 'configuracion' };
   if (partes[0] === 'kmz' && partes[1]) return { pantalla: 'kmz', slug: partes[1] };
   if (partes[0] === 'kmz') return { pantalla: 'kmzs' };

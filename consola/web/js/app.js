@@ -3,7 +3,7 @@
  *
  * Las pantallas viven en la misma página y se cambian con el hash de la URL
  * (`#/planos`, `#/planos/nuevo`, `#/planos/<slug>`, `#/kmz`, `#/kmz/<slug>`,
- * `#/disenos`). Así el botón
+ * `#/disenos`, `#/reservas`). Así el botón
  * atrás funciona, un enlace a un loteo se puede mandar, y no hace falta que el
  * servidor conozca más rutas que la de la página.
  */
@@ -17,8 +17,9 @@ import { pintarKmz, prepararKmz } from './kmz.js';
 import { pintarKmzs, prepararKmzs } from './kmzs.js';
 import { cerrarDialogos, pintarPlano, prepararPlano, seguir } from './plano.js';
 import { pintarPlanos } from './planos.js';
+import { cargarReservas, pintarContador, pintarReservas, prepararReservas } from './reservas.js';
 
-const PANTALLAS = ['planos', 'nuevo', 'plano', 'kmzs', 'kmz', 'disenos', 'diseno', 'configuracion'];
+const PANTALLAS = ['planos', 'nuevo', 'plano', 'kmzs', 'kmz', 'disenos', 'diseno', 'reservas', 'configuracion'];
 
 let anterior = null;
 // Se llegó a un loteo que no estaba en la lista y se está trayendo: al pintarlo
@@ -35,7 +36,8 @@ function mostrar() {
   // Un KMZ pone el plano y el mapa lado a lado: usa todo el ancho.
   document.body.classList.toggle('pantalla-ancha', destino.pantalla === 'kmz');
   const seccion = destino.pantalla.startsWith('diseno') ? 'disenos'
-    : destino.pantalla.startsWith('kmz') ? 'kmz' : 'planos';
+    : destino.pantalla.startsWith('kmz') ? 'kmz'
+      : destino.pantalla === 'reservas' ? 'reservas' : 'planos';
   for (const enlace of $$('.pestanas a')) {
     if (enlace.dataset.seccion === seccion) enlace.setAttribute('aria-current', 'page');
     else enlace.removeAttribute('aria-current');
@@ -66,12 +68,13 @@ function mostrar() {
   }
   document.title = {
     planos: 'Mis planos', nuevo: 'Nuevo master', kmzs: 'Mis KMZ', disenos: 'Mis diseños', diseno: 'Diseño',
-    configuracion: 'Configuración',
+    reservas: 'Reservas', configuracion: 'Configuración',
   }[destino.pantalla] + ' — Tu Masterplan';
   if (destino.pantalla === 'planos') pintarPlanos();
   if (destino.pantalla === 'kmzs') pintarKmzs();
   if (destino.pantalla === 'nuevo' && llegando) abrirNuevo({ kmz: destino.kmz });
   if (destino.pantalla === 'disenos') pintarDisenos();
+  if (destino.pantalla === 'reservas') pintarReservas();
   if (destino.pantalla === 'configuracion' && llegando) pintarConfiguracion();
   // El editor se rellena al llegar: un refresco no pisa lo que se está escribiendo.
   if (destino.pantalla === 'diseno' && llegando) abrirDiseno(destino.id);
@@ -80,6 +83,9 @@ function mostrar() {
 async function refrescar() {
   [estado.proyectos, estado.disenos, estado.kmzs] = await Promise.all([
     pedir('/api/proyectos'), pedir('/api/disenos'), pedir('/api/kmz')]);
+  // Después de los loteos: se piden las de cada uno publicado.
+  estado.reservas = await cargarReservas(estado.proyectos);
+  pintarContador();
   // Un trabajo puede seguir corriendo de una recarga de página: retomarlo. Los de
   // un KMZ van con la clave del servidor, `kmz:<slug>`, para no chocar con un master.
   for (const proyecto of estado.proyectos) {
@@ -104,6 +110,7 @@ async function arrancar() {
   prepararPlano({ refrescar });
   prepararBackOffice({ refrescar });
   prepararDisenos({ refrescar });
+  prepararReservas({ refrescar });
   prepararConfiguracion();
   prepararKmz({ refrescar });
   prepararKmzs({ refrescar });

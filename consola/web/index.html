@@ -23,6 +23,7 @@
     <a href="#/planos" data-seccion="planos">Mis planos</a>
     <a href="#/kmz" data-seccion="kmz">Mis KMZ</a>
     <a href="#/disenos" data-seccion="disenos">Mis diseños</a>
+    <a href="#/reservas" data-seccion="reservas">Reservas <span id="contador-reservas" class="contador" hidden></span></a>
   </nav>
 
   <div class="cuenta">
@@ -745,6 +746,18 @@
       </a>
     </header>
     <ul id="disenos" class="disenos" aria-live="polite"></ul>
+  </section>
+
+  <section id="pantalla-reservas" class="pantalla pantalla--angosta" aria-labelledby="titulo-reservas" hidden>
+    <header class="pantalla__cabecera">
+      <div>
+        <h1 id="titulo-reservas">Reservas</h1>
+        <p class="guia">Lo que piden los compradores desde tus sitios publicados. La parcela
+          queda apartada 2 horas mientras paga: confírmala cuando veas el pago, o libérala.
+          Para que el sitio la muestre reservada para siempre, márcala en tu inventario.</p>
+      </div>
+    </header>
+    <ul id="reservas" class="reservas" aria-live="polite"></ul>
   </section>
 
   <!-- Un diseño -->

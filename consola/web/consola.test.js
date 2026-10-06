@@ -111,6 +111,7 @@ test('el hash elige la pantalla', () => {
   assert.deepEqual(ruta('#/planos/praderas-de-cauquenes'),
     { pantalla: 'plano', slug: 'praderas-de-cauquenes' });
   assert.deepEqual(ruta('#/disenos'), { pantalla: 'disenos' });
+  assert.deepEqual(ruta('#/reservas'), { pantalla: 'reservas' });
   assert.deepEqual(ruta('#/kmz'), { pantalla: 'kmzs' });
   assert.deepEqual(ruta('#/kmz/los-robles'), { pantalla: 'kmz', slug: 'los-robles' });
   assert.deepEqual(ruta('#/cualquier-cosa'), { pantalla: 'planos' });
@@ -124,7 +125,7 @@ test('Nuevo master puede llegar con un KMZ de Mis KMZ ya elegido', () => {
 
 test('la navegación tiene la pestaña Mis KMZ, entre Mis planos y Mis diseños', () => {
   const pestanas = [...html.matchAll(/<a href="#\/(\w+)" data-seccion="(\w+)">/g)].map((c) => c[2]);
-  assert.deepEqual(pestanas, ['planos', 'kmz', 'disenos']);
+  assert.deepEqual(pestanas, ['planos', 'kmz', 'disenos', 'reservas']);
 });
 
 test('Nuevo KMZ está solo en Mis KMZ, no en Mis planos', () => {
