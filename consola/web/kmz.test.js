@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {
   anclaDesde, aPagina, claveLote, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
-  puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias,
+  puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
   tamanoRotado, textoHuecos, vistaAjustada, zoomEn,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
@@ -417,4 +417,12 @@ test('leerCoordenadas: comas decimales ambiguas y textos largos', () => {
     assert.equal(leerCoordenadas(largo), null);
     assert.ok(performance.now() - t0 < 500, `lento con ${largo.length} caracteres`);
   }
+});
+
+test('los vértices para corregir: uno por punto, aunque lo compartan dos lotes', () => {
+  const lote = (...puntos) => ({ geometry: { type: 'Polygon', coordinates: [[...puntos, puntos[0]]] } });
+  const rasgos = [lote([0, 0], [1, 0], [1, 1], [0, 1]), lote([1, 0], [2, 0], [2, 1], [1, 1])];
+  assert.deepEqual(verticesDe(rasgos).map((p) => [p.lon, p.lat]),
+    [[0, 0], [1, 0], [1, 1], [0, 1], [2, 0], [2, 1]]);
+  assert.deepEqual(verticesDe(null), []);
 });

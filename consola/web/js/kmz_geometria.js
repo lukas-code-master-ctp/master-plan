@@ -536,3 +536,20 @@ export function nombreDelSistema(epsg) {
   if (epsg >= 24817 && epsg <= 24821) return `UTM ${epsg - 24800}N · PSAD56`;
   return epsg ? `EPSG ${epsg}` : '—';
 }
+
+/**
+ * Los vértices de los lotes (GeoJSON en lon/lat), sin repetir: un vértice que
+ * comparten dos lotes es uno solo, y se mueve en los dos. Van tal como vinieron del
+ * servidor, que los busca por esas coordenadas.
+ */
+export function verticesDe(rasgos) {
+  const vistos = new Map();
+  for (const rasgo of rasgos ?? []) {
+    const anillo = rasgo.geometry?.coordinates?.[0] ?? [];
+    for (const [lon, lat] of anillo.slice(0, -1)) {
+      const clave = `${lon.toFixed(9)},${lat.toFixed(9)}`;
+      if (!vistos.has(clave)) vistos.set(clave, { lon, lat });
+    }
+  }
+  return [...vistos.values()];
+}

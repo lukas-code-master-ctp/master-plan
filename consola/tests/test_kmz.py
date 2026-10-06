@@ -4,6 +4,7 @@ import json
 import sys
 from urllib.parse import unquote
 
+import numpy as np
 import pytest
 
 from consola.proyectos import Limites
@@ -186,6 +187,179 @@ def test_numeros_que_chocan_no_dan_kmz(ana):
     assert not list((carpeta / slug).glob("*.kmz"))
 
 
+# --- corregir a mano en Revisar ----------------------------------------------------------
+
+# Tres lotes con la topología de la red de deslindes: cada vértice compartido está en
+# todos los lotes que lo tocan. (400, 150) va sobre el lado común de 1 y 2; (400, 690),
+# un diente solo de 3.
+LOTES_RED = [
+    dict(numero="1", poligono=[[0, 0], [400, 0], [400, 150], [400, 300], [0, 300], [0, 0]], huecos=[],
+         area_px=120000, vertices=5),
+    dict(numero="2", poligono=[[400, 0], [800, 0], [800, 300], [400, 300], [400, 150], [400, 0]], huecos=[],
+         area_px=120000, vertices=5),
+    dict(numero="3", poligono=[[0, 300], [400, 300], [800, 300], [800, 700], [400, 690], [0, 700], [0, 300]],
+         huecos=[], area_px=316000, vertices=6),
+]
+
+
+def _ubicado(web, slug, carpeta):
+    listo_para_ubicar(web, slug, carpeta)
+    digitalizado_a_mano(carpeta / slug, json.loads(json.dumps(LOTES_RED)))
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
+    from pipeline.plano.georreferencia import Transformacion
+    t = Transformacion.desde_dict(json.loads((carpeta / slug / "georreferencia.json").read_text()))
+    return lambda x, y: [float(v) for v in t.a_lonlat(x, y)]
+
+
+def _anillos(carpeta, slug):
+    d = json.loads((carpeta / slug / "digitalizado.json").read_text())
+    return {l["numero"]: [tuple(round(v, 1) for v in p) for p in l["poligono"]] for l in d["lotes"]}
+
+
+def test_mover_un_vertice_compartido_lo_mueve_en_los_dos_lotes_y_se_puede_deshacer(ana):
+    web, slug, carpeta, _ = ana
+    ll = _ubicado(web, slug, carpeta)
+    assert web.post(f"/api/kmz/{slug}/crear").status_code == 201
+    antes = _anillos(carpeta, slug)
+
+    r = web.post(f"/api/kmz/{slug}/corregir", json={"accion": "mover", "punto": ll(400, 300), "a": ll(420, 310)})
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {"deshacer": 1}
+    ahora = _anillos(carpeta, slug)
+    for n in ("1", "2", "3"):
+        assert (420.0, 310.0) in ahora[n] and (400.0, 300.0) not in ahora[n]
+    d = json.loads((carpeta / slug / "digitalizado.json").read_text())
+    assert d["lotes"][0]["area_px"] != 120000
+    # El KMZ creado quedó atrasado, y la pantalla ve los lotes nuevos.
+    assert web.get(f"/api/kmz/{slug}").json()["paso"] == "crear"
+    rasgos = web.get(f"/api/kmz/{slug}/lotes", params={"en": "px"}).json()["features"]
+    assert [420, 310] in rasgos[0]["geometry"]["coordinates"][0]
+    geo = json.loads((carpeta / slug / "lotes.geojson").read_text())
+    assert len(geo["features"]) == 3
+
+    assert web.post(f"/api/kmz/{slug}/corregir", json={"accion": "deshacer"}).json() == {"deshacer": 0}
+    assert _anillos(carpeta, slug) == antes
+    assert web.post(f"/api/kmz/{slug}/corregir", json={"accion": "deshacer"}).status_code == 409
+
+
+def test_borrar_un_vertice_sobre_el_lado_comun_o_un_diente(ana):
+    web, slug, carpeta, _ = ana
+    ll = _ubicado(web, slug, carpeta)
+
+    assert web.post(f"/api/kmz/{slug}/corregir", json={"accion": "borrar", "punto": ll(400, 150)}).status_code == 200
+    assert web.post(f"/api/kmz/{slug}/corregir", json={"accion": "borrar", "punto": ll(400, 690)}).status_code == 200
+
+    ahora = _anillos(carpeta, slug)
+    assert all((400.0, 150.0) not in a for a in ahora.values())
+    assert ahora["3"] == [(0, 300), (400, 300), (800, 300), (800, 700), (0, 700), (0, 300)]
+    assert web.post(f"/api/kmz/{slug}/corregir", json={"accion": "deshacer"}).json() == {"deshacer": 1}
+
+
+@pytest.mark.parametrize("campos, texto", [
+    # Una esquina donde llega una divisoria: cada lote la tiene entre otros vecinos.
+    (lambda ll: {"accion": "borrar", "punto": ll(400, 300)}, "esquina"),
+    (lambda ll: {"accion": "borrar", "punto": ll(800, 0)}, "tres vértices"),
+    (lambda ll: {"accion": "mover", "punto": ll(600, 150), "a": ll(0, 0)}, "no hay un vértice"),
+    (lambda ll: {"accion": "mover", "punto": ll(400, 150), "a": ll(900, 150)}, "se cruza"),
+    (lambda ll: {"accion": "mover", "punto": ll(400, 150)}, "lon, lat"),
+    (lambda ll: {"accion": "mover", "punto": "12", "a": ll(0, 0)}, "lon, lat"),
+    (lambda ll: {"accion": "estirar"}, "mover, borrar o deshacer"),
+])
+def test_lo_que_no_se_puede_corregir_es_400_y_no_cambia_nada(ana, campos, texto):
+    web, slug, carpeta, _ = ana
+    ll = _ubicado(web, slug, carpeta)
+    # El 2 con solo tres vértices propios no existe en la red: se arma uno para probarlo.
+    if texto == "tres vértices":
+        d = json.loads((carpeta / slug / "digitalizado.json").read_text())
+        d["sin_numero"] = [dict(poligono=[[800, 0], [900, 0], [900, 100], [800, 0]], area_px=5000)]
+        d["lotes"] = [l for l in d["lotes"] if l["numero"] != "2"]
+        (carpeta / slug / "digitalizado.json").write_text(json.dumps(d))
+    antes = (carpeta / slug / "digitalizado.json").read_text()
+
+    r = web.post(f"/api/kmz/{slug}/corregir", json=campos(ll))
+
+    assert r.status_code == 400 and texto in r.json()["detail"], r.text
+    assert (carpeta / slug / "digitalizado.json").read_text() == antes
+    assert not (carpeta / slug / "ediciones.json").exists()
+
+
+def test_corregir_sin_ubicar_es_409_y_digitalizar_de_nuevo_olvida_las_correcciones(ana):
+    web, slug, carpeta, _ = ana
+    listo_para_ubicar(web, slug, carpeta)
+    assert web.post(f"/api/kmz/{slug}/corregir", json={"accion": "deshacer"}).status_code == 409
+
+    ll = _ubicado(web, slug, carpeta)
+    web.post(f"/api/kmz/{slug}/corregir", json={"accion": "borrar", "punto": ll(400, 690)})
+    assert (carpeta / slug / "ediciones.json").exists()
+    from consola.plano import Plano
+    Plano(carpeta / slug, carpeta / slug / f"{slug}.kmz").anotar("digitalizado", "otra")
+    assert not (carpeta / slug / "ediciones.json").exists()
+
+
+def test_mover_un_vertice_de_un_hueco_pone_al_dia_al_lote_que_lo_tiene():
+    from consola.plano import PlanoInvalido, _mover_vertice
+    afuera = dict(poligono=[[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]],
+                  huecos=[[[40, 40], [60, 40], [60, 60], [40, 60], [40, 40]]], area_px=9600, vertices=4)
+    adentro = dict(poligono=[[40, 40], [60, 40], [60, 60], [40, 60], [40, 40]], huecos=[], area_px=400, vertices=4)
+    d = dict(lotes=[afuera, adentro], sin_numero=[])
+
+    _mover_vertice(d, np.array([60.0, 60.0]), np.array([70.0, 70.0]))
+
+    assert afuera["huecos"][0][2] == [70, 70] and adentro["poligono"][2] == [70, 70]
+    assert afuera["area_px"] + adentro["area_px"] == 10000
+    # Fuera del lote de afuera, el hueco se sale: no se acepta.
+    with pytest.raises(PlanoInvalido):
+        _mover_vertice(d, np.array([70.0, 70.0]), np.array([120.0, 70.0]))
+
+
+def test_mover_no_deja_un_lote_encima_de_otro_que_no_comparte_el_vertice():
+    from consola.plano import PlanoInvalido, _mover_vertice
+    # Dos lotes con un camino entre medio (el camino no es cara).
+    uno = dict(poligono=[[0, 0], [400, 0], [400, 300], [0, 300], [0, 0]], huecos=[], area_px=120000)
+    dos = dict(poligono=[[0, 350], [400, 350], [400, 650], [0, 650], [0, 350]], huecos=[], area_px=120000)
+    d = dict(lotes=[uno, dos], sin_numero=[])
+    antes = json.dumps(d)
+
+    with pytest.raises(PlanoInvalido, match="se monta"):
+        _mover_vertice(d, np.array([400.0, 300.0]), np.array([400.0, 500.0]))
+    # Hasta el borde del camino sí.
+    d = json.loads(antes)
+    _mover_vertice(d, np.array([400.0, 300.0]), np.array([400.0, 350.0]))
+
+
+def test_soltar_un_vertice_sobre_su_vecino_no_deja_un_punto_doble():
+    from consola.plano import _borrar_vertice, _mover_vertice
+    lote = dict(poligono=[[0, 0], [100, 0], [100, 50], [100, 100], [0, 100], [0, 0]], huecos=[],
+                area_px=10000, vertices=5)
+    d = dict(lotes=[lote], sin_numero=[])
+
+    _mover_vertice(d, np.array([100.0, 50.0]), np.array([100.0, 100.0]))
+
+    assert lote["poligono"] == [[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]]
+    assert lote["vertices"] == 4
+    # Y lo que queda se sigue pudiendo corregir.
+    _borrar_vertice(d, np.array([100.0, 0.0]))
+    assert lote["poligono"] == [[0, 0], [100, 100], [0, 100], [0, 0]]
+
+
+def test_corregir_deja_el_kmz_atrasado_aunque_la_georreferencia_no_tenga_huella(ana):
+    web, slug, carpeta, _ = ana
+    ll = _ubicado(web, slug, carpeta)
+    assert web.post(f"/api/kmz/{slug}/crear").status_code == 201
+    huellas = json.loads((carpeta / slug / "huellas.json").read_text())
+    huellas.pop("georreferencia", None)
+    huellas.pop("kmz", None)
+    (carpeta / slug / "huellas.json").write_text(json.dumps(huellas))
+    assert web.get(f"/api/kmz/{slug}").json()["paso"] != "crear"
+
+    assert web.post(f"/api/kmz/{slug}/corregir", json={"accion": "borrar", "punto": ll(400, 690)}).status_code == 200
+
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["paso"] == "crear"
+    assert estado["digitalizado"]["correcciones"] == 1
+
+
 def test_crear_sin_ubicar_es_409(ana):
     web, slug, carpeta, _ = ana
     listo_para_ubicar(web, slug, carpeta)
@@ -298,10 +472,11 @@ def test_una_construccion_frena_la_digitalizacion(con_topes, monkeypatch):
     lambda web, slug: web.post(f"/api/kmz/{slug}/digitalizar"),
     lambda web, slug: web.post(f"/api/kmz/{slug}/georreferenciar"),
     lambda web, slug: web.get(f"/api/kmz/{slug}/lotes"),
+    lambda web, slug: web.post(f"/api/kmz/{slug}/corregir", json={"accion": "deshacer"}),
     lambda web, slug: web.post(f"/api/kmz/{slug}/crear"),
     lambda web, slug: web.get(f"/api/kmz/{slug}/descargar"),
 ], ids=["ver", "renombrar", "borrar", "plano", "pagina", "entradas", "digitalizar",
-        "georreferenciar", "lotes", "crear", "descargar"])
+        "georreferenciar", "lotes", "corregir", "crear", "descargar"])
 def test_el_kmz_de_otra_contesta_404_en_todas_las_rutas(consola, pedir):
     app, carpeta, _, comandos = consola
     ana, luis = entrar(app, "ana@losrobles.cl"), entrar(app, "luis@delvalle.cl")
