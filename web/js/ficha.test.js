@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 
 import { Catalogo } from './datos.js';
 import {
-  accionesDe, atributosDe, debeCerrarAlArrastrar, escapar, formatearPrecio, kmlDeParcela,
-  rotuloConPrecio,
+  accionesDe, atributosDe, debeCerrarAlArrastrar, escapar, financiamientoDe, formatearPrecio,
+  kmlDeParcela, rotuloConPrecio,
 } from './ficha.js';
 
 const ESTADOS = {
@@ -70,6 +70,40 @@ test('sin superficie ni servidumbre no hay tarjetas, y la cuadrícula no se dibu
   assert.deepEqual(atributosDe(parcela({ superficie_m2: null })), []);
 });
 
+test('con topografía y rol, las tarjetas siguen el orden del diseño', () => {
+  const p = parcela({ servidumbre_m2: 240, topografia: 'Plana y lomaje', rol: '8073-145' });
+
+  assert.deepEqual(atributosDe(p).map((a) => [a.rotulo, a.valor]), [
+    ['Superficie', '5.100 m²'], ['Topografía', 'Plana y lomaje'],
+    ['Servidumbre', '240 m²'], ['Rol', '8073-145'],
+  ]);
+});
+
+// --- Financiamiento ------------------------------------------------------------------
+
+test('el pie dice cuánto es del precio', () => {
+  assert.deepEqual(financiamientoDe(parcela({ precio: 24990000, pie: 4998000 })),
+                   [['Pie desde', '$4.998.000 (20%)']]);
+});
+
+test('las cuotas con su valor dicen cuántas y de cuánto', () => {
+  assert.deepEqual(financiamientoDe(parcela({ cuotas: 48, valor_cuota: 416667 })),
+                   [['Cuotas', '48 cuotas de $416.667']]);
+});
+
+test('sin valor de cuota solo se dice cuántas', () => {
+  assert.deepEqual(financiamientoDe(parcela({ cuotas: 36 })), [['Cuotas', '36 cuotas']]);
+});
+
+test('en un loteo en UF el pie y la cuota van en UF', () => {
+  assert.deepEqual(financiamientoDe(parcela({ moneda: 'UF', precio: 1000, pie: 200, cuotas: 24, valor_cuota: 33.5 })),
+                   [['Pie desde', 'UF 200 (20%)'], ['Cuotas', '24 cuotas de UF 33,5']]);
+});
+
+test('sin pie ni cuotas no hay filas de financiamiento', () => {
+  assert.deepEqual(financiamientoDe(parcela()), []);
+});
+
 // --- Acciones ------------------------------------------------------------------
 
 test('una parcela en venta ofrece primero WhatsApp, después reservar o comprar, y verla en 360°', () => {
@@ -96,6 +130,13 @@ test('sin precio, el link de pago es para reservar', () => {
   const p = parcela({ precio: null, link_pago: 'https://pago.example/7' });
 
   assert.equal(accionesDe(p, catalogoCon(p)).find((a) => a.tipo === 'pago').texto, 'Reservar parcela');
+});
+
+test('con monto de reserva, el botón dice cuánto se paga para reservar', () => {
+  const p = parcela({ link_pago: 'https://pago.example/7', reserva: 250000 });
+
+  assert.equal(accionesDe(p, catalogoCon(p)).find((a) => a.tipo === 'pago').texto,
+               'Reservar parcela ($250.000)');
 });
 
 test('los textos de los botones salen del diseño de la loteadora', () => {

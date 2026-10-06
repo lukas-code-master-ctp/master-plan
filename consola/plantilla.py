@@ -17,8 +17,10 @@ from pipeline.config import ESTADOS
 
 MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-COLUMNAS = ("Proyecto", "Parcela", "Estado", "Precio", "Moneda", "Superficie m2", "Link de pago")
-ANCHOS = (34, 12, 16, 16, 10, 16, 44)
+# Las seis del final son opcionales: lo que la ficha muestra si alguien lo llena.
+COLUMNAS = ("Proyecto", "Parcela", "Estado", "Precio", "Moneda", "Superficie m2", "Link de pago",
+            "Rol", "Topografía", "Pie", "Cuotas", "Valor cuota", "Reserva")
+ANCHOS = (34, 12, 16, 16, 10, 16, 44, 14, 22, 14, 10, 14, 14)
 MONEDAS = ("CLP", "UF")
 # Hasta dónde llegan las listas desplegables y el formato de texto de "Parcela".
 FILAS_PREPARADAS = 2000
@@ -26,9 +28,10 @@ FILAS_PREPARADAS = 2000
 # Sin loteo construido no se sabe qué parcelas hay: filas de muestra, con una
 # segunda etapa para que se vea cómo se dice.
 EJEMPLO = (
-    ("MI LOTEO", "1", "Disponible", 9990000, "CLP", 5000, None),
-    ("MI LOTEO", "2", "Reservado", 10490000, "CLP", 5200, None),
-    ("MI LOTEO ET2", "1", "Vendido", 395, "UF", 5000, None),
+    ("MI LOTEO", "1", "Disponible", 9990000, "CLP", 5000, None,
+     "1234-56", "Plana", 1998000, 24, 333000, 250000),
+    ("MI LOTEO", "2", "Reservado", 10490000, "CLP", 5200, None, None, None, None, None, None, None),
+    ("MI LOTEO ET2", "1", "Vendido", 395, "UF", 5000, None, None, None, None, None, None, None),
 )
 
 INSTRUCCIONES = (
@@ -48,6 +51,13 @@ INSTRUCCIONES = (
     ("Moneda", "CLP o UF. Vacío es CLP."),
     ("Superficie m2", "En metros cuadrados, la de la escritura. Vacío: la ficha no la muestra."),
     ("Link de pago", "Opcional. Si lo pones, la ficha muestra el botón para pagar."),
+    ("Rol", "Opcional. El rol de avalúo de la parcela, como \"8073-145\"."),
+    ("Topografía", "Opcional. Cómo es el terreno, en pocas palabras: \"Plana\", \"Plana y lomaje\"."),
+    ("Pie", ("Opcional. El pie mínimo, en la moneda del precio. También puedes escribir un "
+             "porcentaje, como \"20%\", y se calcula sobre el precio.")),
+    ("Cuotas", "Opcional. En cuántas cuotas se puede pagar el saldo."),
+    ("Valor cuota", "Opcional. Cuánto es cada cuota, en la moneda del precio."),
+    ("Reserva", "Opcional. El monto para reservar, en pesos. El botón de pago lo dice."),
     (None, None),
     ("Las parcelas que no estén en la planilla quedan como No disponible.", None),
 )
@@ -91,6 +101,12 @@ def _filas_de(parcelas: list[dict], nombre: str) -> list[tuple]:
         # prellenarla pasaría por la oficial sin que nadie la haya escrito.
         p.get("superficie_m2") if p.get("en_planilla") else None,
         p.get("link_pago"),
+        p.get("rol"),
+        p.get("topografia"),
+        p.get("pie"),
+        p.get("cuotas"),
+        p.get("valor_cuota"),
+        p.get("reserva"),
     ) for p in parcelas]
 
 
@@ -131,7 +147,7 @@ def _instrucciones(hoja) -> None:
         celda.font = Font(bold=True)
     hoja.column_dimensions["A"].width = 16
     hoja.column_dimensions["B"].width = 90
-    for (_, texto) in hoja.iter_rows(min_row=5, max_row=11):
+    for (_, texto) in hoja.iter_rows(min_row=5, max_row=4 + len(COLUMNAS)):
         texto.alignment = Alignment(wrap_text=True, vertical="top")
 
 

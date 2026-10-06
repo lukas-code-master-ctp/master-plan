@@ -77,3 +77,22 @@ def test_lo_que_se_pega_desde_cierra_calza_con_el_plano(tmp_path):
 
     assert {i: f.estado for i, f in fichas.items()} == {
         "1-7": "disponible", "2-7": "reservado", "3-7": "vendido", "4-7": "no_disponible"}
+
+
+def test_la_plantilla_trae_y_devuelve_el_rol_la_topografia_el_financiamiento_y_la_reserva(tmp_path):
+    parcelas = [{"id": "14", "estado": "disponible", "precio": 24_990_000.0, "moneda": "CLP",
+                 "superficie_m2": 5120, "en_planilla": True, "rol": "8073-145",
+                 "topografia": "Plana y lomaje", "pie": 4_990_000.0, "cuotas": 48,
+                 "valor_cuota": 416_667.0, "reserva": 250_000.0}]
+
+    ficha = leer_planilla(guardar(tmp_path, plantilla(parcelas, "Praderas")))["14"]
+
+    assert (ficha.rol, ficha.topografia, ficha.pie, ficha.cuotas, ficha.valor_cuota, ficha.reserva) == (
+        "8073-145", "Plana y lomaje", 4_990_000, 48, 416_667, 250_000)
+
+
+def test_las_instrucciones_explican_cada_columna():
+    hoja = openpyxl.load_workbook(BytesIO(plantilla()))["Cómo llenarla"]
+    explicadas = {fila[0] for fila in hoja.iter_rows(values_only=True) if fila[0]}
+
+    assert set(COLUMNAS) <= explicadas

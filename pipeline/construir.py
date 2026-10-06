@@ -357,7 +357,8 @@ def _armar_parcelas(fichas: dict[str, FichaComercial],
 # Lo que de una parcela sale de la planilla (o de Cierra), y no del dibujo: lo único
 # que `pipeline.inventario` reescribe sin reconstruir.
 CAMPOS_COMERCIALES = ("estado", "superficie_m2", "servidumbre_m", "servidumbre_m2",
-                      "precio", "moneda", "link_pago", "en_planilla")
+                      "precio", "moneda", "link_pago", "en_planilla",
+                      "rol", "topografia", "pie", "cuotas", "valor_cuota", "reserva")
 
 
 def comerciales(ficha: FichaComercial | None, *, en_venta: bool = True,
@@ -374,6 +375,12 @@ def comerciales(ficha: FichaComercial | None, *, en_venta: bool = True,
         "moneda": ficha.moneda if ficha else "CLP",
         "link_pago": ficha.link_pago if ficha else None,
         "en_planilla": ficha is not None,
+        "rol": ficha.rol if ficha else None,
+        "topografia": ficha.topografia if ficha else None,
+        "pie": ficha.pie if ficha else None,
+        "cuotas": ficha.cuotas if ficha else None,
+        "valor_cuota": ficha.valor_cuota if ficha else None,
+        "reserva": ficha.reserva if ficha else None,
     }
 
 
