@@ -119,6 +119,23 @@ export function marcarRectangulo(entradas, herramienta, rect) {
 /** Las herramientas del paso Marcar que dibujan un rectángulo. */
 export const HERRAMIENTAS_RECTANGULO = ['dibujo', 'mascara', 'cuadro'];
 
+/**
+ * La herramienta con que se abre Marcar. Sin el dibujo encerrado, "Encerrar el dibujo":
+ * es lo primero que hay que hacer y con "Mover" un arrastre no marca nada, que es donde
+ * se perdía la gente. Encerrado pero sin leer el plano todavía, sigue tapar. Ya leído,
+ * "Mover": se vuelve a mirar, y un arrastre para correr el plano no debe agregar un
+ * tapado que deje la lectura atrasada.
+ */
+export function herramientaAlEntrar(entradas, digitalizado = false) {
+  if (!entradas?.rectangulo) return 'dibujo';
+  return digitalizado ? 'mover' : 'mascara';
+}
+
+/** Tras el primer rectángulo del dibujo se pasa sola a "Tapar"; si no, queda la que estaba. */
+export function herramientaTrasRectangulo(herramienta, antes, despues) {
+  return herramienta === 'dibujo' && !antes?.rectangulo && despues?.rectangulo ? 'mascara' : herramienta;
+}
+
 /** [x0, y0, x1, y1] con x0 < x1 e y0 < y1, de dos esquinas cualesquiera. */
 export function rectanguloDe(p, q) {
   return [Math.min(p[0], q[0]), Math.min(p[1], q[1]), Math.max(p[0], q[0]), Math.max(p[1], q[1])];

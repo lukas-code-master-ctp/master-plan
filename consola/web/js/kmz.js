@@ -12,7 +12,7 @@
 import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
   anclaDesde, aplicarFuera, aplicarNumero, claveLote, conSemillas, decidirResto, devolverAlKmz, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
-  HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, nombreDelSistema, numerosQueFaltan,
+  herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, nombreDelSistema, numerosQueFaltan,
   ordenarEsquinas, PASOS, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puntoDeRotulo,
   puntoEnPoligono, restoDe, sesgoDeEscala, resumenRevision, siguienteNombre, sinNumero, sugerencias, verticesDe,
 } from './kmz_geometria.js';
@@ -55,6 +55,9 @@ let corrigiendoYa = false;    // una corrección sin respuesta: los vértices de
 let esquinasMarcando = [];    // las esquinas del marco mientras faltan: el servidor pide 4 o ninguna
 let ubicandoYa = false;       // se está calculando la ubicación: "Seguir" espera eso, no más puntos
 let restoCentrado = null;     // dónde ya se centró el plano para preguntar por el resto (una vez)
+let pasoPintado = null;       // el paso de la última pintada: la herramienta de Marcar se elige al entrar
+let lanzando = null;          // el KMZ (slug) cuya lectura se está pidiendo: un segundo clic no lanza otra
+let falloAlPedir = '';        // por qué no se pudo lanzar la lectura: queda escrito en el paso 3, sobre el botón
 
 // --- guardar ---------------------------------------------------------------------------
 
@@ -195,7 +198,7 @@ export function prepararKmz(opciones) {
 
   $('#kmz-es-foto').addEventListener('change', (e) => {
     if (!e.target.checked && entradas.esquinas) cambiar({ ...entradas, esquinas: null, marco_mm: null });
-    if (!e.target.checked && herramienta === 'esquinas') elegirHerramienta('mover');
+    if (!e.target.checked && herramienta === 'esquinas') elegirHerramienta(herramientaAlEntrar(entradas, Boolean(plano?.digitalizado)));
     pintarPanel();
   });
   $('#kmz-lector').addEventListener('change', (e) => cambiar({ ...entradas, lector: e.target.checked }));
@@ -223,6 +226,9 @@ export function prepararKmz(opciones) {
     if (pendiente) { cancelarAncla(); e.preventDefault(); }
     else if (numerando) { cerrarNumero(); e.preventDefault(); }
   });
+
+  // Al cambiar el ancho la cabecera puede envolver (pasos en dos líneas): se vuelve a medir.
+  window.addEventListener('resize', medirPanel);
 
   lienzo = new LienzoPlano($('#kmz-plano'), $('#kmz-lienzo'));
   lienzo.alDibujar = dibujar;
@@ -259,6 +265,8 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
   sucio = false;
   esquinasMarcando = [];
   restoCentrado = null;
+  pasoPintado = null;
+  falloAlPedir = '';
   cerrarNumero();
   $('#kmz-guardado').textContent = '';
   $('#kmz-registro').replaceChildren();
@@ -357,13 +365,19 @@ async function manejar(nodo) {
   if (dataset.confirmar) return confirmarSugerencia(Number(dataset.confirmar));
 
   const accion = dataset.accion;
+  // "Seguir" de Marcar no solo abre el paso 3: lee el plano, que es lo único que se hace ahí.
+  if (accion === 'kmz-siguiente' && paso === 'marcar') return digitalizar({ desdeMarcar: true });
   if (accion === 'kmz-siguiente') return irAlPaso(PASOS[PASOS.indexOf(paso) + 1]);
   if (accion === 'kmz-girar-izq') return girar(-90);
   if (accion === 'kmz-girar-der') return girar(90);
   if (accion === 'kmz-acercar') return lienzo.acercar(1.5);
   if (accion === 'kmz-alejar') return lienzo.acercar(1 / 1.5);
   if (accion === 'kmz-ajustar') return lienzo.ajustar();
-  if (accion === 'kmz-quitar-dibujo') return cambiar({ ...entradas, rectangulo: null });
+  if (accion === 'kmz-quitar-dibujo') {
+    cambiar({ ...entradas, rectangulo: null });
+    // Sin dibujo encerrado, lo que toca es encerrarlo otra vez.
+    return elegirHerramienta('dibujo');
+  }
   if (accion === 'kmz-borrar-esquinas') {
     esquinasMarcando = [];
     return cambiar({ ...entradas, esquinas: null });
@@ -494,7 +508,10 @@ function elegirHerramienta(nombre) {
 function rectangulo(rect) {
   if (paso !== 'marcar') return;
   const nuevas = marcarRectangulo(entradas, herramienta, rect);
-  if (nuevas !== entradas) cambiar(nuevas);
+  if (nuevas === entradas) return;
+  const despues = herramientaTrasRectangulo(herramienta, entradas, nuevas);
+  cambiar(nuevas);
+  if (despues !== herramienta) elegirHerramienta(despues);
 }
 
 function tocarPlano(x, y) {
@@ -537,36 +554,68 @@ function escuchar() {
   });
 }
 
-/** Con `solo`, es la relectura de Numerar: sin preguntar y sin cambiar de paso. */
-async function digitalizar({ solo = false } = {}) {
+/**
+ * Con `solo`, es la relectura de Numerar: sin preguntar y sin cambiar de paso. Si no, se
+ * abre el paso 3 antes de pedirla, con el escáner ya corriendo. Con `desdeMarcar` ("Seguir"
+ * de Marcar), una lectura al día o ya en camino no se repite: solo se va a mirarla.
+ */
+async function digitalizar({ solo = false, desdeMarcar = false } = {}) {
+  const mio = slug;
+  // Un doble clic, o "Seguir" y el botón del paso 3 seguidos: la primera ya se está pidiendo.
+  if (!solo && lanzando === mio) return;
   if (!solo && !entradas.rectangulo
     && !confirm('No encerraste el dibujo: se va a digitalizar la página entera, con cuadros y cajetín. ¿Seguir?')) return;
-  await guardar();
-  const mio = slug;
-  estado.registros.set(clave(), []);
-  // La tarjeta aparece al tiro, en "Abriendo el plano", sin esperar la primera línea.
-  estado.trabajos.set(clave(), { accion: 'digitalizar-plano', estado: 'corriendo', terminado: false });
-  pintarRegistro();
-  escuchar();
-  let id;
+  if (!solo) lanzando = mio;
   try {
-    ({ id } = await pedir(`${api()}/digitalizar`, json({})));
-  } catch (error) {
-    // No se lanzó (otro trabajo corriendo, p. ej.): la tarjeta no puede quedar escaneando.
-    estado.trabajos.delete(clave());
-    pintarRegistro();
-    throw error;
-  }
-  if (mio !== slug) return;
-  plano = { ...plano, trabajo: { id, terminado: false } };
-  if (solo) {
+    await guardar();
+    if (mio !== slug) return;
+    if (!solo) {
+      // La relectura sola de Numerar o una lectura que ya corre: lanzar otra la choca en el
+      // servidor. Leído con lo mismo que está marcado (volvió a Marcar a mirar), no hay qué leer.
+      const enCamino = trabajando() || releyendo === mio;
+      if (enCamino || (desdeMarcar && plano?.digitalizado?.vigente)) {
+        await irAlPaso('digitalizar');
+        return;
+      }
+    }
+    // Cualquier lectura que se lanza, también la relectura sola de Numerar, deja viejo el
+    // "no se pudo empezar": si no, al volver al paso 3 seguiría ahí después de leer bien.
+    falloAlPedir = '';
+    estado.registros.set(clave(), []);
+    // La tarjeta aparece al tiro, en "Abriendo el plano", sin esperar la primera línea.
+    estado.trabajos.set(clave(), { accion: 'digitalizar-plano', estado: 'corriendo', terminado: false });
+    escuchar();
+    if (solo) pintarRegistro();
+    else await irAlPaso('digitalizar');
+    let id;
+    try {
+      ({ id } = await pedir(`${api(mio)}/digitalizar`, json({})));
+    } catch (error) {
+      // No se lanzó (otro trabajo corriendo, sin conexión): la tarjeta no puede quedar
+      // escaneando. Queda el aviso y, en el paso 3, el botón para intentarlo de nuevo.
+      if (mio === slug) {
+        estado.trabajos.delete(clave());
+        pintarRegistro();
+        // El aviso general queda bajo la barra en el celular: en el paso 3 se dice junto al
+        // botón, y no se repite arriba.
+        if (!solo && paso === 'digitalizar') {
+          falloAlPedir = error.message;
+          return;
+        }
+      }
+      throw error;
+    }
+    if (mio !== slug) return;
+    plano = { ...plano, trabajo: { id, terminado: false } };
     pintar();
-  } else {
-    paso = 'digitalizar';
-    pintarPaso();
+    seguir(clave(), id);
+    refrescar().catch(() => {});
+  } finally {
+    if (!solo && lanzando === mio) {
+      lanzando = null;
+      if (mio === slug) pintarPanel();
+    }
   }
-  seguir(clave(), id);
-  refrescar().catch(() => {});
 }
 
 async function terminoDigitalizar(trabajo) {
@@ -973,6 +1022,9 @@ async function pintarPaso() {
   $('#kmz-plano').dataset.modo = paso;
   $('#kmz-cuerpo').classList.toggle('kmz-cuerpo--solo', paso === 'subir' && !plano?.pdf || paso === 'crear');
   if (paso !== 'marcar') elegirHerramienta('mover');
+  else if (pasoPintado !== 'marcar') elegirHerramienta(herramientaAlEntrar(entradas, Boolean(plano?.digitalizado)));
+  pasoPintado = paso;
+  medirPanel();
   pintar();
   // Llegar a Numerar con los lotes atrasados (se cambió algo antes): se releen solos.
   releerSiHaceFalta();
@@ -980,6 +1032,18 @@ async function pintarPaso() {
     await prepararMapa();
     pintarMapa(true);
   }
+}
+
+/**
+ * El alto del panel en escritorio es lo que queda de pantalla bajo su borde de arriba. Con
+ * un alto fijo (`100vh - 12rem`) la cabecera real era más alta y el panel terminaba ~70 px
+ * bajo el borde: el pie pegado al panel ("Seguir") no se veía hasta desplazar la página.
+ */
+function medirPanel() {
+  const cuerpo = $('#kmz-cuerpo');
+  if (!cuerpo || $('#pantalla-kmz').hidden) return;
+  const arriba = Math.round(cuerpo.getBoundingClientRect().top + window.scrollY);
+  cuerpo.style.setProperty('--kmz-arriba', `${arriba}px`);
 }
 
 function pintarPasos() {
@@ -1015,7 +1079,9 @@ function pintarPorQue() {
   const panel = $(`#kmz-panel-${paso}`);
   const boton = panel?.querySelector('[data-accion="kmz-siguiente"]');
   if (!plano || !boton) return;
-  const motivo = porQueNoSigue(paso, plano, {
+  // Mientras se pide la lectura, el servidor todavía no la cuenta como trabajo: ya lo es.
+  const e = lanzando === slug ? { ...plano, trabajo: { terminado: false } } : plano;
+  const motivo = porQueNoSigue(paso, e, {
     entradas, actualizando: actualizando(), releerFallo, ubicando: ubicandoYa,
     duplicados: paso === 'revisar' ? resumenRevision(rasgosGeo?.features ?? []).duplicados : 0,
   });
@@ -1101,12 +1167,18 @@ function fila(texto, quitar, tono) {
 }
 
 function pintarDigitalizar() {
-  const trabajando = Boolean(plano.trabajo && !plano.trabajo.terminado);
+  const leyendo = trabajando() || lanzando === slug;
   const d = plano.digitalizado;
   const huecos = d?.huecos ?? [];
   const boton = $('[data-accion="kmz-digitalizar"]');
-  boton.disabled = trabajando || !pasosHabilitados(plano).digitalizar;
-  boton.textContent = trabajando ? 'Digitalizando…' : d ? 'Digitalizar de nuevo' : 'Digitalizar';
+  // La lectura la lanza "Seguir" de Marcar: este botón es para leer de nuevo (o reintentar si
+  // falló), y mientras se lee no aparece, que el escáner ya dice lo que pasa.
+  boton.hidden = leyendo;
+  boton.disabled = leyendo || !pasosHabilitados(plano).digitalizar;
+  const fallo = plano.trabajo?.terminado && plano.trabajo.estado === 'falló';
+  boton.textContent = d || fallo || falloAlPedir ? 'Digitalizar de nuevo' : 'Digitalizar';
+  $('#kmz-leer-fallo').hidden = leyendo || !falloAlPedir;
+  $('#kmz-leer-fallo').textContent = falloAlPedir ? `No se pudo empezar a leer el plano: ${falloAlPedir}` : '';
   pintarRegistro();
   const cifras = $('#kmz-cifras');
   cifras.hidden = !d;

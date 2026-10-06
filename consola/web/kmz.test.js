@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import {
   anclaDesde, aPagina, aplicarFuera, aplicarNumero, claveLote, decidirResto, devolverAlKmz, restoDe, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
-  HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
+  herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
   tamanoRotado, textoHuecos, vistaAjustada, zoomEn,
 } from './js/kmz_geometria.js';
@@ -85,6 +85,31 @@ test('el cuadro de superficies es un rectángulo solo, que se reemplaza y se qui
   assert.deepEqual(marcarRectangulo(otra, 'dibujo', [0, 0, 50, 50]).cuadro, otra.cuadro);
   // Quitarlo es dejarlo en null (lo que hace "Quitar" en la lista).
   assert.equal({ ...otra, cuadro: null }.cuadro, null);
+});
+
+test('Marcar se abre en lo que toca: encerrar el dibujo, tapar o mirar', () => {
+  const vacias = { rectangulo: null, mascaras: [] };
+  const encerrado = { rectangulo: [10, 10, 500, 400], mascaras: [] };
+  assert.equal(herramientaAlEntrar(vacias), 'dibujo');
+  assert.equal(herramientaAlEntrar(null), 'dibujo');
+  // Aunque esté leído: sin dibujo encerrado (lo quitó) lo primero es encerrarlo.
+  assert.equal(herramientaAlEntrar(vacias, true), 'dibujo');
+  assert.equal(herramientaAlEntrar(encerrado, false), 'mascara');
+  // Ya leído, un arrastre para mirar no debe agregar un tapado.
+  assert.equal(herramientaAlEntrar(encerrado, true), 'mover');
+});
+
+test('tras el primer rectángulo del dibujo se pasa sola a Tapar', () => {
+  const vacias = { rectangulo: null, mascaras: [] };
+  const primero = marcarRectangulo(vacias, 'dibujo', [10, 10, 500, 400]);
+  assert.equal(herramientaTrasRectangulo('dibujo', vacias, primero), 'mascara');
+  // Rehacer el rectángulo del dibujo no la cambia: quiso volver a encerrarlo.
+  const otro = marcarRectangulo(primero, 'dibujo', [20, 20, 480, 380]);
+  assert.equal(herramientaTrasRectangulo('dibujo', primero, otro), 'dibujo');
+  // Las demás herramientas se quedan como están.
+  const tapado = marcarRectangulo(primero, 'mascara', [30, 30, 60, 60]);
+  assert.equal(herramientaTrasRectangulo('mascara', primero, tapado), 'mascara');
+  assert.equal(herramientaTrasRectangulo('cuadro', vacias, marcarRectangulo(vacias, 'cuadro', [0, 0, 90, 90])), 'cuadro');
 });
 
 test('el cuadro se guarda en px de página aunque la página esté girada', () => {
