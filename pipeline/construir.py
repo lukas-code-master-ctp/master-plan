@@ -17,7 +17,7 @@ from pathlib import Path
 
 from . import config, geo, referencias, terreno, visor
 from .crm import leer_crm
-from .excel import FichaComercial, leer_planilla
+from .excel import FichaComercial, alinear_con, leer_planilla
 from .calibracion import Ajuste, aplicar, calibrar, mapa_de_caminos
 from .imagenes import generar_niveles
 from .kmz import ParcelaGeometrica, leer_kmz, leer_lineas
@@ -66,6 +66,10 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
           f"{f', {len(etapas)} etapas' if etapas else ''}")
 
     fichas = _leer_fichas(fuentes, proyecto, avisos)
+    alineadas = alinear_con(fichas, con_id)
+    if alineadas is not fichas:
+        print("  la planilla separa etapas y el KMZ no: se cruzan por el número del lote")
+    fichas = alineadas
     _revisar_cobertura(fichas, con_id, avisos)
 
     print("Leyendo las panorámicas...")
