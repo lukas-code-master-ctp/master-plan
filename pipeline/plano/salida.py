@@ -3,10 +3,13 @@
     python -m pipeline.plano kmz <carpeta-del-plano> <destino.kmz>
 
 Un Placemark por lote, con nombre `LOTE <n>` (el número como vino del plano o de la
-loteadora: "LOTE 8-01", con sus ceros) y un Polygon (con sus huecos, si los
-tiene), en KML 2.2. Sin LineStrings ni Points: así `pipeline/kmz.py` lo lee en modo
-polígonos y saca el id del nombre. El área va en m² medidos en UTM, en la
-descripción y en ExtendedData. Las caras sin número no salen.
+loteadora: "LOTE 8-01", con sus ceros) y un MultiGeometry con un Point dentro del
+lote y el Polygon (con sus huecos, si los tiene), en KML 2.2. Google Earth no rotula
+polígonos en el mapa, solo Points: sin él el número se ve únicamente en la lista de
+lugares. Sin LineStrings: así `pipeline/kmz.py` lo lee en modo polígonos y saca el id
+del nombre (el Point le llega como etiqueta, pero el polígono ya trae su id). El área
+va en m² medidos en UTM, en la descripción y en ExtendedData. Las caras sin número no
+salen.
 """
 from __future__ import annotations
 
@@ -65,7 +68,11 @@ def kml(digitalizado: dict, t: Transformacion, nombre: str = "Subdivisión") -> 
     partes = ['<?xml version="1.0" encoding="UTF-8"?>',
               f'<kml xmlns="{KML_NS}"><Document>',
               f"<name>{escape(nombre)}</name>",
-              '<Style id="lote"><LineStyle><color>ff0000ff</color><width>1.5</width></LineStyle>'
+              # Escala 0 en el ícono: el Point está para llevar el rótulo, no una
+              # chincheta encima de cada lote. Rótulo blanco, legible sobre el satélite.
+              '<Style id="lote"><IconStyle><scale>0</scale></IconStyle>'
+              "<LabelStyle><color>ffffffff</color></LabelStyle>"
+              '<LineStyle><color>ff0000ff</color><width>1.5</width></LineStyle>'
               "<PolyStyle><color>220000ff</color></PolyStyle></Style>"]
     for lote in digitalizado["lotes"]:
         numero = str(lote["numero"])
@@ -74,6 +81,9 @@ def kml(digitalizado: dict, t: Transformacion, nombre: str = "Subdivisión") -> 
         anillo = lambda a: " ".join(f"{lon:.8f},{lat:.8f},0" for lon, lat in a.coords)
         huecos = "".join(f"<innerBoundaryIs><LinearRing><coordinates>{anillo(h)}</coordinates></LinearRing>"
                          "</innerBoundaryIs>" for h in p.interiors)
+        # representative_point cae siempre dentro, también en lotes con huecos o en L
+        # (el centroide no).
+        rotulo = p.representative_point()
         datos = f'<Data name="area_m2"><value>{area:.1f}</value></Data>'
         descripcion = f"Superficie {area:,.0f} m²".replace(",", ".")
         if lote.get("area_oficial") is not None:
@@ -81,9 +91,10 @@ def kml(digitalizado: dict, t: Transformacion, nombre: str = "Subdivisión") -> 
             descripcion += f"; cuadro de superficies {float(lote['area_oficial']):,.0f} m²".replace(",", ".")
         partes.append(f"<Placemark><name>LOTE {escape(numero)}</name>"
                       f"<description>{escape(descripcion)}</description>"
-                      f"<styleUrl>#lote</styleUrl><ExtendedData>{datos}</ExtendedData>"
+                      f"<styleUrl>#lote</styleUrl><ExtendedData>{datos}</ExtendedData><MultiGeometry>"
+                      f"<Point><coordinates>{rotulo.x:.8f},{rotulo.y:.8f},0</coordinates></Point>"
                       f"<Polygon><outerBoundaryIs><LinearRing><coordinates>{anillo(p.exterior)}</coordinates>"
-                      f"</LinearRing></outerBoundaryIs>{huecos}</Polygon></Placemark>")
+                      f"</LinearRing></outerBoundaryIs>{huecos}</Polygon></MultiGeometry></Placemark>")
     partes.append("</Document></kml>")
     return "\n".join(partes)
 
