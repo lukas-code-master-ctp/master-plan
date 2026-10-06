@@ -281,12 +281,20 @@ async function guardar(proyecto) {
   const antes = proyecto.diseno_id ?? null;
   const despues = proyectoActual();
   rellenarAjustes(despues);
-  // El diseño se aplica al publicar; los demás datos, al reconstruir.
-  const soloDiseno = antes !== (despues.diseno_id ?? null) && proyecto.nombre === despues.nombre
-    && proyecto.etapa === despues.etapa && proyecto.whatsapp === despues.whatsapp;
-  $('#plano-guardado').textContent = !proyecto.construido ? 'Guardado.'
-    : soloDiseno ? 'Guardado. El diseño se aplica al publicar.'
-      : 'Guardado. Reconstruye para que se vea en el sitio.';
+  // El diseño, el nombre, la etapa y el WhatsApp se aplican al publicar. La
+  // parcelación, el despegue y los hitos cambian el cálculo: esos piden reconstruir.
+  const igual = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const pideReconstruir = !igual(proyecto.parcelacion, despues.parcelacion)
+    || !igual(proyecto.despegue, despues.despegue) || !igual(proyecto.referencias, despues.referencias);
+  const alPublicar = !igual(antes, despues.diseno_id)
+    || ['nombre', 'etapa', 'whatsapp'].some((campo) => !igual(proyecto[campo], despues[campo]));
+  let aviso = 'Guardado.';
+  if (proyecto.construido && pideReconstruir) aviso = 'Guardado. Reconstruye para que se vea en el sitio.';
+  else if (proyecto.construido && alPublicar) {
+    aviso = proyecto.publicado ? 'Guardado. Vuelve a publicar para que se vea en el sitio.'
+      : 'Guardado. Se aplica al publicar.';
+  }
+  $('#plano-guardado').textContent = aviso;
 }
 
 async function olvidar(proyecto) {

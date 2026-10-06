@@ -2,7 +2,7 @@
 import json
 
 from pipeline import config
-from pipeline.inventario import actualizar
+from pipeline.inventario import actualizar, poner_datos_del_loteo
 
 POLIGONO = [[-72.0, -35.0], [-72.0, -35.001], [-72.001, -35.001]]
 
@@ -11,6 +11,8 @@ def sitio(tmp_path, parcelas):
     salida = config.Salida(tmp_path / "salida")
     salida.datos.mkdir(parents=True)
     (salida.datos / "parcelas.json").write_text(json.dumps({
+        # Como los deja la construcción: con los datos del loteo de `proyecto()`.
+        "proyecto": "Loteo", "etapa": "", "whatsapp": "",
         "generado": "2026-10-01T10:00:00-03:00",
         "resumen": {"total": len(parcelas), "con_geometria": len(parcelas),
                     "con_vista_aerea": len(parcelas), "por_estado": {}},
@@ -112,3 +114,33 @@ def test_pone_al_dia_el_rol_la_topografia_el_financiamiento_y_la_reserva(tmp_pat
     assert resultado.cambiadas == ("1",)
     assert (p["rol"], p["topografia"], p["pie"], p["cuotas"], p["valor_cuota"], p["reserva"]) == (
         "8073-145", "Plana", 1998000, 24, 333000, 250000)
+
+
+def test_pone_al_dia_el_nombre_la_etapa_y_el_whatsapp_del_loteo(tmp_path):
+    """Se cambian en la consola y tienen que llegar al sitio sin reconstruir."""
+    salida = sitio(tmp_path, [parcela("1")])
+    datos = leer(salida)
+    datos.update(proyecto="Loteo viejo", etapa="", whatsapp="")
+    (salida.datos / "parcelas.json").write_text(json.dumps(datos), encoding="utf-8")
+    nuevo = config.Proyecto(nombre="Loteo Nuevo", etapa="Etapa 1", whatsapp="56912345678",
+                            parcelacion="LOTEO NUEVO", despegue=None, referencias=())
+
+    assert poner_datos_del_loteo(nuevo, salida) is True
+
+    datos = leer(salida)
+    assert (datos["proyecto"], datos["etapa"], datos["whatsapp"]) == ("Loteo Nuevo", "Etapa 1", "56912345678")
+    # Las parcelas no se tocan.
+    assert datos["parcelas"][0]["poligono"] == POLIGONO
+
+
+def test_sin_cambios_en_los_datos_del_loteo_no_reescribe(tmp_path):
+    salida = sitio(tmp_path, [parcela("1")])
+    datos = leer(salida)
+    datos.update(proyecto="Loteo", etapa="", whatsapp="56912345678")
+    (salida.datos / "parcelas.json").write_text(json.dumps(datos), encoding="utf-8")
+    antes = (salida.datos / "parcelas.json").read_text(encoding="utf-8")
+    mismo = config.Proyecto(nombre="Loteo", etapa="", whatsapp="56912345678",
+                            parcelacion="LOTEO", despegue=None, referencias=())
+
+    assert poner_datos_del_loteo(mismo, salida) is False
+    assert (salida.datos / "parcelas.json").read_text(encoding="utf-8") == antes
