@@ -26,10 +26,10 @@
  * funciona: que el panorama se dibuja, que los polígonos caen sobre la imagen,
  * y que los flujos de selección, búsqueda y filtros responden.
  *
- * El iframe recibe una versión de index.html con dos sustituciones: se hace que
- * requestAnimationFrame y ResizeObserver disparen por temporizador. Sin eso las
+ * El iframe recibe una versión de index.html con un parche delante. Hace que
+ * requestAnimationFrame y ResizeObserver disparen por temporizador: sin eso las
  * pruebas no pueden correr en una pestaña de fondo, donde el navegador congela
- * ambos.
+ * ambos. Y muestrea el lienzo WebGL en el momento en que el visor lo dibuja.
  */
 
 const PARCHE = `<script>
@@ -39,6 +39,38 @@ const PARCHE = `<script>
     observe(elemento) { setTimeout(() => this.fn([{ target: elemento }]), 0); }
     unobserve() {} disconnect() {}
   };
+
+  // El visor no pide preserveDrawingBuffer, así que apenas el navegador compone
+  // el cuadro el búfer queda en negro y un readPixels posterior lee ceros. Se
+  // muestrea entonces junto con el dibujo, y solo una vez que subió una
+  // panorámica de verdad: antes hay una textura lisa de 1×1 que no prueba nada.
+  const webgl = WebGLRenderingContext.prototype;
+  const subirTextura = webgl.texImage2D;
+  webgl.texImage2D = function (...argumentos) {
+    subirTextura.apply(this, argumentos);
+    if (argumentos.at(-1) instanceof HTMLImageElement) this.conPanorama = true;
+  };
+  const dibujar = webgl.drawArrays;
+  webgl.drawArrays = function (...argumentos) {
+    dibujar.apply(this, argumentos);
+    if (this.conPanorama) window.muestraPanorama = muestrear(this);
+  };
+
+  // Un rectángulo al centro del lienzo: brillo medio y cuántos tonos distintos hay.
+  function muestrear(gl) {
+    const ancho = 60;
+    const alto = 40;
+    const px = new Uint8Array(ancho * alto * 4);
+    gl.readPixels((gl.drawingBufferWidth - ancho) >> 1, (gl.drawingBufferHeight - alto) >> 1,
+                  ancho, alto, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    let suma = 0;
+    const tonos = new Set();
+    for (let i = 0; i < px.length; i += 4) {
+      suma += (px[i] + px[i + 1] + px[i + 2]) / 3;
+      tonos.add(px[i] >> 4);
+    }
+    return { brillo: suma / (ancho * alto), variedad: tonos.size };
+  }
 <\/script>`;
 
 const resultados = [];
@@ -90,14 +122,15 @@ async function correr() {
   revisar('el lienzo toma el tamaño del contenedor',
           lienzo.width > 400 && lienzo.height > 200, `${lienzo.width}×${lienzo.height}`);
 
-  // El visor arranca con una textura lisa de 1×1 mientras baja la panorámica.
-  // Se espera a que aparezca variedad de tonos: eso prueba que la subió de verdad.
-  const gl = lienzo.getContext('webgl');
-  await esperarA(() => muestrear(gl, lienzo).variedad > 3, 15000);
-  const muestra = muestrear(gl, lienzo);
+  // La muestra la toma el parche al dibujar el primer cuadro con la panorámica.
+  // El plazo es solo un tope: se sigue apenas el visor la dibuja.
+  await esperarA(() => ventana.muestraPanorama, 15000);
+  const muestra = ventana.muestraPanorama ?? { brillo: 0, variedad: 0 };
   revisar('el panorama se dibuja (hay imagen, no un lienzo vacío)',
           muestra.brillo > 20 && muestra.variedad > 6,
-          `brillo ${muestra.brillo.toFixed(0)}, variedad ${muestra.variedad}`);
+          ventana.muestraPanorama
+            ? `brillo ${muestra.brillo.toFixed(0)}, variedad ${muestra.variedad}`
+            : 'el visor no dibujó ninguna panorámica en 15 s');
 
   // --- Overlay ---------------------------------------------------------------
   const visibles = [...$('#overlay').querySelectorAll('.parcela')].filter((g) => g.style.display !== 'none');
@@ -287,21 +320,6 @@ async function planoEnTelefono(html) {
   revisar('al abrir el plano en un teléfono queda encuadrado en el loteo, no en el mundo',
           zooms.length > 0 && Math.min(...zooms) >= 12,
           `zoom de las teselas: ${[...new Set(zooms)].join(', ') || 'ninguna cargada'}`);
-}
-
-function muestrear(gl, lienzo) {
-  const ancho = 60;
-  const alto = 40;
-  const px = new Uint8Array(ancho * alto * 4);
-  gl.readPixels((lienzo.width - ancho) >> 1, (lienzo.height - alto) >> 1,
-                ancho, alto, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  let suma = 0;
-  const tonos = new Set();
-  for (let i = 0; i < px.length; i += 4) {
-    suma += (px[i] + px[i + 1] + px[i + 2]) / 3;
-    tonos.add(px[i] >> 4);
-  }
-  return { brillo: suma / (ancho * alto), variedad: tonos.size };
 }
 
 function informar() {
