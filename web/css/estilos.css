@@ -614,7 +614,6 @@ button { cursor: pointer; }
 }
 .zoom button:hover { background: var(--papel-suave); color: var(--tinta); }
 .zoom button:active { background: var(--zinc-100); }
-.zoom button svg { width: 1.15rem; height: 1.15rem; }
 
 /* --- Barra inferior --------------------------------------------------------- */
 
@@ -1274,7 +1273,7 @@ button { cursor: pointer; }
 @media (max-width: 62rem) {
   /* En el teléfono la foto manda. Arriba, una cabecera de una fila y, debajo,
      una sola fila de 40 px con la brújula y los puntos de vuelo. Abajo, la
-     leyenda delgada y, sobre ella, Ver plano y el botón de encuadrar. Antes los
+     leyenda delgada y, sobre ella, Ver plano y el zoom. Antes los
      controles de 48 px en cuatro filas tapaban casi media pantalla. Las medidas
      van en variables para que cada pieza se apoye en la anterior. */
   :root {
@@ -1362,8 +1361,8 @@ button { cursor: pointer; }
   .puntos__palabra { display: inline; }
   .puntos__altura { display: block; font: 500 0.625rem/1 var(--sans); font-variant-numeric: tabular-nums; opacity: 0.8; }
 
-  /* Abajo: la leyenda delgada y, encima, Ver plano y encuadrar. Sin + ni −:
-     en el teléfono se acerca con dos dedos. */
+  /* Abajo: la leyenda delgada y, encima, Ver plano a la izquierda y el zoom a la
+     derecha (también se acerca con dos dedos, pero no todos lo saben). */
   .leyenda {
     z-index: 23;
     left: 0.85rem; right: 0.85rem;
@@ -1382,8 +1381,8 @@ button { cursor: pointer; }
   .ver-plano__textos span { display: none; }
 
   .instrumentos { top: auto; bottom: var(--fondo-hud); right: 0.85rem; transform: none; gap: 0.45rem; }
-  .rosa, #acercar, #alejar { display: none; }
-  .zoom button { position: relative; width: calc(var(--alto-hud) + 6px); height: calc(var(--alto-hud) + 6px); }
+  .rosa { display: none; }
+  .zoom button { position: relative; width: var(--alto-hud); height: var(--alto-hud); font-size: 1.25rem; }
   .altimetro { padding: 0.5rem 0.45rem 0.4rem; }
   .altimetro__escala button { padding: 0.2rem 0.35rem 0.2rem 0.2rem; font-size: 0.75rem; }
   .altimetro__escala button[aria-pressed="true"] { font-size: 0.875rem; }

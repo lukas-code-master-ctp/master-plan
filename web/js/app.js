@@ -254,12 +254,6 @@ function construirControles() {
 
   $('#acercar').addEventListener('click', () => estado.visor.acercar(0.78));
   $('#alejar').addEventListener('click', () => estado.visor.acercar(1.28));
-  // Volver a la parcela elegida, o a todo el loteo si no hay una a la vista.
-  $('#centrar').addEventListener('click', () => {
-    const elegida = estado.catalogo.porId.get(estado.seleccionada);
-    if (elegida?.vistas?.includes(estado.vista?.id)) estado.visor.enfocarParcela(elegida.id);
-    else estado.visor.encuadrarParcelas();
-  });
 }
 
 function conectarAccionesRapidas() {
