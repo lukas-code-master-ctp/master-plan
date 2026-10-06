@@ -425,7 +425,7 @@ def test_cambiar_los_numeros_pide_digitalizar_de_nuevo(ana):
     assert web.get(f"/api/kmz/{slug}").json()["paso"] == "digitalizar"
     respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
     assert respuesta.status_code == 409
-    assert "digitaliza de nuevo" in respuesta.json()["detail"]
+    assert "lee el plano de nuevo" in respuesta.json()["detail"]
 
 
 # La cuadrícula UTM que "leyó" el lector, en el mismo sistema que las anclas.
@@ -542,7 +542,7 @@ def test_sin_anclas_no_se_puede_ubicar(ana):
     respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
 
     assert respuesta.status_code == 400
-    assert "anclas" in respuesta.json()["detail"]
+    assert "2 puntos" in respuesta.json()["detail"]
 
 
 def test_ubicar_sin_digitalizar(ana):

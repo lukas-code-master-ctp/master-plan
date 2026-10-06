@@ -12,9 +12,9 @@
 import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
   anclaDesde, aplicarFuera, aplicarNumero, claveLote, conSemillas, decidirResto, devolverAlKmz, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
-  herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, nombreDelSistema, numerosQueFaltan,
+  herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, detalleUbicacion, filaDelPunto, numerosQueFaltan,
   ordenarEsquinas, PASOS, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puntoDeRotulo,
-  puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, siguienteNombre, sinNumero, sugerencias, textoSemaforo, verticesDe,
+  puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, siguienteNombre, sinNumero, sugerencias, textoSemaforo, verticesDe,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
 import { abrirNombre, abrirUsarKmz, descargaDe, textoDeCreado } from './kmzs.js';
@@ -430,7 +430,7 @@ async function irAlPaso(destino) {
 
 function subirPdf(archivo) {
   if (plano?.pdf && (plano.entradas || plano.digitalizado)
-    && !confirm('Subir otro PDF borra lo marcado y lo digitalizado del plano actual. ¿Seguir?')) {
+    && !confirm('Subir otro PDF borra lo marcado y lo leído del plano actual. ¿Seguir?')) {
     return Promise.resolve();
   }
   const cuerpo = new FormData();
@@ -565,7 +565,7 @@ async function digitalizar({ solo = false, desdeMarcar = false } = {}) {
   // Un doble clic, o "Seguir" y el botón del paso 3 seguidos: la primera ya se está pidiendo.
   if (!solo && lanzando === mio) return;
   if (!solo && !entradas.rectangulo
-    && !confirm('No encerraste el dibujo: se va a digitalizar la página entera, con cuadros y cajetín. ¿Seguir?')) return;
+    && !confirm('No encerraste el dibujo: se va a leer la página entera, con cuadros y cajetín. ¿Seguir?')) return;
   if (!solo) lanzando = mio;
   try {
     await guardar();
@@ -1146,7 +1146,7 @@ function pintarMarcar() {
   const listo = Boolean(entradas.rectangulo) && (!sinLector || entradas.semillas.length > 0);
   $('#kmz-marcar-nota').textContent = listo ? '' : !entradas.rectangulo
     ? 'Encierra el dibujo del loteo con la herramienta "Encerrar el dibujo".'
-    : 'Marca el número de al menos un lote antes de digitalizar.';
+    : 'Marca el número de al menos un lote antes de leer el plano.';
 }
 
 function fila(texto, quitar, tono) {
@@ -1177,7 +1177,7 @@ function pintarDigitalizar() {
   boton.hidden = leyendo;
   boton.disabled = leyendo || !pasosHabilitados(plano).digitalizar;
   const fallo = plano.trabajo?.terminado && plano.trabajo.estado === 'falló';
-  boton.textContent = d || fallo || falloAlPedir ? 'Digitalizar de nuevo' : 'Digitalizar';
+  boton.textContent = d || fallo || falloAlPedir ? 'Leer el plano de nuevo' : 'Leer el plano';
   $('#kmz-leer-fallo').hidden = leyendo || !falloAlPedir;
   $('#kmz-leer-fallo').textContent = falloAlPedir ? `No se pudo empezar a leer el plano: ${falloAlPedir}` : '';
   pintarRegistro();
@@ -1322,20 +1322,29 @@ function pintarUbicar() {
   $('[data-accion="kmz-usar-cuadricula"]').hidden = Boolean(entradas.cuadricula) || !propuesta;
   $('[data-accion="kmz-quitar-cuadricula"]').hidden = !entradas.cuadricula;
   $('#kmz-cuadricula-texto').textContent = entradas.cuadricula
-    ? 'Se está usando la cuadrícula UTM impresa en el plano. Las anclas sirven para confirmar el datum.'
-    : 'El plano trae una cuadrícula UTM impresa: es lo más preciso para ubicarlo.';
+    ? 'Se está usando la cuadrícula impresa en el plano. Puedes sumar puntos para comprobar que calza.'
+    : 'El plano trae una cuadrícula con coordenadas impresas: es lo más preciso para ubicarlo.';
 
-  // Anclas con su residuo.
+  // Los puntos con su distancia: cuánto se aleja cada uno de donde lo dejan los demás.
   const porNombre = new Map((g?.anclas ?? []).map((a) => [a.nombre, a]));
   const cuerpo = $('#kmz-anclas tbody');
   cuerpo.replaceChildren(...entradas.anclas.map((a) => {
     const r = porNombre.get(a.nombre);
     const tr = document.createElement('tr');
-    const atipica = g?.atipicas?.includes(a.nombre);
-    if (atipica) tr.className = 'kmz-atipica';
+    const { distancia, estado, detalle } = filaDelPunto(r, g, vigente);
+    if (detalle) tr.className = 'kmz-atipica';
     const celda = (texto) => { const td = document.createElement('td'); td.textContent = texto; return td; };
-    const residuo = r && vigente ? `${r.residuo_m.toFixed(1)} m` : '—';
-    tr.append(celda(a.nombre), celda(residuo), celda(atipica ? 'Atípica' : r && vigente ? 'ok' : ''));
+    const celdaEstado = celda(estado);
+    // En el celular la tabla no da para la frase entera: "No calza" se ve, y lo que hay que
+    // hacer va en el título y para el lector de pantalla (la lista de avisos lo repite).
+    if (detalle) {
+      celdaEstado.title = `${estado}: ${detalle}`;
+      const oculto = document.createElement('span');
+      oculto.className = 'oculto';
+      oculto.textContent = `: ${detalle}`;
+      celdaEstado.append(oculto);
+    }
+    tr.append(celda(a.nombre), celda(distancia), celdaEstado);
     const acciones = document.createElement('td');
     for (const [texto, clave] of [['Rehacer', 'anclaRehacer'], ['Quitar', 'anclaQuitar']]) {
       const b = document.createElement('button');
@@ -1354,12 +1363,10 @@ function pintarUbicar() {
   const resumen = $('#kmz-ubicacion');
   resumen.hidden = !g;
   if (g) {
-    const p = g.parametros ?? {};
-    const partes = [g.metodo === 'cuadricula' ? 'Con la cuadrícula impresa' : `Con ${p.n_anclas ?? entradas.anclas.length} anclas`,
-      nombreDelSistema(g.epsg)];
-    if (p.rms_m != null) partes.push(`error medio ${p.rms_m.toFixed(1)} m`);
-    if (g.datum?.datum) partes.push(`datum ${g.datum.datum}`);
-    $('#kmz-ubicacion-texto').textContent = (vigente ? '' : 'Desactualizado: ') + partes.join(' · ');
+    const texto = $('#kmz-ubicacion-texto');
+    texto.textContent = (vigente ? '' : 'Antes de tus últimos cambios: ') + resumenUbicacion(g, entradas.anclas.length);
+    // Lo técnico (sistema de coordenadas, error medio) queda a mano para el topógrafo.
+    texto.title = detalleUbicacion(g);
     $('#kmz-avisos').replaceChildren(...(g.avisos ?? []).map((texto) => {
       const li = document.createElement('li');
       li.textContent = texto;
@@ -1549,7 +1556,7 @@ function ficha(p) {
     renglon(`Oficial: ${m2(p.area_oficial_m2)} (${p.error_area > 0 ? '+' : ''}${(p.error_area * 100).toFixed(1)} %)`);
   }
   if (p.banderas?.includes('duplicado')) renglon('Número repetido');
-  if (p.origen === 'lector') renglon(`Número leído del plano (${p.apoyo ?? 0} lecturas)`);
+  if (p.origen === 'lector') renglon('Número leído del plano');
   return nodo;
 }
 

@@ -69,7 +69,7 @@ def test_un_ancla_corrida_15_m_queda_marcada():
     assert mala["residuo_sin_ella_m"] > 12.0
     # La mala contamina el ajuste: su residuo con todas es menor que sin ella.
     assert mala["residuo_m"] < mala["residuo_sin_ella_m"]
-    assert any("a2" in aviso for aviso in t.avisos)
+    assert "El punto a2 no calza con los demás: márcalo de nuevo o quítalo." in t.avisos
 
 
 def test_tres_anclas_inconsistentes_se_avisan():
@@ -310,7 +310,7 @@ def test_georreferenciar_con_cuadricula_en_psad56(tmp_path, capsys):
 def test_georreferenciar_sin_ubicacion_falla(tmp_path, capsys):
     _carpeta(tmp_path, anclas=_anclas(PX[:1]))
     assert main(["georreferenciar", str(tmp_path)]) == 1
-    assert "anclas" in capsys.readouterr().err
+    assert "2 puntos" in capsys.readouterr().err
 
 
 def test_ancla_mal_escrita_se_avisa_con_su_nombre(tmp_path, capsys):
@@ -394,7 +394,20 @@ def test_la_escala_de_las_anclas_contra_el_cuadro_de_superficies_se_avisa(tmp_pa
     g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
     assert g["parametros"]["escala_cuadro"] == dict(lotes=4, area_pct=-5.91, escala_pct=-3.0)
     aviso = [a for a in g["avisos"] if "cuadro de superficies" in a]
-    assert aviso and "5,9 % menos" in aviso[0] and "3,0 % menor" in aviso[0] and "anclas" in aviso[0]
+    # Lo que la loteadora ve en Revisar: los lotes más chicos que lo oficial, y qué revisar.
+    assert aviso and aviso[0].startswith("Los lotes salen un 5,9 % más chicos que en el cuadro de superficies")
+    assert "un 3,0 % más cortos" in aviso[0] and "Revisa los puntos" in aviso[0]
+    assert not any(t in aviso[0] for t in ("ancla", "escala", "mediana"))
+
+
+def test_los_lotes_mas_grandes_que_el_cuadro_se_dicen_mas_grandes(tmp_path, capsys):
+    # El cuadro dice menos que lo medido: los puntos estiran el plano.
+    _carpeta(tmp_path, lotes=_lotes_con_cuadro(2500 / 1.04 ** 2), anclas=_anclas(PX[:4]))
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    assert g["parametros"]["escala_cuadro"]["escala_pct"] > 0
+    aviso = [a for a in g["avisos"] if "cuadro de superficies" in a]
+    assert aviso and "% más grandes" in aviso[0] and "% más largos" in aviso[0]
 
 
 def test_la_escala_que_calza_con_el_cuadro_no_se_avisa(tmp_path, capsys):
@@ -503,7 +516,7 @@ def test_ubicar_con_la_propuesta_sin_digitalizar_de_nuevo_mide_el_giro(tmp_path,
 
 def test_otra_cuadricula_que_la_detectada_no_usa_sus_rectas(tmp_path, monkeypatch):
     """Las rectas guardadas son de la propuesta: si la elegida tiene otras líneas (aunque
-    sean tantas como ellas), no se usan, y se dice que hay que digitalizar de nuevo."""
+    sean tantas como ellas), no se usan, y se dice que hay que leer el plano de nuevo."""
     entradas, propuesta, _ = _plano_con_cuadricula(tmp_path)
     _lector_que_propone(monkeypatch, propuesta)
     assert main(["digitalizar", str(tmp_path)]) == 0
@@ -513,4 +526,4 @@ def test_otra_cuadricula_que_la_detectada_no_usa_sus_rectas(tmp_path, monkeypatc
     assert main(["georreferenciar", str(tmp_path)]) == 0
 
     g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
-    assert any("cambiaron desde la digitalización" in a for a in g["avisos"])
+    assert any("cambiaron desde la última lectura" in a for a in g["avisos"])

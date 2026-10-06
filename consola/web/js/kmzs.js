@@ -21,7 +21,7 @@ let refrescar = async () => {};
 export const PASO_EN_PALABRAS = {
   subir: 'Falta subir el plano',
   marcar: 'Falta marcar el dibujo',
-  digitalizar: 'Falta digitalizar',
+  digitalizar: 'Falta leer el plano',
   ubicar: 'Falta ubicarlo en el mapa',
   crear: 'Falta crear el KMZ',
   listo: 'KMZ creado',
@@ -29,7 +29,7 @@ export const PASO_EN_PALABRAS = {
 
 /** Lo que dice la tarjeta de un KMZ sobre su avance. */
 export function pasoEnPalabras(kmz) {
-  if (kmz?.trabajo) return 'Digitalizando…';
+  if (kmz?.trabajo) return 'Leyendo el plano…';
   return PASO_EN_PALABRAS[kmz?.paso] ?? PASO_EN_PALABRAS.subir;
 }
 
@@ -121,7 +121,7 @@ function tarjeta(kmz) {
   nombre.textContent = kmz.nombre;
   titulo.append(nombre);
   if (kmz.terminado) titulo.append(pastilla('Listo', 'ok'));
-  if (kmz.trabajo) titulo.append(pastilla('Digitalizando…', 'curso'));
+  if (kmz.trabajo) titulo.append(pastilla('Leyendo el plano…', 'curso'));
   const detalle = document.createElement('span');
   detalle.className = 'mi-kmz__detalle';
   // Terminado y al día no repite "KMZ creado": ya lo dice la pastilla.

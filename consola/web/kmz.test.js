@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import {
   anclaDesde, aPagina, aplicarFuera, aplicarNumero, claveLote, decidirResto, devolverAlKmz, restoDe, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
-  herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
+  herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, detalleUbicacion, distanciaEnPalabras, filaDelPunto, resumenUbicacion, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, semaforo, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
   tamanoRotado, textoHuecos, textoSemaforo, vistaAjustada, zoomEn,
 } from './js/kmz_geometria.js';
@@ -187,10 +187,53 @@ test('un arrastre en el mapa son metros al este y al norte', () => {
   cerca(de, 11.132 * Math.cos((33 * Math.PI) / 180), 1e-3);
 });
 
-test('el sistema de la ubicación se nombra para la loteadora', () => {
+test('el sistema de la ubicación se nombra en el detalle técnico', () => {
   assert.equal(nombreDelSistema(32719), 'UTM 19S · WGS84');
   assert.equal(nombreDelSistema(24879), 'UTM 19S · PSAD56');
   assert.equal(nombreDelSistema(null), '—');
+  assert.equal(detalleUbicacion({ epsg: 32719, parametros: { rms_m: 5.43 }, datum: { datum: 'WGS84' } }),
+    'UTM 19S · WGS84 · error medio 5.4 m · datum WGS84');
+});
+
+test('la ubicación se resume sin términos técnicos, en metros enteros', () => {
+  const g = { metodo: 'anclas', epsg: 32719, parametros: { n_anclas: 4, rms_m: 5.43 }, datum: { datum: 'WGS84' } };
+  assert.equal(resumenUbicacion(g), 'Ubicado con 4 puntos · calzan con ±5 m');
+  assert.doesNotMatch(resumenUbicacion(g), /UTM|WGS|datum|ancla|error/);
+  // Con 2 puntos no hay error medio: no se inventa uno.
+  assert.equal(resumenUbicacion({ metodo: 'anclas', parametros: { n_anclas: 2, rms_m: null } }), 'Ubicado con 2 puntos');
+  // Sin el conteo del servidor, los marcados; y nunca "±0 m".
+  assert.equal(resumenUbicacion({ metodo: 'anclas', parametros: { rms_m: 0.2 } }, 3), 'Ubicado con 3 puntos · calzan con ±1 m');
+  assert.equal(resumenUbicacion({ metodo: 'cuadricula', parametros: { rms_m: 1.6 } }),
+    'Ubicado con la cuadrícula impresa · calza con ±2 m');
+});
+
+test('la distancia de cada punto va en metros enteros', () => {
+  assert.equal(distanciaEnPalabras(5.43), '5 m');
+  assert.equal(distanciaEnPalabras(12.5), '13 m');
+  assert.equal(distanciaEnPalabras(0.4), 'menos de 1 m');
+  assert.equal(distanciaEnPalabras(undefined), '—');
+  assert.equal(distanciaEnPalabras(Number.NaN), '—');
+  assert.equal(distanciaEnPalabras(0), 'menos de 1 m');
+});
+
+test('la fila de un punto dice si calza, y con 2 puntos no dice nada', () => {
+  const g = { atipicas: ['D'], parametros: { control: 'atipicas' } };
+  // "No calza" corto para que quepa en el celular; lo que hay que hacer va aparte.
+  assert.deepEqual(filaDelPunto({ nombre: 'D', residuo_m: 7.2 }, g, true),
+    { distancia: '7 m', estado: 'No calza', detalle: 'márcalo de nuevo' });
+  assert.deepEqual(filaDelPunto({ nombre: 'A', residuo_m: 4.6 }, g, true), { distancia: '5 m', estado: 'Calza', detalle: '' });
+  // Desactualizada o sin ubicar con él: nada.
+  assert.deepEqual(filaDelPunto({ nombre: 'D', residuo_m: 7.2 }, g, false), { distancia: '—', estado: '', detalle: '' });
+  assert.deepEqual(filaDelPunto(undefined, g, true), { distancia: '—', estado: '', detalle: '' });
+  // Con 2 puntos la distancia es 0 por construcción: "Calza" contradiría el aviso.
+  assert.deepEqual(filaDelPunto({ nombre: 'A', residuo_m: 0 }, { atipicas: [], parametros: { control: 'sin control' } }, true),
+    { distancia: '—', estado: '', detalle: '' });
+});
+
+test('un error medio que no es número no se muestra', () => {
+  assert.equal(resumenUbicacion({ metodo: 'anclas', parametros: { n_anclas: 3, rms_m: Number.NaN } }), 'Ubicado con 3 puntos');
+  assert.equal(resumenUbicacion({ metodo: 'cuadricula', parametros: {} }), 'Ubicado con la cuadrícula impresa');
+  assert.equal(detalleUbicacion({ epsg: 32719, parametros: { rms_m: null } }), 'UTM 19S · WGS84');
 });
 
 // --- lotes ------------------------------------------------------------------------------------

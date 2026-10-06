@@ -348,7 +348,7 @@
       <ol id="kmz-pasos" class="pasos">
         <li><button type="button" data-paso="subir"><b>1</b>Subir el plano</button></li>
         <li><button type="button" data-paso="marcar"><b>2</b>Marcar</button></li>
-        <li><button type="button" data-paso="digitalizar"><b>3</b>Digitalizar</button></li>
+        <li><button type="button" data-paso="digitalizar"><b>3</b>Leer el plano</button></li>
         <li><button type="button" data-paso="numerar"><b>4</b>Numerar</button></li>
         <li><button type="button" data-paso="ubicar"><b>5</b>Ubicar</button></li>
         <li><button type="button" data-paso="revisar"><b>6</b>Revisar</button></li>
@@ -404,7 +404,7 @@
         </ol>
         <p id="kmz-sin-lector" class="kmz-nota-fuerte" hidden>Este servidor no lee los números del
           plano solo. Con <b>Marcar un número</b>, haz clic en al menos un lote y escribe su número; los
-          demás los numeras después de digitalizar.</p>
+          demás los numeras después de leer el plano.</p>
         <label class="kmz-casilla" id="kmz-lector-caja" hidden>
           <input id="kmz-lector" type="checkbox" checked> Leer los números de lote del plano
         </label>
@@ -425,19 +425,19 @@
         <button class="boton boton--texto boton--chico" data-accion="kmz-quitar-dibujo" type="button" hidden>Quitar el rectángulo del dibujo</button>
         <p id="kmz-marcar-nota" class="nota" role="status"></p>
         <div class="kmz-panel__pie">
-          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-marcar">Seguir: digitalizar</button>
+          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-marcar">Seguir: leer el plano</button>
           <p id="kmz-por-que-marcar" class="kmz-por-que nota" role="status" hidden></p>
         </div>
       </div>
 
-      <!-- 3. Digitalizar -->
+      <!-- 3. Leer el plano -->
       <div class="kmz-panel" id="kmz-panel-digitalizar" data-panel="digitalizar" hidden>
-        <h2 tabindex="-1">Digitaliza el plano</h2>
+        <h2 tabindex="-1">Lee el plano</h2>
         <p class="ayuda">Se busca la tinta de los deslindes, se arma la red de lotes y se leen los
           números. Toma de unos segundos a un par de minutos.</p>
         <p id="kmz-leer-fallo" class="aviso" role="alert" hidden></p>
-        <button class="boton" data-accion="kmz-digitalizar" type="button">Digitalizar</button>
-        <section id="kmz-escaner" class="vuelo escaner" aria-label="Digitalizando el plano" hidden>
+        <button class="boton" data-accion="kmz-digitalizar" type="button">Leer el plano</button>
+        <section id="kmz-escaner" class="vuelo escaner" aria-label="Leyendo el plano" hidden>
           <svg class="vuelo__escena escaner__escena" viewBox="0 0 360 172" aria-hidden="true">
             <defs>
               <linearGradient id="escaner-estela" x1="0" y1="0" x2="0" y2="1">
@@ -446,7 +446,7 @@
               </linearGradient>
             </defs>
             <!-- La hoja del plano: el loteo impreso en gris, un camino al medio y el cajetín.
-                 Encima, lo que va armando la digitalización: números, deslindes y lotes. -->
+                 Encima, lo que va armando la lectura: números, deslindes y lotes. -->
             <g class="escaner__hoja">
               <rect class="escaner__papel" x="42" y="6" width="276" height="156" rx="3"/>
               <g class="escaner__cajetin">
@@ -540,7 +540,7 @@
         <p class="ayuda">Haz clic en un lote para escribir o corregir su número. En
           <span class="kmz-muestra kmz-muestra--usuario">verde</span> los que marcaste tú, en
           <span class="kmz-muestra kmz-muestra--lector">azul</span> los leídos del plano (más claros
-          cuanto menos seguros; con "?" los de pocas lecturas) y en
+          cuanto menos seguros; con "?" los más dudosos) y en
           <span class="kmz-muestra kmz-muestra--malo">rojo</span> los sin número o repetidos.</p>
         <p id="kmz-sin-numero" class="kmz-nota-fuerte" role="status"></p>
         <p id="kmz-actualizando" class="kmz-actualizando" role="status" hidden>Actualizando los lotes…</p>
@@ -597,8 +597,8 @@
           <button class="boton boton--texto boton--chico" data-accion="kmz-quitar-cuadricula" type="button">Dejar de usarla</button>
         </div>
         <table id="kmz-anclas" class="kmz-tabla" hidden>
-          <caption class="nota">Residuo: cuánto se aleja cada punto del ajuste.</caption>
-          <thead><tr><th scope="col">Punto</th><th scope="col">Residuo</th><th scope="col">Estado</th><th scope="col"><span class="oculto">Acciones</span></th></tr></thead>
+          <caption class="nota">Distancia: cuánto se aleja cada punto de donde lo dejan los demás.</caption>
+          <thead><tr><th scope="col">Punto</th><th scope="col">Distancia</th><th scope="col">Estado</th><th scope="col"><span class="oculto">Acciones</span></th></tr></thead>
           <tbody></tbody>
         </table>
         <div id="kmz-ubicacion" class="kmz-ubicacion" hidden>
@@ -644,7 +644,7 @@
           </div>
           <p id="kmz-corregir-ayuda" class="nota" hidden>Arrastra un vértice para moverlo, o tócalo para
             borrarlo. Un vértice que comparten dos lotes se mueve en los dos. Si vuelves a
-            digitalizar, estas correcciones se pierden.</p>
+            leer el plano, estas correcciones se pierden.</p>
           <p id="kmz-corregir-lejos" class="nota" hidden>Acércate al mapa para ver los vértices.</p>
         </div>
         <div class="kmz-panel__pie">
@@ -696,8 +696,8 @@
           </div>
           <!-- Encima del plano y no arriba de la página: aparecer no corre lo que se está tocando. -->
           <div id="kmz-atrasado" class="kmz-atrasado" role="status" hidden>
-            <span>Cambiaste el dibujo o los números: los lotes dibujados están desactualizados.</span>
-            <button class="boton boton--chico" data-accion="kmz-redigitalizar" type="button">Volver a digitalizar</button>
+            <span>Cambiaste el dibujo o los números: vuelve a leer el plano.</span>
+            <button class="boton boton--chico" data-accion="kmz-redigitalizar" type="button">Leer el plano de nuevo</button>
           </div>
           <form id="kmz-numero" class="kmz-numero" hidden>
             <label for="kmz-numero-valor" id="kmz-numero-rotulo">Número del lote</label>

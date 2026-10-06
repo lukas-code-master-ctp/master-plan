@@ -151,12 +151,12 @@ test('ya no queda el flujo del KMZ dentro del master', () => {
 test('el paso de un KMZ se dice en palabras', () => {
   assert.equal(pasoEnPalabras({ paso: 'subir' }), 'Falta subir el plano');
   assert.equal(pasoEnPalabras({ paso: 'marcar' }), 'Falta marcar el dibujo');
-  assert.equal(pasoEnPalabras({ paso: 'digitalizar' }), 'Falta digitalizar');
+  assert.equal(pasoEnPalabras({ paso: 'digitalizar' }), 'Falta leer el plano');
   assert.equal(pasoEnPalabras({ paso: 'ubicar' }), 'Falta ubicarlo en el mapa');
   assert.equal(pasoEnPalabras({ paso: 'crear' }), 'Falta crear el KMZ');
   assert.equal(pasoEnPalabras({ paso: 'listo' }), 'KMZ creado');
-  // Digitalizando gana sobre el paso; algo raro cae en el primero.
-  assert.equal(pasoEnPalabras({ paso: 'digitalizar', trabajo: { id: 'x' } }), 'Digitalizando…');
+  // Leyendo gana sobre el paso; algo raro cae en el primero.
+  assert.equal(pasoEnPalabras({ paso: 'digitalizar', trabajo: { id: 'x' } }), 'Leyendo el plano…');
   assert.equal(pasoEnPalabras({ paso: 'otro' }), 'Falta subir el plano');
   assert.equal(pasoEnPalabras(null), 'Falta subir el plano');
 });
@@ -268,7 +268,7 @@ test('digitalizar el plano tiene sus propios pasos, no los de construir', () => 
   assert.equal(progreso.titulo, 'Separando los lotes');
   assert.equal(progreso.total, 5);
   assert.equal(avance([...lineas, 'Lotes: 65 de 65', 'Listo: /datos/x/plano/digitalizado.json'],
-    'digitalizar-plano', true).resumen, 'Plano digitalizado: 65 lotes');
+    'digitalizar-plano', true).resumen, 'Plano leído: 65 lotes');
 });
 
 // Las líneas de un plano real (Algarrobo, con lector), en el orden en que salen.
@@ -307,7 +307,7 @@ test('digitalizar avanza dentro del paso de lectura con las pasadas del lector',
   assert.ok(Math.abs(avances[3].fraccion - (1 + 0.85 * 32 / 96) / 5) < 1e-9);
   // Con todas las pasadas el paso no se da por terminado: falta la línea del siguiente.
   assert.ok(avances[11].dentro < 1 && avances[11].fraccion < 2 / 5);
-  assert.equal(avance(DIGITALIZAR, 'digitalizar-plano', true).resumen, 'Plano digitalizado: 65 lotes');
+  assert.equal(avance(DIGITALIZAR, 'digitalizar-plano', true).resumen, 'Plano leído: 65 lotes');
 });
 
 test('las pasadas que llegan desordenadas no hacen retroceder la barra', () => {

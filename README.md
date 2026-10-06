@@ -478,7 +478,7 @@ Resultados: [lectura de rótulos](docs/specs/2026-10-01-crea-tu-kmz-rotulos.md) 
    **Cuadro de superficies** se encierra el cuadro de áreas del plano, **aunque quede
    fuera del dibujo** (en Caminos de Rapel lo estaba, y no se leía): de ahí salen las
    áreas oficiales y la lista de números que el plano debería tener.
-3. **Digitalizar**, en un trabajo de fondo con avance en vivo: la tinta de los deslindes
+3. **Leer el plano** (por dentro, `digitalizar`), en un trabajo de fondo con avance en vivo: la tinta de los deslindes
    (roja o negra; se descartan verde, azul, achurados y cuadrícula), regiones cerradas
    separadas con los rótulos, una red de deslindes compartida entre vecinos, aristas
    enderezadas y los polígonos desde las caras. Sin traslapes ni huecos por

@@ -299,7 +299,7 @@ class Plano:
             raise PlanoNoListo("primero sube el PDF del plano")
         entradas = self._entradas_o_409()
         if not entradas["semillas"] and not _con_lector(entradas):
-            raise PlanoNoListo("marca el número de al menos un lote antes de digitalizar"
+            raise PlanoNoListo("marca el número de al menos un lote antes de leer el plano"
                                + ("" if not entradas["lector"] else
                                   " (no hay lector de rótulos en este servidor)"))
         return entradas
@@ -390,10 +390,10 @@ class Plano:
         lotes.geojson. Es rápido: corre en la petición."""
         entradas = self._entradas_o_409()
         if not (self.carpeta / DIGITALIZADO).is_file():
-            raise PlanoNoListo("primero hay que digitalizar el plano")
+            raise PlanoNoListo("primero hay que leer el plano")
         if not self._digitalizado_vigente(entradas):
-            raise PlanoNoListo("cambiaste el dibujo o los números desde la última digitalización:"
-                               " digitaliza de nuevo antes de ubicarlo")
+            raise PlanoNoListo("cambiaste el dibujo o los números desde la última lectura:"
+                               " lee el plano de nuevo antes de ubicarlo")
         lineas: list[str] = []
         try:
             georreferenciar(self.carpeta, avance=lineas.append)
@@ -413,7 +413,7 @@ class Plano:
         if not (self.carpeta / GEORREFERENCIA).is_file():
             raise PlanoNoListo("primero hay que ubicar el plano en el mapa")
         if not self._georreferencia_vigente(entradas):
-            raise PlanoNoListo("cambiaron las entradas desde que se ubicó el plano: digitaliza o ubica de nuevo")
+            raise PlanoNoListo("cambiaste el plano desde que se ubicó: léelo o ubícalo de nuevo")
         digitalizado = self._leer(DIGITALIZADO)
         # Lo que ella dejó fuera (el resto de la propiedad) no se pregunta de nuevo, y si
         # tenía número (lo leyó el lector) no va.
@@ -496,7 +496,7 @@ class Plano:
         if en not in ("px", "lonlat"):
             raise PlanoInvalido("«en» es px o lonlat")
         if not (self.carpeta / DIGITALIZADO).is_file():
-            raise PlanoNoListo("primero hay que digitalizar el plano")
+            raise PlanoNoListo("primero hay que leer el plano")
         d = self._leer(DIGITALIZADO)
         t = (Transformacion.desde_dict(self._leer(GEORREFERENCIA))
              if (self.carpeta / GEORREFERENCIA).is_file() else None)

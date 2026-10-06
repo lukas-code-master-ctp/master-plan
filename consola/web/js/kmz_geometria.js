@@ -777,7 +777,7 @@ export function porQueNoSigue(paso, e, local = {}) {
         : 'Actualizando los lotes…';
     case 'ubicar': {
       if (e?.georreferencia?.vigente) return '';
-      if (d && !d.vigente) return 'Los lotes están desactualizados: vuelve a Numerar.';
+      if (d && !d.vigente) return 'Cambiaste el plano: vuelve a Numerar para que se lea de nuevo.';
       const anclas = local.entradas?.anclas?.length ?? 0;
       if (anclas < 2 && !local.entradas?.cuadricula) return 'Marca al menos 2 puntos en el plano y en el mapa.';
       return local.ubicando ? 'Ubicando el plano…' : 'Aprieta "Ubicar de nuevo" para ubicar los lotes.';
@@ -820,7 +820,7 @@ export function pasosHechos(e) {
   };
 }
 
-/** "UTM 19S · WGS84" para mostrar dónde quedó ubicado. */
+/** "UTM 19S · WGS84": el sistema de coordenadas, para el detalle técnico de Ubicar. */
 export function nombreDelSistema(epsg) {
   if (epsg >= 32701 && epsg <= 32760) return `UTM ${epsg - 32700}S · WGS84`;
   if (epsg >= 32601 && epsg <= 32660) return `UTM ${epsg - 32600}N · WGS84`;
@@ -844,4 +844,51 @@ export function verticesDe(rasgos) {
     }
   }
   return [...vistos.values()];
+}
+
+/**
+ * Cuánto se aleja un punto de donde lo dejan los demás, en metros enteros: los decímetros
+ * no le dicen nada a quien marcó el punto a ojo en una imagen satelital.
+ */
+export function distanciaEnPalabras(metros) {
+  if (metros == null || !Number.isFinite(metros)) return '—';
+  return metros < 1 ? 'menos de 1 m' : `${Math.round(metros)} m`;
+}
+
+/**
+ * Lo que dice la tabla de Ubicar de un punto: su distancia y si calza. `r` es su fila en la
+ * ubicación (undefined si aún no se ubicó con él). Con 2 puntos no se puede comprobar nada
+ * (la distancia sale 0 por construcción): decir "Calza" contradiría el aviso.
+ */
+export function filaDelPunto(r, g, vigente) {
+  if (!r || !vigente) return { distancia: '—', estado: '', detalle: '' };
+  if (g?.parametros?.control === 'sin control') return { distancia: '—', estado: '', detalle: '' };
+  if (g?.atipicas?.includes(r.nombre)) {
+    return { distancia: distanciaEnPalabras(r.residuo_m), estado: 'No calza', detalle: 'márcalo de nuevo' };
+  }
+  return { distancia: distanciaEnPalabras(r.residuo_m), estado: 'Calza', detalle: '' };
+}
+
+/**
+ * "Ubicado con 4 puntos · calzan con ±5 m": cómo quedó ubicado, sin sistemas de
+ * coordenadas ni errores medios. `n` son los puntos marcados, si el servidor no los cuenta.
+ */
+export function resumenUbicacion(g, n = 0) {
+  const p = g?.parametros ?? {};
+  const cuadricula = g?.metodo === 'cuadricula';
+  const cuantos = p.n_anclas ?? n;
+  const partes = [cuadricula ? 'Ubicado con la cuadrícula impresa'
+    : `Ubicado con ${cuantos} ${cuantos === 1 ? 'punto' : 'puntos'}`];
+  // Con 2 puntos no hay con qué comparar (el servidor no da error medio): no se dice nada.
+  if (Number.isFinite(p.rms_m)) partes.push(`${cuadricula ? 'calza' : 'calzan'} con ±${Math.max(1, Math.round(p.rms_m))} m`);
+  return partes.join(' · ');
+}
+
+/** Lo técnico de la ubicación (sistema, error medio, datum), para quien lo quiera ver. */
+export function detalleUbicacion(g) {
+  if (!g) return '';
+  const partes = [nombreDelSistema(g.epsg)];
+  if (Number.isFinite(g.parametros?.rms_m)) partes.push(`error medio ${g.parametros.rms_m.toFixed(1)} m`);
+  if (g.datum?.datum) partes.push(`datum ${g.datum.datum}`);
+  return partes.join(' · ');
 }
