@@ -5,6 +5,7 @@ from xml.etree import ElementTree as ET
 
 import numpy as np
 import pytest
+from shapely.geometry import Point as ShapelyPoint, Polygon as ShapelyPolygon
 
 from pipeline import geo
 from pipeline.kmz import NS, leer_kmz
@@ -59,14 +60,27 @@ def test_el_kmz_lo_lee_pipeline_kmz(tmp_path):
         assert abs(p.area_m2 / (exterior * ESCALA ** 2) - 1) < 0.005
 
 
-def test_el_kml_trae_poligonos_con_huecos_y_nada_mas():
+def test_el_kml_trae_poligonos_con_huecos_y_un_rotulo_por_lote():
     raiz = ET.fromstring(kml(_digitalizado(), _transformacion()))
 
     assert raiz.tag == NS + "kml"
     marcas = list(raiz.iter(NS + "Placemark"))
     assert [m.find(NS + "name").text for m in marcas] == ["LOTE 1", "LOTE 2", "LOTE A3"]
-    assert not list(raiz.iter(NS + "LineString")) and not list(raiz.iter(NS + "Point"))
+    # Sin LineStrings, o pipeline/kmz.py lo leería en modo líneas.
+    assert not list(raiz.iter(NS + "LineString"))
     assert len(list(raiz.iter(NS + "Polygon"))) == 3
+    for marca in marcas:
+        # El Point es el que Google Earth rotula en el mapa; tiene que caer dentro del
+        # lote (en A3, fuera del hueco del medio).
+        (punto,) = marca.findall(f"{NS}MultiGeometry/{NS}Point")
+        x, y, _ = map(float, punto.find(NS + "coordinates").text.split(","))
+        exterior = marca.find(f"{NS}MultiGeometry/{NS}Polygon/{NS}outerBoundaryIs//{NS}coordinates").text
+        huecos = [h.text for h in marca.findall(f".//{NS}innerBoundaryIs//{NS}coordinates")]
+        anillos = [[tuple(map(float, c.split(",")[:2])) for c in a.split()] for a in [exterior] + huecos]
+        assert ShapelyPolygon(anillos[0], anillos[1:]).contains(ShapelyPoint(x, y))
+    estilo = raiz.find(f"{NS}Document/{NS}Style")
+    assert estilo.find(f"{NS}IconStyle/{NS}scale").text == "0"
+    assert estilo.find(f"{NS}LabelStyle/{NS}color").text == "ffffffff"
     huecos = list(marcas[2].iter(NS + "innerBoundaryIs"))
     assert len(huecos) == 1
     datos = {d.get("name"): float(d.find(NS + "value").text) for d in marcas[2].iter(NS + "Data")}
