@@ -117,9 +117,15 @@ el residuo en mm. No guarda nada.
 - Puntos ORB y RANSAC con un modelo rígido (giro y traslado; la escala no cambia), y un
   refinamiento ECC euclídeo a 4 px/mm en la misma zona.
 - Se acepta si hay al menos 30 puntos que calzan y la corrección no pasa de 60 mm ni de
-  5°. Si no, la hoja queda como estaba y `calzada: false`.
-- Con Constitución, tras afinar, el residuo en el traslape debe quedar bajo 1 px de
-  unión (medido en los puntos que calzan).
+  5°. Si no, se reintenta una vez para una hoja dejada lejos (a mano queda a 50–150 mm,
+  a veces sin tocar a la de abajo): la zona pasa a ser lo de cada una a menos de 150 mm
+  de la otra y el tope, 160 mm (el de giro sigue en 5°). Si tampoco, la hoja queda como
+  estaba y `calzada: false`.
+- Con Constitución, tras afinar, las líneas de las dos hojas se ven como una sola en el
+  traslape. El residuo medio queda en 0,4 y 0,8 mm (2 a 5 px de unión): las láminas
+  vienen deformadas entre sí por el escaneo (la hoja 3 tiene escala 1,005 × 0,995) y
+  ningún giro con traslado lo baja más. Como en el traslape manda la hoja de arriba, no
+  hay líneas dobles: a lo más un quiebre de menos de 1 mm en la costura.
 
 ### El cuadro de superficies
 

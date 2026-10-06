@@ -137,6 +137,19 @@ def test_escala_a_la_resolucion_mayor_con_tope():
     assert fina.ppmm == pg.PPMM_TRABAJO_MAXIMO
 
 
+def test_resoluciones_casi_iguales_son_la_misma():
+    # Dos hojas del mismo escaneo: el PDF redondea y sus ppmm difieren en ~1e-8.
+    ancho, alto = 9000, 6000
+    hojas = [{"n": 1, "x": (ancho - 1) / 2, "y": (alto - 1) / 2}, {"n": 2, "x": 12000.5, "y": 2999.5}]
+    tamanos = {1: (ancho, alto), 2: (ancho, alto)}
+    geo = un.geometria(un.leer({"hojas": hojas}), tamanos, {1: 6.00000017, 2: 6.00000022})
+    assert geo.hoja(1).k == 1.0 and geo.hoja(2).k == 1.0
+    # Sin el redondeo de k, la esquina de la hoja 1 caía a 1e-5 px de −0 y el origen era −1.
+    assert geo.origen == (0, 0) and geo.alto == alto
+    distintas = un.geometria(un.leer({"hojas": hojas}), tamanos, {1: 6.0, 2: 6.0001})
+    assert distintas.hoja(1).k != 1.0
+
+
 
 @pytest.mark.parametrize("ppmm, angulo", [(2.0, 0.0), (2.0, 0.8), (1.5, -3.0), (6.0, 7.0)])
 def test_la_hoja_ampliada_pinta_todo_su_recorte(ppmm, angulo):
@@ -270,3 +283,121 @@ def test_caso_numerico_de_geometria():
         h = c["hojas"][0]
         assert un.transformar_punto(*p, 800, 1000, 1.0, h["angulo"], h["x"], h["y"], *geo.origen) == \
             pytest.approx(q, abs=1e-9)
+
+
+# ---------------------------------------------------------------------------- afinar
+PPMM_AFINAR = 4.0
+PLANO_AFINAR = (1440, 960)      # 360 × 240 mm a 4 px/mm
+
+
+def _plano_con_textura() -> np.ndarray:
+    """Un plano con dibujo de sobra para ORB: líneas de loteo, lotes, números y círculos,
+    sin repetir un patrón (lo repetido calza en cualquier lado)."""
+    rng = np.random.default_rng(7)
+    ancho, alto = PLANO_AFINAR
+    img = np.full((alto, ancho, 3), PAPEL, np.uint8)
+    for _ in range(70):
+        p, q = rng.integers(0, (ancho, alto), 2), rng.integers(0, (ancho, alto), 2)
+        cv2.line(img, tuple(int(v) for v in p), tuple(int(v) for v in q), TINTA, int(rng.integers(1, 4)))
+    for _ in range(90):
+        x, y = (int(v) for v in rng.integers(0, (ancho - 60, alto - 40)))
+        w, h = (int(v) for v in rng.integers(20, (90, 70)))
+        cv2.rectangle(img, (x, y), (x + w, y + h), TINTA, int(rng.integers(1, 3)))
+    for _ in range(160):
+        x, y = (int(v) for v in rng.integers(0, (ancho - 40, alto)))
+        cv2.putText(img, str(int(rng.integers(1, 999))), (x, y), cv2.FONT_HERSHEY_SIMPLEX,
+                    float(rng.uniform(0.4, 0.9)), TINTA, 1, cv2.LINE_AA)
+    for _ in range(25):
+        c = tuple(int(v) for v in rng.integers(0, (ancho, alto)))
+        cv2.circle(img, c, int(rng.integers(8, 40)), (190, 50, 50), 2)
+    return img
+
+
+@pytest.fixture(scope="module")
+def plano_afinar():
+    return _plano_con_textura()
+
+
+def _franjas(plano, cortes):
+    """Hojas sin giro con las franjas x∈[a, b) del plano y su posición verdadera."""
+    imagenes, verdad = {}, {}
+    for n, (a, b) in enumerate(cortes, start=1):
+        imagenes[n] = np.ascontiguousarray(plano[:, a:b])
+        w, h = b - a, plano.shape[0]
+        verdad[n] = (a + (w - 1) / 2, (h - 1) / 2)
+    return imagenes, verdad
+
+
+def _error_px(hoja: dict, imagen, verdad) -> float:
+    """Lo más que se alejan las esquinas de la hoja de su lugar verdadero, en px de unión."""
+    alto, ancho = imagen.shape[:2]
+    esquinas = un._esquinas((0, 0, ancho, alto))
+    bien = pg._aplicar(un._matriz(ancho, alto, 1.0, 0.0, *verdad), esquinas)
+    hecha = pg._aplicar(un._matriz(ancho, alto, 1.0, hoja["angulo"], hoja["x"], hoja["y"]), esquinas)
+    return float(np.linalg.norm(bien - hecha, axis=1).max())
+
+
+def _union(verdad, perturbaciones):
+    hojas = []
+    for n, (dx, dy, angulo) in perturbaciones.items():
+        x, y = verdad[n]
+        hojas.append({"n": n, "x": x + dx * PPMM_AFINAR, "y": y + dy * PPMM_AFINAR, "angulo": angulo})
+    return un.leer({"hojas": hojas})
+
+
+def test_afinar_devuelve_las_hojas_a_su_lugar(plano_afinar):
+    imagenes, verdad = _franjas(plano_afinar, [(0, 620), (380, 1060), (820, 1440)])
+    # mm y grados: la 1 queda donde está; la 2 y la 3 corridas 10–40 mm y giradas 1–2°.
+    union = _union(verdad, {1: (0, 0, 0), 2: (32, -14, 1.6), 3: (-12, 25, -1.2)})
+    salida = un.afinar(imagenes, {n: PPMM_AFINAR for n in imagenes}, union)
+    assert [h["n"] for h in salida] == [1, 2, 3]
+    assert salida[0]["x"] == verdad[1][0] and salida[0]["y"] == verdad[1][1] and salida[0]["angulo"] == 0
+    for h in salida[1:]:
+        assert h["calzada"], h
+        assert _error_px(h, imagenes[h["n"]], verdad[h["n"]]) < 1.0, h
+        assert h["residuo_mm"] is not None and h["residuo_mm"] < 0.25
+
+
+def test_afinar_con_imagenes_reducidas(plano_afinar):
+    """La consola pasa sus JPEG de pantalla: imágenes más chicas, con el tamaño y la
+    resolución de la página completa aparte."""
+    imagenes, verdad = _franjas(plano_afinar, [(0, 760), (560, 1440)])
+    chicas = {n: cv2.resize(im, None, fx=0.6, fy=0.6, interpolation=cv2.INTER_AREA) for n, im in imagenes.items()}
+    tamanos = {n: (im.shape[1], im.shape[0]) for n, im in imagenes.items()}
+    union = _union(verdad, {1: (0, 0, 0), 2: (-20, 18, -1.0)})
+    salida = un.afinar(chicas, {n: PPMM_AFINAR for n in imagenes}, union, tamanos)
+    assert salida[1]["calzada"]
+    assert _error_px(salida[1], imagenes[2], verdad[2]) < 1.0
+
+
+def test_afinar_calza_una_hoja_dejada_lejos(plano_afinar):
+    """Arrastrada a mano puede quedar a 100 mm: el primer intento no alcanza y el
+    reintento con la zona y el tope grandes la calza."""
+    imagenes, verdad = _franjas(plano_afinar, [(0, 620), (380, 1060)])
+    # Traslape real de 60 mm; corrida 100 mm a la derecha ya ni toca a la de abajo.
+    union = _union(verdad, {1: (0, 0, 0), 2: (100, 6, 1.0)})
+    salida = un.afinar(imagenes, {n: PPMM_AFINAR for n in imagenes}, union)
+    assert salida[1]["calzada"], salida[1]
+    assert _error_px(salida[1], imagenes[2], verdad[2]) < 1.0
+
+
+def test_afinar_sin_traslape_deja_la_hoja_como_estaba(plano_afinar):
+    # Franjas que no comparten dibujo; la segunda, corrida 40 mm a la izquierda, tapa
+    # 20 mm de la primera en el lienzo, pero ahí no hay nada que calzar.
+    imagenes, verdad = _franjas(plano_afinar, [(0, 620), (700, 1440)])
+    union = _union(verdad, {1: (5, 3, 0.5), 2: (-40, 0, 0)})
+    salida = un.afinar(imagenes, {n: PPMM_AFINAR for n in imagenes}, union)
+    assert salida[0] == {**union.hojas[0].a_dic(), "calzada": True, "residuo_mm": None}
+    assert salida[1] == {**union.hojas[1].a_dic(), "calzada": False, "residuo_mm": None}
+
+
+def test_afinar_no_acepta_un_calce_con_otro_dibujo(plano_afinar):
+    imagenes, verdad = _franjas(plano_afinar, [(0, 620), (380, 1060)])
+    # La segunda hoja es papel con otro dibujo: lo que encuentre ORB no pasa los topes.
+    otro = np.full_like(imagenes[2], PAPEL)
+    cv2.putText(otro, "OTRA LAMINA", (40, 400), cv2.FONT_HERSHEY_SIMPLEX, 2.0, TINTA, 3)
+    imagenes[2] = otro
+    union = _union(verdad, {1: (0, 0, 0), 2: (10, 10, 0)})
+    salida = un.afinar(imagenes, {n: PPMM_AFINAR for n in imagenes}, union)
+    assert salida[1]["calzada"] is False
+    assert (salida[1]["x"], salida[1]["y"]) == (union.hojas[1].x, union.hojas[1].y)
