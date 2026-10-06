@@ -304,6 +304,24 @@ def _lineas(marcas: dict) -> list[_Linea]:
     return salida
 
 
+def _hay_par(lineas: list[_Linea]) -> bool:
+    """¿Hay dos líneas con posición y valor distintos? Es lo mínimo para una progresión."""
+    return any(abs(a.posicion - b.posicion) >= 1e-6 and a.valor != b.valor for a, b in combinations(lineas, 2))
+
+
+def cuadricula_suficiente(marcas: dict | None) -> bool:
+    """¿Alcanza esta cuadrícula para intentar `por_cuadricula`? Al menos dos líneas con
+    valores distintos en cada dirección. La consola la usa para no ofrecer una
+    propuesta del lector que de partida no puede ubicar (p. ej. solo verticales)."""
+    if not isinstance(marcas, dict):
+        return False
+    try:
+        lineas = _lineas(marcas)
+    except (KeyError, TypeError, ValueError):
+        return False
+    return all(_hay_par([l for l in lineas if l.familia == f]) for f in ("verticales", "horizontales"))
+
+
 def _modelos(lineas: list[_Linea]):
     """Candidatos valor = s·posición + t, uno por par de líneas, con sus inliers."""
     pos = np.array([l.posicion for l in lineas])
@@ -326,9 +344,10 @@ def _modelos(lineas: list[_Linea]):
 def _progresion(v: list[_Linea], h: list[_Linea]):
     """Los inliers de cada familia. Gana el par de modelos con más líneas; a igualdad,
     el que da la misma escala en las dos direcciones (px cuadrados)."""
-    mv, mh = _modelos(v), _modelos(h)
-    if not mv or not mh:
+    # El mismo criterio que `cuadricula_suficiente`: con un par en cada familia hay modelos.
+    if not _hay_par(v) or not _hay_par(h):
         raise ValueError("la cuadrícula necesita al menos 2 líneas con valores distintos en cada dirección")
+    mv, mh = _modelos(v), _modelos(h)
     mejor = max(((a, b) for a in mv for b in mh),
                 key=lambda par: (par[0][0] + par[1][0], -abs(math.log(abs(par[0][1]) / abs(par[1][1])))))
     return mejor[0][2], mejor[1][2]
@@ -507,6 +526,18 @@ def _aviso_escala(escala: dict, metodo: str) -> str:
 
 # --- el paso completo ----------------------------------------------------------
 
+def _misma_linea(detectada: dict, elegida: dict, eje: str) -> bool:
+    """¿La recta detectada salió de esta línea? Las detectadas guardan la posición de la
+    que partieron (desde que `digitalizar` busca también las de la cuadrícula propuesta,
+    que puede no ser la que se eligió); las de antes no, y se aceptan por la cantidad."""
+    if detectada.get(eje) is None:
+        return True
+    try:
+        return abs(float(detectada[eje]) - float(elegida.get(eje))) < 0.05
+    except (TypeError, ValueError):
+        return False
+
+
 def _marcas(entradas: dict, detectada: dict | None, avisos: list) -> dict:
     """Las rectas que detectó `digitalizar`, con los valores de `entradas.json` (la
     loteadora puede corregir un valor leído sin volver a digitalizar). Si cambiaron
@@ -514,7 +545,9 @@ def _marcas(entradas: dict, detectada: dict | None, avisos: list) -> dict:
     if not entradas:
         return {}
     familias = ("verticales", "horizontales")
-    if detectada and all(len(detectada.get(f) or []) == len(entradas.get(f) or []) for f in familias):
+    if detectada and all(len(detectada.get(f) or []) == len(entradas.get(f) or [])
+                         and all(_misma_linea(d, e, eje) for d, e in zip(detectada.get(f) or [], entradas.get(f) or []))
+                         for f, eje in zip(familias, ("x", "y"))):
         return {f: [dict(d, valor=e.get("valor")) for d, e in zip(detectada[f], entradas[f])] for f in familias}
     if detectada:
         avisos.append("Las líneas de la cuadrícula cambiaron desde la digitalización: se usa su posición"

@@ -70,8 +70,11 @@ entero. Si cambia la rotación, cambian las coordenadas.
                                                    sin número del tamaño de un lote; y los del
                                                    cuadro (menos el resto de la propiedad,
                                                    `numeros.esperados`)
-      "cuadricula": {"verticales": [{"valor", "p": [x, y], "q": [x, y], "valida"}],
-                     "horizontales": [...]},       las rectas detectadas (o null)
+      "cuadricula": {"verticales": [{"x", "valor", "p": [x, y], "q": [x, y], "valida"}],
+                     "horizontales": [{"y", ...}]},  las rectas detectadas (o null): las de
+                                                   la cuadrícula elegida o, sin ella, las de
+                                                   la que propone el lector (sin borrar su
+                                                   tinta). "x"/"y": de dónde se partió
       "lector": {"activo", "disponible", "motivo",   motivo: por qué no hubo lector
                  "huella",                          con qué página, rectángulo y máscaras
                                                     se leyó: si no cambian, se reusa
@@ -107,6 +110,7 @@ from shapely.ops import unary_union
 from . import pagina as pag
 from . import numeros as numeros_lote
 from . import particion, rotulos, tinta
+from .georreferencia import cuadricula_suficiente
 
 ENTRADAS = "entradas.json"
 SALIDA = "digitalizado.json"
@@ -140,20 +144,7 @@ def digitalizar_imagen(imagen: np.ndarray, ppmm: float, semillas, rectangulo=Non
     segmentos = []
     detectada = None
     if cuadricula:
-        gris = cv2.cvtColor(imagen, cv2.COLOR_RGB2GRAY)
-        verticales, horizontales = cuadricula.get("verticales") or [], cuadricula.get("horizontales") or []
-        xs = [float(v["x"]) for v in verticales]
-        ys = [float(v["y"]) for v in horizontales]
-        lineas = tinta.lineas_cuadricula(gris, ppmm, xs, ys)
-        del gris
-        segmentos = [(p, q) for p, q, _ in lineas]
-        # Las rectas detectadas (no la posición aproximada) son las que georreferencian.
-        punto = lambda p: [round(float(p[0]), 3), round(float(p[1]), 3)]
-        detectada = {familia: [dict(valor=m.get("valor"), p=punto(p), q=punto(q), valida=bool(v))
-                               for m, (p, q, v) in zip(marcas, trozo)]
-                     for familia, marcas, trozo in (("verticales", verticales, lineas[:len(xs)]),
-                                                    ("horizontales", horizontales, lineas[len(xs):]))}
-        avance(f"Cuadrícula: {sum(v for *_, v in lineas)} de {len(lineas)} líneas bien ubicadas")
+        detectada, segmentos = rectas_cuadricula(imagen, ppmm, cuadricula, avance)
 
     papel = pag.color_papel(imagen, rectangulo)
     tapada = pag.tapar(imagen, mascaras, papel)
@@ -213,6 +204,30 @@ def digitalizar_imagen(imagen: np.ndarray, ppmm: float, semillas, rectangulo=Non
     return Resultado(encuadre, lotes, sin_numero, red.lotes, estadisticas, detectada, sin_numero_lote)
 
 
+def rectas_cuadricula(imagen: np.ndarray, ppmm: float, cuadricula: dict, avance=print):
+    """Las rectas de la cuadrícula en la imagen, partiendo de la posición aproximada de
+    cada línea. Devuelve (detectada, segmentos): `detectada` en el formato de
+    `digitalizado.json` y los segmentos en px de página, para borrar su tinta.
+
+    Cada recta guarda también la posición de la que se partió ("x" o "y"): así
+    `georreferencia` sabe si son las rectas de la cuadrícula que se usa al ubicar."""
+    gris = cv2.cvtColor(imagen, cv2.COLOR_RGB2GRAY)
+    verticales, horizontales = cuadricula.get("verticales") or [], cuadricula.get("horizontales") or []
+    xs = [float(v["x"]) for v in verticales]
+    ys = [float(v["y"]) for v in horizontales]
+    lineas = tinta.lineas_cuadricula(gris, ppmm, xs, ys)
+    del gris
+    # Las rectas detectadas (no la posición aproximada) son las que georreferencian.
+    punto = lambda p: [round(float(p[0]), 3), round(float(p[1]), 3)]
+    detectada = {familia: [{eje: posicion, "valor": m.get("valor"), "p": punto(p), "q": punto(q), "valida": bool(v)}
+                           for posicion, m, (p, q, v) in zip(posiciones, marcas, trozo)]
+                 for familia, eje, posiciones, marcas, trozo in (
+                     ("verticales", "x", xs, verticales, lineas[:len(xs)]),
+                     ("horizontales", "y", ys, horizontales, lineas[len(xs):]))}
+    avance(f"Cuadrícula: {sum(v for *_, v in lineas)} de {len(lineas)} líneas bien ubicadas")
+    return detectada, [(p, q) for p, q, _ in lineas]
+
+
 def _transformar(g: Polygon, encuadre: pag.Encuadre) -> Polygon:
     exterior = encuadre.a_pagina(np.asarray(g.exterior.coords))
     huecos = [encuadre.a_pagina(np.asarray(h.coords)) for h in g.interiors]
@@ -248,6 +263,14 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     r = digitalizar_imagen(imagen, hoja.ppmm, semillas, entradas.get("rectangulo"),
                            _mascaras(entradas), entradas.get("esquinas"),
                            entradas.get("marco_mm"), entradas.get("cuadricula"), avance)
+    detectada = r.cuadricula
+    propuesta = (lector or {}).get("cuadricula")
+    if detectada is None and cuadricula_suficiente(propuesta):
+        # La loteadora suele elegir la cuadrícula que propone el lector ya en Ubicar, sin
+        # volver a digitalizar (no atrasa los lotes): se buscan sus rectas desde ya para
+        # que ubicar mida el giro de la hoja. Su tinta no se borra: eso cambiaría los
+        # lotes de una cuadrícula que nadie eligió.
+        detectada, _ = rectas_cuadricula(imagen, hoja.ppmm, propuesta, avance)
     posicion = {s["numero"]: s for s in combinadas}
     cuadro = (lector or {}).get("cuadro") or {}
     # Faltantes son las semillas de la loteadora: un rótulo leído sin polígono suele
@@ -283,7 +306,7 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
                     for g, es, sug in zip(r.sin_numero, r.sin_numero_lote, sugerencias)],
         faltantes=faltantes,
         huecos=huecos,
-        cuadricula=r.cuadricula,
+        cuadricula=detectada,
         lector=_resumen_lector(lector, entradas, de_lector, sin_poligono),
         estadisticas=r.estadisticas,
     )

@@ -599,13 +599,14 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def digitalizar_kmz(slug: str, mis: VistaKmz = Depends(mis_kmz),
                         yo: Sesion = Depends(quien)) -> dict:
         plano = mis.plano(slug)
-        huella = plano.para_digitalizar()
+        entradas = plano.para_digitalizar()
         una_a_la_vez(yo, clave_kmz(slug))
 
         def anotar(trabajo) -> None:
-            # Con qué entradas quedó: si cambian, el paso se ve atrasado.
+            # Con qué entradas quedó: si cambian, el paso se ve atrasado. La huella se
+            # saca al terminar porque depende de la cuadrícula que propuso el lector.
             if trabajo.estado == "listo":
-                plano.anotar("digitalizado", huella)
+                plano.anotar("digitalizado", plano.huella_al_terminar(entradas))
 
         try:
             identificador = trabajos.lanzar(clave_kmz(slug), "digitalizar-plano",

@@ -422,6 +422,113 @@ def test_cambiar_los_numeros_pide_digitalizar_de_nuevo(ana):
     assert "digitaliza de nuevo" in respuesta.json()["detail"]
 
 
+# La cuadrícula UTM que "leyó" el lector, en el mismo sistema que las anclas.
+PROPUESTA = dict(verticales=[dict(x=300.0, valor=E0 + M_PX * 300), dict(x=900.0, valor=E0 + M_PX * 900)],
+                 horizontales=[dict(y=200.0, valor=N0 - M_PX * 200), dict(y=700.0, valor=N0 - M_PX * 700)],
+                 epsg=None)
+
+
+def con_propuesta(carpeta, cuadricula):
+    """Al digitalizado a mano le agrega lo que leyó el lector, con su cuadrícula."""
+    ruta = carpeta / "digitalizado.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["lector"] = dict(activo=True, disponible=True, rotulos=[], semillas=0, apoyo_min=2,
+                           sin_poligono=[], cuadricula=cuadricula, cuadro={})
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+
+
+def test_usar_o_quitar_la_cuadricula_propuesta_no_atrasa_los_lotes(ana):
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    con_propuesta(carpeta_del_plano(raiz, slug), PROPUESTA)
+    esperar_trabajo(web, web.post(f"/api/kmz/{slug}/digitalizar").json()["id"])
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").json()["metodo"] == "anclas"
+    huellas = carpeta_del_plano(raiz, slug) / "huellas.json"
+    digitalizado = json.loads(huellas.read_text(encoding="utf-8"))["digitalizado"]
+
+    # Como la manda el navegador: la propuesta tal cual, con un valor corregido.
+    elegida = dict(PROPUESTA, verticales=[dict(PROPUESTA["verticales"][0]),
+                                          dict(PROPUESTA["verticales"][1], valor=E0 + M_PX * 900)])
+    assert web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, cuadricula=elegida)).status_code == 200
+
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["digitalizado"]["vigente"] is True
+    # La ubicación sí queda atrasada: es lo que cambia.
+    assert estado["paso"] == "ubicar" and estado["georreferencia"]["vigente"] is False
+    g = web.post(f"/api/kmz/{slug}/georreferenciar")
+    assert g.status_code == 200, g.text
+    assert g.json()["metodo"] == "cuadricula"
+    assert web.get(f"/api/kmz/{slug}").json()["paso"] == "crear"
+
+    web.put(f"/api/kmz/{slug}/entradas", json=ENTRADAS)
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["digitalizado"]["vigente"] is True and estado["georreferencia"]["vigente"] is False
+    assert json.loads(huellas.read_text(encoding="utf-8"))["digitalizado"] == digitalizado
+
+
+def test_otra_cuadricula_que_la_propuesta_si_pide_digitalizar(ana):
+    """Otras líneas que las leídas cambian lo que se borra del dibujo: eso sí atrasa."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    con_propuesta(carpeta_del_plano(raiz, slug), PROPUESTA)
+    esperar_trabajo(web, web.post(f"/api/kmz/{slug}/digitalizar").json()["id"])
+
+    corrida = dict(PROPUESTA, verticales=[dict(PROPUESTA["verticales"][0], x=350.0), PROPUESTA["verticales"][1]])
+    web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, cuadricula=corrida))
+
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["digitalizado"]["vigente"] is False and estado["paso"] == "digitalizar"
+
+
+def test_digitalizar_con_la_propuesta_elegida_queda_al_dia(ana):
+    """Si ya estaba elegida y el lector la vuelve a leer igual, digitalizar no la cuenta
+    y quitarla después tampoco atrasa."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, cuadricula=PROPUESTA))
+    con_propuesta(carpeta_del_plano(raiz, slug), PROPUESTA)
+    esperar_trabajo(web, web.post(f"/api/kmz/{slug}/digitalizar").json()["id"])
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["vigente"] is True
+
+    web.put(f"/api/kmz/{slug}/entradas", json=ENTRADAS)
+
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["vigente"] is True
+
+
+def test_un_kmz_que_digitalizo_con_la_propuesta_antes_del_cambio_sigue_al_dia(ana):
+    """Antes la huella llevaba la cuadrícula elegida tal cual, aunque fuera la propuesta:
+    esos KMZ no quedan atrasados porque ahora la propuesta no cuente."""
+    from consola.plano import huella_digitalizar
+    from pipeline.plano.digitalizar import leer_entradas
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, cuadricula=PROPUESTA))
+    carpeta = carpeta_del_plano(raiz, slug)
+    con_propuesta(carpeta, PROPUESTA)
+    (carpeta / "huellas.json").write_text(
+        json.dumps(dict(digitalizado=huella_digitalizar(leer_entradas(carpeta)))), encoding="utf-8")
+
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["digitalizado"]["vigente"] is True and estado["paso"] == "ubicar"
+
+
+def test_la_cuadricula_se_ofrece_solo_si_alcanza_para_ubicar(ana):
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    con_propuesta(carpeta, PROPUESTA)
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["lector"]["cuadricula"] == PROPUESTA
+
+    # Lo que leyó en Rapel: cuatro verticales con valor y ninguna horizontal.
+    rapel = dict(verticales=[dict(x=2377.3 + 400 * i, valor=6213500 + 500 * i) for i in range(4)],
+                 horizontales=[], epsg=None)
+    con_propuesta(carpeta, rapel)
+    lector = web.get(f"/api/kmz/{slug}").json()["digitalizado"]["lector"]
+    assert lector is not None and lector["cuadricula"] is None
+
+    con_propuesta(carpeta, dict(PROPUESTA, horizontales=PROPUESTA["horizontales"][:1]))
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["lector"]["cuadricula"] is None
+
+
 def test_sin_anclas_no_se_puede_ubicar(ana):
     web, slug, raiz, _ = ana
     listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, anclas=ANCLAS[:1]))

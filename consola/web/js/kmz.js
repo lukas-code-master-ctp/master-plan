@@ -43,6 +43,8 @@ let paso = 'subir';
 let herramienta = 'mover';
 let pendiente = null;         // ancla a medias: {nombre, x, y} en el plano, falta el mapa
 let rehacer = null;           // el nombre del ancla que se está volviendo a marcar
+let avisoCuadricula = '';     // la cuadrícula elegida no ubicó y se quitó: se dice en Ubicar
+let cuadriculaNoSirve = false; // y no se vuelve a ofrecer mientras se esté en este KMZ
 let numerando = null;         // {x, y, anillos}: el lote al que se le escribe el número
 let lienzo = null;
 let mapa = null;
@@ -182,6 +184,8 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
   rasgosGeo = null;
   pendiente = null;
   rehacer = null;
+  avisoCuadricula = '';
+  cuadriculaNoSirve = false;
   sucio = false;
   esquinasMarcando = [];
   cerrarNumero();
@@ -601,6 +605,7 @@ function marcarEnMapa(lat, lon) {
   const ancla = anclaDesde(pendiente, lat, lon);
   pendiente = null;
   rehacer = null;
+  avisoCuadricula = '';
   cambiar({ ...entradas, anclas: [...entradas.anclas.filter((a) => a.nombre !== ancla.nombre), ancla] });
   pintarMapa();
   if (entradas.anclas.length >= 2 || entradas.cuadricula) ubicar().catch((e) => avisar(e.message));
@@ -621,12 +626,40 @@ function quitarAncla(nombre, otraVez) {
   if (!otraVez && (entradas.anclas.length >= 2 || entradas.cuadricula)) ubicar().catch((e) => avisar(e.message));
 }
 
-function usarCuadricula(si) {
+const NO_UBICO_CUADRICULA = 'No se pudo ubicar con la cuadrícula del plano. Marca los puntos a mano.';
+
+/** Elegir la cuadrícula ubica al tiro. Si no ubica con ella (error, o el servidor cayó a
+ * las anclas), se quita sola y se dice: así no queda elegida algo que no sirve. */
+async function usarCuadricula(si) {
   const propuesta = plano?.digitalizado?.lector?.cuadricula;
   if (si && !propuesta) return;
+  const mio = slug;
+  avisoCuadricula = '';
   const nuevas = { ...entradas };
   if (si) nuevas.cuadricula = propuesta; else delete nuevas.cuadricula;
   cambiar(nuevas);
+  if (!si) {
+    if (entradas.anclas.length >= 2) await ubicar();
+    return;
+  }
+  let sirvio = false;
+  try {
+    // `ubicar` no corre si el digitalizado está atrasado: eso no es culpa de la cuadrícula.
+    if (!await ubicar()) return;
+    sirvio = plano?.georreferencia?.metodo === 'cuadricula';
+  } catch {
+    sirvio = false;
+  }
+  // Si en la espera se pasó a otro KMZ, `entradas` y `plano` ya son de ese: no se toca.
+  if (mio !== slug || sirvio || !entradas.cuadricula) return;
+  const sinCuadricula = { ...entradas };
+  delete sinCuadricula.cuadricula;
+  cambiar(sinCuadricula);
+  avisoCuadricula = NO_UBICO_CUADRICULA;
+  cuadriculaNoSirve = true;
+  if (entradas.anclas.length >= 2) await ubicar().catch((e) => avisar(e.message));
+  else await guardar();
+  pintarPanel();
 }
 
 function moverAjuste(de, dn) {
@@ -644,22 +677,33 @@ function arrastreDelMapa(de, dn) {
   ubicar().catch((e) => avisar(e.message)).finally(() => pintarMapa());
 }
 
+/** Devuelve si de verdad ubicó (no corre con el digitalizado atrasado o sin con qué). */
 async function ubicar() {
   clearTimeout(ubicarLuego);
+  const mio = slug;
   await guardar();
-  if (!plano?.digitalizado?.vigente) return;
-  if (entradas.anclas.length < 2 && !entradas.cuadricula) return;
+  // Se pasó a otro KMZ mientras se guardaba: ubicar ese no lo pidió nadie.
+  if (mio !== slug) return false;
+  if (!plano?.digitalizado?.vigente) return false;
+  if (entradas.anclas.length < 2 && !entradas.cuadricula) return false;
   $('#kmz-ancla-estado').textContent = 'Ubicando…';
   try {
-    plano.georreferencia = await pedir(`${api()}/georreferenciar`, json({}));
+    const georreferencia = await pedir(`${api(mio)}/georreferenciar`, json({}));
+    if (mio !== slug) return false;
+    plano.georreferencia = georreferencia;
   } catch (error) {
+    if (mio !== slug) return false;
     $('#kmz-ancla-estado').textContent = '';
     throw error;
   }
-  plano = await pedir(api());
-  rasgosGeo = await pedir(`${api()}/lotes?en=lonlat`);
+  const nuevo = await pedir(api(mio));
+  const geo = await pedir(`${api(mio)}/lotes?en=lonlat`);
+  if (mio !== slug) return false;
+  plano = nuevo;
+  rasgosGeo = geo;
   pintar();
   pintarMapa();
+  return true;
 }
 
 const NO_ENTENDI = `No entendí esas coordenadas. Escríbelas como -34.98, -71.24 o como 34°10'37.5"S 71°32'53.9"W.`;
@@ -984,6 +1028,8 @@ function pintarUbicar() {
       + `o pega sus coordenadas y aprieta Usar como punto ${pendiente.nombre} (Esc cancela).`;
   } else if (rehacer) {
     estadoAncla.textContent = `Marca de nuevo el punto ${rehacer}: primero en el plano.`;
+  } else if (avisoCuadricula) {
+    estadoAncla.textContent = avisoCuadricula;
   } else {
     const n = entradas.anclas.length;
     estadoAncla.textContent = n >= 4 ? `${n} puntos marcados.`
@@ -994,7 +1040,8 @@ function pintarUbicar() {
   usar.hidden = !pendiente;
   if (pendiente) usar.textContent = `Usar como punto ${pendiente.nombre}`;
 
-  const propuesta = plano.digitalizado?.lector?.cuadricula;
+  // Una propuesta que ya no ubicó no se vuelve a ofrecer (hasta salir del KMZ).
+  const propuesta = cuadriculaNoSirve ? null : plano.digitalizado?.lector?.cuadricula;
   $('#kmz-cuadricula').hidden = !propuesta && !entradas.cuadricula;
   $('[data-accion="kmz-usar-cuadricula"]').hidden = Boolean(entradas.cuadricula) || !propuesta;
   $('[data-accion="kmz-quitar-cuadricula"]').hidden = !entradas.cuadricula;

@@ -50,7 +50,8 @@ from pipeline.kmz import normalizar_id
 from pipeline.plano import pagina as pag
 from pipeline.plano import rotulos
 from pipeline.plano.digitalizar import ENTRADAS, SALIDA as DIGITALIZADO, escribir_json, leer_entradas
-from pipeline.plano.georreferencia import GEOJSON, SALIDA as GEORREFERENCIA, Transformacion, a_utm, georreferenciar
+from pipeline.plano.georreferencia import (GEOJSON, SALIDA as GEORREFERENCIA, Transformacion, a_utm,
+                                           cuadricula_suficiente, georreferenciar)
 from pipeline.plano.salida import escribir_kmz, geojson, lotes_utm
 
 PDF = "plano.pdf"
@@ -282,9 +283,9 @@ class Plano:
 
     # --- pasos ----------------------------------------------------------------------
 
-    def para_digitalizar(self) -> str:
-        """Revisa que se pueda digitalizar y devuelve la huella de las entradas, que
-        se anota si el trabajo termina bien."""
+    def para_digitalizar(self) -> dict:
+        """Revisa que se pueda digitalizar y devuelve las entradas con que se lanza. Su
+        huella se saca y se anota cuando el trabajo termina bien (`huella_al_terminar`)."""
         if not self.hay():
             raise PlanoNoListo("primero sube el PDF del plano")
         entradas = self._entradas_o_409()
@@ -292,7 +293,13 @@ class Plano:
             raise PlanoNoListo("marca el número de al menos un lote antes de digitalizar"
                                + ("" if not entradas["lector"] else
                                   " (no hay lector de rótulos en este servidor)"))
-        return huella_digitalizar(entradas)
+        return entradas
+
+    def huella_al_terminar(self, entradas: dict) -> str:
+        """La huella de las entradas con que se digitalizó, contra la cuadrícula que
+        propuso el lector en esta misma digitalización (no la de la anterior): si la
+        loteadora ya había elegido la propuesta y el lector lee la misma, sigue sin contar."""
+        return huella_digitalizar(entradas, self._propuesta())
 
     @_a_solas
     def anotar(self, paso: str, huella: str) -> None:
@@ -534,12 +541,24 @@ class Plano:
             raise PlanoNoListo("primero marca el dibujo y los lotes en el plano")
         return entradas
 
+    def _propuesta(self) -> dict | None:
+        """La cuadrícula que leyó el lector en la última digitalización, tal cual."""
+        try:
+            return (self._leer(DIGITALIZADO).get("lector") or {}).get("cuadricula")
+        except (OSError, ValueError, AttributeError):
+            return None
+
     def _huella_digitalizado(self, entradas: dict) -> str:
         # Sin huella anotada (lo digitalizó otro, a mano) se da por vigente.
-        return self._huellas().get("digitalizado") or huella_digitalizar(entradas)
+        return self._huellas().get("digitalizado") or huella_digitalizar(entradas, self._propuesta())
 
     def _digitalizado_vigente(self, entradas: dict) -> bool:
-        return self._huella_digitalizado(entradas) == huella_digitalizar(entradas)
+        # También vale la huella con la cuadrícula elegida tal cual (sin descontar la
+        # propuesta): es como se anotaba antes, y si coincide se digitalizó justo con
+        # esas líneas. Sin esto, un KMZ que eligió la propuesta y digitalizó antes del
+        # cambio se vería atrasado sin que nada haya cambiado.
+        anotada = self._huella_digitalizado(entradas)
+        return anotada in (huella_digitalizar(entradas, self._propuesta()), huella_digitalizar(entradas))
 
     def _georreferencia_vigente(self, entradas: dict) -> bool:
         if not self._digitalizado_vigente(entradas):
@@ -650,17 +669,51 @@ def _resumen_lector(lector: dict | None) -> dict | None:
     """Lo que la pantalla muestra del lector: cuánto leyó y qué propone."""
     if not lector or not lector.get("activo"):
         return None
+    # La cuadrícula se ofrece solo si alcanza para ubicar (el mismo criterio de
+    # `por_cuadricula`): una a medias, al elegirla, no ubicaba nada y nadie decía por qué.
+    cuadricula = lector.get("cuadricula")
+    if not cuadricula_suficiente(cuadricula):
+        cuadricula = None
     return dict(disponible=lector.get("disponible"), motivo=lector.get("motivo"),
                 rotulos=len(lector.get("rotulos") or []), semillas=lector.get("semillas"),
                 apoyo_min=lector.get("apoyo_min"), sin_poligono=lector.get("sin_poligono") or [],
-                cuadricula=lector.get("cuadricula"), areas=len(lector.get("cuadro") or {}))
+                cuadricula=cuadricula, areas=len(lector.get("cuadro") or {}))
 
 
-def huella_digitalizar(entradas: dict) -> str:
+def _posiciones(cuadricula: dict | None) -> dict:
+    """Dónde están las líneas de una cuadrícula, sin sus valores (se corrigen sin volver
+    a digitalizar)."""
+    cuadricula = cuadricula or {}
+    return {f: [m.get(eje) for m in cuadricula.get(f) or []]
+            for f, eje in (("verticales", "x"), ("horizontales", "y"))}
+
+
+def _misma_posicion(a: dict, b: dict) -> bool:
+    """¿Las mismas líneas en el mismo lugar? Con holgura de redondeo: la propuesta pasa
+    por el navegador y vuelve."""
+    return all(len(a[f]) == len(b[f]) and all(
+        isinstance(x, (int, float)) and isinstance(y, (int, float)) and abs(x - y) < 0.05
+        for x, y in zip(a[f], b[f])) for f in a)
+
+
+def huella_digitalizar(entradas: dict, propuesta: dict | None = None) -> str:
+    """Lo que, si cambia, deja atrasada la digitalización. `propuesta`: la cuadrícula que
+    leyó el lector al digitalizar.
+
+    Digitalizar sí usa la cuadrícula elegida: busca sus rectas en la imagen (para que
+    ubicar mida el giro de la hoja) y borra su tinta antes de partir el dibujo en lotes.
+    Pero si es la misma que propuso el lector, elegirla o quitarla no cuenta: la loteadora
+    la elige en Ubicar para ubicar, con los lotes ya revisados, y no espera que eso los
+    rehaga. Sus rectas igual quedan: digitalizar las busca también para la propuesta
+    (sin borrar su tinta), así ubicar mide el giro de la hoja sin volver a digitalizar.
+    Atrasar todo por eso hacía que "Usar la cuadrícula impresa" dejara los lotes
+    desactualizados y "Seguir" trabado. La ubicación sí queda atrasada (`huella_ubicar`
+    lleva la cuadrícula entera), que es lo que cambia."""
     datos = {k: entradas.get(k) for k in CLAVES_DIGITALIZAR}
-    cuadricula = entradas.get("cuadricula") or {}
-    datos["cuadricula"] = {f: [m.get(eje) for m in cuadricula.get(f) or []]
-                           for f, eje in (("verticales", "x"), ("horizontales", "y"))}
+    posiciones = _posiciones(entradas.get("cuadricula"))
+    if propuesta and _misma_posicion(posiciones, _posiciones(propuesta)):
+        posiciones = _posiciones(None)
+    datos["cuadricula"] = posiciones
     return _huella(datos)
 
 
