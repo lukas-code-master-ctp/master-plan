@@ -80,6 +80,22 @@ def test_los_huecos_de_la_numeracion_quedan_en_el_digitalizado(tmp_path):
     assert json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))["huecos"] == ["6", "7"]
 
 
+def test_el_resto_de_la_propiedad_sobrevive_a_digitalizar(tmp_path):
+    """"Resto" no es un número de lote, pero es el nombre que ella le da al resto de la
+    propiedad cuando el cuadro no le da número: queda en su lote al volver a leer."""
+    plano = _carpeta(tmp_path)
+    entradas = json.loads((tmp_path / "entradas.json").read_text(encoding="utf-8"))
+    entradas["semillas"][0]["numero"] = "Resto"
+    entradas["lector"] = False
+    entradas["fuera"] = [[10, 10]]                        # no cambia cómo se parte
+    (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+
+    datos = digitalizar(tmp_path, avance=lambda _: None)
+
+    resto = next(l for l in datos["lotes"] if l["numero"] == "Resto")
+    assert iou(Polygon(resto["poligono"], resto["huecos"]), plano.celdas[plano.semillas[0][0]]) > 0.95
+
+
 def test_sin_entradas(tmp_path, capsys):
     assert main(["digitalizar", str(tmp_path)]) == 2
     assert "entradas.json" in capsys.readouterr().err

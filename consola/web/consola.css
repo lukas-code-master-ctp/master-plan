@@ -858,6 +858,10 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-tabla td { padding: 0.25rem; border-bottom: 1px solid var(--zinc-100); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .kmz-tabla td:last-child { text-align: right; white-space: nowrap; }
 .kmz-tabla .kmz-atipica td { background: var(--rojo-50); color: var(--rojo-700); font-weight: 600; }
+.kmz-resto { display: grid; gap: 0.5rem; padding: 0.75rem; border-radius: var(--radio-md); background: var(--ambar-50); border: 1px solid var(--ambar-200); }
+.kmz-resto p { margin: 0; }
+.kmz-resto__pregunta { font-weight: 600; color: var(--zinc-800); font-size: 0.875rem; }
+.kmz-resto--decidido { background: var(--zinc-50); border-color: var(--zinc-200); }
 .kmz-cuadricula { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.75rem; border-radius: var(--radio-md); background: var(--verde-50); border: 1px solid var(--verde-100); }
 .kmz-cuadricula .nota { flex-basis: 100%; color: var(--verde-800); }
 .kmz-ubicacion p { margin: 0; font-weight: 600; }

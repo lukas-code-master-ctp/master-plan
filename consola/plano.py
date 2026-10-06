@@ -47,6 +47,7 @@ from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
 
 from pipeline.kmz import normalizar_id
+from pipeline.plano import numeros as numeros_lote
 from pipeline.plano import pagina as pag
 from pipeline.plano import rotulos
 from pipeline.plano.digitalizar import ENTRADAS, SALIDA as DIGITALIZADO, escribir_json, leer_entradas
@@ -76,7 +77,7 @@ CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula")
 
 # Topes de lo que se marca a mano: muy por sobre un loteo real, y lejos de lo que
 # atora la revisión (las semillas repetidas se buscan de a pares).
-TOPES = dict(semillas=2000, mascaras=200, anclas=50)
+TOPES = dict(semillas=2000, mascaras=200, anclas=50, fuera=50)
 TOPE_CUADRICULA = 200
 
 # Corrección a mano de los vértices en Revisar: cuántas versiones se guardan para
@@ -87,6 +88,14 @@ TOLERANCIA_VERTICE_PX = 0.5
 
 # Error de área contra el cuadro de superficies: verde ±2 %, ámbar ±5 %, rojo más.
 VERDE, AMBAR = 0.02, 0.05
+
+# El resto de la propiedad (el predio que queda tras sacar los lotes) aparece como una
+# parte sin número enorme: en Caminos de Rapel, 76 há junto a lotes de media há. Sin
+# fila de resto en el cuadro, es resto la parte sin número más grande si mide más de
+# RESTO_VECES la mediana de los lotes; con la fila, basta RESTO_VECES_CUADRO (así no se
+# pregunta por un lote al que no se le leyó el número).
+RESTO_VECES = 5
+RESTO_VECES_CUADRO = 2
 
 
 _CANDADOS: dict[str, threading.RLock] = {}
@@ -406,17 +415,23 @@ class Plano:
         if not self._georreferencia_vigente(entradas):
             raise PlanoNoListo("cambiaron las entradas desde que se ubicó el plano: digitaliza o ubica de nuevo")
         digitalizado = self._leer(DIGITALIZADO)
-        sin_numero = sum(bool(c.get("de_lote")) for c in digitalizado.get("sin_numero") or [])
+        # Lo que ella dejó fuera (el resto de la propiedad) no se pregunta de nuevo, y si
+        # tenía número (lo leyó el lector) no va.
+        fuera = _fuera_del_kmz(digitalizado.get("sin_numero"), entradas)
+        sin_numero = sum(bool(c.get("de_lote")) and not f
+                         for c, f in zip(digitalizado.get("sin_numero") or [], fuera))
         if sin_numero and not omitir_sin_numero:
             raise LotesSinNumero(sin_numero)
+        lotes = digitalizado.get("lotes") or []
+        digitalizado = dict(digitalizado, lotes=[l for l, f in zip(lotes, _fuera_del_kmz(lotes, entradas)) if not f])
         t = Transformacion.desde_dict(self._leer(GEORREFERENCIA))
         try:
             # Aparte y `os.replace` al final: un error no se lleva el anterior.
             n = escribir_kmz(self.kmz, digitalizado, t, nombre=self.nombre or self.carpeta.name)
         except ValueError as error:
             raise PlanoInvalido(str(error)) from error
-        self.anotar("kmz", self._huellas().get("georreferencia") or huella_ubicar(
-            entradas, self._huella_digitalizado(entradas)))
+        self.anotar("kmz", huella_kmz(self._huellas().get("georreferencia") or huella_ubicar(
+            entradas, self._huella_digitalizado(entradas)), self._leer(DIGITALIZADO), entradas))
         return dict(kmz=self.kmz.name, lotes=n)
 
     # --- lectura ----------------------------------------------------------------------
@@ -430,10 +445,13 @@ class Plano:
         digitalizado = georreferencia = None
         if (self.carpeta / DIGITALIZADO).is_file():
             d = self._leer(DIGITALIZADO)
-            caras = d.get("sin_numero") or []
+            # Las partes que ella dejó fuera del KMZ no se cuentan como sin número ni como lotes.
+            fuera = _fuera_del_kmz(d.get("sin_numero"), entradas)
+            caras = [c for c, f in zip(d.get("sin_numero") or [], fuera) if not f]
+            fuera_lotes = _fuera_del_kmz(d.get("lotes"), entradas)
             digitalizado = dict(
-                lotes=len(d.get("lotes") or []), faltantes=d.get("faltantes") or [],
-                sin_numero=len(caras), pagina=d.get("pagina"),
+                lotes=len(fuera_lotes) - sum(fuera_lotes), faltantes=d.get("faltantes") or [],
+                sin_numero=len(caras), fuera=sum(fuera) + sum(fuera_lotes), pagina=d.get("pagina"),
                 # Caras del tamaño de un lote sin número (y cuántas traen una lectura que
                 # confirmar), y los números que faltan en la numeración.
                 sin_numero_lote=sum(bool(c.get("de_lote")) for c in caras),
@@ -467,7 +485,8 @@ class Plano:
         if not (self.carpeta / GEORREFERENCIA).is_file() or not self._georreferencia_vigente(entradas):
             return "ubicar"
         huellas = self._huellas()
-        if not self.kmz.is_file() or huellas.get("kmz") != huellas.get("georreferencia"):
+        if not self.kmz.is_file() or huellas.get("kmz") != huella_kmz(
+                huellas.get("georreferencia"), self._leer(DIGITALIZADO), entradas):
             return "crear"
         return "listo"
 
@@ -484,11 +503,22 @@ class Plano:
         if en == "lonlat" and t is None:
             raise PlanoNoListo("primero hay que ubicar el plano en el mapa")
         areas = dict(lotes_utm(d, t)) if t is not None else {}
-        ids = [normalizar_id(f"LOTE {l['numero']}") for l in d.get("lotes") or []]
+        # El "Resto" no tiene id para el lector de KMZ: se compara por su nombre, como al
+        # crear (`numeros.repetidos`). Si no, cualquier número inválido lo hacía "repetido".
+        ids = [normalizar_id(f"LOTE {l['numero']}") or (f"resto:{numeros_lote.clave(l['numero'])}"
+               if numeros_lote.es_resto(l["numero"]) else None) for l in d.get("lotes") or []]
+        try:
+            entradas = self.entradas()
+        except ValueError:
+            entradas = None
+        resto = _resto(d)
+        fuera = _fuera_del_kmz(d.get("sin_numero"), entradas)
+        fuera_lotes = _fuera_del_kmz(d.get("lotes"), entradas)
         rasgos = []
-        for lote, id_ in zip(d.get("lotes") or [], ids):
+        for i, (lote, id_) in enumerate(zip(d.get("lotes") or [], ids)):
             numero = str(lote["numero"])
             banderas = []
+            # "Resto" es un nombre válido: es el resto de la propiedad, que ella incluyó.
             if id_ is None:
                 banderas.append("sin_numero")
             elif ids.count(id_) > 1:
@@ -498,6 +528,12 @@ class Plano:
                                # que leyó el lector (y cuán seguro) de lo que marcó ella.
                                origen=lote.get("origen") or "usuario", confianza=lote.get("confianza"),
                                apoyo=lote.get("apoyo"), semilla=lote.get("semilla"))
+            if resto["lote"] == i:
+                propiedades["resto"] = True
+            if fuera_lotes[i]:
+                # Tiene número (el lector leyó el del plano) pero ella lo dejó fuera del KMZ.
+                propiedades["fuera"] = True
+                banderas.append("fuera")
             if numero in areas:
                 propiedades["area_m2"] = round(areas[numero].area, 1)
                 oficial = lote.get("area_oficial")
@@ -507,13 +543,22 @@ class Plano:
                                        nivel="verde" if abs(error) <= VERDE else
                                        "ambar" if abs(error) <= AMBAR else "rojo")
             rasgos.append(_rasgo(lote["poligono"], lote.get("huecos") or [], propiedades, en, t))
-        for cara in d.get("sin_numero") or []:
+        for i, (cara, afuera) in enumerate(zip(d.get("sin_numero") or [], fuera)):
             # `de_lote`: del tamaño de un lote (no se pegó a su vecino); `sugerencia`: lo que
-            # leyó el lector dentro, con poco apoyo, para confirmar con un clic.
-            de_lote = bool(cara.get("de_lote"))
+            # leyó el lector dentro, con poco apoyo, para confirmar con un clic. Lo que ella
+            # dejó fuera del KMZ (`fuera`) ya no es un lote sin número: lo decidió.
+            de_lote = bool(cara.get("de_lote")) and not afuera
             propiedades = dict(numero=None, area_px=cara.get("area_px"),
-                               banderas=["sin_numero"] + (["de_lote"] if de_lote else []),
-                               de_lote=de_lote, sugerencia=cara.get("sugerencia"))
+                               banderas=["sin_numero"] + (["de_lote"] if de_lote else [])
+                               + (["fuera"] if afuera else []),
+                               de_lote=de_lote, sugerencia=None if afuera else cara.get("sugerencia"),
+                               fuera=afuera)
+            if resto["cara"] == i:
+                # Numerar pregunta si va al KMZ: con el número del cuadro, si lo trae, y un
+                # punto que cae dentro (el centroide de una parte en "U" puede caer fuera).
+                punto = Polygon(cara["poligono"]).representative_point()
+                propiedades.update(resto=True, numero_resto=resto["numero"], area_resto_m2=resto["area"],
+                                   punto=[round(punto.x, 2), round(punto.y, 2)])
             if t is not None:
                 utm = Polygon(np.c_[t.a_utm(*np.asarray(cara["poligono"], float).T)])
                 propiedades["area_m2"] = round(utm.area, 1)
@@ -660,6 +705,54 @@ def _borrar_vertice(d: dict, p: np.ndarray) -> None:
     _poner_al_dia(d, tocados, "sin ese vértice el lote se cruza consigo mismo")
 
 
+def _area_px(parte: dict) -> float:
+    return float(parte.get("area_px") or Polygon(parte["poligono"]).area)
+
+
+def _resto(d: dict) -> dict:
+    """El resto de la propiedad en el digitalizado: {"lote": índice del lote que lo lleva
+    (ella lo incluyó con el número del cuadro o "Resto"), "cara": índice de la parte sin
+    número que lo parece (falta decidir si va al KMZ), "numero": el del cuadro o None,
+    "area": la suya en el cuadro, m²}.
+    Se calcula al leer, no al digitalizar: así sirve también con lo ya digitalizado."""
+    cuadro = (d.get("lector") or {}).get("cuadro") or {}
+    numero = numeros_lote.resto(cuadro)
+    base = dict(lote=None, cara=None, numero=numero, area=cuadro.get(numero) if numero else None)
+    lotes = d.get("lotes") or []
+    for i, lote in enumerate(lotes):
+        if numeros_lote.es_resto(lote["numero"]) or (
+                numero is not None and numeros_lote.clave(lote["numero"]) == numeros_lote.clave(numero)):
+            return dict(base, lote=i)
+    caras = d.get("sin_numero") or []
+    if not lotes or not caras:
+        return base
+    mediana = float(np.median([_area_px(l) for l in lotes]))
+    mayor = max(range(len(caras)), key=lambda k: _area_px(caras[k]))
+    veces = _area_px(caras[mayor]) / mediana if mediana > 0 else 0.0
+    es = veces > RESTO_VECES or (numero is not None and veces >= RESTO_VECES_CUADRO)
+    return dict(base, cara=mayor if es else None)
+
+
+def _fuera_del_kmz(partes: list | None, entradas: dict | None) -> list[bool]:
+    """Por cada parte (lotes o caras sin número del digitalizado): ¿la dejó ella fuera del
+    KMZ (un punto de `fuera` cae dentro)? Es una decisión sobre qué va al KMZ, no sobre
+    cómo se parte el dibujo: por eso no entra en la huella de digitalizar y cambiarla no
+    obliga a leer el plano. Vale también para una parte con número: el lector puede leer
+    el "LOTE 8" del resto, y lo que ella decidió manda."""
+    from shapely.geometry import Point
+    partes = partes or []
+    puntos = [Point(p) for p in (entradas or {}).get("fuera") or []]
+    if not puntos:
+        return [False] * len(partes)
+    salida = []
+    for parte in partes:
+        forma = Polygon(parte["poligono"], parte.get("huecos") or [])
+        if not forma.is_valid:
+            forma = forma.buffer(0)
+        salida.append(any(forma.contains(p) for p in puntos))
+    return salida
+
+
 def _con_lector(entradas: dict) -> bool:
     """¿Digitalizar va a leer los números solo? (lector encendido y Tesseract instalado)."""
     return bool(entradas.get("lector", True)) and rotulos.disponible()
@@ -679,8 +772,10 @@ def _resumen_lector(lector: dict | None) -> dict | None:
                 apoyo_min=lector.get("apoyo_min"), sin_poligono=lector.get("sin_poligono") or [],
                 cuadricula=cuadricula, areas=len(lector.get("cuadro") or {}),
                 # Los números tal como los dice el cuadro de superficies: la pantalla guarda
-                # lo escrito con esa forma ("8-8" → "8-08") y ofrece los que faltan.
-                numeros_cuadro=[str(n) for n in lector.get("cuadro") or {}])
+                # lo escrito con esa forma ("8-8" → "8-08") y ofrece los que faltan. Sin el
+                # resto de la propiedad, que no es un lote que falte: va aparte.
+                numeros_cuadro=numeros_lote.esperados(lector.get("cuadro") or {}),
+                resto=numeros_lote.resto(lector.get("cuadro") or {}))
 
 
 def _posiciones(cuadricula: dict | None) -> dict:
@@ -718,6 +813,14 @@ def huella_digitalizar(entradas: dict, propuesta: dict | None = None) -> str:
         posiciones = _posiciones(None)
     datos["cuadricula"] = posiciones
     return _huella(datos)
+
+
+def huella_kmz(huella_georreferencia: str | None, digitalizado: dict, entradas: dict | None) -> str | None:
+    """Con qué se hizo el KMZ: la ubicación y, si ella dejó fuera un lote con número, cuáles.
+    Dejar fuera una parte sin número no cambia el KMZ y no lo deja atrasado."""
+    lotes = digitalizado.get("lotes") or []
+    fuera = sorted(str(l["numero"]) for l, f in zip(lotes, _fuera_del_kmz(lotes, entradas)) if f)
+    return _huella(dict(ubicacion=huella_georreferencia, fuera=fuera)) if fuera else huella_georreferencia
 
 
 def huella_ubicar(entradas: dict, huella_digitalizado: str) -> str:

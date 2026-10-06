@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  anclaDesde, aPagina, aplicarNumero, claveLote, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
+  anclaDesde, aPagina, aplicarFuera, aplicarNumero, claveLote, decidirResto, devolverAlKmz, restoDe, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
   tamanoRotado, textoHuecos, vistaAjustada, zoomEn,
@@ -47,7 +47,7 @@ test('girar la página lleva lo marcado a la nueva rotación', () => {
   const entradas = {
     pagina: 1, rotacion: 0, rectangulo: [10, 5, 50, 30], mascaras: [[0, 0, 4, 4]],
     semillas: [{ numero: '1', x: 20, y: 10 }], anclas: [{ nombre: 'A', x: 30, y: 20, lon: -70, lat: -33 }],
-    esquinas: [[0, 0], [99, 0], [99, 59], [0, 59]], cuadricula: { verticales: [{ x: 3 }] },
+    esquinas: [[0, 0], [99, 0], [99, 59], [0, 59]], cuadricula: { verticales: [{ x: 3 }] }, fuera: [[20, 10]],
   };
   const girada = girarEntradas(entradas, 0, 90, 100, 60);
 
@@ -55,6 +55,7 @@ test('girar la página lleva lo marcado a la nueva rotación', () => {
   // (10, 5) → (54, 10) y (50, 30) → (29, 50): el rectángulo se normaliza.
   assert.deepEqual(girada.rectangulo, [29, 10, 54, 50]);
   assert.deepEqual(girada.semillas[0], { numero: '1', x: 49, y: 20 });
+  assert.deepEqual(girada.fuera, [[49, 20]]);           // lo dejado fuera gira con la página
   assert.deepEqual([girada.anclas[0].x, girada.anclas[0].y, girada.anclas[0].lon], [39, 30, -70]);
   // Las esquinas siguen en orden sup-izq, sup-der, inf-der, inf-izq de la página girada (60 × 100).
   assert.deepEqual(girada.esquinas, [[0, 0], [59, 0], [59, 99], [0, 99]]);
@@ -243,7 +244,7 @@ test('la revisión cuenta por color y marca los sin número y repetidos', () => 
     lote(null, [], { banderas: ['sin_numero', 'de_lote'], de_lote: true }),
   ];
   assert.deepEqual(resumenRevision(rasgos),
-    { lotes: 4, verde: 2, ambar: 0, rojo: 1, gris: 1, sin_numero: 2, sin_numero_lote: 1, duplicados: 1 });
+    { lotes: 4, verde: 2, ambar: 0, rojo: 1, gris: 1, sin_numero: 2, sin_numero_lote: 1, duplicados: 1, fuera: 0 });
 });
 
 test('el sesgo de escala: casi todos los lotes hacia el mismo lado y más de 3 %', () => {
@@ -549,4 +550,98 @@ test('bajo un "Seguir" apagado va por qué, en cada paso', () => {
 
   assert.equal(porQueNoSigue('revisar', vigente, { duplicados: 2 }), 'Hay números repetidos: corrígelos en Numerar.');
   assert.equal(porQueNoSigue('revisar', vigente, { duplicados: 0 }), '');
+});
+
+// --- el resto de la propiedad -------------------------------------------------------------
+
+/** Rapel en chico: dos lotes y el resto, una parte sin número enorme que el servidor marca. */
+const conResto = (extra = {}) => [
+  { ...lote('8-01', [cuadro(0, 0, 10, 10)], { semilla: [5, 5] }), rotulo: [5, 5] },
+  { ...lote('8-02', [cuadro(10, 0, 20, 10)], { semilla: [15, 5] }), rotulo: [15, 5] },
+  { ...lote(null, [cuadro(0, 10, 200, 100)], { banderas: ['sin_numero', 'de_lote'], de_lote: true, resto: true,
+    numero_resto: '8', punto: [100, 50], ...extra }), rotulo: [100, 50] },
+];
+
+test('el resto de la propiedad se pregunta aparte y no cuenta como lote sin número que numerar', () => {
+  const rasgos = conResto();
+  assert.deepEqual(restoDe(rasgos), { rasgo: rasgos[2], estado: 'pendiente', numero: '8', punto: [100, 50] });
+  // Sin número en el cuadro, iría como "Resto".
+  assert.equal(restoDe(conResto({ numero_resto: null })).numero, 'Resto');
+  assert.equal(restoDe(rasgos.slice(0, 2)), null);
+  // La tarjeta pregunta por él: ni "Falta 1 número" ni "Ir al siguiente sin número".
+  assert.deepEqual(sinNumero(rasgos), []);
+  assert.equal(mensajeNumerar(rasgos), 'Todos los lotes tienen número.');
+  // El rótulo va en el punto que da el servidor, que cae dentro.
+  const { rotulo: _r, ...sinRotulo } = rasgos[2];
+  assert.deepEqual(puntoDeRotulo(sinRotulo), [100, 50]);
+});
+
+test('dejar fuera el resto: se anota un punto dentro y deja de contar en Revisar', () => {
+  const rasgos = conResto();
+  const anillos = rasgos[2].geometry.coordinates;
+  const entradas = { semillas: [{ numero: '8-01', x: 5, y: 5 }], fuera: [] };
+
+  const fuera = decidirResto(entradas, anillos, [100, 50], false, '8');
+  assert.deepEqual(fuera.fuera, [[100, 50]]);
+  assert.deepEqual(fuera.semillas, entradas.semillas);          // no cambia cómo se parte: no relee
+
+  const vistos = aplicarFuera(rasgos, [100, 50], true);
+  assert.equal(restoDe(vistos).estado, 'fuera');
+  assert.deepEqual(vistos[2].properties.banderas, ['sin_numero', 'fuera']);
+  const cuenta = resumenRevision(vistos);
+  assert.equal(cuenta.sin_numero_lote, 0);
+  assert.equal(cuenta.sin_numero, 0);
+  assert.equal(cuenta.fuera, 1);
+  assert.equal(rasgos[2].properties.fuera, undefined);          // no toca los que recibe
+  // Antes de decidir, en Revisar sí cuenta como lote sin número.
+  assert.equal(resumenRevision(rasgos).sin_numero_lote, 1);
+});
+
+test('incluir el resto pone su número del cuadro, y se puede cambiar de idea', () => {
+  const rasgos = conResto();
+  const anillos = rasgos[2].geometry.coordinates;
+  const fuera = decidirResto({ semillas: [], fuera: [[3, 3]] }, anillos, [100, 50], false);
+
+  const incluido = decidirResto(fuera, anillos, [100, 50], true, '8');
+  assert.deepEqual(incluido.semillas, [{ numero: '8', x: 100, y: 50 }]);
+  assert.deepEqual(incluido.fuera, [[3, 3]]);                    // solo se quita lo de esta parte
+  const vistos = aplicarNumero(aplicarFuera(rasgos, [100, 50], false), '8', [100, 50]);
+  assert.equal(restoDe(vistos).estado, 'incluido');
+  assert.deepEqual(vistos[2].properties.banderas, []);
+  assert.equal(resumenRevision(vistos).sin_numero_lote, 0);
+
+  // Y de vuelta fuera: la semilla queda (no se relee el plano), pero no va al KMZ.
+  const otraVez = decidirResto(incluido, anillos, [100, 50], false);
+  assert.deepEqual(otraVez.semillas, incluido.semillas);
+  assert.deepEqual(otraVez.fuera, [[3, 3], [100, 50]]);
+  const sacado = aplicarFuera(vistos, [100, 50], true);
+  assert.equal(restoDe(sacado).estado, 'fuera');
+  assert.equal(sacado[2].properties.numero, '8');
+  assert.deepEqual(resumenRevision(sacado), { ...resumenRevision(rasgos.slice(0, 2)), fuera: 1 });
+  // Incluirlo de nuevo, ya con número: solo se quita lo anotado, sin otra semilla.
+  assert.deepEqual(decidirResto(otraVez, anillos, [100, 50], true), incluido);
+  assert.equal(restoDe(aplicarFuera(sacado, [100, 50], false)).estado, 'incluido');
+});
+
+test('el resto que numeró el lector se puede dejar fuera, y vuelve a quedar en rojo sin decidir', () => {
+  const leido = conResto({ numero: '8', banderas: [], de_lote: false, origen: 'lector' });
+  assert.equal(restoDe(leido).estado, 'incluido');
+  const sacado = aplicarFuera(leido, [100, 50], true);
+  assert.deepEqual(sacado[2].properties.banderas, ['fuera']);
+  // Una parte sin número vuelta atrás es otra vez un lote sin número que decidir.
+  const deVuelta = aplicarFuera(aplicarFuera(conResto(), [100, 50], true), [100, 50], false);
+  assert.deepEqual(deVuelta[2].properties.banderas, ['sin_numero', 'de_lote']);
+  assert.equal(restoDe(deVuelta).estado, 'pendiente');
+});
+
+test('numerar a mano una parte dejada fuera la devuelve al KMZ, como la muestra aplicarNumero', () => {
+  const rasgos = conResto();
+  const anillos = rasgos[2].geometry.coordinates;
+  const fuera = decidirResto({ semillas: [], fuera: [[3, 3]] }, anillos, [100, 50], false);
+  assert.deepEqual(devolverAlKmz(fuera, anillos).fuera, [[3, 3]]);
+  // Lo que se ve al tiro y lo que guardará el servidor dicen lo mismo: incluido.
+  assert.equal(restoDe(aplicarNumero(aplicarFuera(rasgos, [100, 50], true), '8', [100, 50])).estado, 'incluido');
+  const sinFuera = { semillas: [] };
+  assert.equal(devolverAlKmz(sinFuera, anillos), sinFuera);
+  assert.equal(devolverAlKmz(fuera, null), fuera);
 });

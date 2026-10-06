@@ -114,6 +114,10 @@ export class MapaKmz {
     const L = this.L;
     const estilo = (rasgo) => {
       const p = rasgo.properties;
+      if (p.fuera) {
+        // Lo que ella dejó fuera del KMZ (el resto de la propiedad): gris, ya decidido.
+        return { color: COLORES.gris, weight: 1.5, dashArray: '5 4', fill: true, fillColor: COLORES.gris, fillOpacity: 0.1 };
+      }
       const marcado = (p.banderas ?? []).length > 0;
       if (modo === 'contorno') {
         return { color: marcado ? COLORES.rojo : COLORES.contorno, weight: 1.5, fill: true, fillOpacity: 0.05 };

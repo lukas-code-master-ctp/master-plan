@@ -295,6 +295,19 @@ def test_con_cuadro_la_sugerencia_se_corrige_o_no_se_ofrece():
     assert _sugerencias(caras, [True, True], leidos, 2, ["8-08"])[1]["numero"] == "6-48"
 
 
+def test_el_numero_del_resto_de_la_propiedad_no_se_sugiere():
+    """Si el resto va al KMZ lo pregunta su propia tarjeta: el "8" leído con poco apoyo no
+    se ofrece para confirmar."""
+    from pipeline.plano.digitalizar import _sugerencias
+    from pipeline.plano.rotulos import Rotulo
+    caras = [Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])]
+    cuadro = {**{f"8-{n:02d}": 5000.0 for n in range(1, 17)}, "8": 760000.0}
+    assert _sugerencias(caras, [True], [Rotulo("8", 5, 5, 0.04, 1)], 2, [], cuadro) == [None]
+    # Sin la fila del resto, el 8 se ofrece como cualquier lectura.
+    del cuadro["8"]
+    assert _sugerencias(caras, [True], [Rotulo("8", 5, 5, 0.04, 1)], 2, [], cuadro)[0]["numero"] == "8"
+
+
 def _lotes_con_texto_en_el_borde():
     """Dos lotes de 50 × 35 mm; sobre el deslinde exterior de arriba, por dentro, un
     texto en negrita pegado a la línea ("Servidumbre de tránsito 10 m", como en Caminos

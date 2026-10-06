@@ -85,6 +85,7 @@ export function girarEntradas(entradas, de, a, ancho, alto) {
     mascaras: (entradas.mascaras ?? []).map(caja),
     semillas: (entradas.semillas ?? []).map(conXY),
     anclas: (entradas.anclas ?? []).map(conXY),
+    fuera: (entradas.fuera ?? []).map(punto),
   };
   if (entradas.cuadro) salida.cuadro = caja(entradas.cuadro);
   if (entradas.esquinas) {
@@ -341,10 +342,15 @@ export function centroide(anillo) {
   return [cx / (3 * a), cy / (3 * a)];
 }
 
-/** Dónde escribir el número de un lote: su semilla, o el centroide si cae dentro. */
+/**
+ * Dónde escribir el número de un lote: su semilla, el punto que el servidor da dentro
+ * (el del resto de la propiedad: una parte enorme y torcida) o el centroide si cae dentro.
+ */
 export function puntoDeRotulo(rasgo) {
   const semilla = rasgo.properties?.semilla;
   if (Array.isArray(semilla) && semilla.length === 2) return semilla;
+  const punto = rasgo.properties?.punto;
+  if (Array.isArray(punto) && punto.length === 2) return punto;
   const anillos = rasgo.geometry.coordinates;
   const c = centroide(anillos[0]);
   if (puntoEnPoligono(c[0], c[1], anillos)) return c;
@@ -400,9 +406,16 @@ export function nivelDe(propiedades) {
 
 /** Lo que la revisión cuenta de un vistazo. */
 export function resumenRevision(rasgos) {
-  const cuenta = { lotes: 0, verde: 0, ambar: 0, rojo: 0, gris: 0, sin_numero: 0, sin_numero_lote: 0, duplicados: 0 };
+  const cuenta = {
+    lotes: 0, verde: 0, ambar: 0, rojo: 0, gris: 0, sin_numero: 0, sin_numero_lote: 0, duplicados: 0, fuera: 0,
+  };
   for (const { properties: p } of rasgos) {
     const banderas = p.banderas ?? [];
+    // Lo que ella dejó fuera del KMZ (el resto de la propiedad) ya está decidido: no es un aviso.
+    if (p.fuera) {
+      cuenta.fuera += 1;
+      continue;
+    }
     if (banderas.includes('sin_numero')) {
       cuenta.sin_numero += 1;
       if (p.de_lote) cuenta.sin_numero_lote += 1;
@@ -435,11 +448,13 @@ export function sesgoDeEscala(rasgos, umbral = 0.03, parejo = 0.8) {
 
 /**
  * Las partes sin número, primero las del tamaño de un lote (un lote cuyo número no se
- * leyó) y, entre ellas, las que traen una lectura que confirmar.
+ * leyó) y, entre ellas, las que traen una lectura que confirmar. Sin el resto de la
+ * propiedad (lo pregunta su propia tarjeta) ni lo que ella dejó fuera del KMZ.
  */
 export function sinNumero(rasgos) {
   const peso = ({ properties: p }) => (p.de_lote ? 0 : 2) + (p.sugerencia ? 0 : 1);
-  return rasgos.filter((r) => (r.properties.banderas ?? []).includes('sin_numero') && r.properties.numero == null)
+  return rasgos.filter((r) => (r.properties.banderas ?? []).includes('sin_numero') && r.properties.numero == null
+    && !r.properties.fuera && !r.properties.resto)
     .map((r, i) => [r, i]).sort(([a, i], [b, j]) => peso(a) - peso(b) || i - j).map(([r]) => r);
 }
 
@@ -463,9 +478,10 @@ export function duplicados(rasgos) {
     .map((r) => r.properties.numero))];
 }
 
-/** Leídos por el lector con poco apoyo: los que conviene mirar. */
+/** Leídos por el lector con poco apoyo: los que conviene mirar. El resto de la propiedad
+ *  no: lo muestra su propia tarjeta. */
 export function dudosos(rasgos, apoyoMinimo = 3) {
-  return rasgos.filter(({ properties: p }) => p.origen === 'lector'
+  return rasgos.filter(({ properties: p }) => p.origen === 'lector' && !p.resto
     && ((p.apoyo ?? 0) < apoyoMinimo || (p.confianza ?? 1) < 0.6));
 }
 
@@ -499,8 +515,9 @@ export function aplicarNumero(rasgos, numero, punto) {
     const p = r.properties;
     if (r === lote) {
       const { sugerencia: _s, ...resto } = p;
-      const nuevo = { ...r, properties: { ...resto, numero: limpio, origen: 'usuario', de_lote: false,
-        confianza: null, apoyo: null, semilla: [punto[0], punto[1]], banderas: fuera(p.banderas, 'sin_numero', 'de_lote') } };
+      const nuevo = { ...r, properties: { ...resto, numero: limpio, origen: 'usuario', de_lote: false, fuera: false,
+        confianza: null, apoyo: null, semilla: [punto[0], punto[1]],
+        banderas: fuera(p.banderas, 'sin_numero', 'de_lote', 'fuera') } };
       return { ...nuevo, rotulo: [punto[0], punto[1]] };
     }
     if (p.numero != null && claveLote(p.numero) === clave) {
@@ -524,6 +541,71 @@ export function aplicarNumero(rasgos, numero, punto) {
     if (repetido === tenia) return r;
     const banderas = repetido ? [...fuera(p.banderas), 'duplicado'] : fuera(p.banderas, 'duplicado');
     return { ...r, properties: { ...p, banderas } };
+  });
+}
+
+// --- el resto de la propiedad ----------------------------------------------------------
+
+/**
+ * El resto de la propiedad (el rasgo con `resto` que marca el servidor), o null:
+ * `{rasgo, estado, numero, punto}`. `estado`: "pendiente" (falta decidir si va al KMZ),
+ * "incluido" (tiene número: va como un lote más) o "fuera" (lo dejó fuera, tenga o no el
+ * número que leyó el lector). `numero`: con el que va o iría al KMZ, el suyo, el del cuadro
+ * de superficies o "Resto" si el cuadro no le da uno. `punto`: dentro de la parte, para
+ * centrar el plano y anotar la decisión.
+ */
+export function restoDe(rasgos) {
+  const rasgo = (rasgos ?? []).find((r) => r.properties?.resto);
+  if (!rasgo) return null;
+  const p = rasgo.properties;
+  const estado = p.fuera ? 'fuera' : p.numero != null ? 'incluido' : 'pendiente';
+  const numero = p.numero ?? p.numero_resto ?? 'Resto';
+  return { rasgo, estado, numero: String(numero), punto: rasgo.rotulo ?? puntoDeRotulo(rasgo) };
+}
+
+/**
+ * Las entradas con la decisión sobre el resto (`anillos`: su polígono; `punto`: dentro).
+ * Dejarlo fuera anota `punto` en `fuera`; incluirlo quita lo anotado dentro y, si se da
+ * `numero` (la parte no tiene), pone esa semilla en `punto`. Las semillas no se tocan al
+ * dejarlo fuera: así cambiar de idea no obliga a leer el plano de nuevo.
+ */
+export function decidirResto(entradas, anillos, punto, incluir, numero = null) {
+  const dentro = ([x, y]) => puntoEnPoligono(x, y, anillos);
+  const { fuera } = devolverAlKmz(entradas, anillos);
+  const [x, y] = [redondo(punto[0]), redondo(punto[1])];
+  if (!incluir) return { ...entradas, fuera: [...fuera, [x, y]] };
+  if (!numero) return { ...entradas, fuera };
+  // Un número va en un solo lote: si estaba en otro, se va de ahí (como `ponerNumero`).
+  const clave = claveLote(numero);
+  const semillas = (entradas.semillas ?? []).filter((s) => !dentro([s.x, s.y]) && claveLote(s.numero) !== clave);
+  return { ...entradas, fuera, semillas: [...semillas, { numero, x, y }] };
+}
+
+/**
+ * Las entradas sin lo anotado como fuera del KMZ dentro de la parte `anillos`. Numerar
+ * esa parte a mano también la devuelve al KMZ: `aplicarNumero` la muestra incluida, y si
+ * el punto quedara en `fuera` el servidor la volvería a dejar fuera al releer.
+ */
+export function devolverAlKmz(entradas, anillos) {
+  if (!anillos || !(entradas.fuera ?? []).length) return entradas;
+  return { ...entradas, fuera: entradas.fuera.filter(([x, y]) => !puntoEnPoligono(x, y, anillos)) };
+}
+
+/**
+ * Los lotes con el resto dejado fuera (o vuelto atrás) al tiro, como lo dirá el servidor:
+ * la parte que contiene `punto` queda fuera del KMZ, sin contar como lote sin número; o
+ * vuelve a ser un lote sin número o el lote numerado que era. No toca los rasgos que recibe.
+ */
+export function aplicarFuera(rasgos, punto, fuera) {
+  const parte = loteEn(rasgos, punto[0], punto[1]);
+  if (!parte) return rasgos;
+  return rasgos.map((r) => {
+    if (r !== parte) return r;
+    const p = r.properties;
+    const otras = (p.banderas ?? []).filter((b) => !['fuera', 'de_lote'].includes(b));
+    const sinNumero = p.numero == null;
+    const banderas = [...otras, ...(fuera ? ['fuera'] : sinNumero ? ['de_lote'] : [])];
+    return { ...r, properties: { ...p, fuera, de_lote: sinNumero && !fuera, sugerencia: fuera ? null : p.sugerencia, banderas } };
   });
 }
 

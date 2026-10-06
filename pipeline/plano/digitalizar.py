@@ -39,7 +39,11 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
                                        máscara
       "anclas": [{"nombre": "roja", "x": 2533, "y": 8037,       punto del plano ↔ su lon/lat
                   "lon": -70.8240, "lat": -34.7240}],           WGS84 en grados decimales
-      "ajuste": {"de": 0.0, "dn": 0.0}  traslación fina en metros (este, norte)
+      "ajuste": {"de": 0.0, "dn": 0.0}, traslación fina en metros (este, norte)
+      "fuera": [[x, y]]                partes sin número que ella dejó fuera del KMZ (el
+                                       resto de la propiedad): un punto dentro de cada una.
+                                       No cambia los lotes; solo que la consola no las
+                                       cuente como lotes sin número
     }
 
 Todas las coordenadas van en **píxeles de página**: la imagen que trae el PDF, ya
@@ -251,8 +255,11 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
         lector = _leer_rotulos(carpeta, entradas, imagen, hoja.ppmm, previo, avance)
         poligonos = ([l["poligono"] for l in previo.get("lotes") or []]
                      + [c["poligono"] for c in previo.get("sin_numero") or []]) if previo else []
+        cuadro = lector.get("cuadro") or {}
+        # Sin el resto de la propiedad: su "8" haría pasar el "6-08" por un lote del cuadro.
         combinadas = rotulos.combinar(usuario, lector["rotulos"], RADIO_CORRECCION_MM * hoja.ppmm,
-                                      entradas["lector_apoyo_min"], poligonos, lector.get("cuadro") or {})
+                                      entradas["lector_apoyo_min"], poligonos, numeros_lote.esperados(cuadro),
+                                      [r for r in [numeros_lote.resto(cuadro)] if r])
     else:
         combinadas = rotulos.combinar(usuario, [], 0.0)
     del previo
@@ -300,7 +307,7 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
                     huecos=[_anillo(h) for h in g.interiors], area_px=round(g.area, 1),
                     vertices=len(g.exterior.coords) - 1, origen=posicion[n]["origen"],
                     confianza=posicion[n]["confianza"], apoyo=posicion[n]["apoyo"],
-                    area_oficial=numeros_lote.buscar(cuadro, n))
+                    area_oficial=_area_oficial(cuadro, n))
                for n, g in r.lotes.items()],
         sin_numero=[dict(poligono=_anillo(g.exterior), area_px=round(g.area, 1), de_lote=es, sugerencia=sug)
                     for g, es, sug in zip(r.sin_numero, r.sin_numero_lote, sugerencias)],
@@ -313,6 +320,14 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     escribir_json(carpeta / SALIDA, datos)
     avance(f"Listo: {carpeta / SALIDA}")
     return datos
+
+
+def _area_oficial(cuadro: dict, numero: str) -> float | None:
+    """La del cuadro de superficies. El resto de la propiedad que ella llamó "Resto" (el
+    cuadro no le daba número, o no se había leído) tiene la de la fila del resto."""
+    if numeros_lote.es_resto(numero) and numeros_lote.resto(cuadro):
+        return cuadro[numeros_lote.resto(cuadro)]
+    return numeros_lote.buscar(cuadro, numero)
 
 
 def _sugerencias(caras: list[Polygon], de_lote: list[bool], leidos, apoyo_min: int,
@@ -328,14 +343,17 @@ def _sugerencias(caras: list[Polygon], de_lote: list[bool], leidos, apoyo_min: i
     from shapely.geometry import Point
     salida: list[dict | None] = [None] * len(caras)
     tomados = list(usados)
-    oficiales = list(cuadro or {})
+    oficiales = numeros_lote.esperados(cuadro or {})
+    restos = [r for r in [numeros_lote.resto(cuadro or {})] if r]
     tope = max((numeros_lote.ultimo(n) or 0 for n in oficiales), default=None)
     for r in sorted((r for r in leidos if r.apoyo < apoyo_min), key=lambda r: (-r.apoyo, -r.confianza)):
         numero = numeros_lote.segun_cuadro(r.numero, oficiales)
         if (tope is not None and not any(numeros_lote.mismo_lote(numero, n) for n in oficiales)
                 and (numeros_lote.ultimo(numero) or tope + 1) > tope):
             continue
-        if any(numeros_lote.mismo_lote(numero, n) for n in tomados):
+        # El resto de la propiedad tampoco se sugiere: Numerar le pregunta si va al KMZ.
+        if (numeros_lote.clave(numero) in map(numeros_lote.clave, restos)
+                or any(numeros_lote.mismo_lote(numero, n, restos) for n in tomados)):
             continue
         for i, (cara, es) in enumerate(zip(caras, de_lote)):
             if es and salida[i] is None and cara.contains(Point(r.x, r.y)):
@@ -506,6 +524,10 @@ def leer_entradas(carpeta: Path) -> dict:
             raise ValueError(f"{nombre}: lon/lat fuera de rango ({lon}, {lat})")
         anclas.append(dict(a, nombre=nombre, x=x, y=y, lon=lon, lat=lat))
     salida["anclas"] = anclas
+    fuera = e.get("fuera") or []
+    if not isinstance(fuera, list):
+        raise ValueError(f"«fuera» es una lista de puntos [[x, y]], no {fuera!r}")
+    salida["fuera"] = [numeros(f, 2, "fuera[]") for f in fuera]
     ajuste = e.get("ajuste") or {}
     if not isinstance(ajuste, dict):
         raise ValueError(f"«ajuste» es {{\"de\": metros, \"dn\": metros}}, no {ajuste!r}")

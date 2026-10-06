@@ -543,6 +543,15 @@
           <span class="kmz-muestra kmz-muestra--malo">rojo</span> los sin número o repetidos.</p>
         <p id="kmz-sin-numero" class="kmz-nota-fuerte" role="status"></p>
         <p id="kmz-actualizando" class="kmz-actualizando" role="status" hidden>Actualizando los lotes…</p>
+        <div id="kmz-resto" class="kmz-resto" role="group" aria-labelledby="kmz-resto-texto" hidden>
+          <p id="kmz-resto-texto" class="kmz-resto__pregunta"></p>
+          <p id="kmz-resto-detalle" class="nota"></p>
+          <div class="fila fila--envuelve">
+            <button class="boton boton--chico" data-accion="kmz-resto-incluir" type="button">Incluirlo en el KMZ</button>
+            <button class="boton boton--contorno boton--chico" data-accion="kmz-resto-fuera" type="button">Dejarlo fuera</button>
+            <button id="kmz-resto-ver" class="boton boton--texto boton--chico" type="button">Ver en el plano</button>
+          </div>
+        </div>
         <button class="boton boton--contorno boton--chico" data-accion="kmz-siguiente-sin-numero" type="button">Ir al siguiente sin número</button>
         <div id="kmz-sugerencias-caja" hidden>
           <h3>Números por confirmar</h3>
