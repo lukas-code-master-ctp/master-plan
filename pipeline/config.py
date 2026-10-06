@@ -201,6 +201,11 @@ class Proyecto:
     # Pueblos u otros hitos que se rotulan en el horizonte: nombres a geocodificar
     # ("Cauquenes") o dicts con nombre, lon y lat.
     referencias: tuple = ()
+    # Un link para reservar cualquier parcela del loteo (Webpay, Flow, un
+    # formulario) y cuánto se paga, en pesos. Las parcelas con su propio link en
+    # la planilla usan ese.
+    link_reserva: str = ""
+    monto_reserva: float | None = None
 
     # El slug se ASIGNA, no se deriva. Es la identidad del loteo: su carpeta de
     # salida, su proyecto en el hosting y su URL. Dos clientes pueden llamar igual
@@ -233,6 +238,17 @@ def normalizar_whatsapp(texto: str) -> str:
     return digitos
 
 
+def leer_monto(valor) -> float | None:
+    """Un monto escrito a mano: "250.000", "$250000" o 250000. Vacío o cero: no hay."""
+    if isinstance(valor, (int, float)):
+        return float(valor) or None
+    texto = re.sub(r"[^\d,]", "", str(valor or "")).replace(",", ".")
+    try:
+        return float(texto) or None
+    except ValueError:
+        return None
+
+
 def cargar_proyecto(carpeta: Path, **valores) -> Proyecto:
     """Los datos del proyecto: `proyecto.json` en la carpeta, pisado por lo que
     venga por línea de comandos. Sin nada, el nombre es el de la carpeta."""
@@ -252,6 +268,8 @@ def cargar_proyecto(carpeta: Path, **valores) -> Proyecto:
         parcelacion=str(datos.get("parcelacion") or nombre.upper()),
         despegue=(float(despegue[0]), float(despegue[1])) if despegue else None,
         referencias=tuple(datos.get("referencias") or ()),
+        link_reserva=str(datos.get("link_reserva") or "").strip(),
+        monto_reserva=leer_monto(datos.get("monto_reserva")),
         slug_guardado=str(datos.get("slug") or ""),
     )
 

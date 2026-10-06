@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { Catalogo } from './datos.js';
 import {
   accionesDe, atributosDe, destinoDelArrastre, escapar, financiamientoDe, formatearPrecio,
-  kmlDeParcela, rotuloConPrecio,
+  kmlDeParcela, mensajeWhatsapp, rotuloConPrecio,
 } from './ficha.js';
 
 const ESTADOS = {
@@ -13,9 +13,9 @@ const ESTADOS = {
   vendido: { etiqueta: 'Vendido', color: '#2563eb', vendible: false },
 };
 
-function catalogoCon(parcela, { whatsapp = '56900000000', diseno = null } = {}) {
+function catalogoCon(parcela, { whatsapp = '56900000000', diseno = null, reserva = {} } = {}) {
   return new Catalogo(
-    { proyecto: 'Loteo de Prueba', whatsapp, estados: ESTADOS, parcelas: [parcela] },
+    { proyecto: 'Loteo de Prueba', whatsapp, estados: ESTADOS, parcelas: [parcela], ...reserva },
     { vistas: [] },
     diseno,
   );
@@ -116,14 +116,72 @@ test('una parcela en venta ofrece primero WhatsApp, después reservar o comprar,
   assert.equal(acciones[1].href, 'https://pago.example/7');
 });
 
-test('el WhatsApp dice Consultar por WhatsApp y lleva el nombre de la parcela y del loteo', () => {
+test('el WhatsApp dice Consultar por WhatsApp y abre el chat con el mensaje de la parcela', () => {
   const p = parcela();
+  const url = 'https://loteo.cl/?lote=7';
 
-  const contacto = accionesDe(p, catalogoCon(p)).find((a) => a.tipo === 'contacto');
+  const contacto = accionesDe(p, catalogoCon(p), { url }).find((a) => a.tipo === 'contacto');
 
   assert.equal(contacto.texto, 'Consultar por WhatsApp');
   assert.equal(contacto.href, `https://wa.me/56900000000?text=${encodeURIComponent(
-    'Hola, me interesa la parcela 7 de Loteo de Prueba.')}`);
+    mensajeWhatsapp(catalogoCon(p), p, url))}`);
+});
+
+test('el mensaje de WhatsApp dice que viene del Masterplan, qué parcela es y su enlace', () => {
+  const p = parcela();
+
+  assert.equal(mensajeWhatsapp(catalogoCon(p), p, 'https://loteo.cl/?lote=7'),
+               'Hola, vengo del Masterplan de Loteo de Prueba. Me interesa la parcela 7: https://loteo.cl/?lote=7');
+});
+
+test('sin parcela elegida, el mensaje también dice que viene del Masterplan', () => {
+  assert.equal(mensajeWhatsapp(catalogoCon(parcela()), null, 'https://loteo.cl/'),
+               'Hola, vengo del Masterplan de Loteo de Prueba y quiero más información: https://loteo.cl/');
+});
+
+// --- Reserva del loteo ------------------------------------------------------------
+
+const RESERVA = { link_reserva: 'https://pago.cl/reserva', monto_reserva: 250000 };
+
+test('sin link propio, una parcela en venta usa el link de reserva del loteo con su número', () => {
+  const p = parcela();
+
+  const pago = accionesDe(p, catalogoCon(p, { reserva: RESERVA })).find((a) => a.tipo === 'pago');
+
+  assert.equal(pago.href, 'https://pago.cl/reserva?parcela=7');
+  assert.equal(pago.texto, 'Reservar parcela ($250.000)');
+});
+
+test('el número de la parcela se suma a los parámetros que el link ya traía', () => {
+  const p = parcela();
+  const reserva = { link_reserva: 'https://pago.cl/r?producto=loteo' };
+
+  const pago = accionesDe(p, catalogoCon(p, { reserva })).find((a) => a.tipo === 'pago');
+
+  assert.equal(pago.href, 'https://pago.cl/r?producto=loteo&parcela=7');
+  assert.equal(pago.texto, 'Reservar parcela');
+});
+
+test('el link propio de la parcela manda sobre el del loteo', () => {
+  const p = parcela({ link_pago: 'https://pago.cl/7' });
+
+  const pago = accionesDe(p, catalogoCon(p, { reserva: RESERVA })).find((a) => a.tipo === 'pago');
+
+  assert.equal(pago.href, 'https://pago.cl/7');
+});
+
+test('el monto de reserva de la planilla manda sobre el del loteo', () => {
+  const p = parcela({ reserva: 300000 });
+
+  const pago = accionesDe(p, catalogoCon(p, { reserva: RESERVA })).find((a) => a.tipo === 'pago');
+
+  assert.equal(pago.texto, 'Reservar parcela ($300.000)');
+});
+
+test('una parcela vendida no ofrece la reserva del loteo', () => {
+  const p = parcela({ estado: 'vendido' });
+
+  assert.equal(accionesDe(p, catalogoCon(p, { reserva: RESERVA })).some((a) => a.tipo === 'pago'), false);
 });
 
 test('sin precio, el link de pago es para reservar', () => {

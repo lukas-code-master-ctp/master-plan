@@ -428,7 +428,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                      if cambia_diseno else None)
         try:
             proyecto = mios.ajustar(slug, campos)
-        except ProyectoYaExiste as error:
+        except (ProyectoYaExiste, ValueError) as error:
             raise HTTPException(400, str(error)) from error
         if cambia_diseno:
             proyecto = mios.asignar_diseno(slug, diseno_id)
@@ -1048,6 +1048,8 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "nombre": proyecto.nombre,
         "etapa": proyecto.etapa,
         "whatsapp": proyecto.whatsapp,
+        "link_reserva": proyecto.link_reserva,
+        "monto_reserva": proyecto.monto_reserva,
         "parcelacion": proyecto.parcelacion,
         "despegue": list(proyecto.despegue) if proyecto.despegue else None,
         "referencias": list(proyecto.referencias),

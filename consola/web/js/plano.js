@@ -251,6 +251,8 @@ function rellenarAjustes(proyecto) {
   form.elements.nombre.value = proyecto.nombre ?? '';
   form.elements.etapa.value = proyecto.etapa ?? '';
   form.elements.whatsapp.value = proyecto.whatsapp ?? '';
+  form.elements.link_reserva.value = proyecto.link_reserva ?? '';
+  form.elements.monto_reserva.value = proyecto.monto_reserva ?? '';
   form.elements.parcelacion.value = proyecto.parcelacion ?? '';
   // Vacío es "el nombre en mayúsculas": se muestra como sugerencia, no como valor.
   form.elements.parcelacion.placeholder = (proyecto.nombre ?? '').toUpperCase();
@@ -272,6 +274,8 @@ async function guardar(proyecto) {
     nombre: form.elements.nombre.value.trim() || null,
     etapa: form.elements.etapa.value.trim(),
     whatsapp: form.elements.whatsapp.value.trim(),
+    link_reserva: form.elements.link_reserva.value.trim(),
+    monto_reserva: form.elements.monto_reserva.value.trim(),
     parcelacion: form.elements.parcelacion.value.trim(),
     despegue: numeros.length === 2 ? numeros : null,
     referencias: lista(form.elements.referencias.value),
@@ -281,13 +285,14 @@ async function guardar(proyecto) {
   const antes = proyecto.diseno_id ?? null;
   const despues = proyectoActual();
   rellenarAjustes(despues);
-  // El diseño, el nombre, la etapa y el WhatsApp se aplican al publicar. La
+  // El diseño, el nombre, la etapa, el WhatsApp y la reserva se aplican al publicar. La
   // parcelación, el despegue y los hitos cambian el cálculo: esos piden reconstruir.
   const igual = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   const pideReconstruir = !igual(proyecto.parcelacion, despues.parcelacion)
     || !igual(proyecto.despegue, despues.despegue) || !igual(proyecto.referencias, despues.referencias);
   const alPublicar = !igual(antes, despues.diseno_id)
-    || ['nombre', 'etapa', 'whatsapp'].some((campo) => !igual(proyecto[campo], despues[campo]));
+    || ['nombre', 'etapa', 'whatsapp', 'link_reserva', 'monto_reserva']
+      .some((campo) => !igual(proyecto[campo], despues[campo]));
   let aviso = 'Guardado.';
   if (proyecto.construido && pideReconstruir) aviso = 'Guardado. Reconstruye para que se vea en el sitio.';
   else if (proyecto.construido && alPublicar) {

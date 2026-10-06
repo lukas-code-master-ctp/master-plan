@@ -2,7 +2,7 @@
 import { rumboCardinal, rumboCorto } from './camara.js';
 import { Catalogo, ErrorDeDatos, buscar, conteoPorEstado, filtrar, romano } from './datos.js';
 import { aplicarMarca, ponerLogo } from './marca.js';
-import { renderizarFicha, rotuloConPrecio } from './ficha.js';
+import { mensajeWhatsapp, renderizarFicha, rotuloConPrecio } from './ficha.js';
 import { Mapa } from './mapa.js';
 import {
   construirPerspectivas, marcarPerspectiva, pintarMiniPlano, pintarMiniatura,
@@ -306,10 +306,11 @@ function conectarAccionesRapidas() {
   }
 }
 
-function enlaceWhatsapp(parcela) {
-  const mensaje = parcela
-    ? `Hola, me interesa la ${estado.catalogo.nombre(parcela).toLowerCase()} de ${estado.catalogo.meta.proyecto}.`
-    : `Hola, quiero información sobre ${estado.catalogo.meta.proyecto}.`;
+/** El WhatsApp general del loteo (cabecera y barra), con el enlace al sitio sin parcela. */
+function enlaceWhatsapp() {
+  const url = new URL(location.href);
+  url.searchParams.delete('lote');
+  const mensaje = mensajeWhatsapp(estado.catalogo, null, url.toString());
   return `https://wa.me/${estado.catalogo.meta.whatsapp}?text=${encodeURIComponent(mensaje)}`;
 }
 
