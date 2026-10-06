@@ -14,7 +14,7 @@ import {
   anclaDesde, aplicarFuera, aplicarNumero, claveLote, conSemillas, decidirResto, devolverAlKmz, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, nombreDelSistema, numerosQueFaltan,
   ordenarEsquinas, PASOS, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puntoDeRotulo,
-  puntoEnPoligono, restoDe, sesgoDeEscala, resumenRevision, siguienteNombre, sinNumero, sugerencias, verticesDe,
+  puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, siguienteNombre, sinNumero, sugerencias, textoSemaforo, verticesDe,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
 import { abrirNombre, abrirUsarKmz, descargaDe, textoDeCreado } from './kmzs.js';
@@ -409,6 +409,7 @@ async function manejar(nodo) {
   if (accion === 'kmz-deshacer') return corregir({ accion: 'deshacer' });
   if (accion === 'kmz-georreferenciar') return ubicar();
   if (accion === 'kmz-crear') return crearKmz();
+  if (accion === 'kmz-volver-ubicar') return irAlPaso('ubicar');
   if (accion === 'kmz-renombrar') return renombrar();
   if (accion === 'kmz-usar') return usar();
   return undefined;
@@ -1474,7 +1475,23 @@ function pintarCrear() {
   const crear = $('[data-accion="kmz-crear"]');
   const creando = creandoKmz === slug;
   crear.disabled = creando || !pasosHabilitados(plano).crear;
-  crear.textContent = creando ? 'Creando el KMZ…' : hay ? 'Crear el KMZ de nuevo' : 'Crear el KMZ';
+  // Con los lotes en lon/lat (se cargan con el plano ubicado): sin ellos no hay con qué
+  // comparar y el semáforo queda oculto, como sin cuadro.
+  // Sin la ubicación vigente no se puede crear: los desvíos serían de los puntos viejos.
+  const luz = semaforo(pasosHabilitados(plano).crear ? rasgosGeo?.features ?? [] : []);
+  const caja = $('#kmz-semaforo');
+  const texto = textoSemaforo(luz);
+  caja.hidden = !texto;
+  caja.dataset.tono = luz.tono ?? '';
+  // Solo si cambia: reescribir el mismo texto en una región `status` lo vuelve a anunciar
+  // cada vez que algo repinta el panel.
+  if ($('#kmz-semaforo-texto').textContent !== texto) $('#kmz-semaforo-texto').textContent = texto;
+  $('[data-accion="kmz-volver-ubicar"]').hidden = luz.tono !== 'ambar';
+  // Ámbar avisa pero no bloquea: el botón dice que se crea igual. Con el KMZ ya creado
+  // con esto mismo no hay "igual" que valga: ya se creó, y rehacerlo da lo mismo.
+  const igual = luz.tono === 'ambar' && plano.paso !== 'listo';
+  crear.textContent = creando ? 'Creando el KMZ…' : igual ? 'Crear el KMZ igual'
+    : hay ? 'Crear el KMZ de nuevo' : 'Crear el KMZ';
   if (creando) crear.setAttribute('aria-busy', 'true'); else crear.removeAttribute('aria-busy');
   crear.className = hay ? 'boton boton--contorno' : 'boton boton--grande';
   // Descargar y usar sirven mientras haya un KMZ hecho, aunque esté por rehacerse.

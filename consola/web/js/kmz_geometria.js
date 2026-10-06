@@ -464,6 +464,38 @@ export function sesgoDeEscala(rasgos, umbral = 0.03, parejo = 0.8) {
 }
 
 /**
+ * Cuántos lotes del KMZ calzan con el cuadro de superficies, para avisar antes de crearlo.
+ * Usa el mismo desvío que pinta Revisar (`error_area`, que pone el servidor con el área
+ * oficial, también la del resto incluido): así el aviso y los colores nunca se contradicen.
+ * Solo cuentan los que van al KMZ: ni las partes sin número ni lo que ella dejó fuera.
+ * Ámbar si la mitad o más se aparta más de un 5 % (un desvío así de parejo suele ser la
+ * ubicación, no el dibujo); null si ninguno tiene área oficial (sin cuadro no se muestra).
+ */
+export function semaforo(rasgos, tolerancia = 0.05) {
+  const conArea = (rasgos ?? []).map(({ properties: p }) => p ?? {})
+    .filter((p) => !p.fuera && p.numero != null && !(p.banderas ?? []).includes('sin_numero'))
+    .filter((p) => typeof p.error_area === 'number' && Number.isFinite(p.error_area));
+  const total = conArea.length;
+  if (!total) return { tono: null, dentro: 0, total: 0 };
+  // El `nivel` del servidor sale del desvío sin redondear: con él, un 5,004 % que
+  // `error_area` (a 4 decimales) guarda como 0,05 queda rojo aquí igual que en Revisar.
+  // Sin `nivel`, el desvío con un margen chico para el redondeo.
+  const dentro = conArea.filter((p) => (p.nivel ? p.nivel !== 'rojo'
+    : Math.abs(p.error_area) <= tolerancia + 1e-9)).length;
+  return { tono: (total - dentro) * 2 >= total ? 'ambar' : 'verde', dentro, total };
+}
+
+/** El texto del semáforo ("" si no se muestra). */
+export function textoSemaforo({ tono, dentro, total }) {
+  if (tono === 'verde') return `Los lotes calzan con el cuadro de superficies (${dentro} de ${total} dentro del 5 %).`;
+  if (tono === 'ambar') {
+    return `${total - dentro} de ${total} lotes miden distinto al cuadro de superficies. Suele ser la`
+      + ' ubicación: vuelve a Ubicar y marca los puntos de nuevo.';
+  }
+  return '';
+}
+
+/**
  * Las partes sin número, primero las del tamaño de un lote (un lote cuyo número no se
  * leyó) y, entre ellas, las que traen una lectura que confirmar. Sin el resto de la
  * propiedad (lo pregunta su propia tarjeta) ni lo que ella dejó fuera del KMZ.

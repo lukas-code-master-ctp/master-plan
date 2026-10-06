@@ -657,7 +657,13 @@
       <div class="kmz-panel" id="kmz-panel-crear" data-panel="crear" hidden>
         <h2 tabindex="-1">Crea el KMZ</h2>
         <p id="kmz-crear-texto" class="ayuda"></p>
-        <button class="boton boton--grande" data-accion="kmz-crear" type="button">Crear el KMZ</button>
+        <!-- El semáforo: cuántos lotes calzan con el cuadro de superficies. Solo el texto es
+             región viva: el botón aparece y desaparece sin que se anuncie aparte. -->
+        <div id="kmz-semaforo" class="kmz-semaforo" hidden>
+          <p id="kmz-semaforo-texto" role="status" aria-atomic="true"></p>
+          <button class="boton boton--contorno boton--chico" data-accion="kmz-volver-ubicar" type="button" hidden>Volver a Ubicar</button>
+        </div>
+        <button class="boton boton--grande" data-accion="kmz-crear" type="button" aria-describedby="kmz-semaforo-texto">Crear el KMZ</button>
         <div id="kmz-listo" class="kmz-listo" role="status" hidden>
           <p id="kmz-listo-texto"></p>
           <p class="nota">Descárgalo para Google Earth o tu topógrafo, o úsalo en un master para

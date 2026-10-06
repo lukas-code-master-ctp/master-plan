@@ -888,6 +888,12 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-flechas [data-accion="kmz-este"] { grid-area: e; }
 .kmz-flechas [data-accion="kmz-sur"] { grid-area: s; }
 .kmz-ajuste .campo select { height: 2rem; border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); padding: 0 0.5rem; background: #fff; }
+/* El semáforo de Crear: los tonos 800 sobre su 50 pasan AA (≈7:1); el borde grueso
+   distingue verde de ámbar también sin color, junto con el texto. */
+.kmz-semaforo { display: grid; gap: 0.5rem; justify-items: start; padding: 0.75rem; border-radius: var(--radio-md); border: 1px solid; border-left-width: 4px; font-size: 0.875rem; }
+.kmz-semaforo p { margin: 0; }
+.kmz-semaforo[data-tono="verde"] { background: var(--verde-50); border-color: var(--verde-100); border-left-color: var(--verde-700); color: var(--verde-800); }
+.kmz-semaforo[data-tono="ambar"] { background: var(--ambar-50); border-color: var(--ambar-200); border-left-color: var(--ambar-800); color: var(--ambar-800); }
 .kmz-listo { display: grid; gap: 0.5rem; justify-items: start; padding: 1rem; border-radius: var(--radio-md); background: var(--verde-50); border: 1px solid var(--verde-100); color: var(--verde-800); }
 .kmz-listo p { margin: 0; }
 /* Al crear (o crear de nuevo) el KMZ, el aviso destella una vez: el texto cambia poco y

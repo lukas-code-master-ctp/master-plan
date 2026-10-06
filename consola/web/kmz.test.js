@@ -7,8 +7,8 @@ import assert from 'node:assert/strict';
 import {
   anclaDesde, aPagina, aplicarFuera, aplicarNumero, claveLote, decidirResto, devolverAlKmz, restoDe, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
-  puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
-  tamanoRotado, textoHuecos, vistaAjustada, zoomEn,
+  puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, semaforo, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
+  tamanoRotado, textoHuecos, textoSemaforo, vistaAjustada, zoomEn,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
 
@@ -669,4 +669,54 @@ test('numerar a mano una parte dejada fuera la devuelve al KMZ, como la muestra 
   const sinFuera = { semillas: [] };
   assert.equal(devolverAlKmz(sinFuera, anillos), sinFuera);
   assert.equal(devolverAlKmz(fuera, null), fuera);
+});
+
+// --- semáforo antes de crear ------------------------------------------------------------
+
+/** Un lote con número y su desvío contra el cuadro (sin `error_area`: no tiene área oficial). */
+const conDesvio = (numero, error_area, extra = {}) => ({
+  properties: { numero, banderas: [], ...(error_area === undefined ? {} : { error_area }), ...extra },
+});
+
+test('semáforo verde: menos de la mitad se aparta más de un 5 %', () => {
+  const luz = semaforo([conDesvio('1', 0.01), conDesvio('2', -0.04), conDesvio('3', 0.05), conDesvio('4', 0.09)]);
+  assert.deepEqual(luz, { tono: 'verde', dentro: 3, total: 4 });
+  assert.equal(textoSemaforo(luz), 'Los lotes calzan con el cuadro de superficies (3 de 4 dentro del 5 %).');
+});
+
+test('semáforo ámbar justo en la mitad, y el texto cuenta los que miden distinto', () => {
+  const luz = semaforo([conDesvio('1', 0.01), conDesvio('2', -0.02), conDesvio('3', -0.055), conDesvio('4', 0.07)]);
+  assert.deepEqual(luz, { tono: 'ambar', dentro: 2, total: 4 });
+  assert.match(textoSemaforo(luz), /^2 de 4 lotes miden distinto al cuadro de superficies\. Suele ser la ubicación/);
+  // Uno menos fuera del 5 % y vuelve a verde.
+  assert.equal(semaforo([conDesvio('1', 0.01), conDesvio('2', -0.02), conDesvio('3', 0.03), conDesvio('4', 0.07)]).tono, 'verde');
+});
+
+test('semáforo null sin cuadro de superficies: no se muestra', () => {
+  const luz = semaforo([conDesvio('1'), conDesvio('2', null), conDesvio('3')]);
+  assert.deepEqual(luz, { tono: null, dentro: 0, total: 0 });
+  assert.equal(textoSemaforo(luz), '');
+  assert.equal(semaforo([]).tono, null);
+  assert.equal(semaforo(undefined).tono, null);
+});
+
+test('semáforo cuenta solo lo que va al KMZ: sin las partes sin número ni lo dejado fuera', () => {
+  const rasgos = [
+    conDesvio('1', 0.01), conDesvio('2', 0.02),
+    // Una parte sin número y el resto dejado fuera, aunque traigan desvío, no cuentan.
+    { properties: { numero: null, banderas: ['sin_numero'], error_area: 0.4 } },
+    conDesvio('8', -0.3, { fuera: true, resto: true, banderas: ['fuera'] }),
+    conDesvio('X', 0.2, { banderas: ['sin_numero'] }),
+    // El resto incluido con el área de su fila del cuadro sí cuenta, como un lote más.
+    conDesvio('Resto', 0.03, { resto: true }),
+  ];
+  assert.deepEqual(semaforo(rasgos), { tono: 'verde', dentro: 3, total: 3 });
+});
+
+test('semáforo usa el nivel del servidor si viene: el redondeo de error_area no lo contradice', () => {
+  // 5,004 % se guarda como 0.05, pero Revisar lo pinta rojo (nivel sin redondear).
+  const luz = semaforo([conDesvio('1', 0.05, { nivel: 'rojo' }), conDesvio('2', 0.01, { nivel: 'verde' }),
+    conDesvio('3', -0.03, { nivel: 'ambar' })]);
+  assert.deepEqual(luz, { tono: 'verde', dentro: 2, total: 3 });
+  assert.equal(semaforo([conDesvio('1', 0.05, { nivel: 'rojo' }), conDesvio('2', 0.01, { nivel: 'verde' })]).tono, 'ambar');
 });
