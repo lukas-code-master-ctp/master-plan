@@ -42,6 +42,16 @@ export function cuantosLotes(n) {
   return `${n} ${n === 1 ? 'lote' : 'lotes'}`;
 }
 
+// En 24 horas: es-CL sale con "a. m." si no se le pide el ciclo.
+const HORA = new Intl.DateTimeFormat('es-CL', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+/** El aviso al crear el KMZ. Lleva la hora para que crearlo de nuevo se note aunque
+ *  el resto del texto no cambie. */
+export function textoDeCreado(nombre, lotes, cuando = new Date()) {
+  const cuantos = cuantosLotes(lotes);
+  return `Listo: el KMZ "${nombre}" quedó creado${cuantos ? ` con ${cuantos}` : ''} a las ${HORA.format(cuando)}.`;
+}
+
 /** Lo que se dice al terminar de poner un KMZ en un master. */
 export function textoDeUso(respuesta, master) {
   const lotes = cuantosLotes(respuesta.lotes);

@@ -30,3 +30,17 @@ la lista de lugares. Para que el rótulo se vea en el mapa el Placemark necesita
 
 - Rotular solo el número (sin "LOTE"), tamaño del rótulo según el zoom.
 - Que "Crear el KMZ de nuevo" se desactive cuando no hay cambios.
+
+## Agregado: que se note al crear el KMZ
+
+Lukas pidió en el mismo PR que "Crear el KMZ de nuevo" muestre que algo está pasando.
+Hoy el botón no cambia mientras se escribe el KMZ y, cuando ya estaba listo, el aviso
+verde termina con el mismo texto de antes: parece que no hizo nada.
+
+- Mientras se crea, el botón se desactiva y dice "Creando el KMZ…" (como
+  "Digitalizando…"), con `aria-busy`. Vale para el primer KMZ, para "de nuevo" y
+  para "Crear sin ellos" del diálogo de lotes sin número.
+- Al terminar, el aviso verde dice la hora: `Listo: el KMZ "x" quedó creado con 16
+  lotes a las 14:35.`, y el aviso destella una vez (sin animación si el sistema pide
+  movimiento reducido). Así un segundo clic también se nota.
+- Si falla, el botón vuelve a su texto y el error sale como siempre.

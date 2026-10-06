@@ -17,7 +17,7 @@ import {
   resumenRevision, siguienteNombre, sinNumero, sugerencias, textoHuecos, verticesDe,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
-import { abrirNombre, abrirUsarKmz, cuantosLotes, descargaDe } from './kmzs.js';
+import { abrirNombre, abrirUsarKmz, descargaDe, textoDeCreado } from './kmzs.js';
 import { cargarLeaflet, COLORES, MapaKmz } from './mapa_kmz.js';
 import { oyentes, seguir } from './plano.js';
 import { soltadero } from './subida.js';
@@ -189,6 +189,7 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
   $('#kmz-registro').replaceChildren();
   $('#kmz-escaner').hidden = true;
   $('#kmz-listo').hidden = true;
+  $('#kmz-listo').classList.remove('kmz-listo--nuevo');
   $('#kmz-listo-texto').textContent = '';
   cargarTodo(true).catch((error) => {
     // Borrado en otra pestaña, o de otra loteadora: el servidor dice 404.
@@ -685,28 +686,59 @@ async function usarCoordenadas() {
 /** El KMZ (slug) que espera que confirme crearlo sin sus lotes sin número. */
 let sinNumeroPendiente = null;
 
+/** El KMZ (slug) que se está creando: su botón queda trabajando hasta que responda. */
+let creandoKmz = null;
+
 /** Con `omitir`, sin los lotes sin número (lo confirmó en el diálogo). */
 async function crearKmz(omitir = false) {
-  await guardar();
   const mio = slug;
-  let creado;
+  if (creandoKmz === mio) return;
+  // Se prende antes de guardar: el guardado pendiente también es parte de la espera.
+  creandoKmz = mio;
+  pintarCrear();
   try {
-    creado = await pedir(`${api(mio)}/crear`, json(omitir ? { omitir_sin_numero: true } : {}));
-  } catch (error) {
-    // Quedan lotes sin número: se crea igual solo si ella lo confirma en el diálogo.
-    if (omitir || error.estado !== 409 || !error.cuerpo?.sin_numero) throw error;
+    await guardar();
+    let creado;
+    try {
+      creado = await pedir(`${api(mio)}/crear`, json(omitir ? { omitir_sin_numero: true } : {}));
+    } catch (error) {
+      // Quedan lotes sin número: se crea igual solo si ella lo confirma en el diálogo.
+      // El `finally` suelta el botón: mientras decide, nada está trabajando.
+      if (omitir || error.estado !== 409 || !error.cuerpo?.sin_numero) throw error;
+      if (mio !== slug) return;
+      sinNumeroPendiente = mio;
+      $('#kmz-sin-numero-texto').textContent = error.message;
+      abrirDialogo($('#kmz-sin-numero-dialogo'));
+      return;
+    }
     if (mio !== slug) return;
-    sinNumeroPendiente = mio;
-    $('#kmz-sin-numero-texto').textContent = error.message;
-    abrirDialogo($('#kmz-sin-numero-dialogo'));
-    return;
+    const fresco = await pedir(api(mio));
+    // Si se fue a otro KMZ mientras se leía, ese no recibe el plano ni el aviso de este.
+    if (mio !== slug) return;
+    plano = fresco;
+    $('#kmz-listo-texto').textContent = textoDeCreado(plano.nombre, creado.lotes);
+    await refrescar();
+    pintar();
+    destellarListo();
+  } finally {
+    // Si mientras tanto fue a otro KMZ y lo creó, ese sigue trabajando: solo se suelta el propio.
+    if (creandoKmz === mio) {
+      creandoKmz = null;
+      if (mio === slug) pintarCrear();
+    }
   }
-  if (mio !== slug) return;
-  plano = await pedir(api(mio));
-  const lotes = cuantosLotes(creado.lotes);
-  $('#kmz-listo-texto').textContent = `Listo: el KMZ "${plano.nombre}" quedó creado${lotes ? ` con ${lotes}` : ''}.`;
-  await refrescar();
-  pintar();
+}
+
+/** El aviso verde destella al crear: si ya estaba a la vista, sin esto un segundo
+ *  clic no se nota. Quitar la clase y forzar el reflow reinicia la animación. */
+function destellarListo() {
+  const listo = $('#kmz-listo');
+  listo.classList.remove('kmz-listo--nuevo');
+  void listo.offsetWidth;
+  listo.classList.add('kmz-listo--nuevo');
+  // Se saca al terminar: si quedara puesta, volvería a destellar cada vez que el aviso
+  // se muestra de nuevo (al volver a este KMZ desde otro).
+  listo.addEventListener('animationend', () => listo.classList.remove('kmz-listo--nuevo'), { once: true });
 }
 
 const terminado = () => Boolean(plano?.kmz?.length);
@@ -1119,8 +1151,10 @@ function pintarCrear() {
     : hay ? 'Ya hay un KMZ creado de antes: crearlo de nuevo lo reemplaza con lo último que ubicaste.'
       : 'Un polígono por lote, con su número. Después lo descargas o lo usas en un master.';
   const crear = $('[data-accion="kmz-crear"]');
-  crear.disabled = !pasosHabilitados(plano).crear;
-  crear.textContent = hay ? 'Crear el KMZ de nuevo' : 'Crear el KMZ';
+  const creando = creandoKmz === slug;
+  crear.disabled = creando || !pasosHabilitados(plano).crear;
+  crear.textContent = creando ? 'Creando el KMZ…' : hay ? 'Crear el KMZ de nuevo' : 'Crear el KMZ';
+  if (creando) crear.setAttribute('aria-busy', 'true'); else crear.removeAttribute('aria-busy');
   crear.className = hay ? 'boton boton--contorno' : 'boton boton--grande';
   // Descargar y usar sirven mientras haya un KMZ hecho, aunque esté por rehacerse.
   $('#kmz-listo').hidden = !hay;

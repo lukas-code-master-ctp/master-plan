@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 import { dinero, iniciales, ruta } from './js/comun.js';
 import { avance } from './js/vuelo.js';
 import { coincide, resumenDeTraer } from './js/cierra.js';
-import { cuantosLotes, descargaDe, pasoEnPalabras, terminados, textoDeUso } from './js/kmzs.js';
+import { cuantosLotes, descargaDe, pasoEnPalabras, terminados, textoDeCreado, textoDeUso } from './js/kmzs.js';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(aqui, 'index.html'), 'utf8');
@@ -185,6 +185,14 @@ test('al usar un KMZ se dice en qué master quedó y qué pasó con el anterior'
   assert.match(textoDeUso({ lotes: 1, anteriores: ['subdivision.kmz.anterior'] }, 'X'),
     /\(1 lote\)\. El anterior quedó como subdivision\.kmz\.anterior\./);
   assert.equal(descargaDe('los robles'), '/api/kmz/los%20robles/descargar');
+});
+
+test('al crear un KMZ se dice la hora, en 24 horas, para que crearlo de nuevo se note', () => {
+  // Fecha en la hora local: el formato usa la zona de quien mira.
+  assert.equal(textoDeCreado('Los Robles', 16, new Date(2026, 9, 6, 14, 35)),
+    'Listo: el KMZ "Los Robles" quedó creado con 16 lotes a las 14:35.');
+  assert.equal(textoDeCreado('X', 1, new Date(2026, 9, 6, 9, 5)), 'Listo: el KMZ "X" quedó creado con 1 lote a las 09:05.');
+  assert.equal(textoDeCreado('X', null, new Date(2026, 9, 6, 0, 5)), 'Listo: el KMZ "X" quedó creado a las 00:05.');
 });
 
 test('las iniciales del avatar salen del correo', () => {

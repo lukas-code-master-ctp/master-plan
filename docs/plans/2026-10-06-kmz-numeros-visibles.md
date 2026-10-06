@@ -12,3 +12,14 @@ Spec: `docs/specs/2026-10-06-kmz-numeros-visibles.md`.
   áreas.
 - Verificación: `python3 -m pytest -q pipeline/tests/test_plano_salida.py consola/tests/test_kmz.py`
   y la suite completa.
+
+## Tarea 2: que se note al crear el KMZ
+
+- `consola/web/js/kmz.js`: un estado `creandoKmz` (el slug que se está creando) que
+  `crearKmz()` prende al empezar y apaga en `finally`; `pintarCrear()` lo usa para
+  desactivar el botón, ponerle "Creando el KMZ…" y `aria-busy`. El texto de listo
+  suma la hora (`HH:MM`, es-CL) y `#kmz-listo` reinicia una clase de destello.
+- `consola/web/consola.css`: el destello de `.kmz-listo`, apagado con
+  `prefers-reduced-motion`.
+- Verificación: `npm test` y QA local de Crea tu KMZ (captura del botón trabajando y
+  del aviso con la hora, en escritorio y celular).
