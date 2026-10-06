@@ -8,6 +8,7 @@
  * (topografía, rol, pie, cuotas, reserva) no se dibuja vacío: si no viene, no está.
  */
 import { TEXTOS_POR_DEFECTO } from './marca.js';
+import { conReservas } from './reserva.js';
 
 const NUMERO = new Intl.NumberFormat('es-CL');
 const HECTAREAS = new Intl.NumberFormat('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -141,7 +142,11 @@ export function accionesDe(parcela, catalogo, { url = '' } = {}) {
     });
   }
   const pago = vendible && pagoDe(parcela, catalogo.meta);
-  if (pago) acciones.push({ tipo: 'pago', texto: catalogo.diseno?.texto_pago || pago.texto, href: pago.href });
+  if (pago) {
+    // Con consola, el botón abre el formulario que aparta la parcela antes de pagar.
+    acciones.push({ tipo: 'pago', texto: catalogo.diseno?.texto_pago || pago.texto, href: pago.href,
+                    formulario: conReservas(catalogo.meta) });
+  }
   if (parcela.mejor_vista) acciones.push({ tipo: 'aire', texto: 'Ver en 360°' });
   return acciones;
 }
@@ -243,7 +248,8 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
     <div class="ficha__cabecera">
       <div class="ficha__identidad">
         <div class="ficha__meta">
-          <span class="insignia insignia--${escapar(estado)}">${escapar(catalogo.etiquetaEstado(estado))}</span>
+          <span class="insignia insignia--${escapar(estado)}">${escapar(parcela.apartada
+            ? 'Reserva en proceso' : catalogo.etiquetaEstado(estado))}</span>
           ${parcela.etapa != null ? `<span class="ficha__etapa">${escapar(catalogo.etapaDe(parcela))}</span>` : ''}
         </div>
         <h2 class="ficha__titulo">${escapar(titulo)} <span class="ficha__proyecto">• ${escapar(catalogo.meta.proyecto)}</span></h2>
@@ -283,7 +289,7 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
     .addEventListener('click', () => compartir(contenedor, parcela, `${titulo} · ${catalogo.meta.proyecto}`));
 
   const lista = accionesDe(parcela, catalogo, { url: urlDeParcela(parcela) });
-  pintarBotones(contenedor.querySelector('.acciones'), lista);
+  pintarBotones(contenedor.querySelector('.acciones'), lista, () => acciones.alReservar?.(parcela));
   pintarEnlaces(contenedor, parcela, catalogo, lista.find((a) => a.tipo === 'aire'), acciones);
   permitirArrastre(contenedor, acciones.alCerrar);
 
@@ -298,10 +304,12 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
 }
 
 /** WhatsApp con su verde y, debajo, reservar o comprar en el color de la marca. */
-function pintarBotones(zona, lista) {
+function pintarBotones(zona, lista, alReservar) {
   for (const accion of lista) {
     if (accion.tipo === 'contacto') zona.append(enlace(accion, 'boton boton--whatsapp'));
-    if (accion.tipo === 'pago') zona.append(enlace(accion, 'boton'));
+    if (accion.tipo === 'pago') {
+      zona.append(accion.formulario ? boton(accion.texto, 'boton', alReservar, 'pago') : enlace(accion, 'boton'));
+    }
   }
 }
 

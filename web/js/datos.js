@@ -1,4 +1,5 @@
 /** Carga y consulta de los datos que produce el pipeline. */
+import { aplicarApartadas, pedirApartadas } from './reserva.js';
 
 const RUTA_DATOS = 'datos';
 
@@ -28,14 +29,19 @@ export class Catalogo {
   }
 
   static async cargar() {
-    const [parcelas, vistas, diseno] = await Promise.all([
-      pedirJson(`${RUTA_DATOS}/parcelas.json`),
+    const pedidoParcelas = pedirJson(`${RUTA_DATOS}/parcelas.json`);
+    const [parcelas, vistas, diseno, apartadas] = await Promise.all([
+      pedidoParcelas,
       pedirJson(`${RUTA_DATOS}/vistas.json`),
       // `null` sin diseño propio, y el sitio se ve como siempre. Los sitios
       // construidos antes de los diseños no lo traen: también da null.
       pedirJson(`${RUTA_DATOS}/diseno.json`).catch(() => null),
+      // Las parcelas que alguien apartó para pagar, según la consola. Si no
+      // contesta, ninguna: el sitio no espera más que unos segundos.
+      pedidoParcelas.then((datos) => pedirApartadas(datos)).catch(() => ({})),
     ]);
-    return new Catalogo(parcelas, vistas, diseno);
+    return new Catalogo({ ...parcelas, parcelas: aplicarApartadas(parcelas.parcelas, apartadas) },
+                        vistas, diseno);
   }
 
   /** Overlay de una vista. Se pide una sola vez y queda en memoria. */

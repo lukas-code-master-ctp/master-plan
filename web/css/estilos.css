@@ -1158,6 +1158,70 @@ button { cursor: pointer; }
   color: var(--tinta-tenue);
 }
 
+/* --- Formulario de reserva --------------------------------------------------- */
+
+/* Una ventana sobre todo lo demás (nivel 4 del sistema de diseño): el fondo se
+   oscurece para que quede claro que hay que terminar esto o cancelarlo. */
+.reserva {
+  width: min(26rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 1.5rem;
+  border: 0;
+  border-radius: var(--radio-xl);
+  background: var(--papel);
+  color: var(--tinta);
+  box-shadow: var(--sombra-panel);
+}
+.reserva::backdrop { background: rgb(24 24 27 / 0.6); }
+.reserva__titulo { margin: 0; font: 700 20px/1.2 var(--sans); letter-spacing: -0.015em; }
+.reserva__explicacion { margin: 0.5rem 0 1.1rem; font-size: 0.875rem; line-height: 1.45; color: var(--tinta-suave); }
+.reserva__campos { display: grid; gap: 0.85rem; }
+.reserva__campo { display: grid; gap: 0.35rem; }
+.reserva__campo span {
+  font: 700 0.6875rem/1 var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-suave);
+}
+.reserva__campo input {
+  height: var(--alto-control);
+  padding: 0 0.85rem;
+  border: 1px solid var(--linea-fuerte);
+  border-radius: var(--radio-sm);
+  background: var(--papel);
+  font: 400 1rem var(--sans);   /* 16 px: con menos, el iPhone acerca la página al escribir */
+  color: var(--tinta);
+  outline: none;
+}
+.reserva__campo input:focus { border-color: var(--marca-700); box-shadow: 0 0 0 3px var(--marca-anillo); }
+/* Fuera de la vista y del tabulador, pero no display:none: algunos robots se saltan lo oculto. */
+.reserva__trampa { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.reserva__privacidad { margin: 1rem 0 0; font-size: 0.75rem; line-height: 1.45; color: var(--tinta-tenue); }
+.reserva__error, .reserva__listo {
+  margin: 0.85rem 0 0;
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--radio-md);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+.reserva__error { background: #fef2f2; color: #991b1b; }
+.reserva__listo { background: var(--verde-50); color: var(--verde-800); }
+.reserva--lista .reserva__campos, .reserva--lista .reserva__privacidad { display: none; }
+.reserva__acciones { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem; }
+.reserva__acciones .boton { height: var(--alto-control); }
+
+/* En el teléfono, una hoja que sube desde abajo, como la ficha. */
+@media (max-width: 62rem) {
+  .reserva {
+    width: 100%;
+    max-width: none;
+    margin: auto 0 0;
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    border-radius: var(--radio-xl) var(--radio-xl) 0 0;
+  }
+  .reserva__acciones .boton { flex: 1; }
+}
+
 /* --- Perspectivas y Entrar a 360° (plano del teléfono) ------------------------ */
 
 .perspectivas, .entrar-360 { display: none; }
