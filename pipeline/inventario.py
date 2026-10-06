@@ -18,9 +18,8 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlsplit
 
-from . import config
+from . import config, visor
 from .construir import (
     CAMPOS_COMERCIALES,
     Avisos,
@@ -67,35 +66,11 @@ def poner_datos_del_loteo(proyecto: config.Proyecto, salida: config.Salida,
     if consola is not None:
         nuevos.update(loteo=proyecto.slug, consola=consola)
         if consola:
-            permitir_conexion(salida, consola)
+            visor.permitir_conexion(salida.web, consola)
     if all(datos.get(campo) == valor for campo, valor in nuevos.items()):
         return False
     _escribir(archivo, {**datos, **nuevos})
     return True
-
-
-def permitir_conexion(salida: config.Salida, url: str) -> None:
-    """Deja que el sitio publicado le hable a `url` (la consola), y a nada más.
-
-    El visor pide ahí las parcelas apartadas y manda las solicitudes de reserva.
-    La política de seguridad del sitio (`vercel.json`) solo deja conectar con el
-    propio sitio: se le suma el origen de la consola, el que sea en cada despliegue.
-    Escribirlo dos veces deja lo mismo.
-    """
-    archivo = salida.web / "vercel.json"
-    if not archivo.is_file():
-        return
-    partes = urlsplit(url)
-    origen = f"{partes.scheme}://{partes.netloc}"
-    datos = json.loads(archivo.read_text(encoding="utf-8"))
-    for regla in datos.get("headers", []):
-        for encabezado in regla.get("headers", []):
-            if encabezado.get("key") == "Content-Security-Policy":
-                directivas = [d.strip() for d in encabezado["value"].split(";")]
-                encabezado["value"] = "; ".join(
-                    f"connect-src 'self' {origen}" if d.startswith("connect-src") else d
-                    for d in directivas)
-    archivo.write_text(json.dumps(datos, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def actualizar(fuentes: config.Fuentes, proyecto: config.Proyecto,
@@ -145,4 +120,4 @@ def _escribir(archivo: Path, datos: dict) -> None:
     os.replace(temporal.name, archivo)
 
 
-__all__ = ["DATOS_DEL_LOTEO", "Resultado", "actualizar", "permitir_conexion", "poner_datos_del_loteo"]
+__all__ = ["DATOS_DEL_LOTEO", "Resultado", "actualizar", "poner_datos_del_loteo"]
