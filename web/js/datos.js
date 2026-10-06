@@ -135,6 +135,13 @@ export class Catalogo {
   }
 }
 
+/** Cuántas parcelas hay de cada estado, para la leyenda ("Disponible (18)"). */
+export function conteoPorEstado(parcelas) {
+  const conteo = new Map();
+  for (const { estado } of parcelas) conteo.set(estado, (conteo.get(estado) ?? 0) + 1);
+  return conteo;
+}
+
 /** Filtro sobre el catálogo. Devuelve el conjunto de ids que pasan. */
 export function filtrar(parcelas, filtros) {
   const { estados, supMin, supMax, soloConVista } = filtros;

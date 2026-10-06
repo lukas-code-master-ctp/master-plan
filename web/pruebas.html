@@ -278,7 +278,7 @@ async function planoEnTelefono(html) {
     return;
   }
 
-  doc.querySelector('.pestana[data-panel="mapa"]').click();
+  doc.querySelector('#ver-plano').click();
   await esperarA(() => doc.querySelectorAll('img.leaflet-tile').length > 0, 8000);
   const zooms = [...doc.querySelectorAll('img.leaflet-tile')]
     .map((img) => Number(img.src.match(/\/tile\/(\d+)\//)?.[1]))

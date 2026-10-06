@@ -134,7 +134,7 @@ button { cursor: pointer; }
 /* --- Tarjeta: la superficie base de todo el cromado ------------------------- */
 
 .tarjeta,
-.acciones-rapidas, .puntos, .leyenda, .altimetro, .conmutador, .carta, .filtros, .ficha, .sugerencias {
+.acciones-rapidas, .puntos, .leyenda, .altimetro, .carta, .filtros, .ficha, .sugerencias {
   background: var(--papel);
   border: 1px solid var(--linea);
   box-shadow: var(--sombra-hud);
@@ -610,6 +610,7 @@ button { cursor: pointer; }
 }
 .zoom button:hover { background: var(--papel-suave); color: var(--tinta); }
 .zoom button:active { background: var(--zinc-100); }
+.zoom button svg { width: 1.15rem; height: 1.15rem; }
 
 /* --- Barra inferior --------------------------------------------------------- */
 
@@ -679,6 +680,7 @@ button { cursor: pointer; }
 }
 .puntos__fila button:hover { background: var(--zinc-100); color: var(--tinta); }
 .puntos__fila button[aria-pressed="true"] { background: var(--marca-700); color: #fff; }
+.puntos__palabra, .puntos__altura { display: none; }
 
 /* --- Leyenda ---------------------------------------------------------------- */
 
@@ -918,43 +920,60 @@ button { cursor: pointer; }
 }
 .leaflet-tooltip::before { display: none !important; }
 
-/* --- Conmutador móvil ------------------------------------------------------- */
+/* --- Cápsula de rumbo y Ver plano (vista aérea del teléfono) ------------------ */
 
-/* Un riel gris con la opción elegida levantada en blanco: se lee como un
-   interruptor de dos posiciones y no como dos botones que compiten. */
-.conmutador {
+.capsula-rumbo, .ver-plano { display: none; }
+
+/* "Noreste 42°": la brújula dicha en palabras, que se lee de un vistazo al sol. */
+.capsula-rumbo {
   position: fixed;
-  z-index: 26;
-  display: none;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  background: var(--zinc-100);
+  z-index: 25;
+  align-items: center;
+  gap: 0.5rem;
+  height: calc(var(--alto-control) + 0.5rem + 2px);
+  padding: 0 1.1rem 0 0.9rem;
+  background: var(--papel);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio-full);
+  box-shadow: var(--sombra-hud);
+  font: 700 0.875rem/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--tinta);
+  pointer-events: none;
+}
+.capsula-rumbo svg { width: 1.15rem; height: 1.15rem; color: var(--marca-700); }
+
+.ver-plano {
+  position: fixed;
+  z-index: 24;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 1.1rem 0.4rem 0.4rem;
+  background: var(--papel);
+  border: 1px solid var(--linea);
   border-radius: var(--radio-lg);
   box-shadow: var(--sombra-hud);
+  text-align: left;
+  transition: background 150ms;
 }
-.pestana {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  height: var(--alto-control);
-  padding: 0 0.75rem;
-  background: transparent;
-  border: 0;
+.ver-plano:hover { background: var(--papel-suave); }
+/* El loteo en miniatura, en sus colores de estado, sobre un fondo de terreno. */
+.ver-plano__miniatura {
+  width: 56px; height: 56px;
+  flex: none;
   border-radius: var(--radio-md);
-  color: var(--zinc-600);
-  font: 600 0.875rem/1 var(--sans);
-  white-space: nowrap;
-  transition: background 150ms, color 150ms, box-shadow 150ms;
+  background: #c9cfb4;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
 }
-.pestana svg { width: 1.15rem; height: 1.15rem; flex: none; }
-.pestana:hover { color: var(--tinta); }
-.pestana--activa {
-  background: var(--papel);
-  color: var(--marca-700);
-  box-shadow: 0 1px 2px rgb(24 24 27 / 0.08), 0 0 0 1px var(--linea);
+.ver-plano__miniatura polygon { stroke: rgb(255 255 255 / 0.85); stroke-width: 0.4; }
+.ver-plano__textos { display: grid; gap: 0.2rem; }
+.ver-plano__textos strong {
+  font: 700 0.75rem/1 var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta);
 }
+.ver-plano__textos span { font: 500 0.875rem/1.1 var(--sans); color: var(--tinta-suave); }
 
 /* --- Ficha ------------------------------------------------------------------ */
 
@@ -1202,11 +1221,17 @@ button { cursor: pointer; }
 /* --- Móvil ------------------------------------------------------------------ */
 
 @media (max-width: 62rem) {
-  /* Hasta dónde llega lo fijo de arriba (cabecera + conmutador), para que la
-     leyenda y el plano se acomoden debajo en vez de adivinar cuánto mide. */
+  /* Lo fijo de arriba son dos filas bajo la cabecera: la cápsula de rumbo con
+     compartir y WhatsApp, y los puntos de vuelo. Abajo, la leyenda; sobre ella,
+     Ver plano a la izquierda y el zoom a la derecha. Las medidas van en
+     variables para que cada pieza se apoye en la anterior sin adivinar. */
   :root {
     --alto-cabecera: 7rem;
-    --tope-hud: calc(var(--alto-cabecera) + 0.5rem + var(--alto-control) + 0.5rem + 2px);
+    --alto-fila-hud: calc(var(--alto-control) + 0.5rem + 2px);
+    --fila-1: calc(var(--alto-cabecera) + 0.5rem);
+    --fila-2: calc(var(--fila-1) + var(--alto-fila-hud) + 0.5rem);
+    --tope-hud: calc(var(--fila-2) + var(--alto-fila-hud));
+    --fondo-hud: calc(0.85rem + 2.25rem + 0.5rem + env(safe-area-inset-bottom));
     /* La franja de perspectivas: cabecera, una fila de 56 px y el área segura. */
     --alto-perspectivas: calc(112px + env(safe-area-inset-bottom));
   }
@@ -1218,57 +1243,68 @@ button { cursor: pointer; }
   .cabecera__herramientas { width: 100%; margin-left: 0; }
   .buscador { width: auto; flex: 1; }
 
-  .conmutador { display: grid; top: calc(var(--alto-cabecera) + 0.5rem); left: 0.85rem; right: 0.85rem; }
   .pista { display: none; }
-
-  .instrumentos { right: 0.85rem; gap: 0.45rem; }
-  .rosa { width: 2.5rem; height: 2.5rem; }
-  .altimetro { padding: 0.5rem 0.45rem 0.4rem; }
-  .altimetro__escala button { padding: 0.2rem 0.35rem 0.2rem 0.2rem; font-size: 0.75rem; }
-  .altimetro__escala button[aria-pressed="true"] { font-size: 0.875rem; }
-  .altimetro__unidad--pie { display: none; }
-
   .parcela__pastilla { transform-box: fill-box; }
 
-  .barra-inferior {
-    left: 0.85rem; right: 0.85rem;
-    bottom: calc(0.85rem + env(safe-area-inset-bottom));
-    flex-wrap: wrap;
-  }
+  /* Fila 1: rumbo a la izquierda, compartir y WhatsApp a la derecha. La barra
+     inferior se disuelve (display: contents) para que sus dos piezas se ubiquen
+     cada una por su lado. */
+  .capsula-rumbo { display: inline-flex; top: var(--fila-1); left: 0.85rem; }
+  .barra-inferior { display: contents; }
+  .acciones-rapidas { position: fixed; z-index: 25; top: var(--fila-1); right: 0.85rem; }
   .accion__texto { display: none; }
   .accion { padding: 0 0.5rem; }
-  /* En el teléfono el plano ya tiene su pestaña. Con los botones a 48 px, el
-     repetido hacía que la barra no cupiera en una línea. */
   #accion-plano { display: none; }
 
+  /* Fila 2: los puntos de vuelo, de lado a lado, con su altura. */
+  .puntos {
+    position: fixed;
+    z-index: 25;
+    top: var(--fila-2);
+    left: 0.85rem; right: 0.85rem;
+    padding: 0.25rem;
+  }
+  .puntos__rotulo { display: none; }
+  .puntos__fila { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0.25rem; }
+  .puntos__fila button {
+    display: grid;
+    place-content: center;
+    gap: 0.15rem;
+    padding: 0 0.25rem;
+    font: 700 0.8125rem/1.05 var(--sans);
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  .puntos__palabra { display: inline; }
+  .puntos__altura { display: block; font: 500 0.6875rem/1 var(--sans); font-variant-numeric: tabular-nums; opacity: 0.8; }
+
+  /* Abajo: la leyenda en chips con su conteo, y encima Ver plano y el zoom. */
   .leyenda {
     z-index: 23;
-    left: 0.85rem;
-    right: 0.85rem;
-    bottom: auto;
-    top: calc(var(--tope-hud) + 0.5rem);
+    left: 0.85rem; right: 0.85rem;
+    bottom: calc(0.85rem + env(safe-area-inset-bottom));
     transform: none;
     gap: 0.5rem;
     padding: 0.4rem 0.75rem;
     overflow-x: auto;
   }
-  /* Sobre el plano la leyenda se apila en una esquina, como la de un plano de
-     papel: la fila de lado a lado tapaba justo la parte de arriba del loteo. */
-  body[data-panel="mapa"] .leyenda {
-    right: auto;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.45rem;
-    padding: 0.6rem 0.75rem;
-  }
-  body[data-panel="mapa"] .leyenda span + span { padding-left: 0; border-left: 0; }
-  .leyenda span { font-size: 0.6875rem; }
+  .leyenda span { font-size: 0.75rem; font-weight: 600; }
   .leyenda span + span { padding-left: 0.5rem; }
 
-  /* El plano pasa a pantalla completa cuando se elige su pestaña. Empieza bajo
-     el conmutador; la leyenda flota encima, como sobre la foto. */
+  .ver-plano { display: flex; left: 0.85rem; bottom: var(--fondo-hud); }
+
+  .instrumentos { top: auto; bottom: var(--fondo-hud); right: 0.85rem; transform: none; gap: 0.45rem; }
+  .rosa { display: none; }
+  .altimetro { padding: 0.5rem 0.45rem 0.4rem; }
+  .altimetro__escala button { padding: 0.2rem 0.35rem 0.2rem 0.2rem; font-size: 0.75rem; }
+  .altimetro__escala button[aria-pressed="true"] { font-size: 0.875rem; }
+  .altimetro__unidad--pie { display: none; }
+
+  /* El plano, a pantalla completa bajo la cabecera, sobre la franja de
+     perspectivas. La leyenda se apila arriba a la izquierda, como en un plano
+     de papel; lo de la vista aérea se esconde. */
   .carta {
-    inset: var(--tope-hud) 0 0;
+    inset: var(--alto-cabecera) 0 0;
     width: auto;
     border: 0;
     border-radius: 0;
@@ -1278,16 +1314,30 @@ button { cursor: pointer; }
   .mapa { height: 100%; }
 
   body[data-panel="mapa"] .carta { display: flex; flex-direction: column; bottom: var(--alto-perspectivas); }
+  body[data-panel="mapa"] .mapa { flex: 1; }
   body[data-panel="mapa"] .perspectivas { display: block; }
   body[data-panel="mapa"] .entrar-360 { display: flex; }
-  body[data-panel="mapa"] .mapa { flex: 1; }
-  body[data-panel="mapa"] .instrumentos,
-  body[data-panel="mapa"] .barra-inferior { display: none; }
+  body[data-panel="mapa"] .capsula-rumbo,
+  body[data-panel="mapa"] .barra-inferior,
+  body[data-panel="mapa"] .ver-plano,
+  body[data-panel="mapa"] .instrumentos { display: none; }
+  body[data-panel="mapa"] .leyenda {
+    top: calc(var(--alto-cabecera) + 0.75rem);
+    bottom: auto;
+    right: auto;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+    padding: 0.6rem 0.75rem;
+  }
+  body[data-panel="mapa"] .leyenda span + span { padding-left: 0; border-left: 0; }
 
+  /* La ficha sube hasta debajo de los puntos de vuelo: arriba siguen el rumbo,
+     compartir y los puntos, como en el diseño. */
   .ficha {
     left: 0; right: 0; bottom: 0;
     width: auto;
-    max-height: 72vh;
+    max-height: calc(100dvh - var(--tope-hud) - 0.75rem);
     padding-top: 0;
     border-radius: var(--radio-xl) var(--radio-xl) 0 0;
     padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
@@ -1317,7 +1367,8 @@ button { cursor: pointer; }
   .ficha__titulo { font-size: 22px; }
   body:has(.ficha:not([hidden])) .perspectivas,
   body:has(.ficha:not([hidden])) .entrar-360,
-  body:has(.ficha:not([hidden])) .barra-inferior,
+  body:has(.ficha:not([hidden])) .ver-plano,
+  body:has(.ficha:not([hidden])) .leyenda,
   body:has(.ficha:not([hidden])) .instrumentos { display: none; }
 }
 
@@ -1332,7 +1383,7 @@ button { cursor: pointer; }
   .ficha__cerrar,
   .carta__accion { width: var(--alto-control); height: var(--alto-control); }
 
-  .accion, .pestana { height: var(--alto-control); }
+  .accion { height: var(--alto-control); }
   .accion { min-width: var(--alto-control); justify-content: center; }
   .puntos__fila button { min-width: var(--alto-control); height: var(--alto-control); }
   .altimetro__escala button { min-height: var(--alto-control); }

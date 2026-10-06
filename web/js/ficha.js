@@ -41,6 +41,12 @@ export function formatearPrecio(precio, moneda) {
   return `$${NUMERO.format(Math.round(precio))}`;
 }
 
+/** La pastilla de la parcela elegida sobre la foto: el número y, si lo hay, el precio. */
+export function rotuloConPrecio(parcela, rotulo) {
+  const precio = formatearPrecio(parcela.precio, parcela.moneda);
+  return precio ? `${rotulo} · ${precio}` : rotulo;
+}
+
 /** El ancho en metros si la planilla lo trae; si no, la superficie de la servidumbre. */
 export function formatearServidumbre(parcela) {
   if (parcela.servidumbre_m != null) return `${NUMERO.format(parcela.servidumbre_m)} m`;
