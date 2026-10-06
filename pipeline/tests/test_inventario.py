@@ -146,3 +146,23 @@ def test_sin_cambios_en_los_datos_del_loteo_no_reescribe(tmp_path):
 
     assert poner_datos_del_loteo(mismo, salida) is False
     assert (salida.datos / "parcelas.json").read_text(encoding="utf-8") == antes
+
+
+def test_al_publicar_el_sitio_sabe_su_loteo_y_a_que_consola_pedir_las_reservas(tmp_path):
+    salida = sitio(tmp_path, [parcela("1")])
+    proyecto_con_slug = config.Proyecto(nombre="Loteo", slug_guardado="loteo-x")
+
+    poner_datos_del_loteo(proyecto_con_slug, salida, consola="https://consola.tumasterplan.cl")
+
+    datos = leer(salida)
+    assert (datos["loteo"], datos["consola"]) == ("loteo-x", "https://consola.tumasterplan.cl")
+
+
+def test_la_actualizacion_liviana_no_borra_la_consola_que_dejo_la_publicacion(tmp_path):
+    salida = sitio(tmp_path, [parcela("1")])
+    poner_datos_del_loteo(config.Proyecto(nombre="Loteo"), salida, consola="https://consola.cl")
+    fuentes = fuentes_con(tmp_path, "Parcela,Estado\n1,Disponible\n")
+
+    actualizar(fuentes, proyecto(tmp_path), salida)
+
+    assert leer(salida)["consola"] == "https://consola.cl"
