@@ -829,7 +829,10 @@ def _enderezar(P: np.ndarray, tolerancia: float, ppmm: float, uniones=(), puntas
     uniones = np.asarray(uniones, int)
 
     def al_nodo(j):
-        if uniones.size:
+        # Las puntas de P no se mueven: si una arista corta del final de la cadena cabe
+        # entera en la distancia de ajuste, la punta saltaría al nodo y esa arista
+        # quedaría sin tramos.
+        if uniones.size and 0 < j < len(P) - 1:
             u = int(uniones[np.argmin(np.abs(uniones - j))])
             if 0 < u < len(P) - 1 and abs(u - j) <= 3 * tolerancia:
                 return u
