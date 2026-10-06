@@ -53,11 +53,18 @@ def _datos_del_loteo(proyecto: config.Proyecto) -> dict:
                                       proyecto.link_reserva, proyecto.monto_reserva)))
 
 
-def poner_datos_del_loteo(proyecto: config.Proyecto, salida: config.Salida) -> bool:
-    """Escribe los datos del loteo (nombre, etapa, WhatsApp, reserva) en el sitio. Dice si cambió algo."""
+def poner_datos_del_loteo(proyecto: config.Proyecto, salida: config.Salida,
+                          consola: str | None = None) -> bool:
+    """Escribe los datos del loteo (nombre, etapa, WhatsApp, reserva) en el sitio. Dice si cambió algo.
+
+    Con `consola` (lo hace la publicación) el sitio sabe además su loteo y a qué
+    consola pedir las reservas. La actualización liviana no lo sabe y no lo toca.
+    """
     archivo = salida.datos / "parcelas.json"
     datos = json.loads(archivo.read_text(encoding="utf-8"))
     nuevos = _datos_del_loteo(proyecto)
+    if consola is not None:
+        nuevos.update(loteo=proyecto.slug, consola=consola)
     if all(datos.get(campo) == valor for campo, valor in nuevos.items()):
         return False
     _escribir(archivo, {**datos, **nuevos})

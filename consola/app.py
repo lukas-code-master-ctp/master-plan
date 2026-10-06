@@ -64,6 +64,7 @@ from .plantilla import MIME_XLSX, plantilla
 from .proyectos import KMZ as KMZ_DEL_MASTER
 from .proyectos import KmzExistente, LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
 from .republicar import republicar
+from .reservas import Reservas
 from .rutas_cierra import rutas_de_cierra, sincronizar_antes_de_construir
 from .rutas_cuentas import (
     LIBRES_DE_CUENTAS,
@@ -72,6 +73,8 @@ from .rutas_cuentas import (
     rutas_de_cuentas,
     url_base,
 )
+from .rutas_reservas import PUBLICAS as PUBLICAS_DE_RESERVAS
+from .rutas_reservas import rutas_de_reservas
 from .trabajos import Trabajos
 
 WEB = Path(__file__).resolve().parent / "web"
@@ -117,7 +120,10 @@ def url_propuesta(slug: str) -> str:
 # La revisión periódica de Cierra la llama Cloud Scheduler, sin sesión: la ruta
 # exige su propia clave (`CONSOLA_TAREAS_CLAVE`) y sin ella no existe.
 TAREAS = ("/api/tareas/cierra",)
-LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2", *LIBRES_DE_CUENTAS, *TAREAS)
+# Lo que pide el sitio publicado de un loteo (reservas): se cuida solo, con origen,
+# tope por IP y validación (`consola/rutas_reservas.py`).
+LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2", *LIBRES_DE_CUENTAS, *TAREAS,
+          *PUBLICAS_DE_RESERVAS)
 
 
 def mostrar_registro() -> None:
@@ -144,12 +150,14 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
               google: Google | None | bool = True,
               republicar_al_arrancar: bool | None = None,
               cierra: Cierra | None | bool = True, conexiones: Conexiones | None = None,
-              kmzs: RegistroKmz | None = None) -> FastAPI:
+              kmzs: RegistroKmz | None = None, reservas: Reservas | None = None) -> FastAPI:
     mostrar_registro()
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
     cuentas = cuentas or Cuentas(base=base, correo=correo_del_entorno(acceso.local),
                                  en_segundo_plano=True)
+    # Los avisos de reserva salen por el mismo correo que los de las cuentas.
+    reservas = reservas or Reservas(base=base, correo=cuentas.correo)
     # `True` = lo que diga el entorno; las pruebas pasan uno propio o `None`.
     google = google_del_entorno() if google is True else (google or None)
     disenos = disenos or Disenos(base=base)
@@ -867,6 +875,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return FileResponse(proyecto.salida.qa / archivo, media_type="image/jpeg")
 
     app.include_router(rutas_de_cuentas(acceso, cuentas, google))
+    app.include_router(rutas_de_reservas(reservas, registro, vista, local=acceso.local))
     def publicar_en_linea(proyecto: Proyecto) -> dict:
         """Vuelve a publicar un loteo que ya está en línea, sin preguntar: lo piden
         los estados y precios nuevos, no una persona que decide salir al mundo. La

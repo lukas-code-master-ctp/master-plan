@@ -528,6 +528,13 @@ RUTAS = {
     ("GET", "/entrar/google/vuelta"): SIN_SESION,
     ("GET", "/registro/google"): SIN_SESION,
     ("POST", "/registro/google"): SIN_SESION,
+    # Las pide el sitio publicado: no dan datos de nadie y solo aceptan el origen de
+    # ese loteo (`test_reservas.py` prueba el origen ajeno, el tope y la validación).
+    ("POST", "/api/publico/reservas"): SIN_SESION,
+    ("GET", "/api/publico/apartadas"): SIN_SESION,
+    ("GET", "/api/proyectos/{slug}/reservas"): AJENO_404,
+    ("POST", "/api/proyectos/{slug}/reservas/{identificador}/confirmar"): AJENO_404,
+    ("POST", "/api/proyectos/{slug}/reservas/{identificador}/liberar"): AJENO_404,
 }
 
 

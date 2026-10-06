@@ -192,6 +192,25 @@ cierra_loteos = Table(
     Column("creado_en", DateTime(timezone=True), nullable=False),
 )
 
+# Lo que un comprador pide desde el sitio publicado al tocar "Reservar parcela"
+# (`consola/reservas.py`). Aparta la parcela un rato; la loteadora la confirma o la
+# libera. Datos personales del comprador: solo los ve la loteadora del loteo.
+solicitudes_reserva = Table(
+    "solicitudes_reserva", metadatos,
+    Column("id", Integer, primary_key=True),
+    Column("proyecto_id", Integer, ForeignKey("proyectos.id"), nullable=False, index=True),
+    Column("parcela", String(40), nullable=False),
+    Column("nombre", String(120), nullable=False),
+    Column("telefono", String(20), nullable=False),
+    Column("email", String(160), nullable=False),
+    # pendiente | confirmada | liberada. "Vencida" no se guarda: es una pendiente
+    # cuyo plazo pasó, y así no hace falta nada que la marque a tiempo.
+    Column("estado", String(20), nullable=False),
+    Column("creada_en", DateTime(timezone=True), nullable=False),
+    Column("vence_en", DateTime(timezone=True), nullable=False),
+    Column("resuelta_en", DateTime(timezone=True), nullable=True),
+)
+
 eventos = Table(
     "eventos", metadatos,
     Column("id", Integer, primary_key=True),

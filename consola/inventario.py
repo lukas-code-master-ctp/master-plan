@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 from contextlib import redirect_stdout
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from pipeline import config
 from pipeline import inventario as pipeline_inventario
@@ -43,14 +44,18 @@ def poner_al_dia(proyecto: Proyecto) -> Resultado:
 
 
 def poner_datos_del_loteo(proyecto: Proyecto) -> None:
-    """El nombre, la etapa y el WhatsApp de la consola, en el sitio construido.
+    """El nombre, la etapa, el WhatsApp y la reserva de la consola, en el sitio construido.
 
     Se llama justo antes de publicar, como el diseño: cambiar el número de
     contacto no obliga a reconstruir, que tarda y vuelve a bajar el relieve.
     """
     if proyecto.construido:
-        pipeline_inventario.poner_datos_del_loteo(config.cargar_proyecto(proyecto.fuentes),
-                                                  proyecto.salida)
+        # El slug lo emite la consola: el de proyecto.json podría no estar en una carpeta vinculada.
+        datos = replace(config.cargar_proyecto(proyecto.fuentes), slug_guardado=proyecto.slug)
+        # La dirección de la consola es adonde el sitio publicado manda las reservas.
+        # Sin CONSOLA_URL queda vacía y el visor va directo al link de pago, como antes.
+        pipeline_inventario.poner_datos_del_loteo(datos, proyecto.salida,
+                                                  consola=os.environ.get("CONSOLA_URL", "").strip())
 
 
 @dataclass(frozen=True)
