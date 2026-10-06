@@ -1,6 +1,6 @@
 import pytest
 
-from pipeline.config import descubrir_fuentes
+from pipeline.config import cargar_proyecto, descubrir_fuentes, normalizar_whatsapp
 
 
 def armar(carpeta, kmz="loteo.kmz", excel="parcelas.xlsx", fotos=("fotos/a.JPG",)):
@@ -424,3 +424,23 @@ def test_crea_tu_kmz_en_una_carpeta_vinculada_dentro_del_repo(tmp_path, monkeypa
     # Las fotos están en la raíz: sin excluir el plano, el ancestro común no cambia,
     # pero las páginas tampoco se cuentan como panorámicas (ver test_panoramas).
     assert fuentes.panoramas == carpeta
+
+
+@pytest.mark.parametrize("escrito,esperado", [
+    ("56912345678", "56912345678"),
+    ("+56 9 1234 5678", "56912345678"),
+    ("+56-9-1234-5678", "56912345678"),
+    # Un celular chileno escrito sin el código del país.
+    ("912345678", "56912345678"),
+    ("9 1234 5678", "56912345678"),
+    ("", ""),
+    ("   ", ""),
+])
+def test_el_whatsapp_queda_como_lo_pide_wa_me(escrito, esperado):
+    assert normalizar_whatsapp(escrito) == esperado
+
+
+def test_el_proyecto_trae_el_whatsapp_normalizado(tmp_path):
+    (tmp_path / "proyecto.json").write_text('{"nombre": "Loteo", "whatsapp": "+56 9 1234 5678"}')
+
+    assert cargar_proyecto(tmp_path).whatsapp == "56912345678"

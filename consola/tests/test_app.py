@@ -1309,6 +1309,20 @@ def test_publicar_deja_el_diseno_en_el_sitio(ana_y_luis):
     assert (datos / "logo.png").read_bytes() == PNG
 
 
+def test_publicar_lleva_al_sitio_el_whatsapp_cambiado_sin_reconstruir(ana_y_luis):
+    """El número se cambia en la consola y llega al sitio con solo volver a publicar."""
+    ctp, ana, _, registro, _ = ana_y_luis
+    slug = ana.post("/api/proyectos", json={"nombre": "Con contacto"}).json()["slug"]
+    construir_a_mano(registro, registro.salidas, slug)
+    ctp.post(f"/api/plataforma/proyectos/{slug}/pago", json={"nota_cobro": "transferencia"})
+    ana.patch(f"/api/proyectos/{slug}", json={"whatsapp": "+56 9 1234 5678", "etapa": "Etapa 1"})
+
+    assert ana.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True}).status_code == 202
+
+    datos = json.loads((registro.salidas / slug / "sitio" / "datos" / "parcelas.json").read_text())
+    assert (datos["whatsapp"], datos["proyecto"], datos["etapa"]) == ("56912345678", "Con contacto", "Etapa 1")
+
+
 def test_publicar_sin_diseno_deja_el_diseno_vacio(ana_y_luis):
     ctp, ana, _, registro, _ = ana_y_luis
     diseno = un_diseno(ana)

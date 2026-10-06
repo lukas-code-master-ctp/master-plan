@@ -42,6 +42,17 @@ def poner_al_dia(proyecto: Proyecto) -> Resultado:
         return pipeline_inventario.actualizar(fuentes, datos, proyecto.salida)
 
 
+def poner_datos_del_loteo(proyecto: Proyecto) -> None:
+    """El nombre, la etapa y el WhatsApp de la consola, en el sitio construido.
+
+    Se llama justo antes de publicar, como el diseño: cambiar el número de
+    contacto no obliga a reconstruir, que tarda y vuelve a bajar el relieve.
+    """
+    if proyecto.construido:
+        pipeline_inventario.poner_datos_del_loteo(config.cargar_proyecto(proyecto.fuentes),
+                                                  proyecto.salida)
+
+
 @dataclass(frozen=True)
 class Revision:
     slug: str

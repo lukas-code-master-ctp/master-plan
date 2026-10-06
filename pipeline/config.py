@@ -220,6 +220,19 @@ def sugerir_slug(nombre: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", plano.lower()).strip("-") or "proyecto"
 
 
+def normalizar_whatsapp(texto: str) -> str:
+    """El número como lo pide wa.me: solo dígitos, con el código del país.
+
+    En la consola se escribe como venga ("+56 9 1234 5678"). Con el "+" o los
+    espacios el enlace del botón queda roto, y un celular chileno sin el 56
+    abre el chat de otro país.
+    """
+    digitos = re.sub(r"\D", "", texto or "")
+    if len(digitos) == 9 and digitos.startswith("9"):
+        return "56" + digitos
+    return digitos
+
+
 def cargar_proyecto(carpeta: Path, **valores) -> Proyecto:
     """Los datos del proyecto: `proyecto.json` en la carpeta, pisado por lo que
     venga por línea de comandos. Sin nada, el nombre es el de la carpeta."""
@@ -235,7 +248,7 @@ def cargar_proyecto(carpeta: Path, **valores) -> Proyecto:
     return Proyecto(
         nombre=nombre,
         etapa=str(datos.get("etapa") or ""),
-        whatsapp=str(datos.get("whatsapp") or ""),
+        whatsapp=normalizar_whatsapp(str(datos.get("whatsapp") or "")),
         parcelacion=str(datos.get("parcelacion") or nombre.upper()),
         despegue=(float(despegue[0]), float(despegue[1])) if despegue else None,
         referencias=tuple(datos.get("referencias") or ()),

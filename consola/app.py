@@ -56,7 +56,7 @@ from .datos import (
 )
 from .disenos import DisenoInvalido, Disenos, VistaDisenos
 from .disenos import como_json as diseno_json
-from .inventario import poner_al_dia, revisar_cierra
+from .inventario import poner_al_dia, poner_datos_del_loteo, revisar_cierra
 from .kmzs import NombreInvalido, RegistroKmz, VistaKmz, slug_de_clave
 from .kmzs import clave as clave_kmz
 from .plano import LotesSinNumero, PlanoInvalido, PlanoNoListo
@@ -493,9 +493,10 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         if not opciones.get("confirmado"):
             raise HTTPException(428, "hay que confirmar la publicación")
 
-        # El diseño se escribe recién ahora, con el que tenga el loteo en este
-        # momento: cambiar la marca no obliga a reconstruir.
+        # El diseño, el nombre y el WhatsApp se escriben recién ahora, con los que
+        # tenga el loteo en este momento: cambiarlos no obliga a reconstruir.
         disenos.escribir_en_sitio(proyecto.diseno_id, proyecto.salida.datos)
+        poner_datos_del_loteo(proyecto)
 
         # La primera vez hay que crear el proyecto en el hosting; después no, y
         # pedirlo de nuevo sería intentar pisar uno existente.
@@ -871,6 +872,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         los estados y precios nuevos, no una persona que decide salir al mundo. La
         primera publicación sigue siendo la de la ruta, con su confirmación."""
         disenos.escribir_en_sitio(proyecto.diseno_id, proyecto.salida.datos)
+        poner_datos_del_loteo(proyecto)
         return lanzar(proyecto, "publicar",
                       comandos.publicar(proyecto, vercel_proyecto=proyecto.vercel_proyecto),
                       al_terminar=_anotar_publicacion(registro.todos(), proyecto,
