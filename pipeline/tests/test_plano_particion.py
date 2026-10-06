@@ -463,3 +463,14 @@ def test_enderezar_respeta_un_lado_corto_en_la_punta_y_las_curvas():
         assert not any(s[3] for s in segs)
         vertices = [P[0]] + [P[s] for s, *_ in segs[1:]] + [P[-1]]
         assert max(abs(np.hypot(*v) - radio) for v in vertices) < 2 * tol
+
+
+def test_enderezar_no_mueve_las_puntas_al_nodo_de_una_arista_corta():
+    # Planos CBR Constitución: una cadena que empieza con una arista de pocos píxeles
+    # (el nodo queda a 6 px de la punta). La punta saltaba al nodo, esa arista quedaba
+    # sin tramos y la red de deslindes caía con "list index out of range".
+    tol = particion.DP_MM * PPMM
+    P = np.array([(x, 100.0) for x in range(0, 100)])
+    for uniones in ([6], [93], [6, 93]):
+        segs, _ = particion._enderezar(P, tol, PPMM, uniones)
+        assert segs[0][0] == 0 and segs[-1][1] == len(P) - 1
