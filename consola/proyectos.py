@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import threading
 from dataclasses import dataclass
@@ -36,7 +37,8 @@ EXTENSIONES_FOTO = (".jpg", ".jpeg")
 
 # Lo que se guarda en `proyecto.json`, que es lo que lee el pipeline. El resto
 # —de quién es, dónde quedó publicado— vive en la base y no se duplica acá.
-CAMPOS_DEL_PIPELINE = ("nombre", "etapa", "whatsapp", "parcelacion", "despegue", "referencias")
+CAMPOS_DEL_PIPELINE = ("nombre", "etapa", "whatsapp", "parcelacion", "despegue", "referencias",
+                       "link_reserva", "monto_reserva")
 
 
 MEGA = 1024 * 1024
@@ -179,6 +181,9 @@ class Proyecto:
     url_publicada: str | None = None
     # Sin pago se puede subir y construir, pero no publicar.
     pagado: bool = True
+    # El link para reservar cualquier parcela del loteo, y cuánto se paga.
+    link_reserva: str = ""
+    monto_reserva: float | None = None
     # Subido desde el navegador (sus archivos son nuestros) o carpeta vinculada
     # del disco (no lo son).
     subido: bool = False
@@ -331,6 +336,8 @@ class Registro:
             nombre=guardado.nombre,
             etapa=datos.etapa,
             whatsapp=datos.whatsapp,
+            link_reserva=datos.link_reserva,
+            monto_reserva=datos.monto_reserva,
             parcelacion=str(_leer_json(carpeta / "proyecto.json").get("parcelacion") or ""),
             despegue=datos.despegue,
             referencias=datos.referencias,
@@ -481,6 +488,7 @@ class Vista:
         """
         proyecto = self.ver(slug)
         limpios = {c: v for c, v in campos.items() if v is not None and c in CAMPOS_DEL_PIPELINE}
+        _revisar_reserva(limpios)
         if "nombre" in limpios:
             self.registro.base.renombrar_proyecto(slug, str(limpios["nombre"]))
         self.registro._escribir_json(proyecto.fuentes, slug, limpios)
@@ -595,6 +603,21 @@ def fecha_legible(iso: str | None) -> str:
         return ""
     return datetime.fromisoformat(iso).strftime("%d/%m/%Y %H:%M")
 
+
+
+def _revisar_reserva(campos: dict) -> None:
+    """El link de reserva va a un botón que aprieta cualquiera: solo http(s), y
+    completo, para que no lleve a una página rota ni ejecute nada. El monto, un
+    número. Vacíos se aceptan: es quitar la reserva."""
+    link = str(campos.get("link_reserva", "")).strip()
+    if link and not re.fullmatch(r"https?://[^\s/]+\.[^\s]+", link):
+        raise ValueError("El link de reserva tiene que ser una dirección completa, como "
+                         "https://www.webpay.cl/... (con https://).")
+    if "link_reserva" in campos:
+        campos["link_reserva"] = link
+    monto = campos.get("monto_reserva")
+    if monto not in (None, "") and config.leer_monto(monto) is None:
+        raise ValueError("El monto de reserva tiene que ser un número, como 250000.")
 
 __all__ = ["CARPETA_SUBIDAS", "LimiteAlcanzado", "Limites", "NoEncontrado", "Proyecto", "Registro", "Subida", "Vista",
            "fecha_legible", "precio_desde"]

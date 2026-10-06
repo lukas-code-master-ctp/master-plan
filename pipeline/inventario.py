@@ -43,16 +43,21 @@ class Resultado:
 
 
 # Lo que del loteo entero (no de cada parcela) se edita en la consola y el visor
-# muestra: el nombre, la etapa y el WhatsApp. La construcción lo escribe; esto lo
-# pone al día sin reconstruir, igual que los estados y precios.
-DATOS_DEL_LOTEO = ("proyecto", "etapa", "whatsapp")
+# muestra: el nombre, la etapa, el WhatsApp y la reserva. La construcción lo
+# escribe; esto lo pone al día sin reconstruir, igual que los estados y precios.
+DATOS_DEL_LOTEO = ("proyecto", "etapa", "whatsapp", "link_reserva", "monto_reserva")
+
+
+def _datos_del_loteo(proyecto: config.Proyecto) -> dict:
+    return dict(zip(DATOS_DEL_LOTEO, (proyecto.nombre, proyecto.etapa, proyecto.whatsapp,
+                                      proyecto.link_reserva, proyecto.monto_reserva)))
 
 
 def poner_datos_del_loteo(proyecto: config.Proyecto, salida: config.Salida) -> bool:
-    """Escribe el nombre, la etapa y el WhatsApp del proyecto en el sitio. Dice si cambió algo."""
+    """Escribe los datos del loteo (nombre, etapa, WhatsApp, reserva) en el sitio. Dice si cambió algo."""
     archivo = salida.datos / "parcelas.json"
     datos = json.loads(archivo.read_text(encoding="utf-8"))
-    nuevos = dict(zip(DATOS_DEL_LOTEO, (proyecto.nombre, proyecto.etapa, proyecto.whatsapp)))
+    nuevos = _datos_del_loteo(proyecto)
     if all(datos.get(campo) == valor for campo, valor in nuevos.items()):
         return False
     _escribir(archivo, {**datos, **nuevos})
@@ -86,9 +91,9 @@ def actualizar(fuentes: config.Fuentes, proyecto: config.Proyecto,
             parcela.update(nuevo)
             cambiadas.append(parcela["id"])
 
-    # El nombre, la etapa y el WhatsApp viajan con los estados: si se cambiaron
-    # en la consola, la próxima publicación ya los lleva.
-    nuevos = dict(zip(DATOS_DEL_LOTEO, (proyecto.nombre, proyecto.etapa, proyecto.whatsapp)))
+    # Los datos del loteo viajan con los estados: si se cambiaron en la consola,
+    # la próxima publicación ya los lleva.
+    nuevos = _datos_del_loteo(proyecto)
     cambia_el_loteo = any(datos.get(campo) != valor for campo, valor in nuevos.items())
     if cambiadas or cambia_el_loteo:
         datos.update(nuevos)

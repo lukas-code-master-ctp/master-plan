@@ -12,7 +12,7 @@ def sitio(tmp_path, parcelas):
     salida.datos.mkdir(parents=True)
     (salida.datos / "parcelas.json").write_text(json.dumps({
         # Como los deja la construcción: con los datos del loteo de `proyecto()`.
-        "proyecto": "Loteo", "etapa": "", "whatsapp": "",
+        "proyecto": "Loteo", "etapa": "", "whatsapp": "", "link_reserva": "", "monto_reserva": None,
         "generado": "2026-10-01T10:00:00-03:00",
         "resumen": {"total": len(parcelas), "con_geometria": len(parcelas),
                     "con_vista_aerea": len(parcelas), "por_estado": {}},
@@ -123,12 +123,14 @@ def test_pone_al_dia_el_nombre_la_etapa_y_el_whatsapp_del_loteo(tmp_path):
     datos.update(proyecto="Loteo viejo", etapa="", whatsapp="")
     (salida.datos / "parcelas.json").write_text(json.dumps(datos), encoding="utf-8")
     nuevo = config.Proyecto(nombre="Loteo Nuevo", etapa="Etapa 1", whatsapp="56912345678",
-                            parcelacion="LOTEO NUEVO", despegue=None, referencias=())
+                            parcelacion="LOTEO NUEVO", despegue=None, referencias=(),
+                            link_reserva="https://pago.cl/reserva", monto_reserva=250000)
 
     assert poner_datos_del_loteo(nuevo, salida) is True
 
     datos = leer(salida)
     assert (datos["proyecto"], datos["etapa"], datos["whatsapp"]) == ("Loteo Nuevo", "Etapa 1", "56912345678")
+    assert (datos["link_reserva"], datos["monto_reserva"]) == ("https://pago.cl/reserva", 250000)
     # Las parcelas no se tocan.
     assert datos["parcelas"][0]["poligono"] == POLIGONO
 
@@ -136,7 +138,7 @@ def test_pone_al_dia_el_nombre_la_etapa_y_el_whatsapp_del_loteo(tmp_path):
 def test_sin_cambios_en_los_datos_del_loteo_no_reescribe(tmp_path):
     salida = sitio(tmp_path, [parcela("1")])
     datos = leer(salida)
-    datos.update(proyecto="Loteo", etapa="", whatsapp="56912345678")
+    datos.update(proyecto="Loteo", etapa="", whatsapp="56912345678", link_reserva="", monto_reserva=None)
     (salida.datos / "parcelas.json").write_text(json.dumps(datos), encoding="utf-8")
     antes = (salida.datos / "parcelas.json").read_text(encoding="utf-8")
     mismo = config.Proyecto(nombre="Loteo", etapa="", whatsapp="56912345678",

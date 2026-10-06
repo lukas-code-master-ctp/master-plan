@@ -444,3 +444,20 @@ def test_el_proyecto_trae_el_whatsapp_normalizado(tmp_path):
     (tmp_path / "proyecto.json").write_text('{"nombre": "Loteo", "whatsapp": "+56 9 1234 5678"}')
 
     assert cargar_proyecto(tmp_path).whatsapp == "56912345678"
+
+
+def test_el_proyecto_trae_el_link_y_el_monto_de_reserva_del_loteo(tmp_path):
+    (tmp_path / "proyecto.json").write_text(
+        '{"nombre": "Loteo", "link_reserva": " https://pago.cl/reserva ", "monto_reserva": "250.000"}')
+
+    proyecto = cargar_proyecto(tmp_path)
+
+    assert (proyecto.link_reserva, proyecto.monto_reserva) == ("https://pago.cl/reserva", 250000)
+
+
+def test_sin_reserva_el_proyecto_no_la_inventa(tmp_path):
+    (tmp_path / "proyecto.json").write_text('{"nombre": "Loteo"}')
+
+    proyecto = cargar_proyecto(tmp_path)
+
+    assert (proyecto.link_reserva, proyecto.monto_reserva) == ("", None)

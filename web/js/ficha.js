@@ -126,34 +126,67 @@ function tarjetaServidumbre({ servidumbre_m: ancho, servidumbre_m2: superficie }
 /**
  * Las acciones, en el orden del diseño: escribir por WhatsApp (el canal con que
  * se vende en Chile), después reservar o comprar, y al final verla en 360°. Una
- * parcela que no está a la venta solo se puede mirar.
+ * parcela que no está a la venta solo se puede mirar. `url` es el enlace a la
+ * parcela, que va en el mensaje de WhatsApp.
  */
-export function accionesDe(parcela, catalogo) {
+export function accionesDe(parcela, catalogo, { url = '' } = {}) {
   const vendible = catalogo.estados[parcela.estado]?.vendible;
   const acciones = [];
 
   if (vendible && catalogo.meta.whatsapp) {
-    const mensaje = `Hola, me interesa la ${catalogo.nombre(parcela).toLowerCase()} de ${catalogo.meta.proyecto}.`;
     acciones.push({
       tipo: 'contacto',
       texto: catalogo.diseno?.texto_contacto || TEXTOS_POR_DEFECTO.contacto,
-      href: `https://wa.me/${catalogo.meta.whatsapp}?text=${encodeURIComponent(mensaje)}`,
+      href: `https://wa.me/${catalogo.meta.whatsapp}?text=${encodeURIComponent(mensajeWhatsapp(catalogo, parcela, url))}`,
     });
   }
-  if (vendible && parcela.link_pago) {
-    acciones.push({
-      tipo: 'pago',
-      texto: catalogo.diseno?.texto_pago || textoDePago(parcela),
-      href: parcela.link_pago,
-    });
-  }
+  const pago = vendible && pagoDe(parcela, catalogo.meta);
+  if (pago) acciones.push({ tipo: 'pago', texto: catalogo.diseno?.texto_pago || pago.texto, href: pago.href });
   if (parcela.mejor_vista) acciones.push({ tipo: 'aire', texto: 'Ver en 360°' });
   return acciones;
 }
 
+/**
+ * Lo que se le escribe al loteo por WhatsApp. Dice que viene del Masterplan,
+ * para que quien vende sepa de dónde llegó el contacto, y lleva el enlace a la
+ * parcela para que la vea igual que el comprador.
+ */
+export function mensajeWhatsapp(catalogo, parcela, url = '') {
+  const enlace = url ? `: ${url}` : '.';
+  const loteo = catalogo.meta.proyecto;
+  if (!parcela) return `Hola, vengo del Masterplan de ${loteo} y quiero más información${enlace}`;
+  return `Hola, vengo del Masterplan de ${loteo}. Me interesa la ${catalogo.nombre(parcela).toLowerCase()}${enlace}`;
+}
+
+/**
+ * El botón de pago: el link propio de la parcela (planilla) o, si no tiene, el
+ * link de reserva del loteo (consola), con la parcela en el enlace para que quien
+ * cobra sepa cuál se reservó. Null si no hay ninguno.
+ */
+function pagoDe(parcela, meta) {
+  if (parcela.link_pago) return { href: parcela.link_pago, texto: textoDePago(parcela) };
+  if (!meta.link_reserva) return null;
+  const monto = parcela.reserva || meta.monto_reserva;
+  return {
+    href: conParcela(meta.link_reserva, parcela.id),
+    // La reserva va en pesos: así se cobra, aunque el loteo se venda en UF.
+    texto: monto ? `Reservar parcela (${formatearPrecio(monto, 'CLP')})` : 'Reservar parcela',
+  };
+}
+
+/** El link con `parcela=<id>` sumado a lo que ya traía. Un link raro se deja tal cual. */
+function conParcela(link, id) {
+  try {
+    const url = new URL(link);
+    url.searchParams.set('parcela', id);
+    return url.toString();
+  } catch {
+    return link;
+  }
+}
+
 /** "Reservar parcela ($250.000)" si se sabe cuánto; si no, comprar o reservar. */
 function textoDePago(parcela) {
-  // La reserva va en pesos: así se cobra, aunque el loteo se venda en UF.
   if (parcela.reserva) return `Reservar parcela (${formatearPrecio(parcela.reserva, 'CLP')})`;
   return parcela.precio != null ? 'Comprar' : 'Reservar parcela';
 }
@@ -249,7 +282,7 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
   contenedor.querySelector('[data-accion="compartir"]')
     .addEventListener('click', () => compartir(contenedor, parcela, `${titulo} · ${catalogo.meta.proyecto}`));
 
-  const lista = accionesDe(parcela, catalogo);
+  const lista = accionesDe(parcela, catalogo, { url: urlDeParcela(parcela) });
   pintarBotones(contenedor.querySelector('.acciones'), lista);
   pintarEnlaces(contenedor, parcela, catalogo, lista.find((a) => a.tipo === 'aire'), acciones);
   permitirArrastre(contenedor, acciones.alCerrar);

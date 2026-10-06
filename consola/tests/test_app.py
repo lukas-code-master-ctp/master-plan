@@ -1323,6 +1323,37 @@ def test_publicar_lleva_al_sitio_el_whatsapp_cambiado_sin_reconstruir(ana_y_luis
     assert (datos["whatsapp"], datos["proyecto"], datos["etapa"]) == ("56912345678", "Con contacto", "Etapa 1")
 
 
+def test_publicar_lleva_al_sitio_el_link_y_el_monto_de_reserva_del_loteo(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+    slug = ana.post("/api/proyectos", json={"nombre": "Con reserva"}).json()["slug"]
+    construir_a_mano(registro, registro.salidas, slug)
+    ctp.post(f"/api/plataforma/proyectos/{slug}/pago", json={"nota_cobro": "transferencia"})
+
+    guardado = ana.patch(f"/api/proyectos/{slug}",
+                         json={"link_reserva": "https://pago.cl/reserva", "monto_reserva": "250.000"})
+
+    assert guardado.status_code == 200
+    assert (guardado.json()["link_reserva"], guardado.json()["monto_reserva"]) == ("https://pago.cl/reserva", 250000)
+    assert ana.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True}).status_code == 202
+    datos = json.loads((registro.salidas / slug / "sitio" / "datos" / "parcelas.json").read_text())
+    assert (datos["link_reserva"], datos["monto_reserva"]) == ("https://pago.cl/reserva", 250000)
+
+
+@pytest.mark.parametrize("campos", [
+    {"link_reserva": "pago.cl/reserva"},
+    {"link_reserva": "javascript:alert(1)"},
+    {"monto_reserva": "doscientos mil"},
+])
+def test_un_link_o_monto_de_reserva_que_no_sirve_se_rechaza(ana_y_luis, campos):
+    _, ana, _, _, _ = ana_y_luis
+    slug = ana.post("/api/proyectos", json={"nombre": "Reserva rara"}).json()["slug"]
+
+    respuesta = ana.patch(f"/api/proyectos/{slug}", json=campos)
+
+    assert respuesta.status_code == 400
+    assert ana.get("/api/proyectos").json()[0].get("link_reserva", "") == ""
+
+
 def test_publicar_sin_diseno_deja_el_diseno_vacio(ana_y_luis):
     ctp, ana, _, registro, _ = ana_y_luis
     diseno = un_diseno(ana)

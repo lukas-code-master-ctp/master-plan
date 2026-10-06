@@ -169,6 +169,8 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         "etapas": etapas,
         "generado": datetime.now().astimezone().isoformat(timespec="seconds"),
         "whatsapp": proyecto.whatsapp,
+        "link_reserva": proyecto.link_reserva,
+        "monto_reserva": proyecto.monto_reserva,
         "referencias": [{"nombre": h.nombre, "lon": h.lon, "lat": h.lat} for h in hitos],
         "estados": config.ESTADOS,
         "resumen": _resumen(parcelas),
