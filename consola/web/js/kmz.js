@@ -17,6 +17,7 @@ import {
   resumenRevision, siguienteNombre, sinNumero, sugerencias, textoHuecos, verticesDe,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
+import { EditorUnion } from './kmz_union.js';
 import { abrirNombre, abrirUsarKmz, descargaDe, textoDeCreado } from './kmzs.js';
 import { cargarLeaflet, COLORES, MapaKmz } from './mapa_kmz.js';
 import { oyentes, seguir } from './plano.js';
@@ -51,6 +52,8 @@ let arrastrar = false;
 let corrigiendo = false;      // Revisar: los vértices se arrastran o se borran a mano
 let corrigiendoYa = false;    // una corrección sin respuesta: los vértices del mapa están viejos
 let esquinasMarcando = [];    // las esquinas del marco mientras faltan: el servidor pide 4 o ninguna
+let editorUnion = null;       // el editor de "Une las hojas" (paso 1), creado la primera vez que se abre
+const uniendo = () => Boolean(editorUnion?.abierto);
 
 // --- guardar ---------------------------------------------------------------------------
 
@@ -184,6 +187,7 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
   rehacer = null;
   sucio = false;
   esquinasMarcando = [];
+  editorUnion?.cerrar();
   cerrarNumero();
   $('#kmz-guardado').textContent = '';
   $('#kmz-registro').replaceChildren();
@@ -247,11 +251,19 @@ async function cargarLotes() {
 async function mostrarPagina() {
   const hoja = paginaActual();
   if (!hoja) return;
-  await lienzo.cargar(`${api()}/paginas/${hoja.n}?v=${version}`,
+  // La imagen de la unión cambia con ella: su huella va en la URL para que se pida de nuevo.
+  const v = hoja.huella ? `${version}-${hoja.huella}` : version;
+  await lienzo.cargar(`${api()}/paginas/${hoja.n}?v=${v}`,
     hoja.ancho, hoja.alto, entradas.rotacion ?? 0);
 }
 
-const paginaActual = () => plano?.paginas?.find((p) => p.n === entradas.pagina) ?? plano?.paginas?.[0];
+/** La página del lienzo. La 0 es la unión de hojas: su tamaño lo trae `plano.union`, y
+ *  sin él (aún no guardada o inválida) no hay qué mostrar, en vez de la página 1 con
+ *  coordenadas que no son suyas. */
+const paginaActual = () => {
+  if (entradas.pagina === 0) return plano?.union ? { n: 0, ancho: plano.union.ancho, alto: plano.union.alto, huella: plano.union.huella } : null;
+  return plano?.paginas?.find((p) => p.n === entradas.pagina) ?? plano?.paginas?.[0];
+};
 
 // --- acciones -----------------------------------------------------------------------
 
@@ -280,9 +292,12 @@ async function manejar(nodo) {
   if (accion === 'kmz-siguiente') return irAlPaso(PASOS[PASOS.indexOf(paso) + 1]);
   if (accion === 'kmz-girar-izq') return girar(-90);
   if (accion === 'kmz-girar-der') return girar(90);
-  if (accion === 'kmz-acercar') return lienzo.acercar(1.5);
-  if (accion === 'kmz-alejar') return lienzo.acercar(1 / 1.5);
-  if (accion === 'kmz-ajustar') return lienzo.ajustar();
+  // Con el editor de la unión abierto, el zoom del visor es el suyo.
+  const visor = uniendo() ? editorUnion : lienzo;
+  if (accion === 'kmz-acercar') return visor.acercar(1.5);
+  if (accion === 'kmz-alejar') return visor.acercar(1 / 1.5);
+  if (accion === 'kmz-ajustar') return visor.ajustar();
+  if (accion === 'kmz-unir') return abrirUnion();
   if (accion === 'kmz-quitar-dibujo') return cambiar({ ...entradas, rectangulo: null });
   if (accion === 'kmz-borrar-esquinas') {
     esquinasMarcando = [];
@@ -323,6 +338,7 @@ async function irAlPaso(destino) {
   if (paso === 'ubicar' && destino !== 'ubicar') pendiente = null;
   if (destino !== 'revisar') corrigiendo = false;
   cerrarNumero();
+  editorUnion?.cerrar();
   paso = destino;
   await guardar();
   await pintarPaso();
@@ -361,6 +377,7 @@ function subirPdf(archivo) {
       version += 1;
       sucio = false;
       entradas = VACIAS();
+      editorUnion?.cerrar();
       try {
         await cargarTodo();
         await refrescar();
@@ -390,11 +407,74 @@ async function elegirPagina(n) {
 
 async function girar(grados) {
   const hoja = paginaActual();
-  if (!hoja) return;
+  // La unión no se gira entera: cada hoja lleva su giro en el editor.
+  if (!hoja || entradas.pagina === 0) return;
   const de = entradas.rotacion ?? 0;
   const a = (((de + grados) % 360) + 360) % 360;
   cambiar(girarEntradas(entradas, de, a, hoja.ancho, hoja.alto));
   await mostrarPagina();
+}
+
+// --- 1b. unir las hojas ---------------------------------------------------------------
+
+function abrirUnion() {
+  if (!plano?.paginas || plano.paginas.length < 2) return;
+  if (!editorUnion) {
+    editorUnion = new EditorUnion({ contenedor: $('#kmz-plano'), canvas: $('#kmz-union-lienzo'), panel: $('#kmz-panel-unir') });
+    editorUnion.alAfinar = (cuerpo) => pedir(`${api()}/union/afinar`, json(cuerpo));
+    editorUnion.alUsar = (union) => usarUnion(union);
+    editorUnion.alVolver = () => volverAUnaPagina();
+    editorUnion.alCancelar = () => cerrarUnion();
+    editorUnion.alError = (error) => avisar(error.message);
+  }
+  editorUnion.abrir({
+    paginas: plano.paginas,
+    union: entradas.pagina === 0 ? entradas.union : null,
+    // Si ya giró la página elegida hasta leerla derecha, las demás hojas vienen igual.
+    rotacion: entradas.pagina === 0 ? 0 : entradas.rotacion ?? 0,
+    urlImagen: (n) => `${api()}/paginas/${n}?medio=1&v=${version}`,
+  });
+  pintarPaso();
+  $('#kmz-panel-unir h2').focus();
+}
+
+function cerrarUnion() {
+  editorUnion?.cerrar();
+  pintarPaso();
+  mostrarPagina().catch((error) => avisar(error.message));
+}
+
+/** "Usar la unión": como cambiar de página, borra lo marcado si la unión cambió. */
+async function usarUnion(union) {
+  const cambia = entradas.pagina !== 0 || JSON.stringify(entradas.union?.hojas ?? null) !== JSON.stringify(union.hojas);
+  if (cambia && hayMarcas()
+    && !confirm('Lo marcado es de otra página. Cambiar de página lo borra. ¿Seguir?')) return;
+  const antes = entradas;
+  cambiar(cambia ? { ...VACIAS(), pagina: 0, rotacion: 0, union } : { ...entradas, union });
+  try {
+    await guardar();
+  } catch (error) {
+    // El servidor no la aceptó (p. ej. demasiado grande): vuelve lo de antes y el editor
+    // sigue abierto con las hojas como estaban.
+    entradas = antes;
+    sucio = false;
+    throw error;
+  }
+  editorUnion.cerrar();
+  // La imagen de la unión se compone en el servidor la primera vez (unos segundos con
+  // láminas grandes): se carga mientras ya se ve el paso Marcar.
+  mostrarPagina().catch((error) => avisar(error.message));
+  await irAlPaso('marcar');
+}
+
+/** "Volver a una sola página": quita la unión (y lo marcado en ella) y vuelve a la página 1. */
+async function volverAUnaPagina() {
+  if (entradas.pagina !== 0) return cerrarUnion();
+  if (hayMarcas() && !confirm('Lo marcado es de otra página. Cambiar de página lo borra. ¿Seguir?')) return undefined;
+  editorUnion.cerrar();
+  cambiar({ ...VACIAS(), pagina: 1 });
+  await mostrarPagina();
+  return pintarPaso();
 }
 
 // --- 2. marcar -------------------------------------------------------------------------
@@ -770,14 +850,16 @@ function pintar() {
 }
 
 async function pintarPaso() {
-  for (const panel of $$('.kmz-panel')) panel.hidden = panel.dataset.panel !== paso;
+  // El editor de la unión vive en el paso 1: su panel reemplaza al de subir mientras está abierto.
+  const abierto = uniendo() && paso === 'subir' ? 'unir' : paso;
+  for (const panel of $$('.kmz-panel')) panel.hidden = panel.dataset.panel !== abierto;
   const conPlano = ['subir', 'marcar', 'digitalizar', 'numerar', 'ubicar'].includes(paso) && Boolean(plano?.pdf);
   const conMapa = ['ubicar', 'revisar'].includes(paso);
   $('#kmz-escena').hidden = !conPlano && !conMapa;
   $('#kmz-plano').hidden = !conPlano;
   $('#kmz-mapa-caja').hidden = !conMapa;
   $('#kmz-escena').classList.toggle('kmz-escena--doble', conPlano && conMapa);
-  $('#kmz-plano').dataset.modo = paso;
+  $('#kmz-plano').dataset.modo = abierto;
   $('#kmz-cuerpo').classList.toggle('kmz-cuerpo--solo', paso === 'subir' && !plano?.pdf || paso === 'crear');
   if (paso !== 'marcar') elegirHerramienta('mover');
   pintar();
@@ -836,6 +918,7 @@ function pintarSubir() {
     return boton;
   }));
   $('#kmz-rotacion').textContent = `${entradas.rotacion ?? 0}°`;
+  $('#kmz-unir-caja').hidden = plano.paginas.length < 2;
 }
 
 function pintarMarcar() {

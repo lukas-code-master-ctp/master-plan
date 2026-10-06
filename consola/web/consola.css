@@ -23,6 +23,7 @@
   --verde-50: #f0fdf4; --verde-100: #bbf7d0; --verde-700: #15803d; --verde-800: #166534;
   --ambar-50: #fffbeb; --ambar-200: #fde68a; --ambar-800: #92400e;
   --rojo-50: #fef2f2; --rojo-200: #fecaca; --rojo-700: #b91c1c;
+  --violeta: #7c3aed; --violeta-anillo: rgb(124 58 237 / 0.2);
   --sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --radio-sm: 0.375rem; --radio-md: 0.5rem; --radio-lg: 0.75rem;
@@ -829,6 +830,35 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .hoja:hover { border-color: var(--zinc-400); }
 .hoja[aria-pressed="true"] { border-color: var(--marca-800); box-shadow: 0 0 0 2px var(--marca-anillo); color: var(--zinc-900); font-weight: 600; }
 
+#kmz-unir-caja { padding-top: 0.25rem; }
+#kmz-unir-caja .boton { width: 100%; }
+
+.union-orden { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.union-movil { display: none; }
+.union-hojas { display: grid; gap: 0.375rem; margin: 0; padding: 0; list-style: none; }
+.union-hoja {
+  display: grid; gap: 0.5rem; padding: 0.375rem 0.625rem 0.625rem;
+  background: #fff; border: 1px solid var(--zinc-200); border-radius: var(--radio-md);
+}
+.union-hoja[aria-current="true"] { border-color: var(--violeta); box-shadow: 0 0 0 2px var(--violeta-anillo); }
+.union-hoja--fuera { padding-bottom: 0.375rem; background: var(--zinc-50); color: var(--zinc-500); }
+.union-hoja__cabeza {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; width: 100%; min-height: 2rem;
+  padding: 0; background: none; border: 0; text-align: left; font-weight: 600;
+}
+.union-hoja[aria-current="true"] .union-hoja__cabeza { color: var(--violeta); }
+/* Subir o Bajar sin dónde: se apagan sin el relleno gris de un botón lleno. */
+.union-hoja .boton--texto[disabled] { background: transparent; color: var(--zinc-300); }
+.union-hoja__resumen { margin-left: auto; font-size: 0.75rem; font-weight: 500; color: var(--zinc-500); font-variant-numeric: tabular-nums; }
+.union-hoja__controles { display: grid; gap: 0.5rem; }
+.union-hoja--fuera .union-hoja__controles { gap: 0; }
+.union-giro { display: grid; grid-template-columns: auto minmax(0, 1fr) 3.5rem; align-items: center; gap: 0.5rem; font-size: 0.8125rem; }
+.union-giro input { width: 100%; margin: 0; accent-color: var(--violeta); }
+.union-giro output { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.union-calce { margin: 0; font-size: 0.75rem; font-weight: 600; }
+.union-calce--ok { color: var(--verde-700); }
+.union-calce--no { color: var(--rojo-700); }
+
 .kmz-cifras { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 0.5rem 0.75rem; margin: 0; }
 .kmz-cifras div { display: grid; gap: 0.1rem; }
 .kmz-cifras dt { display: flex; align-items: center; gap: 0.35rem; font: 600 0.625rem/1.2 var(--sans); letter-spacing: 0.05em; text-transform: uppercase; color: var(--zinc-500); }
@@ -900,6 +930,10 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .visor-plano__herramientas button:hover, .visor-plano__zoom button:hover { background: var(--zinc-100); }
 .visor-plano__herramientas button[aria-pressed="true"] { background: var(--marca-800); color: #fff; }
 .visor-plano:not([data-modo="marcar"]) .visor-plano__herramientas { display: none; }
+/* Unir las hojas: el editor dibuja en su propio canvas, sobre el mismo visor. */
+#kmz-union-lienzo { display: none; }
+.visor-plano[data-modo="unir"] #kmz-lienzo { display: none; }
+.visor-plano[data-modo="unir"] #kmz-union-lienzo { display: block; }
 /* La columna es minmax(0, 1fr) y el campo parte de ancho 0: así el ancho intrínseco del
    <input> (unos 20 caracteres) no estira la grilla y el campo y el OK quedan dentro. */
 .kmz-numero {
@@ -937,6 +971,9 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 /* --- Teléfono ------------------------------------------------------------------ */
 
 @media (max-width: 40rem) {
+  /* En el celular se puede, pero cuesta: lo dice, y solo la hoja elegida muestra sus controles. */
+  .union-movil { display: block; }
+  .union-hoja:not([aria-current="true"]) .union-hoja__controles { display: none; }
   .barra { grid-template-columns: auto 1fr auto; padding: 0 1rem; gap: 0.5rem; }
   .marca__texto { display: none; }
   .pestanas { justify-content: center; }
