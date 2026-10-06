@@ -723,13 +723,13 @@ const conDesvio = (numero, error_area, extra = {}) => ({
 
 test('semáforo verde: menos de la mitad se aparta más de un 5 %', () => {
   const luz = semaforo([conDesvio('1', 0.01), conDesvio('2', -0.04), conDesvio('3', 0.05), conDesvio('4', 0.09)]);
-  assert.deepEqual(luz, { tono: 'verde', dentro: 3, total: 4 });
+  assert.deepEqual(luz, { tono: 'verde', dentro: 3, total: 4, sesgo: null });
   assert.equal(textoSemaforo(luz), 'Los lotes calzan con el cuadro de superficies (3 de 4 dentro del 5 %).');
 });
 
 test('semáforo ámbar justo en la mitad, y el texto cuenta los que miden distinto', () => {
   const luz = semaforo([conDesvio('1', 0.01), conDesvio('2', -0.02), conDesvio('3', -0.055), conDesvio('4', 0.07)]);
-  assert.deepEqual(luz, { tono: 'ambar', dentro: 2, total: 4 });
+  assert.deepEqual(luz, { tono: 'ambar', dentro: 2, total: 4, sesgo: null });
   assert.match(textoSemaforo(luz), /^2 de 4 lotes miden distinto al cuadro de superficies\. Suele ser la ubicación/);
   // Uno menos fuera del 5 % y vuelve a verde.
   assert.equal(semaforo([conDesvio('1', 0.01), conDesvio('2', -0.02), conDesvio('3', 0.03), conDesvio('4', 0.07)]).tono, 'verde');
@@ -753,13 +753,23 @@ test('semáforo cuenta solo lo que va al KMZ: sin las partes sin número ni lo d
     // El resto incluido con el área de su fila del cuadro sí cuenta, como un lote más.
     conDesvio('Resto', 0.03, { resto: true }),
   ];
-  assert.deepEqual(semaforo(rasgos), { tono: 'verde', dentro: 3, total: 3 });
+  assert.deepEqual(semaforo(rasgos), { tono: 'verde', dentro: 3, total: 3, sesgo: null });
 });
 
 test('semáforo usa el nivel del servidor si viene: el redondeo de error_area no lo contradice', () => {
   // 5,004 % se guarda como 0.05, pero Revisar lo pinta rojo (nivel sin redondear).
   const luz = semaforo([conDesvio('1', 0.05, { nivel: 'rojo' }), conDesvio('2', 0.01, { nivel: 'verde' }),
     conDesvio('3', -0.03, { nivel: 'ambar' })]);
-  assert.deepEqual(luz, { tono: 'verde', dentro: 2, total: 3 });
+  assert.deepEqual(luz, { tono: 'verde', dentro: 2, total: 3, sesgo: null });
   assert.equal(semaforo([conDesvio('1', 0.05, { nivel: 'rojo' }), conDesvio('2', 0.01, { nivel: 'verde' })]).tono, 'ambar');
+});
+
+test('semáforo en ámbar si casi todos se desvían parejo, aunque menos de la mitad pase del 5 %', () => {
+  // Como Rapel en el QA: todos cerca de un 4,9 % más chicos, solo 2 de 5 pasan del 5 %.
+  const luz = semaforo([conDesvio('1', -0.045), conDesvio('2', -0.049), conDesvio('3', -0.048),
+    conDesvio('4', -0.052), conDesvio('5', -0.055)]);
+  assert.equal(luz.tono, 'ambar');
+  assert.equal(luz.dentro, 3);
+  assert.equal(textoSemaforo(luz), 'Casi todos los lotes salen cerca de un 4,9 % más chicos que en el cuadro'
+    + ' de superficies. Suele ser la ubicación: vuelve a Ubicar y marca los puntos de nuevo.');
 });

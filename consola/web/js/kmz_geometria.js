@@ -482,15 +482,23 @@ export function semaforo(rasgos, tolerancia = 0.05) {
   // Sin `nivel`, el desvío con un margen chico para el redondeo.
   const dentro = conArea.filter((p) => (p.nivel ? p.nivel !== 'rojo'
     : Math.abs(p.error_area) <= tolerancia + 1e-9)).length;
-  return { tono: (total - dentro) * 2 >= total ? 'ambar' : 'verde', dentro, total };
+  // Revisar pide volver a Ubicar cuando casi todos se desvían hacia el mismo lado, aunque
+  // menos de la mitad pase del 5 % (en Rapel, 7 de 16 a un 4,9 % parejo): el semáforo
+  // tiene que decir lo mismo, o Crear queda en verde justo después de ese aviso.
+  const sesgo = sesgoDeEscala(conArea.map((p) => ({ properties: p })));
+  const ambar = (total - dentro) * 2 >= total || sesgo != null;
+  return { tono: ambar ? 'ambar' : 'verde', dentro, total, sesgo };
 }
 
 /** El texto del semáforo ("" si no se muestra). */
-export function textoSemaforo({ tono, dentro, total }) {
+export function textoSemaforo({ tono, dentro, total, sesgo = null }) {
   if (tono === 'verde') return `Los lotes calzan con el cuadro de superficies (${dentro} de ${total} dentro del 5 %).`;
   if (tono === 'ambar') {
-    return `${total - dentro} de ${total} lotes miden distinto al cuadro de superficies. Suele ser la`
-      + ' ubicación: vuelve a Ubicar y marca los puntos de nuevo.';
+    const cuantos = (total - dentro) * 2 >= total || sesgo == null
+      ? `${total - dentro} de ${total} lotes miden distinto al cuadro de superficies.`
+      : `Casi todos los lotes salen cerca de un ${Math.abs(sesgo * 100).toFixed(1).replace('.', ',')} %`
+        + ` ${sesgo > 0 ? 'más grandes' : 'más chicos'} que en el cuadro de superficies.`;
+    return `${cuantos} Suele ser la ubicación: vuelve a Ubicar y marca los puntos de nuevo.`;
   }
   return '';
 }
