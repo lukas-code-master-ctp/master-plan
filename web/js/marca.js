@@ -18,7 +18,7 @@ export const TIPOGRAFIAS = {
 };
 
 export const TEXTOS_POR_DEFECTO = {
-  contacto: 'Me interesa esta parcela',
+  contacto: 'Consultar por WhatsApp',
 };
 
 // El botón lleva texto blanco encima: por debajo de esto no se lee bien (WCAG AA).

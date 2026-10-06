@@ -330,9 +330,12 @@ button { cursor: pointer; }
 .boton--texto:hover { background: var(--zinc-100); color: var(--tinta); }
 .boton--texto:active { background: var(--zinc-200); }
 
-.boton--suave { background: var(--zinc-100); color: var(--tinta); }
-.boton--suave:hover { background: var(--zinc-200); }
-.boton--suave:active { background: var(--zinc-300); }
+/* El de WhatsApp lleva el verde de WhatsApp, a pedido: es el botón que la gente
+   reconoce. Con texto oscuro y no blanco: blanco sobre #25d366 da 2:1 y no se
+   lee al sol; tinta da más de 10:1. Es el único verde que no es un estado. */
+.boton--whatsapp { background: #25d366; color: var(--zinc-950); }
+.boton--whatsapp:hover { background: #20ba59; }
+.boton--whatsapp:active { background: #1caa4f; }
 
 
 .boton[disabled] { background: var(--zinc-300); border-color: transparent; color: #fff; cursor: not-allowed; }
@@ -985,7 +988,7 @@ button { cursor: pointer; }
   /* Con las acciones en dos columnas, a 287 px la fila se partía y el panel
      pedía scroll. 360 px es el ancho del inspector del diseño, menos el margen. */
   width: 360px;
-  max-height: min(36rem, calc(100vh - var(--alto-cabecera) - 6.5rem));
+  max-height: min(44rem, calc(100vh - var(--alto-cabecera) - 6.5rem));
   overflow-y: auto;
   padding: 1.25rem;
   border-radius: var(--radio-xl);
@@ -999,105 +1002,135 @@ button { cursor: pointer; }
 .ficha:not(.ficha--arrastrando) { transition: transform 220ms var(--curva); }
 
 .ficha__cabecera { display: flex; align-items: flex-start; gap: 0.75rem; }
+.ficha__identidad { min-width: 0; }
 .ficha__titulo {
-  margin: 0 0 0.5rem;
+  margin: 0.5rem 0 0;
   font: 700 20px/1.2 var(--sans);
   letter-spacing: -0.015em;
   color: var(--tinta);
 }
-.ficha__cerrar {
-  margin-left: auto;
-  flex: none;
+.ficha__proyecto { color: var(--tinta); }
+.ficha__herramientas { margin-left: auto; display: flex; gap: 0.5rem; flex: none; }
+/* Compartir y cerrar: botones redondos grises, como en el diseño. */
+.ficha__redondo {
   display: grid;
   place-items: center;
-  width: 2rem; height: 2rem;
-  background: transparent;
+  width: var(--alto-control); height: var(--alto-control);
+  background: var(--zinc-100);
   border: 0;
-  border-radius: var(--radio-md);
-  color: var(--zinc-500);
-  font-size: 0.875rem;
-  transition: background 150ms, color 150ms;
+  border-radius: 50%;
+  color: var(--tinta);
+  font-size: 0.9375rem;
+  transition: background 150ms;
 }
-.ficha__cerrar:hover { background: var(--zinc-100); color: var(--tinta); }
+.ficha__redondo:hover { background: var(--zinc-200); }
+.ficha__redondo svg { width: 1.15rem; height: 1.15rem; }
 
-.ficha__meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.ficha__meta { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.ficha__etapa { font: 600 0.8125rem/1 var(--sans); color: var(--tinta-suave); }
 
-/* Pills de estado. */
-.insignia, .ficha__etapa {
+/* El estado en mayúsculas con su punto: lo primero que se lee de la ficha. */
+.insignia {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.125rem 0.625rem;
-  border-radius: var(--radio-sm);
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--radio-full);
   background: var(--zinc-100);
   color: var(--zinc-700);
-  box-shadow: inset 0 0 0 1px var(--zinc-200);
-  font: 600 0.75rem/1.25rem var(--sans);
+  font: 700 0.6875rem/1 var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
-.insignia--disponible { background: var(--verde-50); color: var(--verde-800); box-shadow: inset 0 0 0 1px var(--verde-100); }
-.insignia--reservado { background: var(--ambar-50); color: var(--ambar-800); box-shadow: inset 0 0 0 1px var(--ambar-200); }
-.insignia--vendido { background: var(--azul-50); color: var(--azul-700); box-shadow: inset 0 0 0 1px var(--azul-200); }
-.insignia--no_disponible { background: var(--zinc-900); color: #fff; box-shadow: inset 0 0 0 1px var(--zinc-900); }
-.insignia--no_en_venta { background: var(--zinc-100); color: var(--zinc-600); }
+.insignia::before { content: ''; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; }
+.insignia--disponible { background: var(--verde-100); color: var(--verde-800); }
+.insignia--reservado { background: var(--ambar-200); color: var(--ambar-800); }
+.insignia--vendido { background: var(--azul-200); color: var(--azul-700); }
+.insignia--no_disponible { background: var(--zinc-900); color: #fff; }
+.insignia--no_en_venta { background: var(--zinc-200); color: var(--zinc-600); }
 
-/* Superficie a la izquierda, precio grande a la derecha: las dos cifras que el
-   comprador compara entre parcelas, en la misma línea de lectura. */
-.ficha__resumen {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.25rem 1rem;
-  margin: 1rem 0;
-}
-.ficha__resumen p { margin: 0; }
-.ficha__superficie {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: var(--tinta-suave);
-}
-.ficha__superficie svg { width: 1.1rem; height: 1.1rem; flex: none; color: var(--zinc-500); }
-.ficha__superficie strong { color: var(--tinta); font-weight: 700; font-variant-numeric: tabular-nums; }
-.ficha__precio { margin-left: auto !important; text-align: right; }
-.ficha__precio strong {
-  font: 700 24px/1.1 var(--sans);
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-  color: var(--tinta);
-}
-.ficha__consultar { font: 600 0.875rem var(--sans); color: var(--tinta-tenue); }
-
+/* La cuadrícula de datos del lote: dos columnas de tarjetas con ícono. */
 .atributos {
   display: grid;
-  /* auto-fill y no auto-fit: una sola tarjeta conserva su ancho en vez de
-     estirarse a todo el panel. */
-  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
-  gap: 0.5rem;
-  margin: 0 0 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 1.1rem 0 0;
   padding: 0;
   list-style: none;
 }
 .atributo {
-  display: grid;
-  justify-items: center;
-  gap: 0.2rem;
-  padding: 0.75rem 0.5rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.85rem;
   background: var(--zinc-100);
   border-radius: var(--radio-lg);
-  text-align: center;
 }
-.atributo svg { width: 1.15rem; height: 1.15rem; color: var(--zinc-600); margin-bottom: 0.15rem; }
-.atributo__rotulo { font: 600 0.75rem/1.2 var(--sans); color: var(--tinta); }
-.atributo__valor { font: 400 0.75rem/1.2 var(--sans); font-variant-numeric: tabular-nums; color: var(--tinta-suave); }
+.atributo__icono {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.5rem; height: 2.5rem;
+  background: var(--papel);
+  border-radius: var(--radio-md);
+  color: var(--marca-700);
+}
+.atributo__icono svg { width: 1.25rem; height: 1.25rem; }
+.atributo__textos { display: grid; gap: 0.2rem; min-width: 0; }
+.atributo__rotulo {
+  font: 700 0.625rem/1.1 var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-suave);
+}
+.atributo__valor { font: 700 1.125rem/1.15 var(--sans); font-variant-numeric: tabular-nums; color: var(--tinta); }
+.atributo__detalle { font: 400 0.75rem/1.3 var(--sans); color: var(--tinta-suave); }
 
-.acciones { display: grid; gap: 0.5rem; }
-.acciones .boton { width: 100%; }
-.acciones__fila { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 0.5rem; }
-.acciones .boton svg { width: 1.15rem; height: 1.15rem; flex: none; }
-/* El texto del contacto lo escribe la loteadora y puede no caber en media fila:
-   el botón crece en alto en vez de cortarlo. */
-.acciones__fila .boton { height: auto; min-height: var(--alto-control); padding: 0.5rem 0.75rem; line-height: 1.2; }
+/* El precio en su propia tarjeta, grande: es la cifra que se compara. */
+.precio {
+  margin: 0.75rem 0 1.1rem;
+  padding: 1rem 1.1rem;
+  background: var(--zinc-100);
+  border-radius: var(--radio-lg);
+}
+.precio__rotulo {
+  font: 700 0.6875rem/1 var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-suave);
+}
+.precio__monto { margin: 0.4rem 0 0; color: var(--tinta); }
+.precio__monto strong { font: 700 28px/1.1 var(--sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.precio__monto small { font: 500 0.8125rem var(--sans); color: var(--tinta-suave); }
+.precio__monto--consultar { font: 700 1.125rem/1.2 var(--sans); }
+
+.acciones { display: grid; gap: 0.6rem; }
+.acciones .boton { width: 100%; height: 52px; border-radius: var(--radio-lg); font-size: 0.9375rem; font-weight: 700; }
+.acciones .boton svg { width: 1.25rem; height: 1.25rem; flex: none; }
+
+/* Enlaces chicos bajo los botones: verla en 360°, bajar los deslindes, copiar. */
+.enlaces {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 0.25rem;
+  margin-top: 0.5rem;
+}
+.enlace-ficha {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: var(--alto-control);
+  padding: 0 0.6rem;
+  background: none;
+  border: 0;
+  border-radius: var(--radio-md);
+  color: var(--marca-700);
+  font: 600 0.8125rem/1 var(--sans);
+  text-decoration: none;
+}
+.enlace-ficha:hover { background: var(--zinc-100); }
+.enlace-ficha svg { width: 1.05rem; height: 1.05rem; flex: none; }
 
 .nota {
   margin: 1rem 0 0;

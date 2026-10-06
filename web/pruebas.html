@@ -156,7 +156,7 @@ async function correr() {
             $('.ficha__titulo')?.textContent.includes(idElegida),
             `la pastilla decía ${idElegida}, la ficha "${$('.ficha__titulo')?.textContent ?? '—'}"`);
     revisar('la ficha trae superficie y acciones',
-            $('.ficha__superficie')?.textContent.includes('m²') && $('.acciones')?.children.length >= 1);
+            $('.atributos')?.textContent.includes('m²') && $('.enlaces')?.children.length >= 1);
     // El resaltado se aplica en el siguiente repintado, no en el mismo clic.
     revisar('la parcela queda marcada como seleccionada',
             await esperarA(() => elegida.classList.contains('parcela--seleccionada'), 2000));
