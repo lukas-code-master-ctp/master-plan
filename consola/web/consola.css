@@ -1056,9 +1056,15 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 /* --- Teléfono ------------------------------------------------------------------ */
 
 @media (max-width: 40rem) {
-  .barra { grid-template-columns: auto 1fr auto; padding: 0 1rem; gap: 0.5rem; }
+  /* A 320 px las cuatro pestañas no caben: se deslizan dentro de la barra en vez de
+     empujar la página hacia el lado. Los márgenes automáticos las centran cuando caben
+     sin esconder la primera cuando no (lo que haría justify-content: center). */
+  .barra { grid-template-columns: auto minmax(0, 1fr) auto; padding: 0 1rem; gap: 0.5rem; }
   .marca__texto { display: none; }
-  .pestanas { justify-content: center; }
+  .pestanas { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .pestanas::-webkit-scrollbar { display: none; }
+  .pestanas a:first-child { margin-left: auto; }
+  .pestanas a:last-child { margin-right: auto; }
   .pestanas a { padding: 0 0.5rem; font-size: 0.8125rem; }
   .pestanas a::after { left: 0.5rem; right: 0.5rem; }
   .lienzo { padding: 1.25rem 1rem 3rem; }
