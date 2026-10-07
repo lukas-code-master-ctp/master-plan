@@ -74,7 +74,7 @@ CALIDAD = 90
 # líneas: su valor impreso se puede corregir sin volver a digitalizar.
 CLAVES_DIGITALIZAR = ("pdf", "pagina", "rotacion", "rectangulo", "mascaras", "esquinas", "marco_mm",
                       "semillas", "lector", "lector_apoyo_min", "cuadro")
-CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula", "ubicacion")
+CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula", "ubicacion", "escala_cuadro")
 
 # Topes de lo que se marca a mano: muy por sobre un loteo real, y lejos de lo que
 # atora la revisión (las semillas repetidas se buscan de a pares).
@@ -838,7 +838,10 @@ def huella_ubicar(entradas: dict, huella_digitalizado: str) -> str:
     # no cambia la ubicación y no debe dejarla atrasada. Sin ella, la huella es la de antes
     # de que existiera la clave: lo ya ubicado sigue al día.
     usa = ubicacion_completa(entradas.get("ubicacion")) and len(entradas.get("anclas") or []) < 2
-    datos = {k: entradas.get(k) for k in CLAVES_UBICAR if k != "ubicacion" or usa}
+    # `escala_cuadro` igual: solo con 2 o más puntos (y puesto) cambia la ubicación.
+    ajusta = bool(entradas.get("escala_cuadro")) and len(entradas.get("anclas") or []) >= 2
+    usadas = {"ubicacion": usa, "escala_cuadro": ajusta}
+    datos = {k: entradas.get(k) for k in CLAVES_UBICAR if usadas.get(k, True)}
     return _huella(dict(datos, digitalizado=huella_digitalizado))
 
 

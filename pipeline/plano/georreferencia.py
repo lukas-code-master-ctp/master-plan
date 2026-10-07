@@ -22,10 +22,13 @@ Una `Transformacion` lleva px de página a coordenadas del EPSG con una matriz 3
 (proyectiva: si el plano es una foto rectificada, incluye la homografía página →
 trabajo, y la similitud se ajusta en el plano ya rectificado).
 
+Con los puntos, `entradas.escala_cuadro` reescala la similitud al tamaño del cuadro de
+superficies (`ajustar_escala`): los puntos dan la posición y el giro, el cuadro el tamaño.
+
 `<carpeta>/georreferencia.json`: `Transformacion.a_dict()` más `datum` (la comparación
 WGS84/PSAD56, si hubo cuadrícula y anclas). `<carpeta>/lotes.geojson`: los lotes en
 lon/lat, para el mapa de la consola. Las claves de entrada (`anclas`, `cuadricula`,
-`ubicacion`, `ajuste`) están en `pipeline/plano/digitalizar.py`.
+`ubicacion`, `ajuste`, `escala_cuadro`) están en `pipeline/plano/digitalizar.py`.
 """
 from __future__ import annotations
 
@@ -184,11 +187,16 @@ def _similitud(src: np.ndarray, dst: np.ndarray):
     return a, b, np.c_[resto.real, resto.imag]
 
 
-def por_anclas(anclas, homografia=None, epsg: int | None = None) -> Transformacion:
+def por_anclas(anclas, homografia=None, epsg: int | None = None, escala_m_px: float | None = None) -> Transformacion:
     """Similitud por mínimos cuadrados desde ≥2 anclas {"x", "y", "lon", "lat"}.
 
     `x, y` en px de página; `homografia` (página → trabajo) si el plano es una foto
     rectificada: la similitud vale en el plano enderezado, no en la foto.
+
+    Con `escala_m_px` (m por px del plano en que se ajusta: el de trabajo con
+    `homografia`, el de página sin ella) la similitud se reescala a esa escala, con el
+    mismo giro y el centroide de las anclas en el mismo lugar del mapa: es "Ajustar el
+    tamaño con el cuadro" (`ajustar_escala`).
     """
     anclas = list(anclas)
     if len(anclas) < 2:
@@ -242,6 +250,17 @@ def por_anclas(anclas, homografia=None, epsg: int | None = None) -> Transformaci
                           if len(nombres) == 1 else
                           f"Los puntos {', '.join(nombres)} no calzan con los demás: márcalos de nuevo o quítalos.")
 
+    # Las atípicas se buscan con la similitud libre: con la escala impuesta, todas las
+    # anclas se alejan en proporción a su distancia al centroide y la más lejana parecería
+    # mal marcada sin estarlo. La tabla y el error medio sí son los del ajuste: es donde
+    # quedan los lotes.
+    escala_puntos = float(abs(a))
+    if escala_m_px is not None:
+        a, b = ajustar_escala(a, src, dst, escala_m_px)
+        w = a * (src[:, 0] + 1j * src[:, 1]) + b
+        resto = dst - np.c_[w.real, w.imag]
+        residuos = np.hypot(resto[:, 0], resto[:, 1])
+
     filas = []
     for i, ancla in enumerate(anclas):
         fila = dict(nombre=_nombre(ancla, i), x=float(ancla["x"]), y=float(ancla["y"]),
@@ -257,7 +276,37 @@ def por_anclas(anclas, homografia=None, epsg: int | None = None) -> Transformaci
     parametros = dict(escala_m_px=float(abs(a)), rotacion_grados=float(math.degrees(math.atan2(a.imag, a.real))),
                       n_anclas=n, control=control,
                       rms_m=float(np.sqrt(np.mean(residuos ** 2))) if n >= 3 else None)
+    if escala_m_px is not None:
+        factor = float(abs(a)) / escala_puntos
+        parametros.update(ajustada_al_cuadro=True, escala_puntos_m_px=escala_puntos,
+                          escala_ajustada_m_px=float(abs(a)),
+                          ajuste_escala_pct=round(100 * (factor - 1), 2),
+                          ajuste_area_pct=round(100 * (factor ** 2 - 1), 2))
     return Transformacion("anclas", "similitud", epsg, s @ h, parametros, filas, avisos=avisos)
+
+
+def ajustar_escala(a: complex, src: np.ndarray, dst: np.ndarray, escala_m_px: float) -> tuple[complex, complex]:
+    """La similitud w = a·z + b de las anclas, con |a| = `escala_m_px` y el mismo giro.
+    El centroide de las anclas en el plano sigue yendo al centroide de sus coordenadas
+    (por mínimos cuadrados, b = w̄ − a·z̄): ahí, entre los puntos que ella marcó, el
+    plano no se mueve y los lotes crecen o se achican en torno a ellos."""
+    if not (escala_m_px and math.isfinite(escala_m_px) and escala_m_px > 0):
+        raise ValueError("la escala del cuadro no sirve")
+    a = a / abs(a) * float(escala_m_px)
+    zm = complex(src[:, 0].mean(), src[:, 1].mean())
+    wm = complex(dst[:, 0].mean(), dst[:, 1].mean())
+    return a, wm - a * zm
+
+
+def escala_en_el_ajuste(escala_trabajo: float, homografia_trabajo, en_trabajo: bool) -> float:
+    """m por px de trabajo → m por px del plano en que se ajustan las anclas. Con la foto
+    rectificada (`en_trabajo`) es el mismo; en un recorte las anclas se ajustan en px de
+    página, y la página → trabajo es una escala (y una traslación): un px de página mide
+    sqrt(|det|) px de trabajo."""
+    h = _homografia(homografia_trabajo)
+    if en_trabajo:
+        return float(escala_trabajo)
+    return float(escala_trabajo) * math.sqrt(abs(np.linalg.det(h[:2, :2]))) / abs(float(h[2, 2]))
 
 
 def _sin_cada_una(src, dst, indices, con_rms=False):
@@ -731,12 +780,28 @@ def georreferenciar(carpeta: Path, avance=print) -> Transformacion:
             raise ValueError("para ubicar el plano hacen falta al menos 2 puntos, la cuadrícula con sus valores"
                              " o tu coordenada con su punto en el plano"
                              + (f" (la cuadrícula no sirve: {error_cuadricula})" if error_cuadricula else ""))
-        t = por_anclas(anclas, homografia)
+        escala_ajuste = None
+        if entradas.get("escala_cuadro"):
+            # "Ajustar el tamaño con el cuadro": sin cuadro (o con muy pocas áreas) no hay a
+            # qué ajustar y se ubica con los puntos tal cual; no es un error de ella.
+            del_cuadro = escala_del_cuadro(digitalizado)
+            if del_cuadro is None:
+                avance("Ajustar con el cuadro: no hay cuadro de superficies con qué; se ignora")
+            else:
+                escala_ajuste = escala_en_el_ajuste(del_cuadro, trabajo.get("homografia"), homografia is not None)
+        t = por_anclas(anclas, homografia, escala_m_px=escala_ajuste)
         if error_cuadricula:
             avisos.append(f"No se pudo usar la cuadrícula ({error_cuadricula}); se usan los puntos.")
         p = t.parametros
         avance(f"Anclas: {p['n_anclas']}, similitud {p['escala_m_px']:.4f} m/px, giro {p['rotacion_grados']:.2f}°,"
                f" EPSG:{t.epsg}" + (f", residuo {p['rms_m']:.1f} m" if p["rms_m"] is not None else ", sin control"))
+        if p.get("ajustada_al_cuadro"):
+            avance(f"Ajustada al cuadro: {p['escala_puntos_m_px']:.4f} → {p['escala_ajustada_m_px']:.4f} m/px"
+                   f" ({p['ajuste_escala_pct']:+.2f} % de escala, {p['ajuste_area_pct']:+.2f} % de área)")
+            area = p["ajuste_area_pct"]
+            t.avisos.append(f"Ajustaste el tamaño con el cuadro de superficies: los lotes salen"
+                            f" {f'{abs(area):.1f}'.replace('.', ',')} % {'más grandes' if area >= 0 else 'más chicos'}"
+                            " que con tus puntos.")
         for a in t.anclas:
             if "residuo_sin_ella_m" in a:
                 avance(f"  {a['nombre']}: residuo {a['residuo_m']:.1f} m, sin ella {a['residuo_sin_ella_m']:.1f} m"
@@ -747,7 +812,8 @@ def georreferenciar(carpeta: Path, avance=print) -> Transformacion:
         avance(f"Cuadro de superficies: {escala['lotes']} lotes, área mediana {escala['area_pct']:+.1f} %,"
                f" escala {escala['escala_pct']:+.1f} %")
         # Con la escala sacada del mismo cuadro, compararla con él es circular: siempre calza.
-        circular = t.metodo == "punto" and t.parametros.get("origen_escala") == "cuadro"
+        circular = (t.metodo == "punto" and t.parametros.get("origen_escala") == "cuadro"
+                    or t.parametros.get("ajustada_al_cuadro"))
         if abs(escala["escala_pct"]) > 100 * ESCALA_CUADRO_MAX and not circular:
             t.avisos.append(_aviso_escala(escala, t.metodo))
     ajuste = entradas.get("ajuste") or {}

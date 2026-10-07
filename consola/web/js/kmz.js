@@ -16,7 +16,7 @@ import {
   ordenarEsquinas, PASOS, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puedeUbicar, puntoDeRotulo,
   puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, siguienteNombre, sinNumero, sugerencias, textoSemaforo, verticesDe,
   escalaDeUbicacion, leerEscala, lotesEnElMapa, normalizarGiro, similitudPorPunto, usaUbicacion,
-  afinarAbierta, similitudPorAnclas, textoPuntos, ubicacionCompleta,
+  afinarAbierta, similitudPorAnclas, textoPuntos, ubicacionCompleta, ajustaConElCuadro, ofrecerAjusteDelCuadro,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
 import { abrirNombre, abrirUsarKmz, descargaDe, textoDeCreado } from './kmzs.js';
@@ -56,6 +56,7 @@ let corrigiendo = false;      // Revisar: los vértices se arrastran o se borran
 let corrigiendoYa = false;    // una corrección sin respuesta: los vértices del mapa están viejos
 let esquinasMarcando = [];    // las esquinas del marco mientras faltan: el servidor pide 4 o ninguna
 let ubicandoYa = false;       // se está calculando la ubicación: "Seguir" espera eso, no más puntos
+let ajustandoCuadro = false;  // se está ajustando (o deshaciendo) el tamaño con el cuadro
 let restoCentrado = null;     // dónde ya se centró el plano para preguntar por el resto (una vez)
 let pasoPintado = null;       // el paso de la última pintada: la herramienta de Marcar se elige al entrar
 let lanzando = null;          // el KMZ (slug) cuya lectura se está pidiendo: un segundo clic no lanza otra
@@ -478,6 +479,8 @@ async function manejar(nodo) {
   if (accion === 'kmz-georreferenciar') return ubicar();
   if (accion === 'kmz-crear') return crearKmz();
   if (accion === 'kmz-volver-ubicar') return irAlPaso('ubicar');
+  if (accion === 'kmz-ajustar-cuadro') return ajustarConElCuadro(true);
+  if (accion === 'kmz-deshacer-cuadro') return ajustarConElCuadro(false);
   if (accion === 'kmz-renombrar') return renombrar();
   if (accion === 'kmz-usar') return usar();
   return undefined;
@@ -1026,10 +1029,53 @@ function vistaPrevia() {
   const hoja = d.pagina;
   if (hoja && (hoja.numero !== entradas.pagina || hoja.rotacion !== entradas.rotacion)) return null;
   // Con 2 o más puntos mandan ellos (`por_anclas`), como en el servidor; si no, la coordenada.
+  // Con "Ajustar el tamaño con el cuadro", el tamaño del cuadro, como en el servidor: si no,
+  // los lotes saltarían al soltar el último cambio.
+  const ajuste = ajustaConElCuadro(entradas) && d.escala_m_px > 0
+    ? { escalaMPx: d.escala_m_px, homografiaTrabajo: d.homografia } : {};
   const t = entradas.anclas.length >= 2
-    ? similitudPorAnclas(entradas.anclas, d.perspectiva ? d.homografia : null)
+    ? similitudPorAnclas(entradas.anclas, d.perspectiva ? d.homografia : null, ajuste)
     : usaUbicacion(entradas) && similitudPorPunto(entradas.ubicacion, escalaDeUbicacion(d, entradas.ubicacion), d.homografia);
   return t ? lotesEnElMapa(rasgos, t, entradas.ajuste) : null;
+}
+
+/**
+ * "Ajustar el tamaño con el cuadro" (o deshacerlo): los puntos dejan la posición y el giro,
+ * el cuadro de superficies el tamaño. Ubica de nuevo al tiro, que trae los lotes al día.
+ */
+async function ajustarConElCuadro(ajustar) {
+  if (ajustandoCuadro) return;
+  ajustandoCuadro = true;
+  try {
+    cambiar({ ...entradas, escala_cuadro: ajustar });
+    await ubicar();
+  } finally {
+    ajustandoCuadro = false;
+    pintarPanel();
+  }
+}
+
+/**
+ * En el panel `raiz`: el botón de ajustar (Revisar y el semáforo, si hay `sesgo`) y la línea
+ * "Tamaño ajustado con el cuadro · Deshacer el ajuste" (Revisar y Ubicar). Devuelve si se
+ * ofrece ajustar.
+ */
+function pintarAjusteDelCuadro(raiz, sesgo = null) {
+  const conCuadro = plano?.digitalizado?.escala_m_px > 0;
+  const ajustado = ajustaConElCuadro(entradas) && conCuadro;
+  for (const p of $$('.kmz-ajustado', raiz)) p.hidden = !ajustado;
+  for (const b of $$('[data-accion="kmz-deshacer-cuadro"]', raiz)) b.disabled = ajustandoCuadro;
+  // Mientras ajusta, el botón sigue a la vista (apagado) en vez de desaparecer de golpe.
+  // El sesgo es de lo ubicado: si la ubicación quedó atrasada, ajustar sería sobre lotes viejos.
+  const vigente = Boolean(plano?.georreferencia?.vigente);
+  const ofrecer = (vigente && ofrecerAjusteDelCuadro(entradas, sesgo) || (ajustandoCuadro && entradas.escala_cuadro))
+    && conCuadro;
+  for (const b of $$('[data-accion="kmz-ajustar-cuadro"]', raiz)) {
+    b.hidden = !ofrecer;
+    b.disabled = ajustandoCuadro;
+    b.textContent = ajustandoCuadro && entradas.escala_cuadro ? 'Ajustando el tamaño…' : 'Ajustar el tamaño con el cuadro';
+  }
+  return Boolean(ofrecer);
 }
 
 /** Devuelve si de verdad ubicó (no corre con el digitalizado atrasado o sin con qué). */
@@ -1563,6 +1609,7 @@ function pintarUbicar() {
 
   const resumen = $('#kmz-ubicacion');
   resumen.hidden = !g;
+  pintarAjusteDelCuadro(resumen);
   if (g) {
     const texto = $('#kmz-ubicacion-texto');
     texto.textContent = (vigente ? '' : 'Antes de tus últimos cambios: ') + resumenUbicacion(g, entradas.anclas.length);
@@ -1682,6 +1729,7 @@ function pintarRevisar() {
   }));
   const problemas = cuenta.duplicados;
   const sesgo = sesgoDeEscala(rasgosGeo?.features ?? []);
+  const ajustable = pintarAjusteDelCuadro($('#kmz-panel-revisar'), sesgo);
   $('#kmz-revision-nota').textContent = problemas
     ? 'Hay números repetidos: el KMZ no se puede crear así. Vuelve a Numerar.'
     : cuenta.sin_numero_lote
@@ -1698,7 +1746,9 @@ function pintarRevisar() {
       : sesgo != null
       ? `Casi todos los lotes salen cerca de un ${Math.abs(sesgo * 100).toFixed(1).replace('.', ',')} %`
         + ` ${sesgo > 0 ? 'más grandes' : 'más chicos'} que el oficial: suele ser la escala de los puntos de Ubicar,`
-        + ' no el dibujo. Vuelve a Ubicar y marca 3 o 4 esquinas con coordenadas exactas.'
+        + (ajustable ? ' no el dibujo. Ajusta el tamaño con el cuadro de superficies, o vuelve a Ubicar y marca'
+          + ' 3 o 4 esquinas con coordenadas exactas.'
+          : ' no el dibujo. Vuelve a Ubicar y marca 3 o 4 esquinas con coordenadas exactas.')
       : cuenta.rojo
       ? 'Los rojos tienen un área muy distinta a la oficial: suelen ser lotes mal separados.'
       : 'Ningún lote se aparta más de un 5 % del área oficial.';
@@ -1762,6 +1812,8 @@ function pintarCrear() {
   // cada vez que algo repinta el panel.
   if ($('#kmz-semaforo-texto').textContent !== texto) $('#kmz-semaforo-texto').textContent = texto;
   $('[data-accion="kmz-volver-ubicar"]').hidden = luz.tono !== 'ambar';
+  const ajustable = pintarAjusteDelCuadro($('#kmz-panel-crear'), luz.sesgo);
+  $('#kmz-semaforo-acciones').hidden = luz.tono !== 'ambar' && !ajustable;
   // Ámbar avisa pero no bloquea: el botón dice que se crea igual. Con el KMZ ya creado
   // con esto mismo no hay "igual" que valga: ya se creó, y rehacerlo da lo mismo.
   const igual = luz.tono === 'ambar' && plano.paso !== 'listo';

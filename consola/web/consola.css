@@ -877,6 +877,16 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-cuadricula { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.75rem; border-radius: var(--radio-md); background: var(--verde-50); border: 1px solid var(--verde-100); }
 .kmz-cuadricula .nota { flex-basis: 100%; color: var(--verde-800); }
 .kmz-ubicacion p { margin: 0; font-weight: 600; }
+/* "Ajustar el tamaño con el cuadro" a su ancho, y "Tamaño ajustado con el cuadro · Deshacer
+   el ajuste" en una línea: el deshacer es parte de la frase, no un botón aparte. */
+.kmz-panel > [data-accion="kmz-ajustar-cuadro"] { justify-self: start; }
+.kmz-panel p.kmz-ajustado { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.25rem; font-weight: 400; color: var(--zinc-600); }
+.kmz-ajustado .boton--texto { padding: 0 0.25rem; text-decoration: underline; text-underline-offset: 2px; }
+/* En el teléfono se tocan con el dedo: 44 px de alto, aunque sean "chicos" en la vista. */
+@media (max-width: 40rem) {
+  .kmz-panel [data-accion="kmz-ajustar-cuadro"], .kmz-ajustado .boton--texto,
+  #kmz-semaforo-acciones .boton { height: 2.75rem; }
+}
 /* Ubicar con un punto: los tres pasos numerados en el texto (el <ol> no pone números,
    así se leen igual en el lector de pantalla y en la vista). */
 .kmz-guia { display: grid; gap: 0.75rem; margin: 0; padding: 0; list-style: none; }

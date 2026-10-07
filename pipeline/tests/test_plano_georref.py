@@ -796,3 +796,100 @@ def test_un_punto_en_una_foto_rectificada_usa_la_homografia_para_la_escala_y_el_
     error, t = _error_maximo(tmp_path, verdad, lotes)
     assert error < 0.05
     assert t.parametros["escala_m_px"] == pytest.approx(escala)
+
+
+# --- ajustar el tamaño con el cuadro -------------------------------------------------
+
+PX_LOTEO = np.array([[100.0, 100.0], [1300.0, 150.0], [1250.0, 900.0], [150.0, 850.0]])
+
+
+def _anclas_corridas(verdad, factor=0.95):
+    """4 anclas marcadas con la escala corrida (`factor` de la real) en torno a su
+    centroide: la posición y el giro están bien, el tamaño no. Como Coipue (−5,6 % de área)."""
+    e, n = verdad(PX_LOTEO[:, 0], PX_LOTEO[:, 1])
+    ec, nc = e.mean(), n.mean()
+    e, n = ec + factor * (e - ec), nc + factor * (n - nc)
+    lon, lat = Transformer.from_crs(32719, 4326, always_xy=True).transform(e, n)
+    return [dict(nombre=f"p{i}", x=float(x), y=float(y), lon=float(lo), lat=float(la))
+            for i, ((x, y), lo, la) in enumerate(zip(PX_LOTEO, lon, lat))]
+
+
+def _georreferenciar(tmp_path, **entradas):
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(pdf="plano.pdf", semillas=[], **entradas)),
+                                            encoding="utf-8")
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    return Transformacion.desde_dict(json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8")))
+
+
+def test_ajustar_el_tamano_con_el_cuadro_deja_las_areas_del_cuadro_sin_mover_el_centro(tmp_path, capsys):
+    # El recorte de `_loteo_girado` está agrandado 1,016 veces: la escala del cuadro (m por
+    # px de trabajo) tiene que pasarse a px de página, donde se ajustan las anclas.
+    verdad, lotes = _loteo_girado(tmp_path)
+    anclas = _anclas_corridas(verdad)
+    libre = _georreferenciar(tmp_path, anclas=anclas)
+    assert libre.parametros["escala_cuadro"]["area_pct"] == pytest.approx(-9.75, abs=0.05)
+    assert any(a.startswith("Los lotes salen un 9,8 % más chicos") for a in libre.avisos)
+
+    t = _georreferenciar(tmp_path, anclas=anclas, escala_cuadro=True)
+
+    p = t.parametros
+    assert p["ajustada_al_cuadro"] is True
+    assert p["escala_puntos_m_px"] == pytest.approx(libre.parametros["escala_m_px"])
+    assert p["escala_ajustada_m_px"] == pytest.approx(2 / 6, rel=1e-6)    # m por px de página
+    assert p["escala_m_px"] == p["escala_ajustada_m_px"]
+    assert p["ajuste_escala_pct"] == pytest.approx(100 * (1 / 0.95 - 1), abs=0.01)
+    assert p["ajuste_area_pct"] == pytest.approx(100 * (1 / 0.95 ** 2 - 1), abs=0.01)
+    assert p["rotacion_grados"] == pytest.approx(libre.parametros["rotacion_grados"])
+    # Las áreas calzan con el cuadro y no se avisa la escala: se dice el ajuste, llano.
+    assert p["escala_cuadro"]["area_pct"] == pytest.approx(0, abs=0.05)
+    assert not [a for a in t.avisos if a.startswith("Los lotes salen")]
+    assert "Ajustaste el tamaño con el cuadro de superficies: los lotes salen 10,8 % más grandes que con tus puntos." \
+        in t.avisos
+    # El centroide de las anclas queda donde lo dejaban los puntos.
+    c = PX_LOTEO.mean(axis=0)
+    assert np.hypot(*(np.array(t.a_utm(*c)) - np.array(libre.a_utm(*c)))) < 1e-6
+    # Con el tamaño bien, el plano queda en su lugar real.
+    error, _ = _error_maximo(tmp_path, verdad, lotes)
+    assert error < 0.5
+    # Los residuos de la tabla son los del ajuste (las anclas estaban corridas un 5 %); la
+    # búsqueda de atípicas, la de la similitud libre: ninguna queda marcada.
+    e, n = verdad(PX_LOTEO[:, 0], PX_LOTEO[:, 1])
+    lejos = 0.05 * np.hypot(e - e.mean(), n - n.mean())
+    assert [a["residuo_m"] for a in t.anclas] == pytest.approx(lejos, abs=0.05)
+    assert not any(a["atipica"] for a in t.anclas)
+    assert libre.anclas[0]["residuo_m"] == pytest.approx(0, abs=0.01)
+    assert "Ajustada al cuadro" in capsys.readouterr().out
+
+
+def test_ajustar_con_el_cuadro_sin_cuadro_no_hace_nada(tmp_path, capsys):
+    verdad, _ = _loteo_girado(tmp_path, con_cuadro=False)
+    anclas = _anclas_corridas(verdad)
+    libre = _georreferenciar(tmp_path, anclas=anclas)
+
+    t = _georreferenciar(tmp_path, anclas=anclas, escala_cuadro=True)
+
+    assert "ajustada_al_cuadro" not in t.parametros
+    assert np.allclose(t.matriz, libre.matriz) and t.avisos == libre.avisos
+    assert "se ignora" in capsys.readouterr().out
+
+
+def test_ajustar_con_el_cuadro_no_aplica_a_la_coordenada(tmp_path):
+    verdad, _ = _loteo_girado(tmp_path)
+    ubicacion = _ubicacion(verdad, giro=90)
+    sin = _georreferenciar(tmp_path, ubicacion=ubicacion)
+
+    t = _georreferenciar(tmp_path, ubicacion=ubicacion, escala_cuadro=True)
+
+    assert t.metodo == "punto" and "ajustada_al_cuadro" not in t.parametros
+    assert np.allclose(t.matriz, sin.matriz) and t.avisos == sin.avisos
+
+
+def test_la_escala_del_cuadro_en_el_plano_del_ajuste():
+    from pipeline.plano.georreferencia import escala_en_el_ajuste
+
+    recorte = [[2.0, 0, -50.0], [0, 2.0, 10.0], [0, 0, 1]]
+    # En un recorte agrandado 2 veces, un px de página son 2 de trabajo.
+    assert escala_en_el_ajuste(0.25, recorte, en_trabajo=False) == pytest.approx(0.5)
+    # Con la foto rectificada las anclas ya se ajustan en px de trabajo.
+    assert escala_en_el_ajuste(0.25, [[1.3, 0.1, 0], [0.05, 0.9, 0], [1e-5, 0, 1]], en_trabajo=True) == 0.25
+    assert escala_en_el_ajuste(0.25, None, en_trabajo=False) == 0.25

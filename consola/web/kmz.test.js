@@ -11,6 +11,7 @@ import {
   tamanoRotado, normalizarGiro, puedeUbicar, ubicacionCompleta, textoHuecos, textoSemaforo, vistaAjustada, zoomEn,
   aplicarHomografia, cajaGirada, escalaDeUbicacion, girarEnPantalla, husoDe, leerEscala, lonLatAUtm, lotesEnElMapa, paginaALonLat,
   similitudPorPunto, usaUbicacion, utmALonLat, similitudPorAnclas, afinarAbierta, textoPuntos,
+  ajustaConElCuadro, escalaEnElAjuste, ofrecerAjusteDelCuadro,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
 
@@ -290,6 +291,92 @@ test('la vista previa con puntos repite por_anclas del servidor', () => {
   assert.equal(similitudPorAnclas(null), null);
   // Un punto a medias (sin mapa) no cuenta.
   assert.equal(similitudPorAnclas([ANCLAS_RAPEL[0], { nombre: 'B', x: 583.2, y: 832.9 }]), null);
+});
+
+// Referencias del servidor: `por_anclas(anclas, h, escala_m_px=escala_en_el_ajuste(escala,
+// homografía de trabajo, h is not None))`, como `georreferenciar` con `escala_cuadro`.
+const H_COIPUE = [[1.0159999960572406, 0, -123.94399952095473], [0, 1.0159999960572406, -72.12799972203545], [0, 0, 1]];
+const H_CHILOE = [[0.98, 0.03, -40.0], [-0.02, 1.01, 15.0], [0.00002, -0.00001, 1.0]];
+const AJUSTADAS = [
+  {
+    // Coipue en el QA: sus 4 puntos dejan los lotes un 5,6 % chicos; el cuadro, +5,95 %.
+    nombre: 'Coipue, 4 puntos ajustados al cuadro',
+    anclas: ANCLAS_RAPEL,
+    h: null,
+    ajuste: { escalaMPx: 0.8298253862191156, homografiaTrabajo: H_COIPUE },
+    epsg: 32719,
+    matriz: [[0.010463431018839503, -0.8430376577613011, 265839.53966760455],
+      [-0.8430376577613011, -0.010463431018839503, 6215563.331975068], [0, 0, 1]],
+    puntos: [
+      [[331.5, 845.1], 265130.5571704132, 6215275.022345966, -71.54830103054572, -34.17707293677545],
+      [[2900, 1000], 265026.8459597979, 6213108.059336541, -71.55001314521296, -34.19657323283586],
+      [[0, 0], 265839.53966760455, 6215563.331975068, -71.54053742799523, -34.17463479466167],
+    ],
+  },
+  {
+    nombre: 'Chiloé, 3 puntos con homografía ajustados al cuadro',
+    anclas: POR_ANCLAS[2].anclas,
+    h: H_CHILOE,
+    ajuste: { escalaMPx: 1.5, homografiaTrabajo: H_CHILOE },
+    epsg: 32718,
+    matriz: [[14.465639520269816, -6.605238430965535, 649932.9361697291],
+      [107.97702063872089, -55.558396199059345, 5404622.510104439], [2e-05, -1e-05, 1.0]],
+    puntos: [
+      [[331.5, 845.1], 650330.4604411529, 5403303.908235246, -73.1986527532779, -41.50779577154662],
+      [[2900, 1000], 653891.2713239943, 5402860.184883273, -73.15589263143447, -41.51111443872579],
+      [[0, 0], 649932.9361697291, 5404622.510104439, -73.20374206139503, -41.495998874189766],
+    ],
+  },
+];
+
+test('la vista previa ajustada al cuadro repite por_anclas con escala_m_px del servidor', () => {
+  for (const caso of AJUSTADAS) {
+    const t = similitudPorAnclas(caso.anclas, caso.h, caso.ajuste);
+    assert.equal(t.epsg, caso.epsg, caso.nombre);
+    caso.matriz.forEach((fila, i) => fila.forEach((v, j) => cerca(t.matriz[i][j], v, Math.max(0.05, Math.abs(v) * 1e-9))));
+    for (const [[x, y], e, n, lon, lat] of caso.puntos) {
+      const [e1, n1] = aplicarHomografia(t.matriz, x, y);
+      cerca(e1, e, 0.05);
+      cerca(n1, n, 0.05);
+      const [lon1, lat1] = paginaALonLat(t, x, y);
+      cerca(lon1, lon, 1e-7);
+      cerca(lat1, lat, 1e-7);
+    }
+  }
+  // El centroide de los puntos no se mueve y el giro es el mismo: solo cambia el tamaño.
+  const libre = similitudPorAnclas(ANCLAS_RAPEL);
+  const ajustada = similitudPorAnclas(ANCLAS_RAPEL, null, AJUSTADAS[0].ajuste);
+  const media = (k) => ANCLAS_RAPEL.reduce((s, a) => s + a[k], 0) / ANCLAS_RAPEL.length;
+  const [e0, n0] = aplicarHomografia(libre.matriz, media('x'), media('y'));
+  const [e1, n1] = aplicarHomografia(ajustada.matriz, media('x'), media('y'));
+  cerca(e1, e0, 1e-6);
+  cerca(n1, n0, 1e-6);
+  cerca(Math.atan2(ajustada.matriz[1][0], ajustada.matriz[0][0]), Math.atan2(libre.matriz[1][0], libre.matriz[0][0]), 1e-12);
+  // Sin escala (o una que no sirve) es la similitud libre.
+  assert.deepEqual(similitudPorAnclas(ANCLAS_RAPEL, null, { escalaMPx: null }), libre);
+  assert.deepEqual(similitudPorAnclas(ANCLAS_RAPEL, null, { escalaMPx: 0 }), libre);
+});
+
+test('la escala del cuadro se pasa a px de página en un recorte', () => {
+  cerca(escalaEnElAjuste(0.25, [[2, 0, -50], [0, 2, 10], [0, 0, 1]], false), 0.5);
+  assert.equal(escalaEnElAjuste(0.25, H_CHILOE, true), 0.25);
+  assert.equal(escalaEnElAjuste(0.25, null, false), 0.25);
+});
+
+test('"Ajustar el tamaño con el cuadro" se ofrece con puntos y sesgo, y se deshace', () => {
+  const cuatro = { anclas: ANCLAS_RAPEL };
+  assert.equal(ofrecerAjusteDelCuadro(cuatro, -0.056), true);
+  assert.equal(ofrecerAjusteDelCuadro(cuatro, null), false);
+  // Ya ajustado: se ofrece deshacerlo, no ajustarlo de nuevo.
+  assert.equal(ofrecerAjusteDelCuadro({ ...cuatro, escala_cuadro: true }, -0.01), false);
+  assert.equal(ajustaConElCuadro({ ...cuatro, escala_cuadro: true }), true);
+  assert.equal(ajustaConElCuadro(cuatro), false);
+  // Con la coordenada (menos de 2 puntos) o la cuadrícula no aplica.
+  const coordenada = { anclas: ANCLAS_RAPEL.slice(0, 1), ubicacion: { x: 1, y: 2, lon: -71, lat: -34 } };
+  assert.equal(ofrecerAjusteDelCuadro(coordenada, -0.056), false);
+  assert.equal(ajustaConElCuadro({ ...coordenada, escala_cuadro: true }), false);
+  assert.equal(ofrecerAjusteDelCuadro({ ...cuatro, cuadricula: {} }, -0.056), false);
+  assert.equal(ajustaConElCuadro({ ...cuatro, cuadricula: {}, escala_cuadro: true }), false);
 });
 
 test('"Afinar con puntos" se abre sola con puntos, uno a medias o la cuadrícula', () => {

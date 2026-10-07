@@ -46,6 +46,9 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
                                        escala 1:N del plano, que se usa si no hay cuadro de
                                        superficies. Puede venir a medias (solo la coordenada)
                                        mientras la arma: entonces no ubica
+      "escala_cuadro": true,           con 2 o más anclas: el tamaño sale del cuadro de
+                                       superficies y de los puntos solo la posición y el
+                                       giro ("Ajustar el tamaño con el cuadro")
       "ajuste": {"de": 0.0, "dn": 0.0}, traslación fina en metros (este, norte)
       "fuera": [[x, y]]                partes sin número que ella dejó fuera del KMZ (el
                                        resto de la propiedad): un punto dentro de cada una.
@@ -535,6 +538,11 @@ def leer_entradas(carpeta: Path) -> dict:
     if "ubicacion" in e:
         # Sin la clave no se agrega: unas entradas de antes quedan iguales (y su huella).
         salida["ubicacion"] = _ubicacion(e["ubicacion"])
+    if e.get("escala_cuadro") is not None:
+        # Sin la clave (o null) no se agrega: las entradas de antes quedan iguales, y su huella.
+        if not isinstance(e["escala_cuadro"], bool):
+            raise ValueError(f"«escala_cuadro» es true o false, no {e['escala_cuadro']!r}")
+        salida["escala_cuadro"] = e["escala_cuadro"]
     fuera = e.get("fuera") or []
     if not isinstance(fuera, list):
         raise ValueError(f"«fuera» es una lista de puntos [[x, y]], no {fuera!r}")

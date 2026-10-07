@@ -630,6 +630,57 @@ def test_la_huella_de_ubicar_cambia_con_la_coordenada_solo_cuando_ubica_con_ella
     assert huella_ubicar(dict(uno, ubicacion=dict(completa, giro=1.0)), "d") != huella_ubicar(uno, "d")
 
 
+def test_la_huella_de_ubicar_cambia_con_el_ajuste_al_cuadro_solo_con_puntos(ana):
+    from consola.plano import huella_ubicar
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    web.post(f"/api/kmz/{slug}/georreferenciar")
+    entradas = web.get(f"/api/kmz/{slug}").json()["entradas"]
+    assert "escala_cuadro" not in entradas
+    # Con 4 puntos, ajustar el tamaño con el cuadro cambia la ubicación; apagado es lo de antes.
+    assert huella_ubicar(dict(entradas, escala_cuadro=True), "d") != huella_ubicar(entradas, "d")
+    assert huella_ubicar(dict(entradas, escala_cuadro=False), "d") == huella_ubicar(entradas, "d")
+    # Con menos de 2 puntos no se usa: no deja atrasado lo ubicado con la coordenada.
+    a = ancla("a", 0, 0)
+    con = dict(entradas, anclas=entradas["anclas"][:1],
+               ubicacion=dict(x=0.0, y=0.0, lon=a["lon"], lat=a["lat"], giro=0.0, escala_impresa=None))
+    assert huella_ubicar(dict(con, escala_cuadro=True), "d") == huella_ubicar(con, "d")
+
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, escala_cuadro=True))
+    assert respuesta.status_code == 200 and respuesta.json()["escala_cuadro"] is True
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["georreferencia"]["vigente"] is False
+    web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, escala_cuadro=False))
+    assert web.get(f"/api/kmz/{slug}").json()["georreferencia"]["vigente"] is True
+
+
+@pytest.mark.parametrize("valor", ["si", 1])
+def test_el_ajuste_al_cuadro_es_true_o_false(ana, valor):
+    web, slug, _, _ = ana
+    subir(web, slug)
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, escala_cuadro=valor))
+    assert respuesta.status_code == 400
+    assert "«escala_cuadro» es true o false" in respuesta.json()["detail"]
+
+
+def test_ubicar_con_puntos_ajustados_al_cuadro(ana):
+    web, slug, raiz, _ = ana
+    # Los puntos dejan el plano un 5 % más chico en torno a su centro (500, 400).
+    corridas = [ancla(a["nombre"], 500 + 0.95 * (a["x"] - 500), 400 + 0.95 * (a["y"] - 400)) for a in ANCLAS]
+    corridas = [dict(c, x=a["x"], y=a["y"]) for c, a in zip(corridas, ANCLAS)]
+    listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, anclas=corridas, escala_cuadro=True))
+    digitalizado_a_mano(carpeta_del_plano(raiz, slug), _lotes_con_cuadro())
+
+    respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
+
+    assert respuesta.status_code == 200, respuesta.text
+    p = respuesta.json()["parametros"]
+    assert p["ajustada_al_cuadro"] is True and p["escala_ajustada_m_px"] == pytest.approx(M_PX)
+    assert p["escala_puntos_m_px"] == pytest.approx(0.95 * M_PX)
+    assert p["escala_cuadro"]["area_pct"] == pytest.approx(0, abs=0.05)
+
+
 @pytest.mark.parametrize("ubicacion, mensaje", [
     (dict(x=0, y=0, lon=-71.5, lat=-34.1, giro=270), "−180 a 180"),
     (dict(x=0, y=0, lon=-71.5, lat=-134.1), "fuera de rango"),

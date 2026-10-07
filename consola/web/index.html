@@ -626,6 +626,8 @@
         <p id="kmz-guia-nota" class="kmz-nota-fuerte" hidden></p>
         <div id="kmz-ubicacion" class="kmz-ubicacion" hidden>
           <p id="kmz-ubicacion-texto"></p>
+          <p class="kmz-ajustado nota" hidden>Tamaño ajustado con el cuadro ·
+            <button class="boton boton--texto boton--chico" data-accion="kmz-deshacer-cuadro" type="button">Deshacer el ajuste</button></p>
           <ul id="kmz-avisos" class="kmz-avisos"></ul>
         </div>
         <p id="kmz-pista" class="nota" role="status" hidden></p>
@@ -685,6 +687,11 @@
           plano. Toca un lote para ver sus números.</p>
         <dl id="kmz-revision" class="kmz-cifras"></dl>
         <p id="kmz-revision-nota" class="nota"></p>
+        <!-- Con puntos y los lotes parejo más chicos o más grandes: el tamaño del cuadro de
+             superficies, con la posición y el giro de los puntos (`entradas.escala_cuadro`). -->
+        <button class="boton boton--contorno boton--chico" data-accion="kmz-ajustar-cuadro" type="button" hidden>Ajustar el tamaño con el cuadro</button>
+        <p class="kmz-ajustado nota" hidden>Tamaño ajustado con el cuadro ·
+          <button class="boton boton--texto boton--chico" data-accion="kmz-deshacer-cuadro" type="button">Deshacer el ajuste</button></p>
         <div class="kmz-corregir">
           <div class="fila fila--envuelve">
             <button class="boton boton--contorno" data-accion="kmz-corregir" aria-pressed="false" type="button">Corregir vértices a mano</button>
@@ -709,7 +716,10 @@
              región viva: el botón aparece y desaparece sin que se anuncie aparte. -->
         <div id="kmz-semaforo" class="kmz-semaforo" hidden>
           <p id="kmz-semaforo-texto" role="status" aria-atomic="true"></p>
-          <button class="boton boton--contorno boton--chico" data-accion="kmz-volver-ubicar" type="button" hidden>Volver a Ubicar</button>
+          <div id="kmz-semaforo-acciones" class="fila fila--envuelve" hidden>
+            <button class="boton boton--contorno boton--chico" data-accion="kmz-ajustar-cuadro" type="button" hidden>Ajustar el tamaño con el cuadro</button>
+            <button class="boton boton--contorno boton--chico" data-accion="kmz-volver-ubicar" type="button" hidden>Volver a Ubicar</button>
+          </div>
         </div>
         <button class="boton boton--grande" data-accion="kmz-crear" type="button" aria-describedby="kmz-semaforo-texto">Crear el KMZ</button>
         <div id="kmz-listo" class="kmz-listo" role="status" hidden>

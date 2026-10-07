@@ -1048,8 +1048,13 @@ export function similitudPorPunto(u, escalaMPx, homografia = null) {
  * `homografia` (página → trabajo) solo si el plano es una foto rectificada (modo
  * perspectiva), igual que `georreferenciar`: en un recorte es una escala y una traslación
  * que la similitud absorbe. null con menos de 2 puntos o con todos en el mismo lugar.
+ *
+ * Con `escalaMPx` (m por px de trabajo: la del cuadro de superficies) es "Ajustar el tamaño
+ * con el cuadro", como `por_anclas(..., escala_m_px=...)`: el mismo giro, ese tamaño y el
+ * centroide de los puntos en el mismo lugar del mapa. `homografiaTrabajo` (página →
+ * trabajo, la del estado) pasa esa escala a px de página cuando los puntos se ajustan ahí.
  */
-export function similitudPorAnclas(anclas, homografia = null) {
+export function similitudPorAnclas(anclas, homografia = null, { escalaMPx = null, homografiaTrabajo = null } = {}) {
   const validas = (anclas ?? []).filter((a) => ['x', 'y', 'lon', 'lat'].every((k) => Number.isFinite(a?.[k])));
   if (validas.length < 2) return null;
   const media = (v) => v.reduce((s, x) => s + x, 0) / v.length;
@@ -1073,11 +1078,44 @@ export function similitudPorAnclas(anclas, homografia = null) {
   if (norma < 1e-18) return null;
   ar /= norma;
   ai /= norma;
+  if (Number.isFinite(escalaMPx) && escalaMPx > 0) {
+    // b = w̄ − a·z̄ (abajo) deja el centroide donde estaba con cualquier |a|.
+    const k = escalaEnElAjuste(escalaMPx, homografiaTrabajo, Boolean(homografia)) / Math.hypot(ar, ai);
+    ar *= k;
+    ai *= k;
+  }
   const br = wr - (ar * zr - ai * zi);
   const bi = wi - (ar * zi + ai * zr);
   // z = x − i·y: E = ar·x + ai·y + br, N = ai·x − ar·y + bi.
   const s = [[ar, ai, br], [ai, -ar, bi], [0, 0, 1]];
   return { epsg, matriz: homografia ? multiplicar(s, homografia) : s };
+}
+
+/**
+ * m por px de trabajo → m por px del plano donde se ajustan los puntos (`escala_en_el_ajuste`
+ * del servidor): el mismo con la foto rectificada; en un recorte, un px de página son
+ * sqrt(|det|) px de trabajo.
+ */
+export function escalaEnElAjuste(escalaTrabajo, homografiaTrabajo, enTrabajo) {
+  const h = homografiaTrabajo;
+  if (enTrabajo || !h) return escalaTrabajo;
+  return escalaTrabajo * Math.sqrt(Math.abs(h[0][0] * h[1][1] - h[0][1] * h[1][0])) / Math.abs(h[2][2]);
+}
+
+/**
+ * ¿Se ubica con el tamaño del cuadro? Lo pidió ("Ajustar el tamaño con el cuadro") y
+ * ubica con 2 o más puntos: con la cuadrícula o la coordenada el servidor no lo usa.
+ */
+export function ajustaConElCuadro(entradas) {
+  return Boolean(entradas?.escala_cuadro) && !entradas?.cuadricula && (entradas?.anclas?.length ?? 0) >= 2;
+}
+
+/**
+ * ¿Se ofrece "Ajustar el tamaño con el cuadro"? Si ubicó con puntos, los lotes salen parejo
+ * más chicos o más grandes (`sesgo`, de `sesgoDeEscala` o del semáforo) y aún no lo ajustó.
+ */
+export function ofrecerAjusteDelCuadro(entradas, sesgo) {
+  return sesgo != null && !entradas?.escala_cuadro && !entradas?.cuadricula && (entradas?.anclas?.length ?? 0) >= 2;
 }
 
 /** px de página → [lon, lat] con la similitud `t` y el ajuste fino (metros E, N). */
