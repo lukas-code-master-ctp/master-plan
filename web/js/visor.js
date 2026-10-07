@@ -60,6 +60,7 @@ export class Visor {
     this.referencias = [];
     this.nodosReferencia = [];
     this.capaReferencias = null;
+    this.halo = null;
     this.nodos = new Map();
     this.seleccionada = null;
     this.estiloParcela = () => ({ color: '#ffffff', texto: '#1c1a17', atenuada: false });
@@ -284,6 +285,7 @@ export class Visor {
     this._dibujarReferencias(ancho, alto);
 
     const candidatas = [];
+    let rutaElegida = null;
     for (const [id, parcela] of this.overlay) {
       const nodo = this._nodoDe(id);
       if (!this.camara.puedeVerse(parcela.centro, ancho, alto)) {
@@ -304,6 +306,7 @@ export class Visor {
       nodo.grupo.classList.toggle('parcela--seleccionada', elegida);
       nodo.forma.setAttribute('d', aRuta(pixeles));
       ponerRotulo(nodo, elegida ? this.rotuloSeleccionadoDe(id) : this.rotuloDe(id));
+      if (elegida) rutaElegida = { d: nodo.forma.getAttribute('d'), color: estilo.color };
 
       // La pastilla es el objetivo de clic real: un número redondo se acierta
       // mucho mejor que el borde de un polígono, sobre todo con el dedo. La de la
@@ -332,6 +335,30 @@ export class Visor {
     for (const id of rotulosSinChoques(candidatas, SEPARACION_PASTILLAS)) {
       this.nodos.get(id).pastilla.style.display = '';
     }
+    this._dibujarHalo(rutaElegida);
+  }
+
+  /**
+   * El brillo que late alrededor de la elegida (.parcela-halo en estilos.css). Va
+   * encima de todo y sin clic: es solo luz. Un filtro SVG y no `filter: drop-shadow`
+   * de CSS, que Safari no aplica a los elementos de dentro de un SVG.
+   */
+  _dibujarHalo(ruta) {
+    if (!this.halo) {
+      const defs = document.createElementNS(SVG_NS, 'defs');
+      defs.innerHTML = '<filter id="brillo-parcela" x="-25%" y="-25%" width="150%" height="150%">'
+        + '<feGaussianBlur stdDeviation="4"/></filter>';
+      this.halo = document.createElementNS(SVG_NS, 'path');
+      this.halo.setAttribute('class', 'parcela-halo');
+      this.halo.setAttribute('filter', 'url(#brillo-parcela)');
+      this.svg.append(defs, this.halo);
+    }
+    // Al final del SVG, por si después se agregaron parcelas: el brillo va arriba.
+    if (this.svg.lastChild !== this.halo) this.svg.append(this.halo);
+    this.halo.style.display = ruta ? '' : 'none';
+    if (!ruta) return;
+    this.halo.setAttribute('d', ruta.d);
+    this.halo.style.color = ruta.color;
   }
 
   _nodoDe(id) {
@@ -370,6 +397,7 @@ export class Visor {
 
   _limpiarNodos() {
     this.svg.replaceChildren();
+    this.halo = null;
     this.nodos.clear();
     this.nodosReferencia = [];
     this.capaReferencias = null;
@@ -418,6 +446,8 @@ export class Visor {
 
   marcarSeleccionada(id) {
     this.seleccionada = id;
+    // Con una elegida, las demás se apagan y pierden el rótulo (estilos.css).
+    this.svg.classList.toggle('overlay--con-seleccion', Boolean(id));
     this._pintar();
   }
 
