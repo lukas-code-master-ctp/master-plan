@@ -1219,6 +1219,7 @@ async function crearKmz(omitir = false) {
     if (mio !== slug) return;
     plano = fresco;
     $('#kmz-listo-texto').textContent = textoDeCreado(plano.nombre, creado.lotes);
+    $('#kmz-listo-texto').dataset.alDia = String(plano.paso === 'listo');
     await refrescar();
     pintar();
     destellarListo();
@@ -1883,10 +1884,17 @@ function pintarCrear() {
   $('#kmz-listo').hidden = !hay;
   $('#kmz-descargar').hidden = !hay;
   $('#kmz-descargar').href = descargaDe(slug);
-  if (hay && !$('#kmz-listo-texto').textContent) {
-    $('#kmz-listo-texto').textContent = plano.paso === 'listo'
+  // Se escribe de nuevo cuando el KMZ pasa de al día a atrasado o al revés: si no, tras
+  // "Ajustar el tamaño con el cuadro" seguía diciendo "Listo: está creado" con un KMZ que
+  // no tiene el ajuste. Mientras siga al día, queda el de recién creado (con la hora).
+  const listoTexto = $('#kmz-listo-texto');
+  const alDia = String(plano.paso === 'listo');
+  if (hay && (!listoTexto.textContent || listoTexto.dataset.alDia !== alDia)) {
+    listoTexto.textContent = alDia === 'true'
       ? `Listo: el KMZ "${plano.nombre}" está creado.`
-      : `El KMZ "${plano.nombre}" que creaste antes sigue disponible.`;
+      : `El KMZ "${plano.nombre}" que creaste antes sigue disponible, pero sin tus últimos cambios:`
+        + ' créalo de nuevo para que los tenga.';
+    listoTexto.dataset.alDia = alDia;
   }
   return { luz, ajustable };
 }
