@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import pytest
 from shapely import affinity as shapely_affinity
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point, Polygon, box
 from shapely.ops import unary_union
 
 from pipeline.plano import particion
@@ -295,6 +295,19 @@ def test_con_cuadro_la_sugerencia_se_corrige_o_no_se_ofrece():
     assert _sugerencias(caras, [True, True], leidos, 2, ["8-08"])[1]["numero"] == "6-48"
 
 
+def test_el_numero_del_resto_de_la_propiedad_no_se_sugiere():
+    """Si el resto va al KMZ lo pregunta su propia tarjeta: el "8" leído con poco apoyo no
+    se ofrece para confirmar."""
+    from pipeline.plano.digitalizar import _sugerencias
+    from pipeline.plano.rotulos import Rotulo
+    caras = [Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])]
+    cuadro = {**{f"8-{n:02d}": 5000.0 for n in range(1, 17)}, "8": 760000.0}
+    assert _sugerencias(caras, [True], [Rotulo("8", 5, 5, 0.04, 1)], 2, [], cuadro) == [None]
+    # Sin la fila del resto, el 8 se ofrece como cualquier lectura.
+    del cuadro["8"]
+    assert _sugerencias(caras, [True], [Rotulo("8", 5, 5, 0.04, 1)], 2, [], cuadro)[0]["numero"] == "8"
+
+
 def _lotes_con_texto_en_el_borde():
     """Dos lotes de 50 × 35 mm; sobre el deslinde exterior de arriba, por dentro, un
     texto en negrita pegado a la línea ("Servidumbre de tránsito 10 m", como en Caminos
@@ -474,3 +487,80 @@ def test_enderezar_no_mueve_las_puntas_al_nodo_de_una_arista_corta():
     for uniones in ([6], [93], [6, 93]):
         segs, _ = particion._enderezar(P, tol, PPMM, uniones)
         assert segs[0][0] == 0 and segs[-1][1] == len(P) - 1
+
+
+def _loteo_con_borde(borde):
+    """Dos lotes (1, 2) con el borde sur exterior en `borde(x0, x1, y)` (los vértices de
+    entre medio, de izquierda a derecha), dos lotes al norte (3, 4) y el resto de la
+    propiedad al oriente, que comparte el lado este de 2 y 4. La divisoria 1/2 llega al
+    borde en (300, `t`): el texto puede dejar ese nodo dentro de un diente."""
+    def caras(t=200.0):
+        sur1 = [(x, y) for x, y in borde(0, 300, 200.0)][::-1]
+        sur2 = [(x, y) for x, y in borde(300, 600, 200.0)][::-1]
+        return {
+            "1": Polygon([(0, 0), (300, 0), (300, t), *sur1, (0, 200)]),
+            "2": Polygon([(300, 0), (600, 0), (600, 200), *sur2, (300, t)]),
+            "3": Polygon([(0, -200), (300, -200), (300, 0), (0, 0)]),
+            "4": Polygon([(300, -200), (600, -200), (600, 0), (300, 0)]),
+            "resto": Polygon([(600, -200), (900, -200), (900, 200), (600, 200), (600, 0)]),
+        }
+    return caras
+
+
+def _dientes(alto_px):
+    # Las letras pegadas al borde: el trazado sube y baja cada 20 px.
+    return lambda x0, x1, y: [(x, y - alto_px if (x // 20) % 2 else y + 0.3 * alto_px)
+                              for x in range(x0 + 20, x1, 20)]
+
+
+def _enderezar_borde(caras):
+    nombres = list(caras)
+    salida, n = particion.enderezar_borde_exterior([caras[k] for k in nombres], PPMM)
+    return dict(zip(nombres, salida)), n
+
+
+def test_el_borde_exterior_en_dientes_por_un_rotulo_sale_recto():
+    # Caminos de Rapel: "Servidumbre de Tránsito 8m" pegado al deslinde poniente de 8-01
+    # y 8-10; el borde seguía las letras, y el nodo de su divisoria quedaba en un diente.
+    caras = _loteo_con_borde(_dientes(1.5 * PPMM))(t=200 - 1.4 * PPMM)
+    salida, n = _enderezar_borde(caras)
+    assert n == 2
+    for numero, celda in (("1", box(0, 0, 300, 200)), ("2", box(300, 0, 600, 200))):
+        assert salida[numero].hausdorff_distance(celda) < 0.5, numero
+        assert len(salida[numero].exterior.coords) - 1 == 4, numero
+    # Los lados compartidos no se mueven: los vecinos quedan iguales.
+    for numero in ("3", "4", "resto"):
+        assert salida[numero].equals_exact(caras[numero], 1e-9), numero
+    # Sin huecos ni traslapes: los lotes siguen cubriendo la red completa.
+    todo = unary_union(list(salida.values()))
+    assert sum(g.area for g in salida.values()) - todo.area < EPSILON_PX2
+    assert todo.geom_type == "Polygon" and not list(todo.interiors)
+    assert salida["1"].intersection(salida["2"]).length > 199
+
+
+def test_el_borde_exterior_curvo_o_con_un_entrante_de_verdad_no_se_endereza():
+    # Una curva de 4 mm de flecha (una calle en arco): gira siempre al mismo lado.
+    arco = lambda x0, x1, y: [(x, y + 4 * PPMM * np.sin(np.pi * (x - x0) / (x1 - x0)))
+                              for x in range(x0 + 10, x1, 10)]
+    # Una curva suave (1 mm) tampoco: no zigzaguea.
+    suave = lambda x0, x1, y: [(x, y + PPMM * np.sin(np.pi * (x - x0) / (x1 - x0)))
+                               for x in range(x0 + 10, x1, 10)]
+    # Dientes de 4 mm: más de BORDE_MM, son del dibujo.
+    for borde in (arco, suave, _dientes(4 * PPMM)):
+        caras = _loteo_con_borde(borde)()
+        salida, n = _enderezar_borde(caras)
+        assert n == 0
+        for numero in caras:
+            assert salida[numero].equals_exact(caras[numero], 1e-9), numero
+
+
+def test_el_borde_compartido_con_el_resto_de_la_propiedad_no_se_toca():
+    # Los dientes en el lado que el lote 2 comparte con el resto: no es borde exterior.
+    caras = _loteo_con_borde(lambda x0, x1, y: [])()
+    este = [(600 + (9 if (y // 20) % 2 else 0), y) for y in range(20, 200, 20)]
+    caras["2"] = Polygon([(300, 0), (600, 0), *este, (600, 200), (300, 200)])
+    caras["resto"] = Polygon([(600, -200), (900, -200), (900, 200), (600, 200), *este[::-1], (600, 0)])
+    salida, n = _enderezar_borde(caras)
+    assert n == 0
+    for numero in caras:
+        assert salida[numero].equals_exact(caras[numero], 1e-9), numero

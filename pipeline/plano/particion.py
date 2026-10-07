@@ -31,6 +31,8 @@
    recta. Los nodos van a la intersección de sus rectas y `polygonize` da las caras.
    Como todas las caras salen de la misma red, no hay traslapes ni huecos por
    construcción.
+5. Borde exterior: lo que no comparte ningún otro lote ni cara sin número, si un rótulo
+   pegado lo dejó en dientes, se endereza entre sus vértices compartidos (BORDE_MM).
 """
 from __future__ import annotations
 
@@ -93,6 +95,15 @@ EXCURSION_MM = 6.0
 EXCURSION_FRAC = 0.15
 PUENTE_GRADOS = 10.0   # dos apoyos así de paralelos, con un diente entre medio, se unen por una recta
 SIGUE_DERECHO_GRADOS = 20.0  # en un nodo, dos aristas que siguen derecho son la misma línea
+# El borde exterior del loteo (lo que no comparte ningún otro lote ni cara sin número)
+# no tiene un vecino que lo sostenga: cuando un rótulo va pegado a él, como "Servidumbre
+# de Tránsito 8m" bajo los lotes 8-01 y 8-10 de Caminos de Rapel, el watershed lo
+# reparte entre las letras y el borde sale en dientes de hasta ~2 mm, sin un tramo
+# recto de ANCLA_MM que sirva de apoyo para el enderezado de la red. Ahí, entre vértices
+# compartidos (o una esquina), un tramo que zigzaguea y se aparta a lo más BORDE_MM de
+# la recta entre sus puntas es esa recta. Que zigzaguee es lo que lo distingue de una
+# curva del dibujo (gira siempre al mismo lado), que se respeta.
+BORDE_MM = 2.5
 
 # Etiquetas de la partición: 1 = relleno, 2.. = regiones sin número, LOTE0 + i = la
 # semilla i-ésima.
@@ -558,10 +569,13 @@ def red_de_deslindes(particion: Particion, ppmm: float) -> Red:
                                    list(lotes.values()), afuera, ancho, alto)
     sin_numero = [c for _, c in interiores]
     sin_numero_lote = [e in particion.de_lote for e, _ in interiores]
+    caras_finales, bordes = enderezar_borde_exterior(list(lotes.values()) + sin_numero, ppmm)
+    lotes = dict(zip(lotes, caras_finales[:len(lotes)]))
+    sin_numero = caras_finales[len(lotes):]
 
     estadisticas = dict(
         nodos=len(nodos), aristas=len(aristas), aristas_rectas=int(rectas), nodos_movidos=movidos,
-        tramos_enderezados=int(puenteadas),
+        tramos_enderezados=int(puenteadas), bordes_enderezados=bordes,
         caras=len(caras), lotes_multicara=multicara,
         vertices_mediana=float(np.median([len(p.exterior.coords) - 1 for p in lotes.values()])) if lotes else 0.0,
     )
@@ -591,6 +605,171 @@ def _rellenar_huecos(lotes: dict[str, Polygon]) -> dict[str, Polygon]:
                   if any(o is not p and Polygon(h).contains(o.representative_point()) for o in lotes.values())]
         salida[numero] = Polygon(p.exterior, huecos) if huecos else lleno
     return salida
+
+
+def enderezar_borde_exterior(caras: list[Polygon], ppmm: float) -> tuple[list[Polygon], int]:
+    """Endereza los tramos del borde exterior que torció un rótulo pegado a él (ver
+    BORDE_MM). `caras`: los lotes y las caras sin número de una misma red, que comparten
+    los vértices de sus deslindes comunes. Devuelve las caras y cuántos tramos enderezó.
+
+    Lo que comparten dos caras no se toca: solo se quitan vértices de una sola cara. Un
+    nodo en T (una divisoria que llega al borde) sí se puede correr a la recta del borde
+    cuando el texto lo dejó dentro de un diente: si no, el borde enderezado a cada lado
+    queda quebrado en él. Se corre en todas sus caras al mismo punto, así que la red sigue
+    sin huecos ni traslapes. Cada cambio se revisa (cara válida, sin traslape nuevo con
+    otra) y si no pasa se deja como estaba."""
+    tol = BORDE_MM * ppmm
+    clave = lambda p: (round(float(p[0]), 3), round(float(p[1]), 3))
+    pos: dict = {}
+
+    def anillo_de(coords) -> list:
+        salida = []
+        for p in list(coords)[:-1]:
+            k = clave(p)
+            pos.setdefault(k, np.array(p[:2], float))
+            if not salida or salida[-1] != k:
+                salida.append(k)
+        if len(salida) > 1 and salida[0] == salida[-1]:
+            salida.pop()
+        return salida
+
+    exteriores = [anillo_de(c.exterior.coords) for c in caras]
+    interiores = [[anillo_de(h.coords) for h in c.interiors] for c in caras]
+    pares = lambda a: zip(a, a[1:] + a[:1])
+    usos, de = Counter(), defaultdict(set)
+    for i, ext in enumerate(exteriores):
+        for anillo in (ext, *interiores[i]):
+            usos.update(frozenset(e) for e in pares(anillo))
+            for k in anillo:
+                de[k].add(i)
+    poligonos = list(caras)
+
+    def poligono(i):
+        return Polygon([pos[k] for k in exteriores[i]], [[pos[k] for k in h] for h in interiores[i]])
+
+    def aplicar(nuevos: dict) -> bool:
+        """Acepta las caras nuevas si son válidas y no se meten en otra."""
+        if not all(g.is_valid and g.area > 0 for g in nuevos.values()):
+            return False
+        for i, g in nuevos.items():
+            for j, otra in enumerate(poligonos):
+                if j == i:
+                    continue
+                otra_nueva = nuevos.get(j, otra)
+                if not shapely.intersects(g, otra_nueva):
+                    continue
+                if g.intersection(otra_nueva).area > poligonos[i].intersection(otra).area + 1.0:
+                    return False
+        for i, g in nuevos.items():
+            poligonos[i] = g
+        return True
+
+    # 1. Los tramos de cada cara, entre vértices compartidos.
+    segmentos = []      # (punta, punta, puntos originales, enderezado)
+    enderezados = 0
+    for i, anillo in enumerate(exteriores):
+        n = len(anillo)
+        corte = [len(de[k]) >= 2 for k in anillo]
+        afuera = [usos[frozenset(e)] == 1 for e in pares(anillo)]
+        if not any(afuera) or not any(corte):
+            continue        # una cara sola, sin vecinos que fijen las puntas de su borde
+        s0 = corte.index(True)
+        orden, corte, afuera = anillo[s0:] + anillo[:s0], corte[s0:] + corte[:s0], afuera[s0:] + afuera[:s0]
+        tramos, j = [], 0
+        while j < n:
+            if not afuera[j]:
+                j += 1
+                continue
+            m = j + 1
+            while m < n and afuera[m] and not corte[m]:
+                m += 1
+            tramos.append([orden[t % n] for t in range(j, m + 1)])
+            j = m
+        for tramo in tramos:
+            Q = np.array([pos[k] for k in tramo])
+            quedan = _tramo_recto(Q, tol)
+            if quedan is not None:
+                quitar = set(tramo[1:-1]) - {tramo[t] for t in quedan}
+                nuevo = [k for k in exteriores[i] if k not in quitar]
+                previo, exteriores[i] = exteriores[i], nuevo
+                if aplicar({i: poligono(i)}):
+                    enderezados += 1
+                    segmentos += [(tramo[a], tramo[b], Q[a:b + 1], b - a >= 2) for a, b in zip(quedan, quedan[1:])]
+                    continue
+                exteriores[i] = previo
+            segmentos += [(a, b, Q[t:t + 2], False) for t, (a, b) in enumerate(zip(tramo, tramo[1:]))]
+
+    # 2. Los nodos en T entre dos tramos que siguen derecho, uno al menos enderezado: a la
+    # recta que une las otras puntas, por la dirección de la divisoria que llega.
+    incidentes = defaultdict(list)
+    for s in segmentos:
+        incidentes[s[0]].append(s)
+        incidentes[s[1]].append(s)
+    vecinos = defaultdict(set)
+    for i, ext in enumerate(exteriores):
+        for anillo in (ext, *interiores[i]):
+            for a, b in pares(anillo):
+                vecinos[a].add(b)
+                vecinos[b].add(a)
+
+    def destino(v):
+        """(cuánto se aparta, a dónde va) el nodo v, o None si no es un nodo en T del borde."""
+        ss = incidentes[v]
+        if len(ss) != 2 or len(de[v]) < 2 or len(vecinos[v]) != 3 or not (ss[0][3] or ss[1][3]):
+            return None
+        p, q = (s[1] if s[0] == v else s[0] for s in ss)
+        w, = vecinos[v] - {p, q}
+        P, Q, V = pos[p], pos[q], pos[v]
+        u1, u2 = _unitario(V - P), _unitario(Q - V)
+        if math.degrees(math.acos(max(-1.0, min(1.0, float(u1 @ u2))))) > SIGUE_DERECHO_GRADOS:
+            return None
+        recta = (P, _unitario(Q - P))
+        if _distancia_recta(np.concatenate([ss[0][2], ss[1][2]]), recta).max() > tol:
+            return None
+        x, proyeccion = _cruce((V, _unitario(V - pos[w])), recta), _proyectar(V, recta)
+        return float(_distancia_recta(V, recta)), (x if x is not None and math.hypot(*(x - proyeccion)) <= tol
+                                                  else proyeccion)
+
+    # El más apartado primero: la recta de un nodo vecino que ya está en el borde es la
+    # buena; la de un nodo que va hacia un diente correría a este fuera de su lugar.
+    pendientes = set(incidentes)
+    while True:
+        candidatos = [(d[0], v, d[1]) for v in pendientes if (d := destino(v)) is not None and d[0] > 0.5]
+        if not candidatos:
+            break
+        _, v, x = max(candidatos, key=lambda c: c[0])
+        pendientes.discard(v)
+        V, pos[v] = pos[v], x
+        if not aplicar({i: poligono(i) for i in de[v]}):
+            pos[v] = V
+    return poligonos, enderezados
+
+
+def _tramo_recto(Q: np.ndarray, tol: float) -> list[int] | None:
+    """Los índices de Q que quedan si el tramo se endereza: sus puntas, o sus puntas y
+    una esquina; None si queda como está. Cada recta debe pasar a menos de `tol` de lo
+    que reemplaza, y lo que reemplaza zigzaguear (los dientes del texto)."""
+    def recto(R):
+        if len(R) < 3:
+            return True
+        cuerda = (R[0], _unitario(R[-1] - R[0]))
+        return float(_distancia_recta(R, cuerda).max()) <= tol and _zigzaguea(R)
+
+    if len(Q) < 3:
+        return None
+    if recto(Q):
+        return [0, len(Q) - 1]
+    k = 1 + int(np.argmax(_distancia_recta(Q[1:-1], (Q[0], _unitario(Q[-1] - Q[0])))))
+    if len(Q) > 3 and recto(Q[:k + 1]) and recto(Q[k:]):
+        return [0, k, len(Q) - 1]
+    return None
+
+
+def _zigzaguea(R: np.ndarray) -> bool:
+    """¿Gira a un lado y al otro? Una curva gira siempre al mismo."""
+    u, v = np.diff(R, axis=0)[:-1], np.diff(R, axis=0)[1:]
+    giros = np.degrees(np.arctan2(u[:, 0] * v[:, 1] - u[:, 1] * v[:, 0], (u * v).sum(1)))
+    return bool(giros.size) and giros.max() > 5 and giros.min() < -5
 
 
 def _grietas(ws: np.ndarray):

@@ -85,6 +85,7 @@ export function girarEntradas(entradas, de, a, ancho, alto) {
     mascaras: (entradas.mascaras ?? []).map(caja),
     semillas: (entradas.semillas ?? []).map(conXY),
     anclas: (entradas.anclas ?? []).map(conXY),
+    fuera: (entradas.fuera ?? []).map(punto),
   };
   if (entradas.cuadro) salida.cuadro = caja(entradas.cuadro);
   if (entradas.esquinas) {
@@ -117,6 +118,23 @@ export function marcarRectangulo(entradas, herramienta, rect) {
 
 /** Las herramientas del paso Marcar que dibujan un rectángulo. */
 export const HERRAMIENTAS_RECTANGULO = ['dibujo', 'mascara', 'cuadro'];
+
+/**
+ * La herramienta con que se abre Marcar. Sin el dibujo encerrado, "Encerrar el dibujo":
+ * es lo primero que hay que hacer y con "Mover" un arrastre no marca nada, que es donde
+ * se perdía la gente. Encerrado pero sin leer el plano todavía, sigue tapar. Ya leído,
+ * "Mover": se vuelve a mirar, y un arrastre para correr el plano no debe agregar un
+ * tapado que deje la lectura atrasada.
+ */
+export function herramientaAlEntrar(entradas, digitalizado = false) {
+  if (!entradas?.rectangulo) return 'dibujo';
+  return digitalizado ? 'mover' : 'mascara';
+}
+
+/** Tras el primer rectángulo del dibujo se pasa sola a "Tapar"; si no, queda la que estaba. */
+export function herramientaTrasRectangulo(herramienta, antes, despues) {
+  return herramienta === 'dibujo' && !antes?.rectangulo && despues?.rectangulo ? 'mascara' : herramienta;
+}
 
 /** [x0, y0, x1, y1] con x0 < x1 e y0 < y1, de dos esquinas cualesquiera. */
 export function rectanguloDe(p, q) {
@@ -341,10 +359,15 @@ export function centroide(anillo) {
   return [cx / (3 * a), cy / (3 * a)];
 }
 
-/** Dónde escribir el número de un lote: su semilla, o el centroide si cae dentro. */
+/**
+ * Dónde escribir el número de un lote: su semilla, el punto que el servidor da dentro
+ * (el del resto de la propiedad: una parte enorme y torcida) o el centroide si cae dentro.
+ */
 export function puntoDeRotulo(rasgo) {
   const semilla = rasgo.properties?.semilla;
   if (Array.isArray(semilla) && semilla.length === 2) return semilla;
+  const punto = rasgo.properties?.punto;
+  if (Array.isArray(punto) && punto.length === 2) return punto;
   const anillos = rasgo.geometry.coordinates;
   const c = centroide(anillos[0]);
   if (puntoEnPoligono(c[0], c[1], anillos)) return c;
@@ -400,9 +423,16 @@ export function nivelDe(propiedades) {
 
 /** Lo que la revisión cuenta de un vistazo. */
 export function resumenRevision(rasgos) {
-  const cuenta = { lotes: 0, verde: 0, ambar: 0, rojo: 0, gris: 0, sin_numero: 0, sin_numero_lote: 0, duplicados: 0 };
+  const cuenta = {
+    lotes: 0, verde: 0, ambar: 0, rojo: 0, gris: 0, sin_numero: 0, sin_numero_lote: 0, duplicados: 0, fuera: 0,
+  };
   for (const { properties: p } of rasgos) {
     const banderas = p.banderas ?? [];
+    // Lo que ella dejó fuera del KMZ (el resto de la propiedad) ya está decidido: no es un aviso.
+    if (p.fuera) {
+      cuenta.fuera += 1;
+      continue;
+    }
     if (banderas.includes('sin_numero')) {
       cuenta.sin_numero += 1;
       if (p.de_lote) cuenta.sin_numero_lote += 1;
@@ -434,12 +464,54 @@ export function sesgoDeEscala(rasgos, umbral = 0.03, parejo = 0.8) {
 }
 
 /**
+ * Cuántos lotes del KMZ calzan con el cuadro de superficies, para avisar antes de crearlo.
+ * Usa el mismo desvío que pinta Revisar (`error_area`, que pone el servidor con el área
+ * oficial, también la del resto incluido): así el aviso y los colores nunca se contradicen.
+ * Solo cuentan los que van al KMZ: ni las partes sin número ni lo que ella dejó fuera.
+ * Ámbar si la mitad o más se aparta más de un 5 % (un desvío así de parejo suele ser la
+ * ubicación, no el dibujo); null si ninguno tiene área oficial (sin cuadro no se muestra).
+ */
+export function semaforo(rasgos, tolerancia = 0.05) {
+  const conArea = (rasgos ?? []).map(({ properties: p }) => p ?? {})
+    .filter((p) => !p.fuera && p.numero != null && !(p.banderas ?? []).includes('sin_numero'))
+    .filter((p) => typeof p.error_area === 'number' && Number.isFinite(p.error_area));
+  const total = conArea.length;
+  if (!total) return { tono: null, dentro: 0, total: 0 };
+  // El `nivel` del servidor sale del desvío sin redondear: con él, un 5,004 % que
+  // `error_area` (a 4 decimales) guarda como 0,05 queda rojo aquí igual que en Revisar.
+  // Sin `nivel`, el desvío con un margen chico para el redondeo.
+  const dentro = conArea.filter((p) => (p.nivel ? p.nivel !== 'rojo'
+    : Math.abs(p.error_area) <= tolerancia + 1e-9)).length;
+  // Revisar pide volver a Ubicar cuando casi todos se desvían hacia el mismo lado, aunque
+  // menos de la mitad pase del 5 % (en Rapel, 7 de 16 a un 4,9 % parejo): el semáforo
+  // tiene que decir lo mismo, o Crear queda en verde justo después de ese aviso.
+  const sesgo = sesgoDeEscala(conArea.map((p) => ({ properties: p })));
+  const ambar = (total - dentro) * 2 >= total || sesgo != null;
+  return { tono: ambar ? 'ambar' : 'verde', dentro, total, sesgo };
+}
+
+/** El texto del semáforo ("" si no se muestra). */
+export function textoSemaforo({ tono, dentro, total, sesgo = null }) {
+  if (tono === 'verde') return `Los lotes calzan con el cuadro de superficies (${dentro} de ${total} dentro del 5 %).`;
+  if (tono === 'ambar') {
+    const cuantos = (total - dentro) * 2 >= total || sesgo == null
+      ? `${total - dentro} de ${total} lotes miden distinto al cuadro de superficies.`
+      : `Casi todos los lotes salen cerca de un ${Math.abs(sesgo * 100).toFixed(1).replace('.', ',')} %`
+        + ` ${sesgo > 0 ? 'más grandes' : 'más chicos'} que en el cuadro de superficies.`;
+    return `${cuantos} Suele ser la ubicación: vuelve a Ubicar y marca los puntos de nuevo.`;
+  }
+  return '';
+}
+
+/**
  * Las partes sin número, primero las del tamaño de un lote (un lote cuyo número no se
- * leyó) y, entre ellas, las que traen una lectura que confirmar.
+ * leyó) y, entre ellas, las que traen una lectura que confirmar. Sin el resto de la
+ * propiedad (lo pregunta su propia tarjeta) ni lo que ella dejó fuera del KMZ.
  */
 export function sinNumero(rasgos) {
   const peso = ({ properties: p }) => (p.de_lote ? 0 : 2) + (p.sugerencia ? 0 : 1);
-  return rasgos.filter((r) => (r.properties.banderas ?? []).includes('sin_numero') && r.properties.numero == null)
+  return rasgos.filter((r) => (r.properties.banderas ?? []).includes('sin_numero') && r.properties.numero == null
+    && !r.properties.fuera && !r.properties.resto)
     .map((r, i) => [r, i]).sort(([a, i], [b, j]) => peso(a) - peso(b) || i - j).map(([r]) => r);
 }
 
@@ -463,10 +535,197 @@ export function duplicados(rasgos) {
     .map((r) => r.properties.numero))];
 }
 
-/** Leídos por el lector con poco apoyo: los que conviene mirar. */
+/** Leídos por el lector con poco apoyo: los que conviene mirar. El resto de la propiedad
+ *  no: lo muestra su propia tarjeta. */
 export function dudosos(rasgos, apoyoMinimo = 3) {
-  return rasgos.filter(({ properties: p }) => p.origen === 'lector'
+  return rasgos.filter(({ properties: p }) => p.origen === 'lector' && !p.resto
     && ((p.apoyo ?? 0) < apoyoMinimo || (p.confianza ?? 1) < 0.6));
+}
+
+/**
+ * El número escrito con la forma del cuadro de superficies: si el cuadro trae el mismo
+ * lote ("8-8" y "8-08" tienen la misma `claveLote`), va como lo dice el cuadro, que es
+ * como sale en el KMZ. Si no, como lo escribió, sin "lote" adelante.
+ */
+export function formaDelCuadro(numero, cuadro) {
+  const limpio = String(numero ?? '').trim().replace(/^lotes?\s*/i, '');
+  if (!limpio) return '';
+  const clave = claveLote(limpio);
+  const delCuadro = (cuadro ?? []).map(String).find((n) => claveLote(n) === clave);
+  return delCuadro ?? limpio;
+}
+
+/**
+ * Los lotes con un número nuevo puesto al tiro, sin esperar a que se lea el plano de
+ * nuevo: el lote que contiene `punto` queda con `numero` (de la loteadora, sin bandera
+ * de sin número ni lectura que confirmar) y, si ese número estaba en otro lote, ese otro
+ * lo pierde, como hará el servidor. Los repetidos se cuentan de nuevo. No toca los
+ * rasgos que recibe: devuelve otros.
+ */
+export function aplicarNumero(rasgos, numero, punto) {
+  const limpio = String(numero ?? '').trim();
+  const lote = limpio ? loteEn(rasgos, punto[0], punto[1]) : null;
+  if (!lote) return rasgos;
+  const clave = claveLote(limpio);
+  const fuera = (banderas, ...quitar) => (banderas ?? []).filter((b) => !quitar.includes(b));
+  const salida = rasgos.map((r) => {
+    const p = r.properties;
+    if (r === lote) {
+      const { sugerencia: _s, ...resto } = p;
+      const nuevo = { ...r, properties: { ...resto, numero: limpio, origen: 'usuario', de_lote: false, fuera: false,
+        confianza: null, apoyo: null, semilla: [punto[0], punto[1]],
+        banderas: fuera(p.banderas, 'sin_numero', 'de_lote', 'fuera') } };
+      return { ...nuevo, rotulo: [punto[0], punto[1]] };
+    }
+    if (p.numero != null && claveLote(p.numero) === clave) {
+      // Era un lote con número: queda como un lote sin número (rojo), no como un camino.
+      const nuevo = { ...r, properties: { ...p, numero: null, semilla: null, de_lote: true, origen: null,
+        banderas: ['sin_numero', 'de_lote'] } };
+      return { ...nuevo, rotulo: puntoDeRotulo(nuevo) };
+    }
+    return r;
+  });
+  // Un número que estaba repetido puede dejar de estarlo (o al revés).
+  const cuenta = new Map();
+  for (const { properties: p } of salida) {
+    if (p.numero != null) cuenta.set(claveLote(p.numero), (cuenta.get(claveLote(p.numero)) ?? 0) + 1);
+  }
+  return salida.map((r) => {
+    const p = r.properties;
+    if (p.numero == null) return r;
+    const repetido = cuenta.get(claveLote(p.numero)) > 1;
+    const tenia = (p.banderas ?? []).includes('duplicado');
+    if (repetido === tenia) return r;
+    const banderas = repetido ? [...fuera(p.banderas), 'duplicado'] : fuera(p.banderas, 'duplicado');
+    return { ...r, properties: { ...p, banderas } };
+  });
+}
+
+// --- el resto de la propiedad ----------------------------------------------------------
+
+/**
+ * El resto de la propiedad (el rasgo con `resto` que marca el servidor), o null:
+ * `{rasgo, estado, numero, punto}`. `estado`: "pendiente" (falta decidir si va al KMZ),
+ * "incluido" (tiene número: va como un lote más) o "fuera" (lo dejó fuera, tenga o no el
+ * número que leyó el lector). `numero`: con el que va o iría al KMZ, el suyo, el del cuadro
+ * de superficies o "Resto" si el cuadro no le da uno. `punto`: dentro de la parte, para
+ * centrar el plano y anotar la decisión.
+ */
+export function restoDe(rasgos) {
+  const rasgo = (rasgos ?? []).find((r) => r.properties?.resto);
+  if (!rasgo) return null;
+  const p = rasgo.properties;
+  const estado = p.fuera ? 'fuera' : p.numero != null ? 'incluido' : 'pendiente';
+  const numero = p.numero ?? p.numero_resto ?? 'Resto';
+  return { rasgo, estado, numero: String(numero), punto: rasgo.rotulo ?? puntoDeRotulo(rasgo) };
+}
+
+/**
+ * Las entradas con la decisión sobre el resto (`anillos`: su polígono; `punto`: dentro).
+ * Dejarlo fuera anota `punto` en `fuera`; incluirlo quita lo anotado dentro y, si se da
+ * `numero` (la parte no tiene), pone esa semilla en `punto`. Las semillas no se tocan al
+ * dejarlo fuera: así cambiar de idea no obliga a leer el plano de nuevo.
+ */
+export function decidirResto(entradas, anillos, punto, incluir, numero = null) {
+  const dentro = ([x, y]) => puntoEnPoligono(x, y, anillos);
+  const { fuera } = devolverAlKmz(entradas, anillos);
+  const [x, y] = [redondo(punto[0]), redondo(punto[1])];
+  if (!incluir) return { ...entradas, fuera: [...fuera, [x, y]] };
+  if (!numero) return { ...entradas, fuera };
+  // Un número va en un solo lote: si estaba en otro, se va de ahí (como `ponerNumero`).
+  const clave = claveLote(numero);
+  const semillas = (entradas.semillas ?? []).filter((s) => !dentro([s.x, s.y]) && claveLote(s.numero) !== clave);
+  return { ...entradas, fuera, semillas: [...semillas, { numero, x, y }] };
+}
+
+/**
+ * Las entradas sin lo anotado como fuera del KMZ dentro de la parte `anillos`. Numerar
+ * esa parte a mano también la devuelve al KMZ: `aplicarNumero` la muestra incluida, y si
+ * el punto quedara en `fuera` el servidor la volvería a dejar fuera al releer.
+ */
+export function devolverAlKmz(entradas, anillos) {
+  if (!anillos || !(entradas.fuera ?? []).length) return entradas;
+  return { ...entradas, fuera: entradas.fuera.filter(([x, y]) => !puntoEnPoligono(x, y, anillos)) };
+}
+
+/**
+ * Los lotes con el resto dejado fuera (o vuelto atrás) al tiro, como lo dirá el servidor:
+ * la parte que contiene `punto` queda fuera del KMZ, sin contar como lote sin número; o
+ * vuelve a ser un lote sin número o el lote numerado que era. No toca los rasgos que recibe.
+ */
+export function aplicarFuera(rasgos, punto, fuera) {
+  const parte = loteEn(rasgos, punto[0], punto[1]);
+  if (!parte) return rasgos;
+  return rasgos.map((r) => {
+    if (r !== parte) return r;
+    const p = r.properties;
+    const otras = (p.banderas ?? []).filter((b) => !['fuera', 'de_lote'].includes(b));
+    const sinNumero = p.numero == null;
+    const banderas = [...otras, ...(fuera ? ['fuera'] : sinNumero ? ['de_lote'] : [])];
+    return { ...r, properties: { ...p, fuera, de_lote: sinNumero && !fuera, sugerencia: fuera ? null : p.sugerencia, banderas } };
+  });
+}
+
+/**
+ * Las semillas de la loteadora que el último digitalizado todavía no tiene (las puso
+ * después), puestas encima de los lotes: así un número recién escrito no se borra al
+ * recargar los lotes mientras se vuelve a leer el plano.
+ */
+export function conSemillas(rasgos, semillas) {
+  let salida = rasgos;
+  for (const s of semillas ?? []) {
+    const lote = loteEn(salida, s.x, s.y);
+    if (lote && claveLote(lote.properties.numero ?? '') !== claveLote(s.numero)) {
+      salida = aplicarNumero(salida, s.numero, [s.x, s.y]);
+    }
+  }
+  return salida;
+}
+
+/**
+ * Los números de `lista` (los del cuadro de superficies o, sin cuadro, los huecos de la
+ * numeración) que ningún lote tiene todavía: los que ofrece el campo del número.
+ */
+export function numerosQueFaltan(lista, rasgos) {
+  const puestos = new Set(rasgos.filter((r) => r.properties.numero != null).map((r) => claveLote(r.properties.numero)));
+  return (lista ?? []).map(String).filter((n) => !puestos.has(claveLote(n)));
+}
+
+/**
+ * El mensaje único de Numerar: cuántos lotes faltan por numerar y qué hacer. Las partes
+ * sin número que no son del tamaño de un lote (caminos, áreas comunes) van en una frase
+ * corta. `faltan`: los números que ningún lote tiene (para cuando no queda ningún lote
+ * rojo pero falta un número, p. ej. dos lotes que quedaron juntos).
+ */
+export function mensajeNumerar(rasgos, faltan = []) {
+  const partes = sinNumero(rasgos);
+  const lotes = partes.filter((r) => r.properties.de_lote).length;
+  const otras = partes.length - lotes;
+  const otrasTexto = otras === 1
+    ? ' Queda 1 parte chica sin número: si es un camino o un área común, se deja así.'
+    : otras ? ` Quedan ${otras} partes chicas sin número: si son caminos o áreas comunes, se dejan así.` : '';
+  if (lotes) {
+    const cuantos = lotes === 1 ? 'Falta 1 número' : `Faltan ${lotes} números`;
+    return `${cuantos}: haz clic en cada lote rojo y elige su número.${otrasTexto}`;
+  }
+  const lista = (faltan ?? []).map(String);
+  if (lista.length) {
+    if (lista.length === 1) {
+      return `Falta el ${lista[0]} en el plano: búscalo; puede que dos lotes hayan quedado juntos.${otrasTexto}`;
+    }
+    const cuales = `${lista.slice(0, -1).join(', ')} y ${lista[lista.length - 1]}`;
+    return `Faltan ${cuales} en el plano: búscalos; puede que haya lotes que quedaron juntos.${otrasTexto}`;
+  }
+  return `Todos los lotes tienen número.${otrasTexto}`;
+}
+
+/**
+ * ¿Un error de `pedir` es de la conexión o del servidor caído (sin respuesta o 5xx), y no
+ * una respuesta que dice que algo no sirve? Lo pasajero se avisa y se puede reintentar.
+ */
+export function esFalloPasajero(error) {
+  const estado = error?.estado;
+  return estado == null || estado >= 500;
 }
 
 // --- pasos ---------------------------------------------------------------------------
@@ -495,6 +754,47 @@ export function pasosHabilitados(e) {
 export function puedeSeguirANumerar(e) {
   const trabajando = Boolean(e?.trabajo && !e.trabajo.terminado);
   return Boolean(e?.digitalizado?.vigente) && !trabajando;
+}
+
+/**
+ * Por qué no se puede seguir desde `paso` ("" si se puede): va en una línea bajo el
+ * "Seguir" deshabilitado, que si no se ve apagado sin explicación. Es también lo que
+ * lo deshabilita, para que el motivo y el botón no se contradigan.
+ * `e`: el estado del servidor. `local`: lo que sabe solo la pantalla —
+ * `entradas`, `actualizando` (se está por volver a leer el plano, o se está leyendo),
+ * `releerFallo` (la relectura sola falló), `ubicando` (se está calculando la ubicación)
+ * y `duplicados` (cuántos números repetidos).
+ */
+export function porQueNoSigue(paso, e, local = {}) {
+  const trabajando = Boolean(e?.trabajo && !e.trabajo.terminado);
+  const d = e?.digitalizado;
+  switch (paso) {
+    case 'marcar':
+      if (pasosHabilitados(e).digitalizar) return '';
+      return local.entradas?.rectangulo ? 'Guardando lo marcado…' : 'Falta encerrar el dibujo del loteo.';
+    case 'digitalizar':
+      if (puedeSeguirANumerar(e)) return '';
+      if (trabajando) return 'Leyendo el plano…';
+      return d ? 'Cambiaste lo marcado: lee el plano de nuevo.' : 'Falta leer el plano.';
+    case 'numerar':
+      if (!d) return 'Falta leer el plano.';
+      if (trabajando || local.actualizando) return 'Actualizando los lotes…';
+      // Al día gana sobre un fallo anterior: si después se leyó bien (en el paso 3), se sigue.
+      if (d.vigente) return '';
+      return local.releerFallo ? 'No se pudieron actualizar los lotes: lee el plano de nuevo en el paso 3.'
+        : 'Actualizando los lotes…';
+    case 'ubicar': {
+      if (e?.georreferencia?.vigente) return '';
+      if (d && !d.vigente) return 'Cambiaste el plano: vuelve a Numerar para que se lea de nuevo.';
+      const anclas = local.entradas?.anclas?.length ?? 0;
+      if (anclas < 2 && !local.entradas?.cuadricula) return 'Marca al menos 2 puntos en el plano y en el mapa.';
+      return local.ubicando ? 'Ubicando el plano…' : 'Aprieta "Ubicar de nuevo" para ubicar los lotes.';
+    }
+    case 'revisar':
+      return local.duplicados ? 'Hay números repetidos: corrígelos en Numerar.' : '';
+    default:
+      return '';
+  }
 }
 
 /** El paso donde conviene abrir la pantalla, según `estado.paso` del servidor. */
@@ -528,7 +828,7 @@ export function pasosHechos(e) {
   };
 }
 
-/** "UTM 19S · WGS84" para mostrar dónde quedó ubicado. */
+/** "UTM 19S · WGS84": el sistema de coordenadas, para el detalle técnico de Ubicar. */
 export function nombreDelSistema(epsg) {
   if (epsg >= 32701 && epsg <= 32760) return `UTM ${epsg - 32700}S · WGS84`;
   if (epsg >= 32601 && epsg <= 32660) return `UTM ${epsg - 32600}N · WGS84`;
@@ -552,4 +852,51 @@ export function verticesDe(rasgos) {
     }
   }
   return [...vistos.values()];
+}
+
+/**
+ * Cuánto se aleja un punto de donde lo dejan los demás, en metros enteros: los decímetros
+ * no le dicen nada a quien marcó el punto a ojo en una imagen satelital.
+ */
+export function distanciaEnPalabras(metros) {
+  if (metros == null || !Number.isFinite(metros)) return '—';
+  return metros < 1 ? 'menos de 1 m' : `${Math.round(metros)} m`;
+}
+
+/**
+ * Lo que dice la tabla de Ubicar de un punto: su distancia y si calza. `r` es su fila en la
+ * ubicación (undefined si aún no se ubicó con él). Con 2 puntos no se puede comprobar nada
+ * (la distancia sale 0 por construcción): decir "Calza" contradiría el aviso.
+ */
+export function filaDelPunto(r, g, vigente) {
+  if (!r || !vigente) return { distancia: '—', estado: '', detalle: '' };
+  if (g?.parametros?.control === 'sin control') return { distancia: '—', estado: '', detalle: '' };
+  if (g?.atipicas?.includes(r.nombre)) {
+    return { distancia: distanciaEnPalabras(r.residuo_m), estado: 'No calza', detalle: 'márcalo de nuevo' };
+  }
+  return { distancia: distanciaEnPalabras(r.residuo_m), estado: 'Calza', detalle: '' };
+}
+
+/**
+ * "Ubicado con 4 puntos · calzan con ±5 m": cómo quedó ubicado, sin sistemas de
+ * coordenadas ni errores medios. `n` son los puntos marcados, si el servidor no los cuenta.
+ */
+export function resumenUbicacion(g, n = 0) {
+  const p = g?.parametros ?? {};
+  const cuadricula = g?.metodo === 'cuadricula';
+  const cuantos = p.n_anclas ?? n;
+  const partes = [cuadricula ? 'Ubicado con la cuadrícula impresa'
+    : `Ubicado con ${cuantos} ${cuantos === 1 ? 'punto' : 'puntos'}`];
+  // Con 2 puntos no hay con qué comparar (el servidor no da error medio): no se dice nada.
+  if (Number.isFinite(p.rms_m)) partes.push(`${cuadricula ? 'calza' : 'calzan'} con ±${Math.max(1, Math.round(p.rms_m))} m`);
+  return partes.join(' · ');
+}
+
+/** Lo técnico de la ubicación (sistema, error medio, datum), para quien lo quiera ver. */
+export function detalleUbicacion(g) {
+  if (!g) return '';
+  const partes = [nombreDelSistema(g.epsg)];
+  if (Number.isFinite(g.parametros?.rms_m)) partes.push(`error medio ${g.parametros.rms_m.toFixed(1)} m`);
+  if (g.datum?.datum) partes.push(`datum ${g.datum.datum}`);
+  return partes.join(' · ');
 }

@@ -320,6 +320,11 @@ def _asignar_etiquetas(etiquetas: list[tuple[str, geo.Punto]],
     """
     sin_asignar = [p for p in parcelas if p.id is None]
     pendientes: list[tuple[str, geo.Punto]] = []
+    # La etiqueta de un polígono que ya trae su nombre (el KMZ de Crea tu KMZ: "LOTE 8-01"
+    # con su Point) no busca otro: daría ese id a un polígono sin nombre cercano (el
+    # "RESTO", un área común) y el KMZ quedaría con el lote repetido.
+    nombrados = {p.id for p in parcelas if p.id}
+    etiquetas = [(i, punto) for i, punto in etiquetas if i not in nombrados]
 
     for identificador, punto in etiquetas:
         contenedores = [p for p in sin_asignar if p.id is None and geo.contiene(p.anillo, punto)]

@@ -4,6 +4,7 @@ otra loteadora, están en test_kmz.py."""
 import io
 import json
 import sys
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -220,6 +221,9 @@ def test_el_pdf_de_las_entradas_no_sale_de_la_carpeta(ana, pdf):
     (dict(rotacion=45), "rotación"),
     (dict(rectangulo=[10, 10, 5, 5]), "vacío"),
     (dict(anclas=[dict(x=1, y=1, lon=-300, lat=0)]), "fuera de rango"),
+    (dict(fuera="aquí"), "«fuera»"),
+    (dict(fuera=[[1]]), "fuera[]"),
+    (dict(fuera=[["a", 2]]), "fuera[]"),
 ])
 def test_las_entradas_malas_dicen_que_esta_mal(ana, cambio, mensaje):
     web, slug, _, _ = ana
@@ -272,6 +276,8 @@ def test_las_entradas_tienen_tope(ana):
     assert respuesta.status_code == 400
     assert "semillas" in respuesta.json()["detail"]
     assert not (carpeta_del_plano(raiz, slug) / "entradas.json").exists()
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, fuera=[[1, 1]] * 51))
+    assert respuesta.status_code == 400 and "fuera" in respuesta.json()["detail"]
 
 
 def test_sin_plano_no_hay_entradas(ana):
@@ -419,7 +425,114 @@ def test_cambiar_los_numeros_pide_digitalizar_de_nuevo(ana):
     assert web.get(f"/api/kmz/{slug}").json()["paso"] == "digitalizar"
     respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
     assert respuesta.status_code == 409
-    assert "digitaliza de nuevo" in respuesta.json()["detail"]
+    assert "lee el plano de nuevo" in respuesta.json()["detail"]
+
+
+# La cuadrícula UTM que "leyó" el lector, en el mismo sistema que las anclas.
+PROPUESTA = dict(verticales=[dict(x=300.0, valor=E0 + M_PX * 300), dict(x=900.0, valor=E0 + M_PX * 900)],
+                 horizontales=[dict(y=200.0, valor=N0 - M_PX * 200), dict(y=700.0, valor=N0 - M_PX * 700)],
+                 epsg=None)
+
+
+def con_propuesta(carpeta, cuadricula):
+    """Al digitalizado a mano le agrega lo que leyó el lector, con su cuadrícula."""
+    ruta = carpeta / "digitalizado.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["lector"] = dict(activo=True, disponible=True, rotulos=[], semillas=0, apoyo_min=2,
+                           sin_poligono=[], cuadricula=cuadricula, cuadro={})
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+
+
+def test_usar_o_quitar_la_cuadricula_propuesta_no_atrasa_los_lotes(ana):
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    con_propuesta(carpeta_del_plano(raiz, slug), PROPUESTA)
+    esperar_trabajo(web, web.post(f"/api/kmz/{slug}/digitalizar").json()["id"])
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").json()["metodo"] == "anclas"
+    huellas = carpeta_del_plano(raiz, slug) / "huellas.json"
+    digitalizado = json.loads(huellas.read_text(encoding="utf-8"))["digitalizado"]
+
+    # Como la manda el navegador: la propuesta tal cual, con un valor corregido.
+    elegida = dict(PROPUESTA, verticales=[dict(PROPUESTA["verticales"][0]),
+                                          dict(PROPUESTA["verticales"][1], valor=E0 + M_PX * 900)])
+    assert web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, cuadricula=elegida)).status_code == 200
+
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["digitalizado"]["vigente"] is True
+    # La ubicación sí queda atrasada: es lo que cambia.
+    assert estado["paso"] == "ubicar" and estado["georreferencia"]["vigente"] is False
+    g = web.post(f"/api/kmz/{slug}/georreferenciar")
+    assert g.status_code == 200, g.text
+    assert g.json()["metodo"] == "cuadricula"
+    assert web.get(f"/api/kmz/{slug}").json()["paso"] == "crear"
+
+    web.put(f"/api/kmz/{slug}/entradas", json=ENTRADAS)
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["digitalizado"]["vigente"] is True and estado["georreferencia"]["vigente"] is False
+    assert json.loads(huellas.read_text(encoding="utf-8"))["digitalizado"] == digitalizado
+
+
+def test_otra_cuadricula_que_la_propuesta_si_pide_digitalizar(ana):
+    """Otras líneas que las leídas cambian lo que se borra del dibujo: eso sí atrasa."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    con_propuesta(carpeta_del_plano(raiz, slug), PROPUESTA)
+    esperar_trabajo(web, web.post(f"/api/kmz/{slug}/digitalizar").json()["id"])
+
+    corrida = dict(PROPUESTA, verticales=[dict(PROPUESTA["verticales"][0], x=350.0), PROPUESTA["verticales"][1]])
+    web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, cuadricula=corrida))
+
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["digitalizado"]["vigente"] is False and estado["paso"] == "digitalizar"
+
+
+def test_digitalizar_con_la_propuesta_elegida_queda_al_dia(ana):
+    """Si ya estaba elegida y el lector la vuelve a leer igual, digitalizar no la cuenta
+    y quitarla después tampoco atrasa."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, cuadricula=PROPUESTA))
+    con_propuesta(carpeta_del_plano(raiz, slug), PROPUESTA)
+    esperar_trabajo(web, web.post(f"/api/kmz/{slug}/digitalizar").json()["id"])
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["vigente"] is True
+
+    web.put(f"/api/kmz/{slug}/entradas", json=ENTRADAS)
+
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["vigente"] is True
+
+
+def test_un_kmz_que_digitalizo_con_la_propuesta_antes_del_cambio_sigue_al_dia(ana):
+    """Antes la huella llevaba la cuadrícula elegida tal cual, aunque fuera la propuesta:
+    esos KMZ no quedan atrasados porque ahora la propuesta no cuente."""
+    from consola.plano import huella_digitalizar
+    from pipeline.plano.digitalizar import leer_entradas
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, cuadricula=PROPUESTA))
+    carpeta = carpeta_del_plano(raiz, slug)
+    con_propuesta(carpeta, PROPUESTA)
+    (carpeta / "huellas.json").write_text(
+        json.dumps(dict(digitalizado=huella_digitalizar(leer_entradas(carpeta)))), encoding="utf-8")
+
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["digitalizado"]["vigente"] is True and estado["paso"] == "ubicar"
+
+
+def test_la_cuadricula_se_ofrece_solo_si_alcanza_para_ubicar(ana):
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    con_propuesta(carpeta, PROPUESTA)
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["lector"]["cuadricula"] == PROPUESTA
+
+    # Lo que leyó en Rapel: cuatro verticales con valor y ninguna horizontal.
+    rapel = dict(verticales=[dict(x=2377.3 + 400 * i, valor=6213500 + 500 * i) for i in range(4)],
+                 horizontales=[], epsg=None)
+    con_propuesta(carpeta, rapel)
+    lector = web.get(f"/api/kmz/{slug}").json()["digitalizado"]["lector"]
+    assert lector is not None and lector["cuadricula"] is None
+
+    con_propuesta(carpeta, dict(PROPUESTA, horizontales=PROPUESTA["horizontales"][:1]))
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["lector"]["cuadricula"] is None
 
 
 def test_sin_anclas_no_se_puede_ubicar(ana):
@@ -429,7 +542,7 @@ def test_sin_anclas_no_se_puede_ubicar(ana):
     respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
 
     assert respuesta.status_code == 400
-    assert "anclas" in respuesta.json()["detail"]
+    assert "2 puntos" in respuesta.json()["detail"]
 
 
 def test_ubicar_sin_digitalizar(ana):
@@ -565,3 +678,201 @@ def test_un_camino_sin_numero_no_pide_confirmar(ana):
     assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
 
     assert web.post(f"/api/kmz/{slug}/crear").status_code == 201
+
+
+def test_el_estado_trae_los_numeros_del_cuadro_de_superficies(ana):
+    """La pantalla los usa para escribir el número como en el cuadro y ofrecer los que faltan."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    con_propuesta(carpeta, None)
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["lector"]["numeros_cuadro"] == []
+
+    ruta = carpeta / "digitalizado.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["lector"]["cuadro"] = {"8-01": 5000.0, "8-08": 5000.0, "8-16": 5000.0}
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+
+    lector = web.get(f"/api/kmz/{slug}").json()["digitalizado"]["lector"]
+    assert lector["numeros_cuadro"] == ["8-01", "8-08", "8-16"] and lector["areas"] == 3
+
+
+# --- el resto de la propiedad -----------------------------------------------------------
+
+RAPEL = {"8-01": 5000.0, "8-02": 5000.0, "8-03": 5000.0, "8": 760000.0}
+# Un punto dentro del resto de `_con_resto`.
+EN_EL_RESTO = [500, 500]
+
+
+def _con_resto(carpeta, cuadro=None, area_resto=(0, 300, 1000, 1000)):
+    """Caminos de Rapel en chico: lotes chicos y el resto de la propiedad, una parte sin
+    número del tamaño de un lote (no se pegó a un vecino) pero enorme. Con `cuadro`, lo
+    que leyó el lector del cuadro de superficies."""
+    ruta = carpeta / "digitalizado.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["lotes"] = [dict(numero=n, poligono=_cuadro(x, 0, x + 300, 300), huecos=[], area_px=90000,
+                           area_oficial=5000.0 if cuadro else None)
+                      for n, x in (("8-01", 0), ("8-02", 300), ("8-03", 600))]
+    x0, y0, x1, y1 = area_resto
+    datos["sin_numero"] = [dict(poligono=_cuadro(x0, y0, x1, y1), area_px=float((x1 - x0) * (y1 - y0)),
+                                de_lote=True, sugerencia=None),
+                           dict(poligono=_cuadro(900, 0, 1000, 300), area_px=30000.0, de_lote=False,
+                                sugerencia=None)]
+    datos["lector"] = dict(activo=True, disponible=True, rotulos=[], semillas=0, apoyo_min=2, sin_poligono=[],
+                           cuadricula=None, cuadro=cuadro or {})
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+
+
+def test_el_resto_de_la_propiedad_se_marca_para_preguntar(ana):
+    """Sin cuadro, por su tamaño (más de 5 veces la mediana de los lotes); con la fila del
+    resto en el cuadro, con su número y su área."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    _con_resto(carpeta)
+
+    resto, camino = (r["properties"] for r in web.get(f"/api/kmz/{slug}/lotes").json()["features"][3:])
+
+    assert resto["resto"] is True and resto["numero_resto"] is None and resto["de_lote"] is True
+    x, y = resto["punto"]
+    assert 0 < x < 1000 and 300 < y < 1000
+    assert "resto" not in camino
+
+    _con_resto(carpeta, RAPEL)
+    resto = web.get(f"/api/kmz/{slug}/lotes").json()["features"][3]["properties"]
+    assert (resto["numero_resto"], resto["area_resto_m2"]) == ("8", 760000.0)
+    lector = web.get(f"/api/kmz/{slug}").json()["digitalizado"]["lector"]
+    # El resto no es un número que falte: va aparte.
+    assert lector["numeros_cuadro"] == ["8-01", "8-02", "8-03"] and lector["resto"] == "8"
+
+
+def test_una_parte_un_poco_mas_grande_es_resto_solo_si_el_cuadro_lo_trae(ana):
+    """Un lote sin número que quedó pegado a otro mide el doble: no se pregunta si es el
+    resto, salvo que el cuadro traiga la fila del resto."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    _con_resto(carpeta, area_resto=(0, 300, 600, 600))           # 2 veces la mediana
+
+    assert "resto" not in web.get(f"/api/kmz/{slug}/lotes").json()["features"][3]["properties"]
+    _con_resto(carpeta, RAPEL, area_resto=(0, 300, 600, 600))
+    assert web.get(f"/api/kmz/{slug}/lotes").json()["features"][3]["properties"]["resto"] is True
+
+
+def test_dejar_fuera_el_resto_no_lo_cuenta_ni_pide_confirmar_al_crear(ana):
+    from consola.plano import huella_digitalizar
+    from pipeline.plano.digitalizar import leer_entradas
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    _con_resto(carpeta, RAPEL)
+    (carpeta / "huellas.json").write_text(
+        json.dumps(dict(digitalizado=huella_digitalizar(leer_entradas(carpeta)))), encoding="utf-8")
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["sin_numero_lote"] == 1
+    assert web.post(f"/api/kmz/{slug}/crear").status_code == 409
+
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, fuera=[EN_EL_RESTO]))
+
+    assert respuesta.status_code == 200 and respuesta.json()["fuera"] == [[500.0, 500.0]]
+    estado = web.get(f"/api/kmz/{slug}").json()
+    # Es qué va al KMZ, no cómo se parte el dibujo: no hay que volver a leer ni a ubicar.
+    assert estado["digitalizado"]["vigente"] is True and estado["georreferencia"]["vigente"] is True
+    d = estado["digitalizado"]
+    assert (d["sin_numero_lote"], d["sin_numero"], d["fuera"]) == (0, 1, 1)
+    resto = web.get(f"/api/kmz/{slug}/lotes", params={"en": "lonlat"}).json()["features"][3]["properties"]
+    assert resto["banderas"] == ["sin_numero", "fuera"] and resto["fuera"] is True and resto["de_lote"] is False
+    assert resto["resto"] is True                       # la tarjeta lo muestra para poder cambiarlo
+    respuesta = web.post(f"/api/kmz/{slug}/crear")
+    assert respuesta.status_code == 201, respuesta.text
+    assert respuesta.json()["lotes"] == 3
+
+
+def test_el_resto_incluido_va_al_kmz_con_su_numero(ana):
+    """Con el número del cuadro ("8", con su área) o "Resto": no es un lote sin número."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    _con_resto(carpeta, RAPEL)
+    ruta = carpeta / "digitalizado.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    resto = datos["sin_numero"].pop(0)
+    datos["lotes"].append(dict(numero="8", poligono=resto["poligono"], huecos=[], area_px=resto["area_px"],
+                               area_oficial=760000.0, origen="usuario"))
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
+
+    ocho = web.get(f"/api/kmz/{slug}/lotes", params={"en": "lonlat"}).json()["features"][3]["properties"]
+
+    assert ocho["numero"] == "8" and ocho["banderas"] == [] and ocho["resto"] is True
+    assert ocho["area_oficial_m2"] == 760000.0
+    assert web.post(f"/api/kmz/{slug}/crear").json()["lotes"] == 4
+    with zipfile.ZipFile(next(carpeta.glob("*.kmz"))) as z:
+        assert "<name>LOTE 8</name>" in z.read("doc.kml").decode("utf-8")
+
+    # Sin número en el cuadro, como "Resto": ya no queda rojo por no ser un número de lote.
+    datos["lotes"][3]["numero"] = "Resto"
+    datos["lector"]["cuadro"] = {}
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+    resto = web.get(f"/api/kmz/{slug}/lotes").json()["features"][3]["properties"]
+    assert resto["banderas"] == [] and resto["resto"] is True
+    assert web.post(f"/api/kmz/{slug}/crear").status_code == 201
+    with zipfile.ZipFile(next(carpeta.glob("*.kmz"))) as z:
+        assert "<name>RESTO</name>" in z.read("doc.kml").decode("utf-8")
+
+
+def test_dejar_fuera_el_resto_que_numero_el_lector_lo_saca_del_kmz(ana):
+    """En Caminos de Rapel el lector lee el "LOTE 8" impreso en el resto. Con la fila del
+    resto en el cuadro no lo numera solo (`rotulos.combinar`), pero sin ella, o en un
+    digitalizado de antes, sí: va al KMZ. Si ella lo deja fuera, no va, sin volver a leer
+    el plano; el KMZ que ya estaba queda atrasado."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    _con_resto(carpeta, RAPEL)
+    ruta = carpeta / "digitalizado.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    resto = datos["sin_numero"].pop(0)
+    datos["lotes"].append(dict(numero="8", poligono=resto["poligono"], huecos=[], area_px=resto["area_px"],
+                               area_oficial=760000.0, origen="lector", confianza=0.9, apoyo=3))
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
+    assert web.post(f"/api/kmz/{slug}/crear").json()["lotes"] == 4
+    assert web.get(f"/api/kmz/{slug}").json()["paso"] == "listo"
+
+    assert web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, fuera=[EN_EL_RESTO])).status_code == 200
+
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["paso"] == "crear" and estado["georreferencia"]["vigente"] is True
+    assert (estado["digitalizado"]["lotes"], estado["digitalizado"]["fuera"]) == (3, 1)
+    ocho = web.get(f"/api/kmz/{slug}/lotes").json()["features"][3]["properties"]
+    assert ocho["numero"] == "8" and ocho["fuera"] is True and ocho["resto"] is True and ocho["banderas"] == ["fuera"]
+    assert web.post(f"/api/kmz/{slug}/crear").json()["lotes"] == 3
+    with zipfile.ZipFile(next(carpeta.glob("*.kmz"))) as z:
+        assert "<name>LOTE 8</name>" not in z.read("doc.kml").decode("utf-8")
+    assert web.get(f"/api/kmz/{slug}").json()["paso"] == "listo"
+
+
+def test_el_resto_no_es_repetido_de_un_numero_que_no_se_reconoce(ana):
+    """"Resto" y un número inválido no tienen id para el lector de KMZ: no son el mismo lote."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    _con_resto(carpeta)
+    ruta = carpeta / "digitalizado.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    resto = datos["sin_numero"].pop(0)
+    datos["lotes"].append(dict(numero="Resto", poligono=resto["poligono"], huecos=[], area_px=resto["area_px"]))
+    datos["lotes"][0]["numero"] = "?"
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+
+    rasgos = [r["properties"] for r in web.get(f"/api/kmz/{slug}/lotes").json()["features"]]
+
+    assert rasgos[0]["banderas"] == ["sin_numero"]
+    assert rasgos[3]["numero"] == "Resto" and rasgos[3]["banderas"] == []
+    # Dos "Resto" sí son el mismo, como al crear.
+    datos["lotes"][0]["numero"] = "RESTO"
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+    rasgos = [r["properties"] for r in web.get(f"/api/kmz/{slug}/lotes").json()["features"]]
+    assert rasgos[0]["banderas"] == rasgos[3]["banderas"] == ["duplicado"]

@@ -29,13 +29,17 @@ def ultimo(numero) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def mismo_lote(a, b) -> bool:
+def mismo_lote(a, b, restos=()) -> bool:
     """Mismo número normalizado, o uno trae el sector y el otro no ("10-6" y "6"): en
-    Hidango los rótulos dicen "LOTE 10-6" y la loteadora puede marcar solo el 6."""
+    Hidango los rótulos dicen "LOTE 10-6" y la loteadora puede marcar solo el 6.
+
+    `restos`: los números del resto de la propiedad (`resto`). Esos se comparan solo
+    iguales: el "8" del resto no es el "8-08" aunque el 8 sea su número dentro del sector,
+    y si no, numerar el resto borraba la lectura del 8-08."""
     ca, cb = clave(a), clave(b)
     if ca == cb:
         return True
-    if ("-" in ca) == ("-" in cb):
+    if ("-" in ca) == ("-" in cb) or {ca, cb} & {clave(r) for r in restos}:
         return False
     return ultimo(ca) is not None and ultimo(ca) == ultimo(cb)
 
@@ -94,15 +98,28 @@ def _como(plantilla: str, n: int) -> str:
     return plantilla[:m.start(1)] + (str(n).zfill(len(digitos)) if digitos.startswith("0") else str(n))
 
 
+def es_resto(numero) -> bool:
+    """¿Es el nombre del resto de la propiedad y no un número ("Resto", "RESTO DE LA
+    PROPIEDAD")? Así lo escribe la loteadora cuando el cuadro no le da número."""
+    return "RESTO" in clave(numero)
+
+
 def esperados(cuadro) -> list[str]:
     """Los números del cuadro de superficies que deben ser lotes del dibujo: todos menos
     el resto de la propiedad. El resto es la fila cuyo número es el sector de las demás
-    ("8 o resto de la propiedad, 760.000 m²" en un cuadro de "8-01" a "8-16"): es el
-    predio que queda, no un lote de la situación propuesta, y no se avisa como faltante.
-    Su área sigue en el cuadro: si una cara lleva ese número, la tiene."""
+    ("8 o resto de la propiedad, 760.000 m²" en un cuadro de "8-01" a "8-16") o la que
+    dice "resto": es el predio que queda, no un lote de la situación propuesta, y no se
+    avisa como faltante. Su área sigue en el cuadro: si una cara lleva ese número, la tiene."""
     numeros = [str(n) for n in cuadro]
     sectores = {s[0].rstrip("-") for s in map(_serie, numeros) if s and s[0]}
-    return [n for n in numeros if "-" in clave(n) or clave(n) not in sectores]
+    return [n for n in numeros if not es_resto(n) and ("-" in clave(n) or clave(n) not in sectores)]
+
+
+def resto(cuadro) -> str | None:
+    """El número del resto de la propiedad en el cuadro de superficies, como viene ("8"),
+    o None si el cuadro no trae fila de resto."""
+    lotes = {clave(n) for n in esperados(cuadro)}
+    return next((str(n) for n in cuadro if clave(n) not in lotes), None)
 
 
 def huecos(numeros, esperados=(), junto=None) -> list[str]:

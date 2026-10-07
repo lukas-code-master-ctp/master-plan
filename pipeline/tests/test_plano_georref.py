@@ -6,8 +6,8 @@ import pytest
 from pyproj import Transformer
 
 from pipeline.plano.__main__ import main
-from pipeline.plano.georreferencia import (Transformacion, ajuste_fino, comparar_datum, huso, por_anclas,
-                                           por_cuadricula)
+from pipeline.plano.georreferencia import (Transformacion, ajuste_fino, comparar_datum, cuadricula_suficiente,
+                                           huso, por_anclas, por_cuadricula)
 
 # Una similitud conocida, px de página → UTM 19S: 0,25 m/px, girada 20°.
 ESCALA, GIRO = 0.25, 20.0
@@ -69,7 +69,7 @@ def test_un_ancla_corrida_15_m_queda_marcada():
     assert mala["residuo_sin_ella_m"] > 12.0
     # La mala contamina el ajuste: su residuo con todas es menor que sin ella.
     assert mala["residuo_m"] < mala["residuo_sin_ella_m"]
-    assert any("a2" in aviso for aviso in t.avisos)
+    assert "El punto a2 no calza con los demás: márcalo de nuevo o quítalo." in t.avisos
 
 
 def test_tres_anclas_inconsistentes_se_avisan():
@@ -310,7 +310,7 @@ def test_georreferenciar_con_cuadricula_en_psad56(tmp_path, capsys):
 def test_georreferenciar_sin_ubicacion_falla(tmp_path, capsys):
     _carpeta(tmp_path, anclas=_anclas(PX[:1]))
     assert main(["georreferenciar", str(tmp_path)]) == 1
-    assert "anclas" in capsys.readouterr().err
+    assert "2 puntos" in capsys.readouterr().err
 
 
 def test_ancla_mal_escrita_se_avisa_con_su_nombre(tmp_path, capsys):
@@ -348,6 +348,28 @@ def test_cuadricula_en_una_sola_direccion_sin_anclas_dice_por_que(tmp_path, caps
     assert "en cada dirección" in capsys.readouterr().err
 
 
+def test_la_cuadricula_alcanza_con_dos_lineas_de_valor_distinto_por_direccion():
+    assert cuadricula_suficiente(_marcas(con_rectas=False))
+    assert cuadricula_suficiente(_marcas())
+    # Lo que leyó el lector en Rapel: cuatro verticales y ninguna horizontal.
+    rapel = dict(verticales=[dict(x=2377.3 + 500 * i, valor=6213500 + 500 * i) for i in range(4)],
+                 horizontales=[], epsg=None)
+    assert not cuadricula_suficiente(rapel)
+    for familia in ("verticales", "horizontales"):
+        marcas = _marcas(con_rectas=False)
+        marcas[familia] = marcas[familia][:1]
+        assert not cuadricula_suficiente(marcas)
+        with pytest.raises(ValueError, match="en cada dirección"):
+            por_cuadricula(marcas)
+        # Dos líneas sin valor, o con el mismo valor, tampoco dan una progresión.
+        marcas = _marcas(con_rectas=False)
+        marcas[familia] = [dict(m, valor=marcas[familia][0]["valor"]) for m in marcas[familia]]
+        assert not cuadricula_suficiente(marcas)
+        marcas[familia] = [{k: v for k, v in m.items() if k != "valor"} for m in marcas[familia]]
+        assert not cuadricula_suficiente(marcas)
+    assert not cuadricula_suficiente(None) and not cuadricula_suficiente({})
+
+
 def test_epsg_de_la_cuadricula_que_no_es_utm_falla(tmp_path, capsys):
     _carpeta(tmp_path, cuadricula=dict(_marcas(con_rectas=False), epsg=4326))
     assert main(["georreferenciar", str(tmp_path)]) == 1
@@ -372,7 +394,20 @@ def test_la_escala_de_las_anclas_contra_el_cuadro_de_superficies_se_avisa(tmp_pa
     g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
     assert g["parametros"]["escala_cuadro"] == dict(lotes=4, area_pct=-5.91, escala_pct=-3.0)
     aviso = [a for a in g["avisos"] if "cuadro de superficies" in a]
-    assert aviso and "5,9 % menos" in aviso[0] and "3,0 % menor" in aviso[0] and "anclas" in aviso[0]
+    # Lo que la loteadora ve en Revisar: los lotes más chicos que lo oficial, y qué revisar.
+    assert aviso and aviso[0].startswith("Los lotes salen un 5,9 % más chicos que en el cuadro de superficies")
+    assert "un 3,0 % más cortos" in aviso[0] and "Revisa los puntos" in aviso[0]
+    assert not any(t in aviso[0] for t in ("ancla", "escala", "mediana"))
+
+
+def test_los_lotes_mas_grandes_que_el_cuadro_se_dicen_mas_grandes(tmp_path, capsys):
+    # El cuadro dice menos que lo medido: los puntos estiran el plano.
+    _carpeta(tmp_path, lotes=_lotes_con_cuadro(2500 / 1.04 ** 2), anclas=_anclas(PX[:4]))
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    assert g["parametros"]["escala_cuadro"]["escala_pct"] > 0
+    aviso = [a for a in g["avisos"] if "cuadro de superficies" in a]
+    assert aviso and "% más grandes" in aviso[0] and "% más largos" in aviso[0]
 
 
 def test_la_escala_que_calza_con_el_cuadro_no_se_avisa(tmp_path, capsys):
@@ -389,3 +424,106 @@ def test_sin_cuadro_no_se_mide_la_escala(tmp_path, capsys):
     assert main(["georreferenciar", str(tmp_path)]) == 0
     g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
     assert "escala_cuadro" not in g["parametros"]
+
+
+def _plano_con_cuadricula(tmp_path, giro=0.4):
+    """El plano sintético con una cuadrícula UTM gris impresa en los márgenes, girada
+    `giro` grados (la hoja escaneada algo torcida), y lo que "lee" el lector de ella."""
+    import io
+
+    import cv2
+    import pymupdf
+    from PIL import Image
+
+    from pipeline.tests.plano_sintetico import PPMM, dibujar
+
+    plano = dibujar()
+    img = plano.imagen.copy()
+    alto, ancho = img.shape[:2]
+    c, s = math.cos(math.radians(giro)), math.sin(math.radians(giro))
+    # u, v: la página girada; E = E0 + u/2, N = N0 − v/2.
+    e0, n0 = 280000.0, 6290000.0
+    verdad = lambda x, y: (e0 + 0.5 * (x * c + y * s), n0 - 0.5 * (-x * s + y * c))
+    a16 = lambda p: (int(round(p[0] * 16)), int(round(p[1] * 16)))
+    propuesta = dict(verticales=[], horizontales=[], epsg=None)
+    for u in (60.0, 1500.0):                    # verticales: u constante, en los márgenes
+        x_en = lambda y: (u - y * s) / c
+        cv2.line(img, a16((x_en(0), 0)), a16((x_en(alto - 1), alto - 1)), (150, 150, 150), 1, cv2.LINE_AA, 4)
+        propuesta["verticales"].append(dict(x=round(x_en(alto / 2), 1), valor=e0 + 0.5 * u))
+    for v in (60.0, 990.0):                     # horizontales: v constante
+        y_en = lambda x: (v + x * s) / c
+        cv2.line(img, a16((0, y_en(0))), a16((ancho - 1, y_en(ancho - 1))), (150, 150, 150), 1, cv2.LINE_AA, 4)
+        propuesta["horizontales"].append(dict(y=round(y_en(ancho / 2), 1), valor=n0 - 0.5 * v))
+    buf = io.BytesIO()
+    Image.fromarray(img).save(buf, "JPEG", quality=95)
+    doc = pymupdf.open()
+    hoja = doc.new_page(width=ancho / PPMM / 25.4 * 72, height=alto / PPMM / 25.4 * 72)
+    hoja.insert_image(hoja.rect, stream=buf.getvalue())
+    doc.save(tmp_path / "plano.pdf")
+    entradas = dict(pdf="plano.pdf", pagina=1, rotacion=0, rectangulo=[100, 100, ancho - 100, alto - 100],
+                    mascaras=[], esquinas=None, marco_mm=None, cuadricula=None, lector=True,
+                    semillas=[dict(numero=n, x=x, y=y) for n, x, y in plano.semillas], anclas=[])
+    (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+    return entradas, propuesta, verdad
+
+
+def _lector_que_propone(monkeypatch, propuesta):
+    from pipeline.plano import rotulos
+
+    monkeypatch.setattr(rotulos, "motivo_no_disponible", lambda: None)
+    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance: [])
+    monkeypatch.setattr(rotulos, "leer_cuadricula", lambda imagen, ppmm, avance, rectangulo: propuesta)
+    monkeypatch.setattr(rotulos, "leer_cuadro", lambda imagen, rects, avance: {})
+
+
+def test_ubicar_con_la_propuesta_sin_digitalizar_de_nuevo_mide_el_giro(tmp_path, monkeypatch, capsys):
+    """La loteadora digitaliza sin cuadrícula y elige la que propone el lector recién en
+    Ubicar: ubicar usa las rectas detectadas de esa propuesta (mide el giro), sin que
+    digitalizar haya borrado su tinta."""
+    entradas, propuesta, verdad = _plano_con_cuadricula(tmp_path)
+    sin_propuesta = tmp_path / "sin_propuesta"
+    sin_propuesta.mkdir()
+    _plano_con_cuadricula(sin_propuesta)
+    _lector_que_propone(monkeypatch, None)
+    assert main(["digitalizar", str(sin_propuesta)]) == 0
+    _lector_que_propone(monkeypatch, propuesta)
+
+    assert main(["digitalizar", str(tmp_path)]) == 0
+
+    d = json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))
+    assert d["lector"]["cuadricula"] == propuesta
+    assert [m["x"] for m in d["cuadricula"]["verticales"]] == [m["x"] for m in propuesta["verticales"]]
+    assert all(m["valida"] for f in ("verticales", "horizontales") for m in d["cuadricula"][f])
+    # Los lotes son los mismos que sin la propuesta: su tinta no se borró.
+    otro = json.loads((sin_propuesta / "digitalizado.json").read_text(encoding="utf-8"))
+    assert otro["cuadricula"] is None
+    assert d["lotes"] == otro["lotes"] and d["sin_numero"] == otro["sin_numero"]
+
+    # Elige la propuesta (como la manda el navegador) y ubica, sin digitalizar de nuevo.
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(entradas, cuadricula=propuesta)), encoding="utf-8")
+    capsys.readouterr()
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    assert g["metodo"] == "cuadricula"
+    assert not any("Sin las líneas detectadas" in a or "cambiaron" in a for a in g["avisos"])
+    assert abs(abs(g["parametros"]["rotacion_grados"]) - 0.4) < 0.05
+    t = Transformacion.desde_dict(g)
+    for x, y in ((0, 0), (1560, 0), (1560, 1026), (0, 1026)):
+        e, n = t.a_utm(float(x), float(y))
+        assert math.hypot(e - verdad(x, y)[0], n - verdad(x, y)[1]) < 1.0
+
+
+def test_otra_cuadricula_que_la_detectada_no_usa_sus_rectas(tmp_path, monkeypatch):
+    """Las rectas guardadas son de la propuesta: si la elegida tiene otras líneas (aunque
+    sean tantas como ellas), no se usan, y se dice que hay que leer el plano de nuevo."""
+    entradas, propuesta, _ = _plano_con_cuadricula(tmp_path)
+    _lector_que_propone(monkeypatch, propuesta)
+    assert main(["digitalizar", str(tmp_path)]) == 0
+    corrida = dict(propuesta, verticales=[dict(propuesta["verticales"][0], x=200.0), propuesta["verticales"][1]])
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(entradas, cuadricula=corrida)), encoding="utf-8")
+
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    assert any("cambiaron desde la última lectura" in a for a in g["avisos"])

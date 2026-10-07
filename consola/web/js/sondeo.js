@@ -38,7 +38,7 @@ export function trasFalloDeSondeo(error, fallos = 0) {
 /** Lo que se le dice a la persona cuando su trabajo se perdió con el servidor. */
 export function textoInterrumpido(clave, tipo) {
   if (String(clave).startsWith('kmz:') || tipo === 'digitalizar-plano') {
-    return 'La digitalización se interrumpió (el servidor se reinició). Vuelve a intentarlo.';
+    return 'La lectura del plano se interrumpió (el servidor se reinició). Vuelve a intentarlo.';
   }
   const nombre = { construir: 'La construcción', publicar: 'La publicación' }[tipo] ?? 'El trabajo';
   return `${nombre} se interrumpió (el servidor se reinició). Vuelve a intentarlo.`;

@@ -47,7 +47,7 @@ test('otros errores se avisan y se deja de sondear, como antes', () => {
 
 test('el texto dice qué se interrumpió', () => {
   const kmz = textoInterrumpido('kmz:rapel', 'digitalizar-plano');
-  assert.equal(kmz, 'La digitalización se interrumpió (el servidor se reinició). Vuelve a intentarlo.');
+  assert.equal(kmz, 'La lectura del plano se interrumpió (el servidor se reinició). Vuelve a intentarlo.');
   assert.equal(textoInterrumpido('kmz:rapel', undefined), kmz);
   assert.match(textoInterrumpido('hidango', 'construir'), /^La construcción se interrumpió/);
   assert.match(textoInterrumpido('hidango', 'publicar'), /^La publicación se interrumpió/);

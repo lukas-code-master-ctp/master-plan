@@ -109,6 +109,35 @@ def test_esperados_del_cuadro_sin_el_resto_de_la_propiedad():
     assert numeros.huecos(sin_el_8 + ["8-08"], numeros.esperados(cuadro), junto=[]) == ["8-07", "8-16"]
 
 
+def test_el_resto_de_la_propiedad_en_el_cuadro():
+    cuadro = {"8-01": 5000.0, "8-02": 5000.0, "8": 760000.0}
+    assert numeros.resto(cuadro) == "8"
+    assert numeros.resto({"8-01": 5000.0, "8-02": 5000.0}) is None
+    assert numeros.resto({"1": 5000.0, "8": 5000.0}) is None             # sin sectores, el 8 es un lote
+    # La fila que dice "resto" sin número.
+    assert numeros.resto({"1": 5000.0, "2": 5000.0, "Resto": 90000.0}) == "Resto"
+    assert numeros.esperados({"1": 5000.0, "Resto": 90000.0}) == ["1"]
+    assert numeros.es_resto("Resto") and numeros.es_resto("RESTO DE LA PROPIEDAD")
+    assert not numeros.es_resto("8") and not numeros.es_resto("8-08")
+
+
+def test_el_resto_llamado_resto_tiene_el_area_de_la_fila_del_resto():
+    from pipeline.plano.digitalizar import _area_oficial
+    cuadro = {"8-01": 5000.0, "8": 760000.0}
+    assert _area_oficial(cuadro, "Resto") == 760000.0
+    assert _area_oficial(cuadro, "8") == 760000.0 and _area_oficial(cuadro, "8-1") == 5000.0
+    assert _area_oficial({"8-01": 5000.0}, "Resto") is None
+
+
+def test_el_resto_se_compara_solo_igual():
+    """"8" y "8-08" son el mismo lote para quien marca solo el número dentro del sector,
+    pero no si el 8 es el resto de la propiedad."""
+    assert numeros.mismo_lote("8", "8-08")
+    assert not numeros.mismo_lote("8", "8-08", restos=["8"])
+    assert numeros.mismo_lote("8", "8", restos=["8"])
+    assert numeros.mismo_lote("6", "10-6", restos=["8"])                 # lo demás, como siempre
+
+
 def test_huecos_con_el_cuadro_de_superficies():
     # El cuadro trae el último (el 16), que la serie sola no ve; "16" sin sector va con la serie.
     cuadro = [str(n) for n in range(1, 17)]

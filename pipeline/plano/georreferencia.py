@@ -189,7 +189,7 @@ def por_anclas(anclas, homografia=None, epsg: int | None = None) -> Transformaci
     """
     anclas = list(anclas)
     if len(anclas) < 2:
-        raise ValueError("hacen falta al menos 2 anclas")
+        raise ValueError("hacen falta al menos 2 puntos")
     lon = np.array([float(a["lon"]) for a in anclas])
     lat = np.array([float(a["lat"]) for a in anclas])
     epsg = int(epsg or huso(float(lon.mean()), float(lat.mean())))
@@ -198,7 +198,7 @@ def por_anclas(anclas, homografia=None, epsg: int | None = None) -> Transformaci
     src = np.c_[trabajo[:, 0], -trabajo[:, 1]]          # y hacia arriba: sin reflejo
     dst = np.c_[a_utm(lon, lat, epsg)]
     if np.ptp(src, axis=0).max() < 1e-9:
-        raise ValueError("las anclas están todas en el mismo punto del plano")
+        raise ValueError("los puntos están todos en el mismo lugar del plano")
     a, b, resto = _similitud(src, dst)
     n = len(anclas)
 
@@ -223,18 +223,21 @@ def por_anclas(anclas, homografia=None, epsg: int | None = None) -> Transformaci
     avisos = []
     if n == 2:
         control = "sin control"
-        avisos.append("Con 2 anclas no hay control: un ancla mal marcada no se nota. Marca una tercera y una cuarta.")
+        avisos.append("Con 2 puntos no se puede comprobar que calce: un punto mal marcado no se nota."
+                      " Marca un tercero y un cuarto.")
     elif n == 3 and atipicas.any():
         # Con 3 anclas, dos de ellas fijan la similitud exacta y la tercera es el único
         # control: un error en cualquiera reparte el desacuerdo entre las tres.
         control = "inconsistente"
-        avisos.append("Las 3 anclas no calzan entre sí y con 3 no se sabe cuál está mal:"
-                      " revisa las marcadas o marca una cuarta.")
+        avisos.append("Los 3 puntos no calzan entre sí y con 3 no se sabe cuál está mal:"
+                      " revisa los marcados o marca un cuarto.")
     else:
         control = "atipicas" if atipicas.any() else "ok"
         if atipicas.any():
-            avisos.append("Anclas atípicas (quítalas o vuelve a marcarlas): "
-                          + ", ".join(_nombre(anclas[i], i) for i in np.flatnonzero(atipicas)))
+            nombres = [_nombre(anclas[i], i) for i in np.flatnonzero(atipicas)]
+            avisos.append(f"El punto {nombres[0]} no calza con los demás: márcalo de nuevo o quítalo."
+                          if len(nombres) == 1 else
+                          f"Los puntos {', '.join(nombres)} no calzan con los demás: márcalos de nuevo o quítalos.")
 
     filas = []
     for i, ancla in enumerate(anclas):
@@ -304,6 +307,24 @@ def _lineas(marcas: dict) -> list[_Linea]:
     return salida
 
 
+def _hay_par(lineas: list[_Linea]) -> bool:
+    """¿Hay dos líneas con posición y valor distintos? Es lo mínimo para una progresión."""
+    return any(abs(a.posicion - b.posicion) >= 1e-6 and a.valor != b.valor for a, b in combinations(lineas, 2))
+
+
+def cuadricula_suficiente(marcas: dict | None) -> bool:
+    """¿Alcanza esta cuadrícula para intentar `por_cuadricula`? Al menos dos líneas con
+    valores distintos en cada dirección. La consola la usa para no ofrecer una
+    propuesta del lector que de partida no puede ubicar (p. ej. solo verticales)."""
+    if not isinstance(marcas, dict):
+        return False
+    try:
+        lineas = _lineas(marcas)
+    except (KeyError, TypeError, ValueError):
+        return False
+    return all(_hay_par([l for l in lineas if l.familia == f]) for f in ("verticales", "horizontales"))
+
+
 def _modelos(lineas: list[_Linea]):
     """Candidatos valor = s·posición + t, uno por par de líneas, con sus inliers."""
     pos = np.array([l.posicion for l in lineas])
@@ -326,9 +347,10 @@ def _modelos(lineas: list[_Linea]):
 def _progresion(v: list[_Linea], h: list[_Linea]):
     """Los inliers de cada familia. Gana el par de modelos con más líneas; a igualdad,
     el que da la misma escala en las dos direcciones (px cuadrados)."""
-    mv, mh = _modelos(v), _modelos(h)
-    if not mv or not mh:
+    # El mismo criterio que `cuadricula_suficiente`: con un par en cada familia hay modelos.
+    if not _hay_par(v) or not _hay_par(h):
         raise ValueError("la cuadrícula necesita al menos 2 líneas con valores distintos en cada dirección")
+    mv, mh = _modelos(v), _modelos(h)
     mejor = max(((a, b) for a in mv for b in mh),
                 key=lambda par: (par[0][0] + par[1][0], -abs(math.log(abs(par[0][1]) / abs(par[1][1])))))
     return mejor[0][2], mejor[1][2]
@@ -421,9 +443,7 @@ def por_cuadricula(marcas: dict, epsg: int = 32719, homografia=None) -> Transfor
                       rms_m=float(np.sqrt(np.mean(residuos ** 2))), maximo_m=float(residuos.max()),
                       ejes=ejes)
     if abs(parametros["escala_x_m_px"] / parametros["escala_y_m_px"] - 1) > DIFERENCIA_ESCALA_MAX:
-        avisos.append(f"Las dos direcciones de la cuadrícula dan escalas distintas"
-                      f" ({parametros['escala_x_m_px']:.4f} y {parametros['escala_y_m_px']:.4f} m/px):"
-                      " revisa los valores leídos.")
+        avisos.append("Las dos direcciones de la cuadrícula no dan la misma escala: revisa los valores leídos.")
     informe = dict(lineas=[dict(familia=l.familia, valor=l.valor, posicion=round(l.posicion, 2), usada=l.usada,
                                 motivo=l.motivo) for l in lineas])
     return Transformacion("cuadricula", "afin", int(epsg), afin @ hm, parametros, cuadricula=informe, avisos=avisos)
@@ -494,18 +514,33 @@ def escala_contra_cuadro(digitalizado: dict, t: Transformacion) -> dict | None:
 
 
 def _aviso_escala(escala: dict, metodo: str) -> str:
+    """En palabras de la loteadora: cuánto más chicos o grandes salen los lotes que en el
+    cuadro, y qué revisar. `area_pct` y `escala_pct` tienen el mismo signo (la escala es
+    la raíz del cociente de áreas): negativos, los puntos dejan el plano más chico y los
+    lotes miden menos que lo oficial."""
     coma = lambda v: f"{abs(v):.1f}".replace(".", ",")
     area, factor = escala["area_pct"], escala["escala_pct"]
-    origen = "las anclas" if metodo == "anclas" else "la cuadrícula"
-    revisar = ("Revisa las anclas: márcalas en puntos que se vean igual en el plano y en la imagen"
-               " (esquinas de deslinde, cruces de caminos), lo más separadas posible."
+    revisar = ("Revisa los puntos: márcalos en lugares que se vean igual en el plano y en la imagen"
+               " (esquinas de deslinde, cruces de caminos), lo más separados posible."
                if metodo == "anclas" else "Revisa los valores de la cuadrícula.")
-    return (f"Los lotes miden un {coma(area)} % {'menos' if area < 0 else 'más'} que en el cuadro de superficies"
-            f" (mediana de {escala['lotes']} lotes): la escala de {origen} parece {coma(factor)} %"
-            f" {'menor' if factor < 0 else 'mayor'} que la del plano. {revisar}")
+    return (f"Los lotes salen un {coma(area)} % {'más chicos' if area < 0 else 'más grandes'} que en el"
+            f" cuadro de superficies (sus lados, un {coma(factor)} % {'más cortos' if factor < 0 else 'más largos'})."
+            f" {revisar}")
 
 
 # --- el paso completo ----------------------------------------------------------
+
+def _misma_linea(detectada: dict, elegida: dict, eje: str) -> bool:
+    """¿La recta detectada salió de esta línea? Las detectadas guardan la posición de la
+    que partieron (desde que `digitalizar` busca también las de la cuadrícula propuesta,
+    que puede no ser la que se eligió); las de antes no, y se aceptan por la cantidad."""
+    if detectada.get(eje) is None:
+        return True
+    try:
+        return abs(float(detectada[eje]) - float(elegida.get(eje))) < 0.05
+    except (TypeError, ValueError):
+        return False
+
 
 def _marcas(entradas: dict, detectada: dict | None, avisos: list) -> dict:
     """Las rectas que detectó `digitalizar`, con los valores de `entradas.json` (la
@@ -514,11 +549,13 @@ def _marcas(entradas: dict, detectada: dict | None, avisos: list) -> dict:
     if not entradas:
         return {}
     familias = ("verticales", "horizontales")
-    if detectada and all(len(detectada.get(f) or []) == len(entradas.get(f) or []) for f in familias):
+    if detectada and all(len(detectada.get(f) or []) == len(entradas.get(f) or [])
+                         and all(_misma_linea(d, e, eje) for d, e in zip(detectada.get(f) or [], entradas.get(f) or []))
+                         for f, eje in zip(familias, ("x", "y"))):
         return {f: [dict(d, valor=e.get("valor")) for d, e in zip(detectada[f], entradas[f])] for f in familias}
     if detectada:
-        avisos.append("Las líneas de la cuadrícula cambiaron desde la digitalización: se usa su posición"
-                      " aproximada. Digitaliza de nuevo para medir el giro de la hoja.")
+        avisos.append("Las líneas de la cuadrícula cambiaron desde la última lectura: se usa su posición"
+                      " aproximada. Lee el plano de nuevo para medir el giro de la hoja.")
     return {f: list(entradas.get(f) or []) for f in familias}
 
 
@@ -530,7 +567,7 @@ def georreferenciar(carpeta: Path, avance=print) -> Transformacion:
     entradas = leer_entradas(carpeta)
     ruta = carpeta / DIGITALIZADO
     if not ruta.is_file():
-        raise FileNotFoundError(f"falta {DIGITALIZADO}: primero hay que digitalizar el plano")
+        raise FileNotFoundError(f"primero hay que leer el plano (falta {DIGITALIZADO})")
     digitalizado = json.loads(ruta.read_text(encoding="utf-8"))
     trabajo = digitalizado.get("trabajo") or {}
     # La homografía solo cambia algo si la foto se rectificó; en un recorte es una
@@ -553,7 +590,7 @@ def georreferenciar(carpeta: Path, avance=print) -> Transformacion:
             t = por_cuadricula(marcas, epsg, homografia)
         except ValueError as e:
             error_cuadricula = str(e)
-            avisos.append(f"No se pudo usar la cuadrícula ({e}); se usan las anclas.")
+            avisos.append(f"No se pudo usar la cuadrícula ({e}); se usan los puntos.")
             avance(f"Cuadrícula: no sirve ({e})")
         else:
             p = t.parametros
@@ -565,16 +602,17 @@ def georreferenciar(carpeta: Path, avance=print) -> Transformacion:
                     avance(f"Datum {c['datum']} {c['huso']}: anclas a {c['distancia_rms_m']:.1f} m de la cuadrícula")
                 if datum["elegido"] != t.epsg and datum["concluyente"] and not cuadricula.get("epsg"):
                     t = t.con_epsg(datum["elegido"])
-                    t.avisos.append(f"Las anclas indican que la cuadrícula está en {datum['datum']} huso"
-                                    f" {datum['huso']} (EPSG:{datum['elegido']}).")
+                    t.avisos.append(f"Según los puntos, la cuadrícula impresa está en {datum['datum']} huso"
+                                    f" {datum['huso']}: se ubicó con ese sistema.")
                 elif not datum["concluyente"]:
-                    t.avisos.append("Las anclas no distinguen el datum de la cuadrícula: se queda"
-                                    f" EPSG:{t.epsg}. Revisa las anclas.")
+                    t.avisos.append("Con estos puntos no se sabe en qué sistema está impresa la cuadrícula:"
+                                    " revisa los puntos o suma otro.")
             elif not cuadricula.get("epsg"):
-                t.avisos.append(f"Sin anclas no se comprueba el datum: se supone EPSG:{t.epsg} (WGS84).")
+                t.avisos.append("Sin puntos no se comprueba que la cuadrícula calce con el mapa:"
+                                " puedes sumar puntos para comprobarlo.")
     if t is None:
         if len(anclas) < 2:
-            raise ValueError("para ubicar el plano hacen falta al menos 2 anclas o la cuadrícula con sus valores"
+            raise ValueError("para ubicar el plano hacen falta al menos 2 puntos o la cuadrícula con sus valores"
                              + (f" (la cuadrícula no sirve: {error_cuadricula})" if error_cuadricula else ""))
         t = por_anclas(anclas, homografia)
         p = t.parametros

@@ -125,6 +125,30 @@ def test_combinar_compara_numeros_normalizados():
     assert [s["numero"] for s in salida] == ["8-1", "6", "8-02"]
 
 
+def test_combinar_el_resto_que_numero_ella_no_borra_el_lote_de_su_mismo_numero():
+    """Caminos de Rapel: ella incluye el resto de la propiedad como "8" (la fila del cuadro).
+    El "8-08" que leyó el lector sigue: el 8 es su número dentro del sector, pero el resto
+    no es ese lote. Y con el cuadro sin el resto, el "6-08" se corrige a "8-08"."""
+    lector = [Rotulo("6-08", 100, 100, 0.5, 48), Rotulo("8-01", 300, 100, 0.4, 40)]
+    oficiales = [f"8-{n:02d}" for n in range(1, 17)]
+    salida = rotulos.combinar([("8", 900, 900)], lector, radio=20, oficiales=oficiales, restos=["8"])
+    assert [s["numero"] for s in salida] == ["8", "8-08", "8-01"]
+    # Sin decir que el 8 es el resto, se comparaba como el mismo lote y el 8-08 se perdía.
+    sin = rotulos.combinar([("8", 900, 900)], lector, radio=20, oficiales=oficiales)
+    assert [s["numero"] for s in sin] == ["8", "8-01"]
+
+
+def test_combinar_el_lector_no_numera_el_resto_de_la_propiedad():
+    """Si el resto va al KMZ lo decide ella: el "8" que el lector lee en el resto (Caminos
+    de Rapel, apoyo 4) no es semilla, y Numerar le pregunta."""
+    lector = [Rotulo("8", 900, 900, 0.15, 4), Rotulo("8-01", 300, 100, 0.4, 40)]
+    oficiales = [f"8-{n:02d}" for n in range(1, 17)]
+    salida = rotulos.combinar([], lector, radio=20, oficiales=oficiales, restos=["8"])
+    assert [s["numero"] for s in salida] == ["8-01"]
+    # Sin cuadro con fila de resto, el 8 es un número como otro.
+    assert [s["numero"] for s in rotulos.combinar([], lector, radio=20)] == ["8-01", "8"]
+
+
 def test_combinar_sin_semillas_de_la_loteadora_toma_las_del_lector():
     lector = [Rotulo("1", 100, 100, 0.5, 48), Rotulo("2", 300, 100, 0.01, 1)]
     assert [s["numero"] for s in rotulos.combinar([], lector, radio=20)] == ["1"]
@@ -175,15 +199,24 @@ def test_areas_de_filas_usa_la_ultima_columna_y_decide_la_unidad_por_columna():
 
 def test_cuadro_como_el_de_caminos_de_rapel():
     """LOTE | SUP. SERVIDUMBRE | TOTAL, con el número como está impreso ("8-01") y la unidad
-    pegada. El total es la columna de más a la derecha; la del medio no cuenta. El resto
-    de la propiedad no empieza con un número de lote en la línea que trae las áreas (el
-    "8" va solo en la línea de arriba): no es fila. Sin la "m" en la lista blanca,
-    Tesseract leía "5.0002": eso no tiene forma de área y no es fila."""
+    pegada. El total es la columna de más a la derecha; la del medio no cuenta. La fila del
+    resto de la propiedad es alta: el "8" va solo en una línea y las áreas en la de abajo,
+    sin número; se lee como una fila del "8". La línea siguiente, ya sin número arriba, no
+    es fila. Sin la "m" en la lista blanca, Tesseract leía "5.0002": eso no tiene forma de
+    área y no es fila."""
     texto = (".0\n8-01 1.342m2 5.000m2\n8-02 435 m2 5.000 m2\n8-02 4352 5.0002\n8-03 456m2 5.000m2\n"
              "8\ns 0.000m2 760.000m2\n0sa 0.000m2 760.000m2\n")
     filas = rotulos.filas_cuadro(texto)
-    assert filas == [["8-01", "1.342m2", "5.000m2"], ["8-02", "435 m2", "5.000 m2"], ["8-03", "456m2", "5.000m2"]]
-    assert rotulos.areas_de_filas(filas) == {"8-01": 5000.0, "8-02": 5000.0, "8-03": 5000.0}
+    assert filas == [["8-01", "1.342m2", "5.000m2"], ["8-02", "435 m2", "5.000 m2"], ["8-03", "456m2", "5.000m2"],
+                     ["8", "0.000m2", "760.000m2"]]
+    assert rotulos.areas_de_filas(filas) == {"8-01": 5000.0, "8-02": 5000.0, "8-03": 5000.0, "8": 760000.0}
+    # Con las palabras en medio ("o resto", "de la", "propiedad"), igual.
+    assert rotulos.filas_cuadro("8\no resto\nde la\npropiedad 0.000 m2 760.000 m2") \
+        == [["8", "0.000 m2", "760.000 m2"]]
+    # Sin número, la fila que dice "resto" va como "Resto".
+    assert rotulos.areas_de_filas(rotulos.filas_cuadro("Resto de la propiedad 760.000 m2")) == {"Resto": 760000.0}
+    # Un número solo que no sigue con áreas no se pega a la fila de otro lote.
+    assert [f[0] for f in rotulos.filas_cuadro("8\n8-04 474m2 5.000m2")] == ["8-04"]
     # Si una pasada lee el resto en una sola línea, queda en el cuadro con su número.
     assert rotulos.areas_de_filas(rotulos.filas_cuadro("8 o resto 0.000 m2 760.000 m2")) == {"8": 760000.0}
     # La unidad de la celda manda sobre la de la columna: "5,00hás" son 5 ha aunque las

@@ -283,7 +283,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                   + [clave_kmz(k.slug) for k in kmzs.para(sesion).listar()])
         otros = [c for c in claves if c != clave and trabajos.corriendo(c)]
         if len(otros) >= registro.limites.construcciones:
-            raise HTTPException(429, "ya tienes otro master construyendo o un KMZ digitalizando;"
+            raise HTTPException(429, "ya tienes otro master construyendo o un KMZ leyendo su plano;"
                                      " lanza este cuando termine ese")
 
     def lanzar(proyecto: Proyecto, accion: str, comando: list[str], al_terminar=None) -> dict:
@@ -522,7 +522,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def kmz_libre(slug: str) -> None:
         """Lo que reescribe el plano o el KMZ, o lo borra, no se hace mientras se digitaliza."""
         if trabajos.corriendo(clave_kmz(slug)):
-            raise HTTPException(409, "este KMZ se está digitalizando; espera a que termine")
+            raise HTTPException(409, "se está leyendo el plano de este KMZ; espera a que termine")
 
     def kmz_json(mis: VistaKmz, guardado) -> dict:
         ultimo = trabajos.ultimo(clave_kmz(guardado.slug))
@@ -599,13 +599,14 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def digitalizar_kmz(slug: str, mis: VistaKmz = Depends(mis_kmz),
                         yo: Sesion = Depends(quien)) -> dict:
         plano = mis.plano(slug)
-        huella = plano.para_digitalizar()
+        entradas = plano.para_digitalizar()
         una_a_la_vez(yo, clave_kmz(slug))
 
         def anotar(trabajo) -> None:
-            # Con qué entradas quedó: si cambian, el paso se ve atrasado.
+            # Con qué entradas quedó: si cambian, el paso se ve atrasado. La huella se
+            # saca al terminar porque depende de la cuadrícula que propuso el lector.
             if trabajo.estado == "listo":
-                plano.anotar("digitalizado", huella)
+                plano.anotar("digitalizado", plano.huella_al_terminar(entradas))
 
         try:
             identificador = trabajos.lanzar(clave_kmz(slug), "digitalizar-plano",
@@ -619,7 +620,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     async def georreferenciar_kmz(slug: str, mis: VistaKmz = Depends(mis_kmz)) -> dict:
         plano = mis.plano(slug)
         if trabajos.corriendo(clave_kmz(slug)):
-            raise HTTPException(409, "se está digitalizando; ubícalo cuando termine")
+            raise HTTPException(409, "se está leyendo el plano; ubícalo cuando termine")
         return await run_in_threadpool(plano.georreferenciar)
 
     @app.get("/api/kmz/{slug}/lotes")

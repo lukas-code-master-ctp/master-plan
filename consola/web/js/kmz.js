@@ -11,10 +11,10 @@
  */
 import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
-  anclaDesde, claveLote, dudosos, duplicados, empujar, girarEntradas, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo,
-  nombreDelSistema, ordenarEsquinas, PASOS,
-  pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, puedeSeguirANumerar, puntoDeRotulo, puntoEnPoligono, sesgoDeEscala,
-  resumenRevision, siguienteNombre, sinNumero, sugerencias, textoHuecos, verticesDe,
+  anclaDesde, aplicarFuera, aplicarNumero, claveLote, conSemillas, decidirResto, devolverAlKmz, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
+  herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, detalleUbicacion, filaDelPunto, numerosQueFaltan,
+  ordenarEsquinas, PASOS, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puntoDeRotulo,
+  puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, siguienteNombre, sinNumero, sugerencias, textoSemaforo, verticesDe,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
 import { abrirNombre, abrirUsarKmz, descargaDe, textoDeCreado } from './kmzs.js';
@@ -43,6 +43,8 @@ let paso = 'subir';
 let herramienta = 'mover';
 let pendiente = null;         // ancla a medias: {nombre, x, y} en el plano, falta el mapa
 let rehacer = null;           // el nombre del ancla que se está volviendo a marcar
+let avisoCuadricula = '';     // la cuadrícula elegida no ubicó y se quitó: se dice en Ubicar
+let cuadriculaNoSirve = false; // y no se vuelve a ofrecer mientras se esté en este KMZ
 let numerando = null;         // {x, y, anillos}: el lote al que se le escribe el número
 let lienzo = null;
 let mapa = null;
@@ -51,6 +53,11 @@ let arrastrar = false;
 let corrigiendo = false;      // Revisar: los vértices se arrastran o se borran a mano
 let corrigiendoYa = false;    // una corrección sin respuesta: los vértices del mapa están viejos
 let esquinasMarcando = [];    // las esquinas del marco mientras faltan: el servidor pide 4 o ninguna
+let ubicandoYa = false;       // se está calculando la ubicación: "Seguir" espera eso, no más puntos
+let restoCentrado = null;     // dónde ya se centró el plano para preguntar por el resto (una vez)
+let pasoPintado = null;       // el paso de la última pintada: la herramienta de Marcar se elige al entrar
+let lanzando = null;          // el KMZ (slug) cuya lectura se está pidiendo: un segundo clic no lanza otra
+let falloAlPedir = '';        // por qué no se pudo lanzar la lectura: queda escrito en el paso 3, sobre el botón
 
 // --- guardar ---------------------------------------------------------------------------
 
@@ -59,6 +66,7 @@ let temporizador = 0;
 let enVuelo = null;
 let ubicarLuego = 0;
 let vaciado = Promise.resolve();  // el guardado pendiente al dejar un KMZ: se espera antes de releer
+let lotesAtrasados = false;   // lo guardado cambia los lotes del servidor sin releer (lo dejado fuera)
 
 function cambiar(nuevas) {
   entradas = nuevas;
@@ -77,6 +85,8 @@ async function guardar() {
   if (!sucio || !slug) return;
   sucio = false;
   const mias = slug;
+  const recargar = lotesAtrasados;
+  lotesAtrasados = false;
   $('#kmz-guardado').textContent = 'Guardando…';
   enVuelo = (async () => {
     try {
@@ -84,6 +94,9 @@ async function guardar() {
       if (mias !== slug) return;
       if (!sucio) entradas = normalizadas;
       plano = await pedir(api(mias));
+      // Lo dejado fuera no relee el plano, pero cambia lo que cuentan los lotes en el mapa
+      // de Revisar: se traen de nuevo. Los del plano ya se ven así desde el clic.
+      if (recargar && mias === slug) await cargarLotes();
       $('#kmz-guardado').textContent = 'Guardado';
     } catch (error) {
       $('#kmz-guardado').textContent = 'No se guardó';
@@ -92,6 +105,63 @@ async function guardar() {
   })();
   try { await enVuelo; } finally { enVuelo = null; }
   pintar();
+}
+
+// --- releer solo --------------------------------------------------------------------------
+//
+// Al cambiar un número en Numerar, los lotes se separan de nuevo con él (la semilla manda
+// en el reparto), así que el digitalizado queda atrasado. En vez de pedirle que vuelva a
+// digitalizar, se relee el plano solo, un momento después del último cambio: una ráfaga
+// de números es una sola lectura. El cambio ya se ve al tiro (`aplicarNumero`); esto es
+// para que los lotes queden bien separados y "Seguir" se habilite.
+
+let releerLuego = 0;          // el temporizador: se reinicia con cada cambio
+let releyendo = null;         // el KMZ (slug) cuya relectura sola se está lanzando o corre
+let releerFallo = false;      // la relectura sola falló: no se insiste hasta el próximo cambio
+const RELEER_MS = 1500;
+
+const trabajando = () => Boolean(plano?.trabajo && !plano.trabajo.terminado);
+/** "Seguir" en Numerar espera: hay una relectura por lanzar, corriendo o un cambio sin guardar. */
+const actualizando = () => Boolean(releerLuego) || releyendo === slug || trabajando() || (paso === 'numerar' && sucio);
+
+function programarRelectura() {
+  clearTimeout(releerLuego);
+  releerFallo = false;
+  const mio = slug;
+  releerLuego = setTimeout(() => {
+    releerLuego = 0;
+    // Si salió de Numerar no se lee a sus espaldas: al volver, `releerSiHaceFalta` la programa.
+    if (paso !== 'numerar') return;
+    releerSolo(mio).catch((error) => {
+      if (mio === slug) {
+        releyendo = null;
+        releerFallo = true;
+        pintarPanel();
+      }
+      avisar(error.message);
+    });
+  }, RELEER_MS);
+}
+
+/** En Numerar, con el digitalizado atrasado y nada en camino, se programa la relectura. */
+function releerSiHaceFalta() {
+  const d = plano?.digitalizado;
+  if (paso !== 'numerar' || !d || d.vigente || releerLuego || releyendo === slug || releerFallo || trabajando()) return;
+  programarRelectura();
+}
+
+async function releerSolo(mio) {
+  if (mio !== slug) return;
+  // Se marca antes de guardar: el guardado repinta y no debe programar otra.
+  releyendo = mio;
+  await guardar();
+  // Con un trabajo corriendo no se lanza otro: al terminar ese, si sigue atrasado, se relanza.
+  if (mio !== slug || trabajando() || !plano?.digitalizado || plano.digitalizado.vigente) {
+    if (releyendo === mio) releyendo = null;
+    if (mio === slug) pintarPanel();
+    return;
+  }
+  await digitalizar({ solo: true });
 }
 
 // --- preparar --------------------------------------------------------------------------
@@ -128,7 +198,7 @@ export function prepararKmz(opciones) {
 
   $('#kmz-es-foto').addEventListener('change', (e) => {
     if (!e.target.checked && entradas.esquinas) cambiar({ ...entradas, esquinas: null, marco_mm: null });
-    if (!e.target.checked && herramienta === 'esquinas') elegirHerramienta('mover');
+    if (!e.target.checked && herramienta === 'esquinas') elegirHerramienta(herramientaAlEntrar(entradas, Boolean(plano?.digitalizado)));
     pintarPanel();
   });
   $('#kmz-lector').addEventListener('change', (e) => cambiar({ ...entradas, lector: e.target.checked }));
@@ -157,6 +227,9 @@ export function prepararKmz(opciones) {
     else if (numerando) { cerrarNumero(); e.preventDefault(); }
   });
 
+  // Al cambiar el ancho la cabecera puede envolver (pasos en dos líneas): se vuelve a medir.
+  window.addEventListener('resize', medirPanel);
+
   lienzo = new LienzoPlano($('#kmz-plano'), $('#kmz-lienzo'));
   lienzo.alDibujar = dibujar;
   lienzo.alTocar = tocarPlano;
@@ -175,6 +248,11 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
       .catch((error) => avisar(error.message));
   }
   slug = nuevoSlug;
+  // La relectura programada era del KMZ anterior.
+  clearTimeout(releerLuego);
+  releerLuego = 0;
+  releyendo = null;
+  releerFallo = false;
   corrigiendo = false;
   plano = null;
   entradas = VACIAS();
@@ -182,8 +260,13 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
   rasgosGeo = null;
   pendiente = null;
   rehacer = null;
+  avisoCuadricula = '';
+  cuadriculaNoSirve = false;
   sucio = false;
   esquinasMarcando = [];
+  restoCentrado = null;
+  pasoPintado = null;
+  falloAlPedir = '';
   cerrarNumero();
   $('#kmz-guardado').textContent = '';
   $('#kmz-registro').replaceChildren();
@@ -234,8 +317,13 @@ async function cargarLotes() {
   rasgosGeo = null;
   if (plano?.digitalizado) {
     const px = await pedir(`${api(mio)}/lotes?en=px`);
-    rasgos = px.features;
-    for (const r of rasgos) r.rotulo = puntoDeRotulo(r);
+    for (const r of px.features) r.rotulo = puntoDeRotulo(r);
+    // Si se está releyendo el plano, los números escritos desde la última lectura siguen
+    // viéndose puestos: si no, el lote recién numerado volvería a rojo hasta que termine.
+    // También con un número escrito que aún no llega al servidor (`sucio` o guardándose):
+    // para el servidor los lotes siguen al día, pero no tienen ese número.
+    const alDia = plano.digitalizado.vigente && !sucio && !enVuelo;
+    rasgos = alDia ? px.features : conSemillas(px.features, entradas.semillas);
   }
   if (plano?.georreferencia) {
     rasgosGeo = await pedir(`${api(mio)}/lotes?en=lonlat`);
@@ -277,19 +365,27 @@ async function manejar(nodo) {
   if (dataset.confirmar) return confirmarSugerencia(Number(dataset.confirmar));
 
   const accion = dataset.accion;
+  // "Seguir" de Marcar no solo abre el paso 3: lee el plano, que es lo único que se hace ahí.
+  if (accion === 'kmz-siguiente' && paso === 'marcar') return digitalizar({ desdeMarcar: true });
   if (accion === 'kmz-siguiente') return irAlPaso(PASOS[PASOS.indexOf(paso) + 1]);
   if (accion === 'kmz-girar-izq') return girar(-90);
   if (accion === 'kmz-girar-der') return girar(90);
   if (accion === 'kmz-acercar') return lienzo.acercar(1.5);
   if (accion === 'kmz-alejar') return lienzo.acercar(1 / 1.5);
   if (accion === 'kmz-ajustar') return lienzo.ajustar();
-  if (accion === 'kmz-quitar-dibujo') return cambiar({ ...entradas, rectangulo: null });
+  if (accion === 'kmz-quitar-dibujo') {
+    cambiar({ ...entradas, rectangulo: null });
+    // Sin dibujo encerrado, lo que toca es encerrarlo otra vez.
+    return elegirHerramienta('dibujo');
+  }
   if (accion === 'kmz-borrar-esquinas') {
     esquinasMarcando = [];
     return cambiar({ ...entradas, esquinas: null });
   }
   if (accion === 'kmz-digitalizar' || accion === 'kmz-redigitalizar') return digitalizar();
   if (accion === 'kmz-siguiente-sin-numero') return siguienteSinNumero();
+  if (accion === 'kmz-resto-incluir') return elegirResto(true);
+  if (accion === 'kmz-resto-fuera') return elegirResto(false);
   if (accion === 'kmz-ir') return irA();
   if (accion === 'kmz-usar-coordenadas') return usarCoordenadas();
   if (accion === 'kmz-cancelar-ancla') return cancelarAncla();
@@ -313,6 +409,7 @@ async function manejar(nodo) {
   if (accion === 'kmz-deshacer') return corregir({ accion: 'deshacer' });
   if (accion === 'kmz-georreferenciar') return ubicar();
   if (accion === 'kmz-crear') return crearKmz();
+  if (accion === 'kmz-volver-ubicar') return irAlPaso('ubicar');
   if (accion === 'kmz-renombrar') return renombrar();
   if (accion === 'kmz-usar') return usar();
   return undefined;
@@ -333,7 +430,7 @@ async function irAlPaso(destino) {
 
 function subirPdf(archivo) {
   if (plano?.pdf && (plano.entradas || plano.digitalizado)
-    && !confirm('Subir otro PDF borra lo marcado y lo digitalizado del plano actual. ¿Seguir?')) {
+    && !confirm('Subir otro PDF borra lo marcado y lo leído del plano actual. ¿Seguir?')) {
     return Promise.resolve();
   }
   const cuerpo = new FormData();
@@ -412,7 +509,10 @@ function elegirHerramienta(nombre) {
 function rectangulo(rect) {
   if (paso !== 'marcar') return;
   const nuevas = marcarRectangulo(entradas, herramienta, rect);
-  if (nuevas !== entradas) cambiar(nuevas);
+  if (nuevas === entradas) return;
+  const despues = herramientaTrasRectangulo(herramienta, entradas, nuevas);
+  cambiar(nuevas);
+  if (despues !== herramienta) elegirHerramienta(despues);
 }
 
 function tocarPlano(x, y) {
@@ -455,34 +555,83 @@ function escuchar() {
   });
 }
 
-async function digitalizar() {
-  if (!entradas.rectangulo
-    && !confirm('No encerraste el dibujo: se va a digitalizar la página entera, con cuadros y cajetín. ¿Seguir?')) return;
-  await guardar();
-  estado.registros.set(clave(), []);
-  // La tarjeta aparece al tiro, en "Abriendo el plano", sin esperar la primera línea.
-  estado.trabajos.set(clave(), { accion: 'digitalizar-plano', estado: 'corriendo', terminado: false });
-  pintarRegistro();
-  escuchar();
-  let id;
+/**
+ * Con `solo`, es la relectura de Numerar: sin preguntar y sin cambiar de paso. Si no, se
+ * abre el paso 3 antes de pedirla, con el escáner ya corriendo. Con `desdeMarcar` ("Seguir"
+ * de Marcar), una lectura al día o ya en camino no se repite: solo se va a mirarla.
+ */
+async function digitalizar({ solo = false, desdeMarcar = false } = {}) {
+  const mio = slug;
+  // Un doble clic, o "Seguir" y el botón del paso 3 seguidos: la primera ya se está pidiendo.
+  if (!solo && lanzando === mio) return;
+  if (!solo && !entradas.rectangulo
+    && !confirm('No encerraste el dibujo: se va a leer la página entera, con cuadros y cajetín. ¿Seguir?')) return;
+  if (!solo) lanzando = mio;
   try {
-    ({ id } = await pedir(`${api()}/digitalizar`, json({})));
-  } catch (error) {
-    // No se lanzó (otro trabajo corriendo, p. ej.): la tarjeta no puede quedar escaneando.
-    estado.trabajos.delete(clave());
-    pintarRegistro();
-    throw error;
+    await guardar();
+    if (mio !== slug) return;
+    if (!solo) {
+      // La relectura sola de Numerar o una lectura que ya corre: lanzar otra la choca en el
+      // servidor. Leído con lo mismo que está marcado (volvió a Marcar a mirar), no hay qué leer.
+      const enCamino = trabajando() || releyendo === mio;
+      if (enCamino || (desdeMarcar && plano?.digitalizado?.vigente)) {
+        await irAlPaso('digitalizar');
+        return;
+      }
+    }
+    // Cualquier lectura que se lanza, también la relectura sola de Numerar, deja viejo el
+    // "no se pudo empezar": si no, al volver al paso 3 seguiría ahí después de leer bien.
+    falloAlPedir = '';
+    estado.registros.set(clave(), []);
+    // La tarjeta aparece al tiro, en "Abriendo el plano", sin esperar la primera línea.
+    estado.trabajos.set(clave(), { accion: 'digitalizar-plano', estado: 'corriendo', terminado: false });
+    escuchar();
+    if (solo) pintarRegistro();
+    else await irAlPaso('digitalizar');
+    let id;
+    try {
+      ({ id } = await pedir(`${api(mio)}/digitalizar`, json({})));
+    } catch (error) {
+      // No se lanzó (otro trabajo corriendo, sin conexión): la tarjeta no puede quedar
+      // escaneando. Queda el aviso y, en el paso 3, el botón para intentarlo de nuevo.
+      if (mio === slug) {
+        estado.trabajos.delete(clave());
+        pintarRegistro();
+        // El aviso general queda bajo la barra en el celular: en el paso 3 se dice junto al
+        // botón, y no se repite arriba.
+        if (!solo && paso === 'digitalizar') {
+          falloAlPedir = error.message;
+          return;
+        }
+      }
+      throw error;
+    }
+    if (mio !== slug) return;
+    plano = { ...plano, trabajo: { id, terminado: false } };
+    pintar();
+    seguir(clave(), id);
+    refrescar().catch(() => {});
+  } finally {
+    if (!solo && lanzando === mio) {
+      lanzando = null;
+      if (mio === slug) pintarPanel();
+    }
   }
-  paso = 'digitalizar';
-  plano = { ...plano, trabajo: { id, terminado: false } };
-  pintarPaso();
-  seguir(clave(), id);
-  refrescar().catch(() => {});
 }
 
 async function terminoDigitalizar(trabajo) {
+  const sola = releyendo === slug;
+  releyendo = null;
+  // Antes de cargar: `cargarTodo` repinta el paso y, con el fallo sin anotar, programaría
+  // otra relectura que vuelve a fallar. Una lectura que salió bien borra un fallo anterior.
+  if (trabajo.estado === 'listo') releerFallo = false;
+  else if (sola || paso === 'numerar') releerFallo = true;
   await cargarTodo();
-  if (trabajo.estado === 'listo') {
+  if (sola || paso === 'numerar') {
+    // La relectura de Numerar (o una que terminó mientras numeraba) no la saca de ahí.
+    pintar();
+    releerSiHaceFalta();
+  } else if (trabajo.estado === 'listo') {
     await irAlPaso(plano.digitalizado?.sin_numero || plano.digitalizado?.faltantes?.length || plano.digitalizado?.huecos?.length ? 'numerar' : 'ubicar');
   } else {
     pintarPaso();
@@ -550,14 +699,35 @@ function cerrarNumero() {
   lienzo?.redibujar();
 }
 
+/** Los números del cuadro de superficies, tal como los escribe el cuadro. */
+const numerosCuadro = () => plano?.digitalizado?.lector?.numeros_cuadro ?? [];
+
+/**
+ * Pone el número: en las semillas (lo que se guarda) y, en Numerar, también en los lotes
+ * que se ven, para que el lote pase a verde al tiro. Después se relee el plano solo.
+ */
+function ponerEnLote(numero, punto, anillos) {
+  const semillas = ponerNumero(entradas.semillas, numero, punto, anillos);
+  if (paso === 'numerar') {
+    // Donde quedó la semilla (si el lote ya tenía una, ahí): ahí va el rótulo.
+    const puesta = numero ? semillas.find((s) => s.numero === numero) : null;
+    if (puesta) rasgos = aplicarNumero(rasgos, numero, [puesta.x, puesta.y]);
+    programarRelectura();
+  }
+  // Con número, la parte vuelve al KMZ aunque ella la hubiera dejado fuera.
+  cambiar({ ...(numero ? devolverAlKmz(entradas, anillos) : entradas), semillas });
+}
+
 function escribirNumero(valor) {
   if (!numerando) return;
-  const limpio = valor.trim().replace(/^lote\s*/i, '');
+  // Como lo dice el cuadro: "8-8" queda "8-08", que es como sale en el KMZ.
+  const limpio = formaDelCuadro(valor, numerosCuadro());
   const otra = entradas.semillas.find((s) => claveLote(s.numero) === claveLote(limpio)
     && !(numerando.anillos && puntoEnPoligono(s.x, s.y, numerando.anillos)));
   if (limpio && otra && !confirm(`El ${limpio} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
-  cambiar({ ...entradas, semillas: ponerNumero(entradas.semillas, limpio, [numerando.x, numerando.y], numerando.anillos) });
+  const { x, y, anillos } = numerando;
   cerrarNumero();
+  ponerEnLote(limpio, [x, y], anillos);
   lienzo.canvas.focus({ preventScroll: true });
 }
 
@@ -565,9 +735,30 @@ function escribirNumero(valor) {
 function confirmarSugerencia(i) {
   const s = sugerencias(rasgos)[i];
   if (!s) return;
-  const otra = entradas.semillas.find((x) => claveLote(x.numero) === claveLote(s.numero));
-  if (otra && !confirm(`El ${s.numero} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
-  cambiar({ ...entradas, semillas: ponerNumero(entradas.semillas, s.numero, s.rasgo.rotulo, s.rasgo.geometry.coordinates) });
+  const numero = formaDelCuadro(s.numero, numerosCuadro());
+  const otra = entradas.semillas.find((x) => claveLote(x.numero) === claveLote(numero));
+  if (otra && !confirm(`El ${numero} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
+  ponerEnLote(numero, s.rasgo.rotulo, s.rasgo.geometry.coordinates);
+}
+
+/**
+ * Incluir el resto de la propiedad en el KMZ (con el número del cuadro, o "Resto") o
+ * dejarlo fuera. Se ve al tiro; ponerle número cambia las semillas y relee el plano solo,
+ * dejarlo fuera no (no cambia cómo se parte el dibujo, solo qué va al KMZ).
+ */
+function elegirResto(incluir) {
+  const resto = restoDe(rasgos);
+  if (!resto) return;
+  const { rasgo, numero, punto } = resto;
+  // Solo si no tiene número se le pone: si ya lo tiene (lo leyó el lector), basta con no dejarlo fuera.
+  const ponerle = incluir && rasgo.properties.numero == null ? numero : null;
+  const nuevas = decidirResto(entradas, rasgo.geometry.coordinates, punto, incluir, ponerle);
+  const otrasSemillas = JSON.stringify(nuevas.semillas) !== JSON.stringify(entradas.semillas);
+  rasgos = aplicarFuera(rasgos, punto, !incluir);
+  if (ponerle) rasgos = aplicarNumero(rasgos, ponerle, punto);
+  if (otrasSemillas) programarRelectura();
+  lotesAtrasados = true;
+  cambiar(nuevas);
 }
 
 function siguienteSinNumero() {
@@ -601,6 +792,7 @@ function marcarEnMapa(lat, lon) {
   const ancla = anclaDesde(pendiente, lat, lon);
   pendiente = null;
   rehacer = null;
+  avisoCuadricula = '';
   cambiar({ ...entradas, anclas: [...entradas.anclas.filter((a) => a.nombre !== ancla.nombre), ancla] });
   pintarMapa();
   if (entradas.anclas.length >= 2 || entradas.cuadricula) ubicar().catch((e) => avisar(e.message));
@@ -621,12 +813,46 @@ function quitarAncla(nombre, otraVez) {
   if (!otraVez && (entradas.anclas.length >= 2 || entradas.cuadricula)) ubicar().catch((e) => avisar(e.message));
 }
 
-function usarCuadricula(si) {
+const NO_UBICO_CUADRICULA = 'No se pudo ubicar con la cuadrícula del plano. Marca los puntos a mano.';
+
+/** Elegir la cuadrícula ubica al tiro. Si no ubica con ella (error, o el servidor cayó a
+ * las anclas), se quita sola y se dice: así no queda elegida algo que no sirve. */
+async function usarCuadricula(si) {
   const propuesta = plano?.digitalizado?.lector?.cuadricula;
   if (si && !propuesta) return;
+  const mio = slug;
+  avisoCuadricula = '';
   const nuevas = { ...entradas };
   if (si) nuevas.cuadricula = propuesta; else delete nuevas.cuadricula;
   cambiar(nuevas);
+  if (!si) {
+    if (entradas.anclas.length >= 2) await ubicar();
+    return;
+  }
+  let sirvio = false;
+  try {
+    // `ubicar` no corre si el digitalizado está atrasado: eso no es culpa de la cuadrícula.
+    if (!await ubicar()) return;
+    sirvio = plano?.georreferencia?.metodo === 'cuadricula';
+  } catch (error) {
+    // Sin conexión o con el servidor caído no se sabe si sirve: se avisa y queda elegida,
+    // para reintentar con "Ubicar de nuevo". Solo un "no" del servidor la descarta.
+    if (esFalloPasajero(error)) {
+      if (mio === slug) avisar(error.message);
+      return;
+    }
+    sirvio = false;
+  }
+  // Si en la espera se pasó a otro KMZ, `entradas` y `plano` ya son de ese: no se toca.
+  if (mio !== slug || sirvio || !entradas.cuadricula) return;
+  const sinCuadricula = { ...entradas };
+  delete sinCuadricula.cuadricula;
+  cambiar(sinCuadricula);
+  avisoCuadricula = NO_UBICO_CUADRICULA;
+  cuadriculaNoSirve = true;
+  if (entradas.anclas.length >= 2) await ubicar().catch((e) => avisar(e.message));
+  else await guardar();
+  pintarPanel();
 }
 
 function moverAjuste(de, dn) {
@@ -644,22 +870,39 @@ function arrastreDelMapa(de, dn) {
   ubicar().catch((e) => avisar(e.message)).finally(() => pintarMapa());
 }
 
+/** Devuelve si de verdad ubicó (no corre con el digitalizado atrasado o sin con qué). */
 async function ubicar() {
   clearTimeout(ubicarLuego);
+  const mio = slug;
   await guardar();
-  if (!plano?.digitalizado?.vigente) return;
-  if (entradas.anclas.length < 2 && !entradas.cuadricula) return;
+  // Se pasó a otro KMZ mientras se guardaba: ubicar ese no lo pidió nadie.
+  if (mio !== slug) return false;
+  if (!plano?.digitalizado?.vigente) return false;
+  if (entradas.anclas.length < 2 && !entradas.cuadricula) return false;
   $('#kmz-ancla-estado').textContent = 'Ubicando…';
+  ubicandoYa = true;
+  pintarPorQue();
   try {
-    plano.georreferencia = await pedir(`${api()}/georreferenciar`, json({}));
+    const georreferencia = await pedir(`${api(mio)}/georreferenciar`, json({}));
+    if (mio !== slug) return false;
+    plano.georreferencia = georreferencia;
   } catch (error) {
+    if (mio !== slug) return false;
     $('#kmz-ancla-estado').textContent = '';
+    ubicandoYa = false;
+    pintarPorQue();
     throw error;
+  } finally {
+    ubicandoYa = false;
   }
-  plano = await pedir(api());
-  rasgosGeo = await pedir(`${api()}/lotes?en=lonlat`);
+  const nuevo = await pedir(api(mio));
+  const geo = await pedir(`${api(mio)}/lotes?en=lonlat`);
+  if (mio !== slug) return false;
+  plano = nuevo;
+  rasgosGeo = geo;
   pintar();
   pintarMapa();
+  return true;
 }
 
 const NO_ENTENDI = `No entendí esas coordenadas. Escríbelas como -34.98, -71.24 o como 34°10'37.5"S 71°32'53.9"W.`;
@@ -780,11 +1023,28 @@ async function pintarPaso() {
   $('#kmz-plano').dataset.modo = paso;
   $('#kmz-cuerpo').classList.toggle('kmz-cuerpo--solo', paso === 'subir' && !plano?.pdf || paso === 'crear');
   if (paso !== 'marcar') elegirHerramienta('mover');
+  else if (pasoPintado !== 'marcar') elegirHerramienta(herramientaAlEntrar(entradas, Boolean(plano?.digitalizado)));
+  pasoPintado = paso;
+  medirPanel();
   pintar();
+  // Llegar a Numerar con los lotes atrasados (se cambió algo antes): se releen solos.
+  releerSiHaceFalta();
   if (conMapa) {
     await prepararMapa();
     pintarMapa(true);
   }
+}
+
+/**
+ * El alto del panel en escritorio es lo que queda de pantalla bajo su borde de arriba. Con
+ * un alto fijo (`100vh - 12rem`) la cabecera real era más alta y el panel terminaba ~70 px
+ * bajo el borde: el pie pegado al panel ("Seguir") no se veía hasta desplazar la página.
+ */
+function medirPanel() {
+  const cuerpo = $('#kmz-cuerpo');
+  if (!cuerpo || $('#pantalla-kmz').hidden) return;
+  const arriba = Math.round(cuerpo.getBoundingClientRect().top + window.scrollY);
+  cuerpo.style.setProperty('--kmz-arriba', `${arriba}px`);
 }
 
 function pintarPasos() {
@@ -802,8 +1062,9 @@ function pintarPasos() {
 function pintarPanel() {
   if (!plano) return;
   const d = plano.digitalizado;
-  const atrasado = Boolean(d && !d.vigente) && ['digitalizar', 'numerar', 'ubicar'].includes(paso);
-  $('#kmz-atrasado').hidden = !atrasado || Boolean(plano.trabajo && !plano.trabajo.terminado);
+  // En Numerar no: ahí los lotes se releen solos y el panel dice "Actualizando los lotes…".
+  const atrasado = Boolean(d && !d.vigente) && ['digitalizar', 'ubicar'].includes(paso);
+  $('#kmz-atrasado').hidden = !atrasado || trabajando();
   if (paso === 'subir') pintarSubir();
   if (paso === 'marcar') pintarMarcar();
   if (paso === 'digitalizar') pintarDigitalizar();
@@ -811,6 +1072,25 @@ function pintarPanel() {
   if (paso === 'ubicar') pintarUbicar();
   if (paso === 'revisar') pintarRevisar();
   if (paso === 'crear') pintarCrear();
+  pintarPorQue();
+}
+
+/** El "Seguir" del paso abierto: se apaga con su motivo debajo, en una línea. */
+function pintarPorQue() {
+  const panel = $(`#kmz-panel-${paso}`);
+  const boton = panel?.querySelector('[data-accion="kmz-siguiente"]');
+  if (!plano || !boton) return;
+  // Mientras se pide la lectura, el servidor todavía no la cuenta como trabajo: ya lo es.
+  const e = lanzando === slug ? { ...plano, trabajo: { terminado: false } } : plano;
+  const motivo = porQueNoSigue(paso, e, {
+    entradas, actualizando: actualizando(), releerFallo, ubicando: ubicandoYa,
+    duplicados: paso === 'revisar' ? resumenRevision(rasgosGeo?.features ?? []).duplicados : 0,
+  });
+  boton.disabled = Boolean(motivo);
+  const linea = panel.querySelector('.kmz-por-que');
+  if (!linea) return;
+  linea.textContent = motivo;
+  linea.hidden = !motivo;
 }
 
 function pintarSubir() {
@@ -864,10 +1144,9 @@ function pintarMarcar() {
   for (const s of entradas.semillas) filas.push(fila(`Lote ${s.numero}`, { quitarSemilla: s.numero }));
   lista.replaceChildren(...filas);
   const listo = Boolean(entradas.rectangulo) && (!sinLector || entradas.semillas.length > 0);
-  $('#kmz-panel-marcar [data-accion="kmz-siguiente"]').disabled = !pasosHabilitados(plano).digitalizar;
   $('#kmz-marcar-nota').textContent = listo ? '' : !entradas.rectangulo
     ? 'Encierra el dibujo del loteo con la herramienta "Encerrar el dibujo".'
-    : 'Marca el número de al menos un lote antes de digitalizar.';
+    : 'Marca el número de al menos un lote antes de leer el plano.';
 }
 
 function fila(texto, quitar, tono) {
@@ -889,15 +1168,19 @@ function fila(texto, quitar, tono) {
 }
 
 function pintarDigitalizar() {
-  const trabajando = Boolean(plano.trabajo && !plano.trabajo.terminado);
+  const leyendo = trabajando() || lanzando === slug;
   const d = plano.digitalizado;
   const huecos = d?.huecos ?? [];
   const boton = $('[data-accion="kmz-digitalizar"]');
-  boton.disabled = trabajando || !pasosHabilitados(plano).digitalizar;
-  boton.textContent = trabajando ? 'Digitalizando…' : d ? 'Digitalizar de nuevo' : 'Digitalizar';
+  // La lectura la lanza "Seguir" de Marcar: este botón es para leer de nuevo (o reintentar si
+  // falló), y mientras se lee no aparece, que el escáner ya dice lo que pasa.
+  boton.hidden = leyendo;
+  boton.disabled = leyendo || !pasosHabilitados(plano).digitalizar;
+  const fallo = plano.trabajo?.terminado && plano.trabajo.estado === 'falló';
+  boton.textContent = d || fallo || falloAlPedir ? 'Leer el plano de nuevo' : 'Leer el plano';
+  $('#kmz-leer-fallo').hidden = leyendo || !falloAlPedir;
+  $('#kmz-leer-fallo').textContent = falloAlPedir ? `No se pudo empezar a leer el plano: ${falloAlPedir}` : '';
   pintarRegistro();
-  // Antes del `return` de abajo: sin digitalizar también hay que apagarlo.
-  $('#kmz-panel-digitalizar [data-accion="kmz-siguiente"]').disabled = !puedeSeguirANumerar(plano);
   const cifras = $('#kmz-cifras');
   cifras.hidden = !d;
   if (!d) return;
@@ -926,22 +1209,23 @@ function pintarDigitalizar() {
 function pintarNumerar() {
   const d = plano.digitalizado;
   const partes = sinNumero(rasgos);
-  const deLote = partes.filter((r) => r.properties.de_lote).length;
-  const repetidos = duplicados(rasgos);
   const dudas = dudosos(rasgos);
-  const lotesSin = deLote === 1 ? 'Un lote quedó sin número' : `${deLote} lotes quedaron sin número`;
-  $('#kmz-sin-numero').textContent = deLote
-    ? `${lotesSin} (en rojo, con "?"): no se leyó su número. Haz clic y escríbelo; si no, no va al KMZ.`
-      + (partes.length > deLote ? ` Además hay ${partes.length - deLote} ${partes.length - deLote === 1 ? 'parte' : 'partes'}`
-        + ' sin número más chicas: si son caminos o áreas comunes, se dejan así.' : '')
-    : partes.length
-      ? `${partes.length} ${partes.length === 1 ? 'parte sin número' : 'partes sin número'} (en rojo, con "?"). `
-        + 'Si es un lote, haz clic y escribe su número. Los caminos y áreas comunes se dejan así: no van al KMZ.'
-      : 'Todos los lotes tienen número.';
+  const repetidos = duplicados(rasgos);
+  // Un solo mensaje: cuántos faltan y qué hacer. Los huecos de la numeración van ahí cuando
+  // no queda ningún lote rojo (si no, son esos mismos lotes).
+  $('#kmz-sin-numero').textContent = mensajeNumerar(rasgos, numerosQueFaltan(d?.huecos, rasgos));
+  pintarResto();
+  $('#kmz-actualizando').hidden = !actualizando() || Boolean(releerFallo && !trabajando());
   $('[data-accion="kmz-siguiente-sin-numero"]').hidden = !partes.length;
-  const huecos = textoHuecos(d?.huecos);
-  $('#kmz-huecos').hidden = !huecos;
-  $('#kmz-huecos').textContent = huecos ? `${huecos} Búscalos en el plano: suelen ser los lotes sin número.` : '';
+  // El campo del número ofrece los que faltan: los del cuadro de superficies o, sin cuadro,
+  // los huecos de la numeración.
+  const cuadro = numerosCuadro();
+  $('#kmz-numeros-faltan').replaceChildren(...numerosQueFaltan(cuadro.length ? cuadro : d?.huecos, rasgos)
+    .map((numero) => {
+      const opcion = document.createElement('option');
+      opcion.value = numero;
+      return opcion;
+    }));
   const porConfirmar = sugerencias(rasgos);
   $('#kmz-sugerencias-caja').hidden = !porConfirmar.length;
   $('#kmz-sugerencias').replaceChildren(...porConfirmar.map(({ numero }, i) => {
@@ -970,9 +1254,45 @@ function pintarNumerar() {
   $('#kmz-duplicados-caja').hidden = !repetidosRasgos.length;
   $('#kmz-duplicados').replaceChildren(...botones(repetidosRasgos, (p) => `Lote ${p.numero}`));
   $('#kmz-dudosos-caja').hidden = !dudas.length;
-  $('#kmz-dudosos').replaceChildren(...botones(dudas,
-    (p) => `${p.numero} · ${p.apoyo ?? 0} lect.${p.confianza != null ? ` · ${Math.round(p.confianza * 100)} %` : ''}`));
-  $('#kmz-panel-numerar [data-accion="kmz-siguiente"]').disabled = !d?.vigente;
+  $('#kmz-dudosos').replaceChildren(...botones(dudas, (p) => p.numero));
+}
+
+/** La tarjeta del resto de la propiedad: la pregunta o lo que ya eligió, con cómo cambiarlo. */
+function pintarResto() {
+  const resto = restoDe(rasgos);
+  const caja = $('#kmz-resto');
+  caja.hidden = !resto;
+  if (!resto) return;
+  const { estado: decision, numero, punto, rasgo } = resto;
+  const comoVa = numero === 'Resto' ? 'como "Resto"' : `como lote ${numero}`;
+  const m2 = rasgo.properties.area_resto_m2;
+  caja.classList.toggle('kmz-resto--decidido', decision !== 'pendiente');
+  $('#kmz-resto-texto').textContent = {
+    pendiente: '¿Este polígono grande es el resto de la propiedad?',
+    incluido: `El resto de la propiedad va en el KMZ ${comoVa}.`,
+    fuera: 'El resto de la propiedad queda fuera del KMZ.',
+  }[decision];
+  $('#kmz-resto-detalle').textContent = decision === 'pendiente'
+    ? (m2 ? `El cuadro de superficies trae el ${numero} con ${new Intl.NumberFormat('es-CL').format(m2)} m². ` : '')
+      + `Si lo incluyes, va ${comoVa}; si no, no cuenta como lote sin número.`
+    : 'Puedes cambiarlo cuando quieras.';
+  const incluir = $('[data-accion="kmz-resto-incluir"]');
+  const fuera = $('[data-accion="kmz-resto-fuera"]');
+  incluir.hidden = decision === 'incluido';
+  fuera.hidden = decision === 'fuera';
+  incluir.textContent = decision === 'fuera' ? 'Cambiar: incluirlo en el KMZ' : 'Incluirlo en el KMZ';
+  fuera.textContent = decision === 'incluido' ? 'Cambiar: dejarlo fuera' : 'Dejarlo fuera';
+  // Uno se ve como pregunta principal; el otro, como alternativa.
+  incluir.className = `boton boton--chico${decision === 'pendiente' ? '' : ' boton--contorno'}`;
+  $('#kmz-resto-ver').dataset.centrar = punto.map((v) => v.toFixed(1)).join(',');
+  // Al aparecer la pregunta, el plano va a esa parte: si no, la tarjeta habla de algo que no se ve.
+  const donde = `${slug}:${punto.join(',')}`;
+  if (decision === 'pendiente' && restoCentrado !== donde && lienzo?.ancho && lienzo.contenedor.clientWidth) {
+    restoCentrado = donde;
+    // Primero el encuadre de la página: si no, el que hace al llegar la imagen lo pisaría.
+    if (!lienzo.ajustada) lienzo.ajustar();
+    lienzo.centrar(punto[0], punto[1]);
+  }
 }
 
 function pintarUbicar() {
@@ -984,6 +1304,8 @@ function pintarUbicar() {
       + `o pega sus coordenadas y aprieta Usar como punto ${pendiente.nombre} (Esc cancela).`;
   } else if (rehacer) {
     estadoAncla.textContent = `Marca de nuevo el punto ${rehacer}: primero en el plano.`;
+  } else if (avisoCuadricula) {
+    estadoAncla.textContent = avisoCuadricula;
   } else {
     const n = entradas.anclas.length;
     estadoAncla.textContent = n >= 4 ? `${n} puntos marcados.`
@@ -994,25 +1316,35 @@ function pintarUbicar() {
   usar.hidden = !pendiente;
   if (pendiente) usar.textContent = `Usar como punto ${pendiente.nombre}`;
 
-  const propuesta = plano.digitalizado?.lector?.cuadricula;
+  // Una propuesta que ya no ubicó no se vuelve a ofrecer (hasta salir del KMZ).
+  const propuesta = cuadriculaNoSirve ? null : plano.digitalizado?.lector?.cuadricula;
   $('#kmz-cuadricula').hidden = !propuesta && !entradas.cuadricula;
   $('[data-accion="kmz-usar-cuadricula"]').hidden = Boolean(entradas.cuadricula) || !propuesta;
   $('[data-accion="kmz-quitar-cuadricula"]').hidden = !entradas.cuadricula;
   $('#kmz-cuadricula-texto').textContent = entradas.cuadricula
-    ? 'Se está usando la cuadrícula UTM impresa en el plano. Las anclas sirven para confirmar el datum.'
-    : 'El plano trae una cuadrícula UTM impresa: es lo más preciso para ubicarlo.';
+    ? 'Se está usando la cuadrícula impresa en el plano. Puedes sumar puntos para comprobar que calza.'
+    : 'El plano trae una cuadrícula con coordenadas impresas: es lo más preciso para ubicarlo.';
 
-  // Anclas con su residuo.
+  // Los puntos con su distancia: cuánto se aleja cada uno de donde lo dejan los demás.
   const porNombre = new Map((g?.anclas ?? []).map((a) => [a.nombre, a]));
   const cuerpo = $('#kmz-anclas tbody');
   cuerpo.replaceChildren(...entradas.anclas.map((a) => {
     const r = porNombre.get(a.nombre);
     const tr = document.createElement('tr');
-    const atipica = g?.atipicas?.includes(a.nombre);
-    if (atipica) tr.className = 'kmz-atipica';
+    const { distancia, estado, detalle } = filaDelPunto(r, g, vigente);
+    if (detalle) tr.className = 'kmz-atipica';
     const celda = (texto) => { const td = document.createElement('td'); td.textContent = texto; return td; };
-    const residuo = r && vigente ? `${r.residuo_m.toFixed(1)} m` : '—';
-    tr.append(celda(a.nombre), celda(residuo), celda(atipica ? 'Atípica' : r && vigente ? 'ok' : ''));
+    const celdaEstado = celda(estado);
+    // En el celular la tabla no da para la frase entera: "No calza" se ve, y lo que hay que
+    // hacer va en el título y para el lector de pantalla (la lista de avisos lo repite).
+    if (detalle) {
+      celdaEstado.title = `${estado}: ${detalle}`;
+      const oculto = document.createElement('span');
+      oculto.className = 'oculto';
+      oculto.textContent = `: ${detalle}`;
+      celdaEstado.append(oculto);
+    }
+    tr.append(celda(a.nombre), celda(distancia), celdaEstado);
     const acciones = document.createElement('td');
     for (const [texto, clave] of [['Rehacer', 'anclaRehacer'], ['Quitar', 'anclaQuitar']]) {
       const b = document.createElement('button');
@@ -1031,12 +1363,10 @@ function pintarUbicar() {
   const resumen = $('#kmz-ubicacion');
   resumen.hidden = !g;
   if (g) {
-    const p = g.parametros ?? {};
-    const partes = [g.metodo === 'cuadricula' ? 'Con la cuadrícula impresa' : `Con ${p.n_anclas ?? entradas.anclas.length} anclas`,
-      nombreDelSistema(g.epsg)];
-    if (p.rms_m != null) partes.push(`error medio ${p.rms_m.toFixed(1)} m`);
-    if (g.datum?.datum) partes.push(`datum ${g.datum.datum}`);
-    $('#kmz-ubicacion-texto').textContent = (vigente ? '' : 'Desactualizado: ') + partes.join(' · ');
+    const texto = $('#kmz-ubicacion-texto');
+    texto.textContent = (vigente ? '' : 'Antes de tus últimos cambios: ') + resumenUbicacion(g, entradas.anclas.length);
+    // Lo técnico (sistema de coordenadas, error medio) queda a mano para el topógrafo.
+    texto.title = detalleUbicacion(g);
     $('#kmz-avisos').replaceChildren(...(g.avisos ?? []).map((texto) => {
       const li = document.createElement('li');
       li.textContent = texto;
@@ -1052,7 +1382,6 @@ function pintarUbicar() {
   for (const b of $$('#kmz-ajuste-fino button')) b.disabled = !g;
   $('[data-accion="kmz-georreferenciar"]').disabled = !plano.digitalizado?.vigente
     || (entradas.anclas.length < 2 && !entradas.cuadricula);
-  $('#kmz-panel-ubicar [data-accion="kmz-siguiente"]').disabled = !vigente;
 }
 
 function pintarRevisar() {
@@ -1066,6 +1395,7 @@ function pintarRevisar() {
     ['Lotes sin número', cuenta.sin_numero_lote, cuenta.sin_numero_lote ? 'rojo' : null],
     ['Otras partes sin número', cuenta.sin_numero - cuenta.sin_numero_lote, null],
     ['Repetidos', cuenta.duplicados, cuenta.duplicados ? 'rojo' : null],
+    ...(cuenta.fuera ? [['Fuera del KMZ', cuenta.fuera, 'gris']] : []),
   ];
   $('#kmz-revision').replaceChildren(...datos.map(([rotulo, valor, color]) => {
     const div = document.createElement('div');
@@ -1104,7 +1434,6 @@ function pintarRevisar() {
       : cuenta.rojo
       ? 'Los rojos tienen un área muy distinta a la oficial: suelen ser lotes mal separados.'
       : 'Ningún lote se aparta más de un 5 % del área oficial.';
-  $('#kmz-panel-revisar [data-accion="kmz-siguiente"]').disabled = Boolean(problemas);
   const boton = $('[data-accion="kmz-corregir"]');
   boton.setAttribute('aria-pressed', String(corrigiendo));
   boton.textContent = corrigiendo ? 'Listo, dejar de corregir' : 'Corregir vértices a mano';
@@ -1153,7 +1482,23 @@ function pintarCrear() {
   const crear = $('[data-accion="kmz-crear"]');
   const creando = creandoKmz === slug;
   crear.disabled = creando || !pasosHabilitados(plano).crear;
-  crear.textContent = creando ? 'Creando el KMZ…' : hay ? 'Crear el KMZ de nuevo' : 'Crear el KMZ';
+  // Con los lotes en lon/lat (se cargan con el plano ubicado): sin ellos no hay con qué
+  // comparar y el semáforo queda oculto, como sin cuadro.
+  // Sin la ubicación vigente no se puede crear: los desvíos serían de los puntos viejos.
+  const luz = semaforo(pasosHabilitados(plano).crear ? rasgosGeo?.features ?? [] : []);
+  const caja = $('#kmz-semaforo');
+  const texto = textoSemaforo(luz);
+  caja.hidden = !texto;
+  caja.dataset.tono = luz.tono ?? '';
+  // Solo si cambia: reescribir el mismo texto en una región `status` lo vuelve a anunciar
+  // cada vez que algo repinta el panel.
+  if ($('#kmz-semaforo-texto').textContent !== texto) $('#kmz-semaforo-texto').textContent = texto;
+  $('[data-accion="kmz-volver-ubicar"]').hidden = luz.tono !== 'ambar';
+  // Ámbar avisa pero no bloquea: el botón dice que se crea igual. Con el KMZ ya creado
+  // con esto mismo no hay "igual" que valga: ya se creó, y rehacerlo da lo mismo.
+  const igual = luz.tono === 'ambar' && plano.paso !== 'listo';
+  crear.textContent = creando ? 'Creando el KMZ…' : igual ? 'Crear el KMZ igual'
+    : hay ? 'Crear el KMZ de nuevo' : 'Crear el KMZ';
   if (creando) crear.setAttribute('aria-busy', 'true'); else crear.removeAttribute('aria-busy');
   crear.className = hay ? 'boton boton--contorno' : 'boton boton--grande';
   // Descargar y usar sirven mientras haya un KMZ hecho, aunque esté por rehacerse.
@@ -1201,16 +1546,17 @@ function ficha(p) {
   const nodo = document.createElement('div');
   nodo.className = 'kmz-ficha';
   const titulo = document.createElement('strong');
-  titulo.textContent = p.numero ? `Lote ${p.numero}` : 'Sin número';
+  titulo.textContent = p.fuera ? 'Fuera del KMZ' : p.numero ? `Lote ${p.numero}` : 'Sin número';
   nodo.append(titulo);
   const renglon = (texto) => { const s = document.createElement('span'); s.textContent = texto; nodo.append(s); };
+  if (p.resto) renglon('Resto de la propiedad');
   const m2 = (v) => `${new Intl.NumberFormat('es-CL').format(Math.round(v))} m²`;
   if (p.area_m2 != null) renglon(`Área: ${m2(p.area_m2)}`);
   if (p.area_oficial_m2 != null) {
     renglon(`Oficial: ${m2(p.area_oficial_m2)} (${p.error_area > 0 ? '+' : ''}${(p.error_area * 100).toFixed(1)} %)`);
   }
   if (p.banderas?.includes('duplicado')) renglon('Número repetido');
-  if (p.origen === 'lector') renglon(`Número leído del plano (${p.apoyo ?? 0} lecturas)`);
+  if (p.origen === 'lector') renglon('Número leído del plano');
   return nodo;
 }
 
@@ -1279,7 +1625,9 @@ function dibujar(ctx, P) {
     const tenue = paso === 'marcar';
     for (const r of rasgos) {
       const p = r.properties;
-      const malo = p.banderas.length > 0;
+      // Lo que ella dejó fuera del KMZ va en gris: ya no es un problema.
+      const afuera = Boolean(p.fuera);
+      const malo = p.banderas.length > 0 && !afuera;
       const lector = p.origen === 'lector';
       const alfa = lector ? 0.35 + 0.5 * Math.min(1, p.confianza ?? 0.5) : 1;
       ctx.beginPath();
@@ -1287,11 +1635,12 @@ function dibujar(ctx, P) {
         anillo.forEach(([x, y], i) => { const [a, b] = P(x, y); if (i) ctx.lineTo(a, b); else ctx.moveTo(a, b); });
         ctx.closePath();
       }
-      ctx.fillStyle = malo ? 'rgb(220 38 38 / 0.18)' : lector ? `rgb(37 99 235 / ${0.12 * alfa})` : 'rgb(22 163 74 / 0.10)';
+      ctx.fillStyle = afuera ? 'rgb(113 113 122 / 0.12)' : malo ? 'rgb(220 38 38 / 0.18)'
+        : lector ? `rgb(37 99 235 / ${0.12 * alfa})` : 'rgb(22 163 74 / 0.10)';
       if (!tenue) ctx.fill('evenodd');
-      ctx.strokeStyle = malo ? '#dc2626' : lector ? `rgb(37 99 235 / ${alfa})` : '#15803d';
+      ctx.strokeStyle = afuera ? '#71717a' : malo ? '#dc2626' : lector ? `rgb(37 99 235 / ${alfa})` : '#15803d';
       ctx.lineWidth = malo ? 2 : 1.25;
-      ctx.setLineDash(malo ? [5, 3] : []);
+      ctx.setLineDash(malo || afuera ? [5, 3] : []);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -1302,9 +1651,11 @@ function dibujar(ctx, P) {
         // Sobre la semilla va su punto: el número, justo arriba.
         const b = p.semilla ? b0 - 14 : b0;
         const lector = p.origen === 'lector';
-        const texto = p.numero == null ? (p.sugerencia?.numero ? `¿${p.sugerencia.numero}?` : '?')
+        const texto = p.fuera ? (p.numero ? `${p.numero} · fuera del KMZ` : 'Fuera del KMZ') : p.numero == null
+          ? (p.resto ? '¿Resto de la propiedad?' : p.sugerencia?.numero ? `¿${p.sugerencia.numero}?` : '?')
           : `${p.numero}${lector && (p.apoyo ?? 0) < 3 ? '?' : ''}`;
-        etiqueta(ctx, texto, a, b, p.banderas.length ? '#dc2626' : lector ? '#1d4ed8' : '#14532d', 'center');
+        const color = p.fuera ? '#52525b' : p.banderas.length ? '#dc2626' : lector ? '#1d4ed8' : '#14532d';
+        etiqueta(ctx, texto, a, b, color, 'center');
       }
     }
   }
