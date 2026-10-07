@@ -10,7 +10,7 @@ import {
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, semaforo, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
   tamanoRotado, normalizarGiro, puedeUbicar, ubicacionCompleta, textoHuecos, textoSemaforo, vistaAjustada, zoomEn,
   aplicarHomografia, cajaGirada, escalaDeUbicacion, girarEnPantalla, husoDe, leerEscala, lonLatAUtm, lotesEnElMapa, paginaALonLat,
-  similitudPorPunto, usaUbicacion, utmALonLat,
+  similitudPorPunto, usaUbicacion, utmALonLat, similitudPorAnclas, afinarAbierta, textoPuntos,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
 
@@ -210,6 +210,110 @@ test('el plano girado en pantalla vuelve a la página', () => {
   const [w, h] = cajaGirada(100, 60, 90);
   cerca(w, 60);
   cerca(h, 100);
+});
+
+// --- afinar con puntos: la vista previa desde el segundo punto -------------------------
+//
+// Referencias del servidor: `por_anclas(anclas, h)` de pipeline/plano/georreferencia.py,
+// con t.matriz, t.a_utm(x, y) y t.a_lonlat(x, y) de unos puntos de la página.
+
+// Los 4 puntos de parcelas-coipue-lote-8 en el QA (recorte: sin homografía).
+const ANCLAS_RAPEL = [
+  { nombre: 'A', x: 331.5, y: 845.1, lon: -71.5482044, lat: -34.1771027 },
+  { nombre: 'B', x: 583.2, y: 832.9, lon: -71.5481615, lat: -34.1790199 },
+  { nombre: 'C', x: 705.4, y: 359.1, lon: -71.5440202, lat: -34.1799429 },
+  { nombre: 'D', x: 464.0, y: 371.4, lon: -71.5440202, lat: -34.178079 },
+];
+const POR_ANCLAS = [
+  {
+    nombre: 'Rapel, 4 puntos',
+    anclas: ANCLAS_RAPEL,
+    h: null,
+    epsg: 32719,
+    matriz: [[0.010165534392355477, -0.8190361544500154, 265825.24297401303],
+      [-0.8190361544500154, -0.010165534392355477, 6215550.647220799], [0, 0, 1]],
+    puntos: [
+      [[331.5, 845.1], 265136.4453945384, 6215270.545842484, -71.54823841289004, -34.177114595121324],
+      [[2900, 1000], 265035.68686930084, 6213165.276838501, -71.54990175570907, -34.19605971556408],
+      [[0, 0], 265825.24297401303, 6215550.647220799, -71.54069583405014, -34.17474587089481],
+    ],
+  },
+  {
+    // Con 2 la similitud pasa justo por los dos: A queda en su coordenada.
+    nombre: 'Rapel, 2 puntos (A y C)',
+    anclas: [ANCLAS_RAPEL[0], ANCLAS_RAPEL[2]],
+    h: null,
+    epsg: 32719,
+    matriz: [[-0.003346997645177568, -0.8124578050544772, 265827.26566422987],
+      [-0.8124578050544772, 0.003346997645177568, 6215538.444880181], [0, 0, 1]],
+    puntos: [
+      [[331.5, 845.1], 265139.54804345896, 6215271.943665516, -71.5482044, -34.177102700000006],
+      [[2900, 1000], 265005.1015660044, 6213185.664243168, -71.55022785371447, -34.195869134149774],
+      [[0, 0], 265827.26566422987, 6215538.444880181, -71.54067720465869, -34.17485626540894],
+    ],
+  },
+  {
+    // Una foto rectificada (perspectiva) en Chiloé: la similitud vale en el plano enderezado.
+    nombre: 'Chiloé, 3 puntos con homografía',
+    anclas: [{ x: 100, y: 200, lon: -73.2, lat: -41.5 }, { x: 900, y: 250, lon: -73.191, lat: -41.5012 },
+      { x: 500, y: 800, lon: -73.1952, lat: -41.5049 }],
+    h: [[0.98, 0.03, -40.0], [-0.02, 1.01, 15.0], [0.00002, -0.00001, 1.0]],
+    epsg: 32718,
+    matriz: [[13.89766687942536, -6.566515113858877, 650199.6020996504],
+      [108.01678121587248, -54.96475452988783, 5404355.006486214], [2e-05, -1e-05, 1.0]],
+    puntos: [
+      [[331.5, 845.1], 650441.7712128364, 5403551.723093821, -73.19738150070138, -41.50554380555408],
+      [[2900, 1000], 652610.9932596614, 5403281.409811408, -73.17133365115723, -41.507567149827075],
+      [[0, 0], 650199.6020996504, 5404355.006486214, -73.20048212418006, -41.49835728125477],
+    ],
+  },
+];
+
+test('la vista previa con puntos repite por_anclas del servidor', () => {
+  for (const caso of POR_ANCLAS) {
+    const t = similitudPorAnclas(caso.anclas, caso.h);
+    assert.equal(t.epsg, caso.epsg, caso.nombre);
+    caso.matriz.forEach((fila, i) => fila.forEach((v, j) => cerca(t.matriz[i][j], v, Math.max(0.05, Math.abs(v) * 1e-9))));
+    for (const [[x, y], e, n, lon, lat] of caso.puntos) {
+      const [e1, n1] = aplicarHomografia(t.matriz, x, y);
+      cerca(e1, e, 0.05);
+      cerca(n1, n, 0.05);
+      const [lon1, lat1] = paginaALonLat(t, x, y);
+      cerca(lon1, lon, 1e-7);
+      cerca(lat1, lat, 1e-7);
+    }
+  }
+  // Con uno solo, o con los dos en el mismo lugar del plano, no hay similitud.
+  assert.equal(similitudPorAnclas([ANCLAS_RAPEL[0]]), null);
+  assert.equal(similitudPorAnclas([ANCLAS_RAPEL[0], { ...ANCLAS_RAPEL[1], x: 331.5, y: 845.1 }]), null);
+  assert.equal(similitudPorAnclas([]), null);
+  assert.equal(similitudPorAnclas(null), null);
+  // Un punto a medias (sin mapa) no cuenta.
+  assert.equal(similitudPorAnclas([ANCLAS_RAPEL[0], { nombre: 'B', x: 583.2, y: 832.9 }]), null);
+});
+
+test('"Afinar con puntos" se abre sola con puntos, uno a medias o la cuadrícula', () => {
+  assert.equal(afinarAbierta({ anclas: [] }), false);
+  assert.equal(afinarAbierta({ anclas: [], ubicacion: { x: 1, y: 2, lon: -71, lat: -34 } }), false);
+  assert.equal(afinarAbierta({ anclas: [{}] }), true);
+  assert.equal(afinarAbierta({ anclas: [], cuadricula: {} }), true);
+  assert.equal(afinarAbierta({ anclas: [] }, { pendiente: { nombre: 'A' } }), true);
+  assert.equal(afinarAbierta({ anclas: [] }, { rehacer: 'B' }), true);
+  assert.equal(afinarAbierta(null), false);
+});
+
+test('el estado de los puntos dice qué toca y quién manda', () => {
+  assert.match(textoPuntos({ n: 0, coordenada: true }), /^Haz clic en un punto del plano.*ellos mandan sobre tu coordenada\.$/);
+  assert.match(textoPuntos({ n: 0 }), /Con 2 puntos ya se ubica el plano\.$/);
+  assert.equal(textoPuntos({ n: 1, coordenada: true }), '1 punto. Marca otro: con 2 o más puntos, ellos mandan sobre tu coordenada.');
+  assert.equal(textoPuntos({ n: 2, coordenada: true }),
+    '2 puntos. Con 2 o más puntos, ellos mandan sobre tu coordenada. Con 4 se nota si alguno quedó mal marcado.');
+  assert.equal(textoPuntos({ n: 3 }), '3 puntos. Con 4 se nota si alguno quedó mal marcado.');
+  assert.equal(textoPuntos({ n: 4 }), '4 puntos.');
+  assert.match(textoPuntos({ n: 2, pendiente: 'C' }), /^Punto C marcado en el plano\. Ahora haz clic en el mismo punto del mapa/);
+  assert.match(textoPuntos({ n: 3, rehacer: 'B' }), /^Marca de nuevo el punto B/);
+  assert.match(textoPuntos({ n: 0, cuadricula: true }), /comprobar que la cuadrícula calza/);
+  assert.match(textoPuntos({ n: 2, cuadricula: true }), /^2 puntos para comprobar la cuadrícula/);
 });
 
 test('el cuadro de superficies es un rectángulo solo, que se reemplaza y se quita', () => {
@@ -761,7 +865,7 @@ test('bajo un "Seguir" apagado va por qué, en cada paso', () => {
   assert.equal(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: 0.8 }, georreferencia: { vigente: true } },
     { entradas: { anclas: [], ubicacion: { x: 1, y: 2, lon: -71.5, lat: -34.1 } }, ubicando: true }), 'Ubicando el plano…');
   assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [{}] } }),
-    'Pega tu coordenada y haz clic en ese punto del plano, o marca al menos 2 puntos en el plano y en el mapa.');
+    'Pega tu coordenada y haz clic en ese punto del plano, o marca 2 puntos en "Afinar con puntos".');
   // La coordenada sola, sin el punto del plano, todavía no ubica.
   assert.match(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [], ubicacion: { lon: -71.5, lat: -34.1 } } }),
     /coordenada/);

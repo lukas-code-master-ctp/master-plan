@@ -819,7 +819,7 @@ export function porQueNoSigue(paso, e, local = {}) {
       if (e?.georreferencia?.vigente && !local.ubicando) return '';
       if (d && !d.vigente) return 'Cambiaste el plano: vuelve a Numerar para que se lea de nuevo.';
       if (!puedeUbicar(local.entradas)) {
-        return 'Pega tu coordenada y haz clic en ese punto del plano, o marca al menos 2 puntos en el plano y en el mapa.';
+        return 'Pega tu coordenada y haz clic en ese punto del plano, o marca 2 puntos en "Afinar con puntos".';
       }
       // Con solo la coordenada, el tamaño sale del cuadro de superficies o de la escala impresa.
       const soloCoordenada = !local.entradas?.cuadricula && (local.entradas?.anclas?.length ?? 0) < 2;
@@ -1042,6 +1042,44 @@ export function similitudPorPunto(u, escalaMPx, homografia = null) {
   return { epsg, matriz: homografia ? multiplicar(s, homografia) : s };
 }
 
+/**
+ * La similitud de `por_anclas` (mínimos cuadrados con 2 o más puntos): {epsg, matriz} como
+ * `similitudPorPunto`, para ver los lotes desde el segundo punto sin esperar al servidor.
+ * `homografia` (página → trabajo) solo si el plano es una foto rectificada (modo
+ * perspectiva), igual que `georreferenciar`: en un recorte es una escala y una traslación
+ * que la similitud absorbe. null con menos de 2 puntos o con todos en el mismo lugar.
+ */
+export function similitudPorAnclas(anclas, homografia = null) {
+  const validas = (anclas ?? []).filter((a) => ['x', 'y', 'lon', 'lat'].every((k) => Number.isFinite(a?.[k])));
+  if (validas.length < 2) return null;
+  const media = (v) => v.reduce((s, x) => s + x, 0) / v.length;
+  const epsg = husoDe(media(validas.map((a) => a.lon)), media(validas.map((a) => a.lat)));
+  // y del plano hacia abajo y N hacia arriba: con y negada la similitud no refleja.
+  const z = validas.map((a) => { const [x, y] = aplicarHomografia(homografia, a.x, a.y); return [x, -y]; });
+  const w = validas.map((a) => lonLatAUtm(a.lon, a.lat, epsg));
+  const [zr, zi] = [media(z.map((p) => p[0])), media(z.map((p) => p[1]))];
+  const [wr, wi] = [media(w.map((p) => p[0])), media(w.map((p) => p[1]))];
+  // a = Σ conj(z − z̄)·(w − w̄) / Σ |z − z̄|², b = w̄ − a·z̄ (como `_similitud`).
+  let ar = 0;
+  let ai = 0;
+  let norma = 0;
+  z.forEach(([x, y], i) => {
+    const [dx, dy] = [x - zr, y - zi];
+    const [ex, ey] = [w[i][0] - wr, w[i][1] - wi];
+    ar += dx * ex + dy * ey;
+    ai += dx * ey - dy * ex;
+    norma += dx * dx + dy * dy;
+  });
+  if (norma < 1e-18) return null;
+  ar /= norma;
+  ai /= norma;
+  const br = wr - (ar * zr - ai * zi);
+  const bi = wi - (ar * zi + ai * zr);
+  // z = x − i·y: E = ar·x + ai·y + br, N = ai·x − ar·y + bi.
+  const s = [[ar, ai, br], [ai, -ar, bi], [0, 0, 1]];
+  return { epsg, matriz: homografia ? multiplicar(s, homografia) : s };
+}
+
 /** px de página → [lon, lat] con la similitud `t` y el ajuste fino (metros E, N). */
 export function paginaALonLat(t, x, y, ajuste = null) {
   const [e, n] = aplicarHomografia(t.matriz, x, y);
@@ -1057,6 +1095,38 @@ export function escalaDeUbicacion(digitalizado, ubicacion) {
   const n = ubicacion?.escala_impresa;
   const ppmm = digitalizado?.ppmm;
   return n && ppmm ? n / 1000 / ppmm : null;
+}
+
+/**
+ * ¿"Afinar con puntos" se abre sola? Cuando ya hay puntos (o un punto a medias o por
+ * rehacer) o la cuadrícula elegida, que también vive ahí: si no, lo que manda quedaría
+ * escondido.
+ */
+export function afinarAbierta(entradas, { pendiente = null, rehacer = null } = {}) {
+  return (entradas?.anclas?.length ?? 0) > 0 || Boolean(entradas?.cuadricula) || Boolean(pendiente || rehacer);
+}
+
+/**
+ * La línea de estado de "Afinar con puntos": qué toca ahora y quién manda. `coordenada`
+ * dice si ella ya ubicó con su coordenada (con 2 puntos dejan de mandar su coordenada y
+ * el giro: hay que decírselo).
+ */
+export function textoPuntos({ n = 0, pendiente = null, rehacer = null, coordenada = false, cuadricula = false } = {}) {
+  if (pendiente) {
+    return `Punto ${pendiente} marcado en el plano. Ahora haz clic en el mismo punto del mapa, `
+      + `o pega sus coordenadas arriba y aprieta "Usar como punto ${pendiente}" (Esc cancela).`;
+  }
+  if (rehacer) return `Marca de nuevo el punto ${rehacer}: primero en el plano, después en el mapa.`;
+  const como = 'Haz clic en un punto del plano (acerca bien) y después en el mismo punto del mapa.';
+  if (cuadricula) {
+    return n ? `${n} ${n === 1 ? 'punto' : 'puntos'} para comprobar la cuadrícula. ${como}`
+      : `Puedes marcar puntos para comprobar que la cuadrícula calza. ${como}`;
+  }
+  const mandan = coordenada ? 'Con 2 o más puntos, ellos mandan sobre tu coordenada.' : 'Con 2 puntos ya se ubica el plano.';
+  if (n === 0) return `${como} ${mandan}`;
+  if (n === 1) return `1 punto. Marca otro: ${mandan.charAt(0).toLowerCase()}${mandan.slice(1)}`;
+  const control = n < 4 ? ' Con 4 se nota si alguno quedó mal marcado.' : '';
+  return `${n} puntos.${coordenada ? ' Con 2 o más puntos, ellos mandan sobre tu coordenada.' : ''}${control}`;
 }
 
 /** ¿El servidor ubica con la coordenada? Sin cuadrícula elegida y sin 2 puntos que manden. */

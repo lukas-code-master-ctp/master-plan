@@ -468,6 +468,9 @@ class Plano:
                 # ppmm de trabajo (para la escala impresa) y la homografía página → trabajo.
                 escala_m_px=escala_del_cuadro(d), ppmm=(d.get("trabajo") or {}).get("ppmm"),
                 homografia=(d.get("trabajo") or {}).get("homografia"),
+                # La vista previa con puntos usa la homografía solo en una foto rectificada,
+                # como `georreferenciar` (en un recorte la similitud la absorbe).
+                perspectiva=(d.get("trabajo") or {}).get("modo") == "perspectiva",
                 vigente=entradas is not None and self._digitalizado_vigente(entradas))
         if (self.carpeta / GEORREFERENCIA).is_file():
             georreferencia = dict(resumen_georreferencia(self._leer(GEORREFERENCIA)),

@@ -919,6 +919,19 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
   content: ''; position: absolute; left: 11px; bottom: -3px; width: 6px; height: 6px; border-radius: 50%;
   background: #ea580c; box-shadow: 0 0 0 2px #fff;
 }
+/* "Afinar con puntos": plegada debajo de la guía. El summary lleva el para qué, así se
+   entiende sin abrirla; abierta, se marca con el mismo anillo que el paso que toca. */
+.kmz-afinar { border: 1px solid var(--zinc-200); border-radius: var(--radio-md); }
+.kmz-afinar[open] { border-color: var(--zinc-400); }
+.kmz-afinar > summary { display: grid; gap: 0.2rem; padding: 0.75rem 0.75rem 0.75rem 2rem; cursor: pointer; list-style: none; position: relative; }
+.kmz-afinar > summary::-webkit-details-marker { display: none; }
+.kmz-afinar > summary::before { content: '▸'; position: absolute; left: 0.8rem; top: 0.7rem; color: var(--zinc-600); transition: transform 0.15s; }
+.kmz-afinar[open] > summary::before { transform: rotate(90deg); }
+.kmz-afinar > summary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--marca-anillo); border-radius: var(--radio-md); }
+.kmz-afinar__titulo { font-size: 0.875rem; font-weight: 600; color: var(--zinc-900); }
+.kmz-afinar__para { font-size: 0.8125rem; color: var(--zinc-600); }
+.kmz-afinar__cuerpo { display: grid; gap: 0.5rem; justify-items: start; padding: 0 0.75rem 0.75rem; }
+.kmz-afinar__cuerpo .kmz-cuadricula, .kmz-afinar__cuerpo .kmz-tabla { justify-self: stretch; }
 .kmz-avisos { margin: 0.35rem 0 0; padding-left: 1.1rem; color: var(--ambar-800); font-size: 0.8125rem; }
 .kmz-ajuste { display: grid; gap: 0.5rem; margin: 0; padding: 0.75rem; border: 1px solid var(--zinc-200); border-radius: var(--radio-md); }
 .kmz-ajuste legend { padding: 0 0.25rem; font-weight: 600; }

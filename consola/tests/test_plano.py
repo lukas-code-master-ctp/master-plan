@@ -568,6 +568,7 @@ def test_ubicar_con_la_coordenada_y_un_punto_del_plano(ana):
     # Lo que necesita la vista previa del navegador.
     assert estado["digitalizado"]["escala_m_px"] == pytest.approx(M_PX)
     assert estado["digitalizado"]["homografia"] == np.eye(3).tolist()
+    assert estado["digitalizado"]["perspectiva"] is False
 
     respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
 

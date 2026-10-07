@@ -621,29 +621,39 @@
                    aria-describedby="kmz-escala-ayuda">
           </label>
           <p id="kmz-escala-ayuda" class="nota">El plano no trae cuadro de superficies, así que el tamaño sale
-            de su escala. Si no la sabes, marca puntos abajo.</p>
+            de su escala. Si no la sabes, abre "Afinar con puntos" abajo.</p>
         </div>
         <p id="kmz-guia-nota" class="kmz-nota-fuerte" hidden></p>
         <div id="kmz-ubicacion" class="kmz-ubicacion" hidden>
           <p id="kmz-ubicacion-texto"></p>
           <ul id="kmz-avisos" class="kmz-avisos"></ul>
         </div>
-        <h3>Afinar con puntos</h3>
-        <p class="ayuda">Si tienes más puntos, puedes marcarlos: haz clic en un punto del plano (acerca
-          bien) y después en el mismo punto del mapa. Con 2 o más, mandan ellos.</p>
-        <button class="boton boton--texto boton--chico" data-accion="kmz-marcar-anclas" type="button" hidden>Marcar puntos en el plano y el mapa</button>
-        <p id="kmz-ancla-estado" class="kmz-estado" role="status" aria-live="polite"></p>
-        <button class="boton boton--texto boton--chico" data-accion="kmz-cancelar-ancla" type="button" hidden>Cancelar este punto (Esc)</button>
-        <div id="kmz-cuadricula" class="kmz-cuadricula" hidden>
-          <p id="kmz-cuadricula-texto" class="nota"></p>
-          <button class="boton boton--contorno boton--chico" data-accion="kmz-usar-cuadricula" type="button">Usar la cuadrícula impresa</button>
-          <button class="boton boton--texto boton--chico" data-accion="kmz-quitar-cuadricula" type="button">Dejar de usarla</button>
-        </div>
-        <table id="kmz-anclas" class="kmz-tabla" hidden>
-          <caption class="nota">Distancia: cuánto se aleja cada punto de donde lo dejan los demás.</caption>
-          <thead><tr><th scope="col">Punto</th><th scope="col">Distancia</th><th scope="col">Estado</th><th scope="col"><span class="oculto">Acciones</span></th></tr></thead>
-          <tbody></tbody>
-        </table>
+        <p id="kmz-pista" class="nota" role="status" hidden></p>
+        <!-- Abrirla es pedir que un clic en el plano marque un punto (`afinando` en kmz.js);
+             plegarla lo apaga. La línea del summary dice para qué sirve aunque esté plegada. -->
+        <details id="kmz-afinar" class="kmz-afinar">
+          <summary>
+            <span class="kmz-afinar__titulo">Afinar con puntos</span>
+            <span class="kmz-afinar__para">Si los lotes no calzan girando, marca puntos que veas igual en el plano
+              y en el mapa: esquinas de deslinde, cruces de caminos.</span>
+            <span id="kmz-afinar-cuadricula" class="kmz-afinar__para" hidden>Tu plano trae una cuadrícula con
+              coordenadas impresas: también está aquí.</span>
+          </summary>
+          <div class="kmz-afinar__cuerpo">
+            <p id="kmz-ancla-estado" class="kmz-estado" role="status" aria-live="polite"></p>
+            <button class="boton boton--texto boton--chico" data-accion="kmz-cancelar-ancla" type="button" hidden>Cancelar este punto (Esc)</button>
+            <div id="kmz-cuadricula" class="kmz-cuadricula" hidden>
+              <p id="kmz-cuadricula-texto" class="nota"></p>
+              <button class="boton boton--contorno boton--chico" data-accion="kmz-usar-cuadricula" type="button">Usar la cuadrícula impresa</button>
+              <button class="boton boton--texto boton--chico" data-accion="kmz-quitar-cuadricula" type="button">Dejar de usarla</button>
+            </div>
+            <table id="kmz-anclas" class="kmz-tabla" hidden>
+              <caption class="nota">Distancia: cuánto se aleja cada punto de donde lo dejan los demás.</caption>
+              <thead><tr><th scope="col">Punto</th><th scope="col">Distancia</th><th scope="col">Estado</th><th scope="col"><span class="oculto">Acciones</span></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
         <fieldset id="kmz-ajuste-fino" class="kmz-ajuste">
           <legend>Ajuste fino</legend>
           <p class="nota">Mueve los lotes para que los caminos calcen con la imagen.</p>
