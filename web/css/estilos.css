@@ -1716,44 +1716,58 @@ button { cursor: pointer; }
   }
   body[data-panel="mapa"] .leyenda span + span { padding-left: 0; border-left: 0; }
 
-  /* La ficha sube hasta debajo de los puntos de vuelo: arriba siguen el rumbo,
-     compartir y los puntos, como en el diseño. */
+  /* La ficha es una hoja que sube hasta debajo de los puntos de vuelo. Entera,
+     media y asomada son la misma hoja corrida hacia abajo (--desplazo, hoja.js):
+     nunca cambia de alto, así que el movimiento es uno solo. La curva es la de las
+     hojas del sistema: arranca rápido y se posa sin rebote. */
   .ficha {
     left: 0; right: 0; bottom: 0;
     width: auto;
-    /* Abre a media altura, para que la parcela elegida se siga viendo arriba;
-       el asa la sube entera (.ficha--entera). */
-    max-height: min(52dvh, calc(100dvh - var(--tope-hud) - 0.75rem));
+    max-height: calc(100dvh - var(--tope-hud) - 0.75rem);
     padding-top: 0;
     border-radius: var(--radio-xl) var(--radio-xl) 0 0;
     padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+    transform: translateY(var(--desplazo, 0px));
+    animation: none;
+    /* Fuera de entera, el dedo mueve la hoja en vez de desplazar el contenido. */
+    overflow-y: hidden;
+    overscroll-behavior: contain;
+    touch-action: none;
+    will-change: transform;
   }
-  /* El asa: una franja de 28 px a todo el ancho que se arrastra hacia abajo
-     (touch-action: none para que el navegador no la tome como scroll). */
+  .ficha:not(.ficha--arrastrando) { transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1); }
+  .ficha--entera { overflow-y: auto; touch-action: pan-y; }
+  /* Arriba, el asa con su botón: baja la hoja hasta asomarla y la vuelve a subir.
+     También se arrastra (touch-action: none, para que no sea scroll). */
   .ficha__asa {
-    display: block;
+    display: flex;
+    justify-content: center;
     position: sticky;
     top: 0;
     z-index: 1;
-    height: 28px;
     margin: 0 -1.25rem 0.25rem;
+    padding: 6px 0 2px;
     background: var(--papel);
     cursor: grab;
-    touch-action: none;
   }
-  .ficha__asa::before {
-    content: '';
-    position: absolute;
-    left: 50%; top: 12px;
-    width: 36px; height: 4px;
-    margin-left: -18px;
-    border-radius: 2px;
-    background: var(--zinc-300);
+  .ficha__asa, .ficha__cabecera { touch-action: none; }
+  .ficha__bajar {
+    display: grid;
+    place-items: center;
+    width: 3.5rem; height: 1.75rem;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radio-full);
+    background: var(--zinc-100);
+    color: var(--zinc-500);
+    transition: background 150ms;
   }
-  .ficha--entera { max-height: calc(100dvh - var(--tope-hud) - 0.75rem); }
-  /* Asomada: la ficha baja hasta dejar ver solo su cabecera, y la parcela sigue
-     elegida (ficha.js, ponerNivel). Se mueve con transform, no cambia de alto. */
-  .ficha--minima { transform: translateY(calc(100% - var(--asomo, 132px))); overflow: hidden; }
+  .ficha__bajar:active { background: var(--zinc-300); }
+  .ficha__bajar svg { width: 1.1rem; height: 1.1rem; transition: transform 300ms var(--curva); }
+  .ficha--minima .ficha__bajar svg { transform: rotate(180deg); }
+  /* El dedo responde en 44 px de alto aunque la pastilla mida 28. */
+  .ficha__bajar { position: relative; }
+  .ficha__bajar::after { content: ''; position: absolute; inset: -8px -6px; }
   .ficha--minima .ficha__cabecera { cursor: pointer; }
   .ficha__titulo { font-size: 22px; }
   body:has(.ficha:not([hidden])) .perspectivas,
