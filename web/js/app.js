@@ -2,7 +2,8 @@
 import { rumboCardinal, rumboCorto } from './camara.js';
 import { Catalogo, ErrorDeDatos, buscar, conteoPorEstado, filtrar, romano } from './datos.js';
 import { aplicarMarca, ponerLogo } from './marca.js';
-import { mensajeWhatsapp, renderizarFicha, rotuloConPrecio } from './ficha.js';
+import { mensajeWhatsapp, renderizarFicha } from './ficha.js';
+import { agruparParcelas, resumenDeGrupo } from './grupos.js';
 import { abrirFormulario } from './reserva.js';
 import { Mapa } from './mapa.js';
 import {
@@ -64,7 +65,6 @@ async function arrancar() {
 
   estado.visor = new Visor($('#visor'), {
     rotuloDe: (id) => catalogo.rotulo(id),
-    rotuloSeleccionadoDe: (id) => rotuloConPrecio(catalogo.porId.get(id), catalogo.rotulo(id)),
     alElegirParcela: (id) => seleccionar(id),
     alPasarSobreParcela: (id) => destacar(id),
     alMoverCamara: (camara) => {
@@ -84,6 +84,17 @@ async function arrancar() {
     alPasarSobreParcela: (id) => destacar(id),
     alElegirVista: (posicion) => irAPosicion(posicion),
   });
+
+  // De lejos, los grupos de parcelas vecinas cuyos números no caben se muestran
+  // como una burbuja con su rango y sus disponibles (grupos.js).
+  const grupos = agruparParcelas(catalogo.parcelas);
+  const resumenDe = (grupo) => resumenDeGrupo(grupo, {
+    parcela: (id) => catalogo.porId.get(id),
+    esDisponible: (parcela) => Boolean(catalogo.estados[parcela.estado]?.vendible) && !parcela.apartada,
+    visible: (id) => estado.visibles.has(id),
+  });
+  estado.visor.ponerGrupos(grupos, resumenDe);
+  estado.mapa.ponerGrupos(grupos, resumenDe);
 
   construirLeyenda();
   construirFiltros();
@@ -188,6 +199,10 @@ async function verDesdeElAire(parcela) {
 }
 
 function destacar(id) {
+  // El nombre que se abrió al pasar sobre la vista aérea se cierra al salir: si
+  // no, quedaban decenas abiertos en el plano. El de la elegida es fijo y se queda.
+  const anterior = estado.mapa.formas.get(estado.destacada);
+  if (anterior && estado.destacada !== estado.seleccionada) anterior.closeTooltip();
   estado.destacada = id;
   const forma = estado.mapa.formas.get(id);
   if (forma) forma.openTooltip();
@@ -213,6 +228,12 @@ function refrescarEstilos() {
 
 // --- Controles de vuelo -------------------------------------------------------
 
+/** Despliega o pliega los puntos de vuelo (solo cambia algo en el teléfono). */
+function desplegarPuntos(abierto) {
+  $('.puntos').classList.toggle('puntos--abierto', abierto);
+  $('#controles-posicion').setAttribute('aria-expanded', String(abierto));
+}
+
 function construirControles() {
   const posiciones = estado.catalogo.posiciones();
   $('#controles-posicion').replaceChildren(...posiciones.map(({ posicion }) => {
@@ -229,10 +250,22 @@ function construirControles() {
     altura.textContent = estado.catalogo.alturasDePunto(posicion);
     boton.append(nombre, altura);
     boton.title = `${estado.catalogo.nombrePunto(posicion)} · ${estado.catalogo.alturasDePunto(posicion)}`;
-    boton.addEventListener('click', () => irAPosicion(posicion));
+    boton.addEventListener('click', () => {
+      // En el teléfono los puntos van plegados en una pastilla con el actual: el
+      // primer toque los despliega y el segundo elige.
+      if (!ESCRITORIO.matches && !$('.puntos').classList.contains('puntos--abierto')) {
+        desplegarPuntos(true);
+        return;
+      }
+      desplegarPuntos(false);
+      irAPosicion(posicion);
+    });
     boton.dataset.posicion = posicion;
     return boton;
   }));
+  document.addEventListener('pointerdown', (evento) => {
+    if (!evento.target.closest('.puntos')) desplegarPuntos(false);
+  });
 
   // El altímetro se lee de arriba hacia abajo, como un instrumento de vuelo.
   // Las alturas salen del vuelo, no de una lista fija: cada loteo se vuela a las
@@ -255,8 +288,17 @@ function construirControles() {
     return boton;
   }));
 
+  $('#abrir-plano').addEventListener('click', () => ponerPlano('mini', { alTerminar: enfocarEnElPlano }));
   $('#ampliar-mapa').addEventListener('click', () => {
-    ampliarPlano(!$('#carta').classList.contains('carta--amplia'));
+    ponerPlano(document.body.dataset.plano === 'completo' ? 'mini' : 'completo',
+               { alTerminar: enfocarEnElPlano });
+  });
+  $('#cerrar-plano').addEventListener('click', () => {
+    ponerPlano('cerrado');
+    $('#abrir-plano').focus();
+  });
+  document.addEventListener('keydown', (evento) => {
+    if (evento.key === 'Escape' && document.body.dataset.plano === 'completo') ponerPlano('mini');
   });
 
   $('#acercar').addEventListener('click', () => estado.visor.acercar(0.78));
@@ -264,19 +306,6 @@ function construirControles() {
 }
 
 function conectarAccionesRapidas() {
-  $('#accion-plano').addEventListener('click', () => {
-    // En el teléfono el plano es otra pestaña. En escritorio ya está a la vista,
-    // chico en una esquina: apretar "Plano" y que solo cambie la pestaña oculta
-    // era no hacer nada. Ahí se agranda, o se achica si ya estaba grande.
-    if (ESCRITORIO.matches) {
-      const amplia = !$('#carta').classList.contains('carta--amplia');
-      ampliarPlano(amplia, { alTerminar: () => amplia && enfocarEnElPlano() });
-      return;
-    }
-    mostrarPanel('mapa');
-    enfocarEnElPlano();
-  });
-
   const compartir = $('#accion-compartir');
   compartir.addEventListener('click', async () => {
     const etiqueta = compartir.querySelector('.accion__texto');
@@ -511,7 +540,11 @@ function conectarPaneles() {
     mostrarPanel('mapa');
     enfocarEnElPlano();
   });
-  $('#entrar-360').addEventListener('click', () => mostrarPanel('visor'));
+  $('#entrar-360').addEventListener('click', () => {
+    // En escritorio el plano a pantalla completa tapa la vista aérea: se vuelve al minimapa.
+    if (document.body.dataset.plano === 'completo') ponerPlano('mini');
+    mostrarPanel('visor');
+  });
   const pista = $('#pista');
   $('#visor').addEventListener('pointerdown', () => pista.classList.add('pista--oculta'),
                                { once: true });
@@ -520,16 +553,26 @@ function conectarPaneles() {
 // El mismo corte que estilos.css: debajo, plano y vista aérea son pestañas.
 const ESCRITORIO = window.matchMedia('(min-width: 62.0625rem)');
 
-/** Agranda o achica el plano de la esquina, con los dos botones de acuerdo. */
-function ampliarPlano(amplia, { alTerminar } = {}) {
-  $('#carta').classList.toggle('carta--amplia', amplia);
-  $('#ampliar-mapa').setAttribute('aria-pressed', String(amplia));
-  $('#accion-plano').setAttribute('aria-pressed', String(amplia));
-  // Leaflet necesita saber que cambió de tamaño, y la transición dura 420 ms.
-  setTimeout(() => {
+/**
+ * El plano en escritorio: 'cerrado' (solo el botón flotante), 'mini' (en la
+ * esquina) o 'completo' (bajo la cabecera). Lo decide body[data-plano] en
+ * estilos.css; en el teléfono el plano es otra pestaña y esto no se ve.
+ */
+function ponerPlano(modo, { alTerminar } = {}) {
+  document.body.dataset.plano = modo;
+  const completo = modo === 'completo';
+  const ampliar = $('#ampliar-mapa');
+  ampliar.setAttribute('aria-pressed', String(completo));
+  ampliar.querySelector('.visually-hidden').textContent =
+    completo ? 'Volver al minimapa' : 'Plano a pantalla completa';
+  if (modo === 'cerrado') return;
+  // El botón para volver a la vista aérea muestra dónde se estaba mirando.
+  if (completo) pintarMiniatura($('#entrar-360-miniatura'), estado.vista, estado.camara);
+  // Leaflet mide su contenedor: hay que esperar a que el cambio de tamaño se pinte.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
     estado.mapa?.refrescar();
     alTerminar?.();
-  }, 460);
+  }));
 }
 
 /** En el plano, lo que se está mirando: la parcela elegida o el punto de vuelo. */

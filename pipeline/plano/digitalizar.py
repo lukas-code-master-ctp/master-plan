@@ -4,7 +4,7 @@
 
 Imprime una línea por etapa: la consola muestra la salida en vivo.
 
-`<carpeta>/entradas.json` (lo que aporta la loteadora; `anclas` y `ajuste` son de
+`<carpeta>/entradas.json` (lo que aporta la loteadora; `anclas`, `ubicacion` y `ajuste` son de
 `georreferenciar` y aquí solo se revisan):
 
     {
@@ -47,7 +47,21 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
                                        `union.cuadro`
       "anclas": [{"nombre": "roja", "x": 2533, "y": 8037,       punto del plano ↔ su lon/lat
                   "lon": -70.8240, "lat": -34.7240}],           WGS84 en grados decimales
-      "ajuste": {"de": 0.0, "dn": 0.0}  traslación fina en metros (este, norte)
+      "ubicacion": {"x": 331.5, "y": 845.1,   ubicar con un punto: el punto del plano (px de
+                    "lon": -71.5483, "lat": -34.1771,   página), su coordenada WGS84, el giro
+                    "giro": 89.3,                   en grados (horario, como gira ella el plano
+                    "escala_impresa": null},        en pantalla: 0 = el arriba es el norte) y la
+                                       escala 1:N del plano, que se usa si no hay cuadro de
+                                       superficies. Puede venir a medias (solo la coordenada)
+                                       mientras la arma: entonces no ubica
+      "escala_cuadro": true,           con 2 o más anclas: el tamaño sale del cuadro de
+                                       superficies y de los puntos solo la posición y el
+                                       giro ("Ajustar el tamaño con el cuadro")
+      "ajuste": {"de": 0.0, "dn": 0.0}, traslación fina en metros (este, norte)
+      "fuera": [[x, y]]                partes sin número que ella dejó fuera del KMZ (el
+                                       resto de la propiedad): un punto dentro de cada una.
+                                       No cambia los lotes; solo que la consola no las
+                                       cuente como lotes sin número
     }
 
 Todas las coordenadas van en **píxeles de página**: la imagen que trae el PDF, ya
@@ -72,7 +86,8 @@ cualquier página.
                                                    todo en px de página
       "sin_numero": [{"poligono", "area_px",       caras dentro del contorno sin lote
                       "de_lote",                   del tamaño de un lote: un lote cuyo número
-                                                   no se leyó (no se unió a su vecino); hay que
+                                                   no se leyó (no se unió a su vecino y no
+                                                   es una franja como un camino); hay que
                                                    numerarlo o crear el KMZ sin él
                       "sugerencia"}],              {"numero", "confianza", "apoyo"} o null: lo
                                                    que leyó el lector dentro, con menos apoyo
@@ -83,8 +98,11 @@ cualquier página.
                                                    sin número del tamaño de un lote; y los del
                                                    cuadro (menos el resto de la propiedad,
                                                    `numeros.esperados`)
-      "cuadricula": {"verticales": [{"valor", "p": [x, y], "q": [x, y], "valida"}],
-                     "horizontales": [...]},       las rectas detectadas (o null)
+      "cuadricula": {"verticales": [{"x", "valor", "p": [x, y], "q": [x, y], "valida"}],
+                     "horizontales": [{"y", ...}]},  las rectas detectadas (o null): las de
+                                                   la cuadrícula elegida o, sin ella, las de
+                                                   la que propone el lector (sin borrar su
+                                                   tinta). "x"/"y": de dónde se partió
       "lector": {"activo", "disponible", "motivo",   motivo: por qué no hubo lector
                  "huella",                          con qué página, rectángulo y máscaras
                                                     se leyó: si no cambian, se reusa
@@ -107,6 +125,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import time
 from dataclasses import dataclass, field, replace
@@ -121,6 +140,7 @@ from . import pagina as pag
 from . import numeros as numeros_lote
 from . import particion, rotulos, tinta
 from . import union as union_hojas
+from .georreferencia import cuadricula_suficiente
 
 ENTRADAS = "entradas.json"
 SALIDA = "digitalizado.json"
@@ -154,20 +174,7 @@ def digitalizar_imagen(imagen: np.ndarray, ppmm: float, semillas, rectangulo=Non
     segmentos = []
     detectada = None
     if cuadricula:
-        gris = cv2.cvtColor(imagen, cv2.COLOR_RGB2GRAY)
-        verticales, horizontales = cuadricula.get("verticales") or [], cuadricula.get("horizontales") or []
-        xs = [float(v["x"]) for v in verticales]
-        ys = [float(v["y"]) for v in horizontales]
-        lineas = tinta.lineas_cuadricula(gris, ppmm, xs, ys)
-        del gris
-        segmentos = [(p, q) for p, q, _ in lineas]
-        # Las rectas detectadas (no la posición aproximada) son las que georreferencian.
-        punto = lambda p: [round(float(p[0]), 3), round(float(p[1]), 3)]
-        detectada = {familia: [dict(valor=m.get("valor"), p=punto(p), q=punto(q), valida=bool(v))
-                               for m, (p, q, v) in zip(marcas, trozo)]
-                     for familia, marcas, trozo in (("verticales", verticales, lineas[:len(xs)]),
-                                                    ("horizontales", horizontales, lineas[len(xs):]))}
-        avance(f"Cuadrícula: {sum(v for *_, v in lineas)} de {len(lineas)} líneas bien ubicadas")
+        detectada, segmentos = rectas_cuadricula(imagen, ppmm, cuadricula, avance)
 
     papel = pag.color_papel(imagen, rectangulo)
     tapada = pag.tapar(imagen, mascaras, papel)
@@ -227,6 +234,30 @@ def digitalizar_imagen(imagen: np.ndarray, ppmm: float, semillas, rectangulo=Non
     return Resultado(encuadre, lotes, sin_numero, red.lotes, estadisticas, detectada, sin_numero_lote)
 
 
+def rectas_cuadricula(imagen: np.ndarray, ppmm: float, cuadricula: dict, avance=print):
+    """Las rectas de la cuadrícula en la imagen, partiendo de la posición aproximada de
+    cada línea. Devuelve (detectada, segmentos): `detectada` en el formato de
+    `digitalizado.json` y los segmentos en px de página, para borrar su tinta.
+
+    Cada recta guarda también la posición de la que se partió ("x" o "y"): así
+    `georreferencia` sabe si son las rectas de la cuadrícula que se usa al ubicar."""
+    gris = cv2.cvtColor(imagen, cv2.COLOR_RGB2GRAY)
+    verticales, horizontales = cuadricula.get("verticales") or [], cuadricula.get("horizontales") or []
+    xs = [float(v["x"]) for v in verticales]
+    ys = [float(v["y"]) for v in horizontales]
+    lineas = tinta.lineas_cuadricula(gris, ppmm, xs, ys)
+    del gris
+    # Las rectas detectadas (no la posición aproximada) son las que georreferencian.
+    punto = lambda p: [round(float(p[0]), 3), round(float(p[1]), 3)]
+    detectada = {familia: [{eje: posicion, "valor": m.get("valor"), "p": punto(p), "q": punto(q), "valida": bool(v)}
+                           for posicion, m, (p, q, v) in zip(posiciones, marcas, trozo)]
+                 for familia, eje, posiciones, marcas, trozo in (
+                     ("verticales", "x", xs, verticales, lineas[:len(xs)]),
+                     ("horizontales", "y", ys, horizontales, lineas[len(xs):]))}
+    avance(f"Cuadrícula: {sum(v for *_, v in lineas)} de {len(lineas)} líneas bien ubicadas")
+    return detectada, [(p, q) for p, q, _ in lineas]
+
+
 def _transformar(g: Polygon, encuadre: pag.Encuadre) -> Polygon:
     exterior = encuadre.a_pagina(np.asarray(g.exterior.coords))
     huecos = [encuadre.a_pagina(np.asarray(h.coords)) for h in g.interiors]
@@ -259,8 +290,11 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
         lector = _leer_rotulos(carpeta, entradas, imagen, ppmm, previo, avance)
         poligonos = ([l["poligono"] for l in previo.get("lotes") or []]
                      + [c["poligono"] for c in previo.get("sin_numero") or []]) if previo else []
+        cuadro = lector.get("cuadro") or {}
+        # Sin el resto de la propiedad: su "8" haría pasar el "6-08" por un lote del cuadro.
         combinadas = rotulos.combinar(usuario, lector["rotulos"], RADIO_CORRECCION_MM * ppmm,
-                                      entradas["lector_apoyo_min"], poligonos, lector.get("cuadro") or {})
+                                      entradas["lector_apoyo_min"], poligonos, numeros_lote.esperados(cuadro),
+                                      [r for r in [numeros_lote.resto(cuadro)] if r])
     else:
         combinadas = rotulos.combinar(usuario, [], 0.0)
     del previo
@@ -271,6 +305,14 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     r = digitalizar_imagen(imagen, ppmm, semillas, entradas.get("rectangulo"),
                            _mascaras(entradas), entradas.get("esquinas"),
                            entradas.get("marco_mm"), entradas.get("cuadricula"), avance)
+    detectada = r.cuadricula
+    propuesta = (lector or {}).get("cuadricula")
+    if detectada is None and cuadricula_suficiente(propuesta):
+        # La loteadora suele elegir la cuadrícula que propone el lector ya en Ubicar, sin
+        # volver a digitalizar (no atrasa los lotes): se buscan sus rectas desde ya para
+        # que ubicar mida el giro de la hoja. Su tinta no se borra: eso cambiaría los
+        # lotes de una cuadrícula que nadie eligió.
+        detectada, _ = rectas_cuadricula(imagen, ppmm, propuesta, avance)
     posicion = {s["numero"]: s for s in combinadas}
     cuadro = (lector or {}).get("cuadro") or {}
     # Faltantes son las semillas de la loteadora: un rótulo leído sin polígono suele
@@ -300,19 +342,27 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
                     huecos=[_anillo(h) for h in g.interiors], area_px=round(g.area, 1),
                     vertices=len(g.exterior.coords) - 1, origen=posicion[n]["origen"],
                     confianza=posicion[n]["confianza"], apoyo=posicion[n]["apoyo"],
-                    area_oficial=numeros_lote.buscar(cuadro, n))
+                    area_oficial=_area_oficial(cuadro, n))
                for n, g in r.lotes.items()],
         sin_numero=[dict(poligono=_anillo(g.exterior), area_px=round(g.area, 1), de_lote=es, sugerencia=sug)
                     for g, es, sug in zip(r.sin_numero, r.sin_numero_lote, sugerencias)],
         faltantes=faltantes,
         huecos=huecos,
-        cuadricula=r.cuadricula,
+        cuadricula=detectada,
         lector=_resumen_lector(lector, entradas, de_lector, sin_poligono),
         estadisticas=r.estadisticas,
     )
     escribir_json(carpeta / SALIDA, datos)
     avance(f"Listo: {carpeta / SALIDA}")
     return datos
+
+
+def _area_oficial(cuadro: dict, numero: str) -> float | None:
+    """La del cuadro de superficies. El resto de la propiedad que ella llamó "Resto" (el
+    cuadro no le daba número, o no se había leído) tiene la de la fila del resto."""
+    if numeros_lote.es_resto(numero) and numeros_lote.resto(cuadro):
+        return cuadro[numeros_lote.resto(cuadro)]
+    return numeros_lote.buscar(cuadro, numero)
 
 
 def _sugerencias(caras: list[Polygon], de_lote: list[bool], leidos, apoyo_min: int,
@@ -328,14 +378,17 @@ def _sugerencias(caras: list[Polygon], de_lote: list[bool], leidos, apoyo_min: i
     from shapely.geometry import Point
     salida: list[dict | None] = [None] * len(caras)
     tomados = list(usados)
-    oficiales = list(cuadro or {})
+    oficiales = numeros_lote.esperados(cuadro or {})
+    restos = [r for r in [numeros_lote.resto(cuadro or {})] if r]
     tope = max((numeros_lote.ultimo(n) or 0 for n in oficiales), default=None)
     for r in sorted((r for r in leidos if r.apoyo < apoyo_min), key=lambda r: (-r.apoyo, -r.confianza)):
         numero = numeros_lote.segun_cuadro(r.numero, oficiales)
         if (tope is not None and not any(numeros_lote.mismo_lote(numero, n) for n in oficiales)
                 and (numeros_lote.ultimo(numero) or tope + 1) > tope):
             continue
-        if any(numeros_lote.mismo_lote(numero, n) for n in tomados):
+        # El resto de la propiedad tampoco se sugiere: Numerar le pregunta si va al KMZ.
+        if (numeros_lote.clave(numero) in map(numeros_lote.clave, restos)
+                or any(numeros_lote.mismo_lote(numero, n, restos) for n in tomados)):
             continue
         for i, (cara, es) in enumerate(zip(caras, de_lote)):
             if es and salida[i] is None and cara.contains(Point(r.x, r.y)):
@@ -558,11 +611,61 @@ def leer_entradas(carpeta: Path) -> dict:
             raise ValueError(f"{nombre}: lon/lat fuera de rango ({lon}, {lat})")
         anclas.append(dict(a, nombre=nombre, x=x, y=y, lon=lon, lat=lat))
     salida["anclas"] = anclas
+    if "ubicacion" in e:
+        # Sin la clave no se agrega: unas entradas de antes quedan iguales (y su huella).
+        salida["ubicacion"] = _ubicacion(e["ubicacion"])
+    if e.get("escala_cuadro") is not None:
+        # Sin la clave (o null) no se agrega: las entradas de antes quedan iguales, y su huella.
+        if not isinstance(e["escala_cuadro"], bool):
+            raise ValueError(f"«escala_cuadro» es true o false, no {e['escala_cuadro']!r}")
+        salida["escala_cuadro"] = e["escala_cuadro"]
+    fuera = e.get("fuera") or []
+    if not isinstance(fuera, list):
+        raise ValueError(f"«fuera» es una lista de puntos [[x, y]], no {fuera!r}")
+    salida["fuera"] = [numeros(f, 2, "fuera[]") for f in fuera]
     ajuste = e.get("ajuste") or {}
     if not isinstance(ajuste, dict):
         raise ValueError(f"«ajuste» es {{\"de\": metros, \"dn\": metros}}, no {ajuste!r}")
     de, dn = numeros([ajuste.get("de", 0.0), ajuste.get("dn", 0.0)], 2, "ajuste: de, dn")
     salida["ajuste"] = dict(de=de, dn=dn)
+    return salida
+
+
+# La escala impresa de un plano de loteo va de 1:500 a 1:50.000; con holgura, lo que
+# está fuera de esto es un error de tipeo (p. ej. 5 por 5.000).
+ESCALA_IMPRESA_MIN, ESCALA_IMPRESA_MAX = 100, 1_000_000
+
+
+def _ubicacion(u) -> dict | None:
+    """`ubicacion` revisada. Cada parte es opcional (se arma de a poco en la pantalla),
+    pero lo que viene tiene que ser un número que sirva."""
+    if u is None:
+        return None
+    if not isinstance(u, dict):
+        raise ValueError(f"«ubicacion» es {{\"x\", \"y\", \"lon\", \"lat\", \"giro\"}}, no {u!r}")
+    salida = {}
+    for clave in ("x", "y", "lon", "lat", "giro"):
+        valor = u.get(clave)
+        if valor is None:
+            continue
+        if not isinstance(valor, (int, float)) or isinstance(valor, bool) or not math.isfinite(valor):
+            raise ValueError(f"«ubicacion.{clave}» debe ser un número, no {valor!r}")
+        salida[clave] = float(valor)
+    if "lon" in salida and not -180 <= salida["lon"] <= 180 or "lat" in salida and not -90 <= salida["lat"] <= 90:
+        raise ValueError(f"la coordenada está fuera de rango ({salida.get('lon')}, {salida.get('lat')})")
+    if not -180 <= salida.get("giro", 0.0) <= 180:
+        raise ValueError(f"el giro va de −180 a 180 grados, no {salida['giro']}")
+    escala = u.get("escala_impresa")
+    if escala is not None:
+        if (not isinstance(escala, (int, float)) or isinstance(escala, bool) or not math.isfinite(escala)
+                or escala != int(escala)):
+            raise ValueError(f"la escala del plano es un número entero (1:5.000 → 5000), no {escala!r}")
+        if not ESCALA_IMPRESA_MIN <= escala <= ESCALA_IMPRESA_MAX:
+            raise ValueError(f"la escala del plano 1:{int(escala)} no parece real: revísala (por ejemplo 1:5.000)")
+        salida["escala_impresa"] = int(escala)
+    else:
+        salida["escala_impresa"] = None
+    salida.setdefault("giro", 0.0)
     return salida
 
 

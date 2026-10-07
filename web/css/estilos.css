@@ -507,8 +507,83 @@ button { cursor: pointer; }
   stroke-width: 3;
 }
 
+/* El globo de la elegida: la pastilla flota sobre la parcela y una patita con
+   punta la señala (visor.js, _ponerGlobo). En las demás no existen. */
+.parcela__patita, .parcela__punta { display: none; }
+.parcela--seleccionada .parcela__patita {
+  display: inline;
+  stroke: #fff;
+  stroke-width: 2;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.5));
+}
+.parcela--seleccionada .parcela__punta {
+  display: inline;
+  fill: currentColor;
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
 .parcela--atenuada { opacity: 0.18; pointer-events: none; }
 .parcela--atenuada .parcela__pastilla { display: none; }
+
+/* Con una parcela elegida, el resto da un paso atrás: se apaga y pierde el rótulo,
+   pero se puede tocar para cambiar de parcela. */
+/* 0.2 y no más: en un loteo grande son cientos de contornos blancos, y al 30 % todavía
+   competían con la elegida. */
+.overlay--con-seleccion .parcela:not(.parcela--seleccionada) {
+  opacity: 0.2;
+  transition: opacity 200ms ease;
+}
+.overlay--con-seleccion .parcela:not(.parcela--seleccionada):hover { opacity: 0.75; }
+.overlay--con-seleccion .parcela:not(.parcela--seleccionada) .parcela__pastilla { display: none; }
+
+/* Un grupo de parcelas vecinas cuyos números no caben (grupos.js): su rango y
+   cuántas quedan disponibles. Al tocarlo, la cámara se acerca y aparecen. */
+.burbuja { pointer-events: auto; cursor: pointer; }
+.burbuja__toque { fill: transparent; }
+.burbuja__fondo {
+  fill: var(--zinc-900);
+  stroke: rgb(255 255 255 / 0.9);
+  stroke-width: 1.5;
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / 0.45));
+  transition: transform 160ms var(--curva);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.burbuja:hover .burbuja__fondo { transform: scale(1.08); }
+.burbuja__texto {
+  font: 600 0.75rem var(--sans);
+  font-variant-numeric: tabular-nums;
+  text-anchor: middle;
+  fill: #fff;
+  pointer-events: none;
+}
+.burbuja__rango { font-weight: 700; }
+.burbuja__disponibles { fill: rgb(255 255 255 / 0.7); }
+/* Verde claro y no el #15803d de disponible: sobre el fondo oscuro no se leería. */
+.burbuja__disponibles--hay { fill: #4ade80; }
+.overlay--con-seleccion .burbuja { display: none; }
+
+/* El brillo que late alrededor de la elegida, del color de su estado. Solo se
+   anima la opacidad. */
+.parcela-halo {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 7;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  animation: latido 1.6s ease-in-out infinite;
+}
+@keyframes latido {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+/* La regla general de movimiento reducido acorta las animaciones a 1 ms: en una
+   infinita eso sería un parpadeo. Acá el brillo se queda quieto. */
+@media (prefers-reduced-motion: reduce) {
+  .parcela-halo, .parcela-mapa--elegida { animation: none !important; opacity: 0.85; }
+}
 
 .referencia { pointer-events: none; }
 .referencia__tick { stroke: rgb(255 255 255 / 0.85); stroke-width: 1.5; }
@@ -832,9 +907,116 @@ button { cursor: pointer; }
 .carta__accion[aria-pressed="true"] { background: var(--marca-50); color: var(--marca-700); }
 .accion[aria-pressed="true"] { background: var(--zinc-900); color: #fff; }
 
-.mapa { height: 11rem; background: var(--zinc-100); transition: height 420ms var(--curva); }
-.carta--amplia { width: min(32rem, 44vw); }
-.carta--amplia .mapa { height: min(22rem, 48vh); }
+.mapa { height: 11rem; background: var(--zinc-100); }
+.carta__accion + .carta__accion { margin-left: 0; }
+
+/* El plano en escritorio tiene tres estados (body[data-plano]): guardado en el
+   botón flotante, abierto como minimapa en la esquina, o a pantalla completa bajo
+   la cabecera. En el teléfono es otra pestaña y nada de esto aplica. */
+.plano-flotante {
+  position: fixed;
+  z-index: 21;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--alto-control);
+  padding: 0 1.1rem 0 0.9rem;
+  background: var(--papel);
+  border: 0;
+  border-radius: var(--radio-full);
+  box-shadow: var(--sombra-panel);
+  color: var(--tinta);
+  font: 600 0.875rem/1 var(--sans);
+  cursor: pointer;
+  transition: transform 160ms var(--curva), box-shadow 160ms;
+}
+.plano-flotante svg { width: 1.15rem; height: 1.15rem; }
+.plano-flotante:hover { transform: translateY(-1px); }
+.plano-flotante:active { transform: translateY(0) scale(0.98); }
+.plano-flotante:focus-visible { outline: 2px solid var(--marca-700); outline-offset: 2px; }
+
+@media (min-width: 62.0625rem) {
+  body[data-plano="cerrado"] .carta { display: none; }
+  body[data-plano="cerrado"] .plano-flotante { display: inline-flex; animation: subir 200ms ease-out; }
+
+  body[data-plano="completo"] .carta {
+    inset: var(--alto-cabecera) 0 0;
+    width: auto;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    animation: aparecer 180ms ease-out;
+  }
+  body[data-plano="completo"] .mapa { flex: 1; height: auto; }
+  /* Lo de la vista aérea queda debajo del plano; la leyenda sigue sirviendo. */
+  body[data-plano="completo"] .barra-inferior,
+  body[data-plano="completo"] .instrumentos { display: none; }
+  body[data-plano="completo"] .leyenda { z-index: 22; }
+  /* Volver a la vista aérea: el mismo botón del teléfono, en la esquina donde la
+     vista aérea tiene el botón Plano. El zoom del plano sube para no quedar debajo. */
+  body[data-plano="completo"] .entrar-360 { display: flex; left: auto; right: 1.25rem; bottom: 1.25rem; }
+  body[data-plano="completo"] .carta .leaflet-control-zoom { margin-bottom: 6rem; }
+}
+
+/* En el plano, la elegida late y lleva su nombre fijo; las demás no muestran el
+   suyo mientras haya una elegida. */
+.parcela-mapa--elegida {
+  animation: latido-plano 1.6s ease-in-out infinite;
+  filter: drop-shadow(0 0 5px rgb(255 214 150 / 0.95));
+}
+@keyframes latido-plano {
+  0%, 100% { stroke-opacity: 0.55; stroke-width: 3px; }
+  50% { stroke-opacity: 1; stroke-width: 6px; }
+}
+.mapa--con-seleccion .leaflet-tooltip:not(.etiqueta-elegida) { display: none; }
+
+/* Los números del plano y, cuando no caben, la burbuja de su grupo (grupos.js).
+   Cuelgan de un ancla de tamaño cero para quedar centrados en la parcela. */
+.numero-mapa-ancla { width: 0 !important; height: 0 !important; }
+.numero-mapa, .burbuja-mapa {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  border-radius: var(--radio-full);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 1.5px rgb(255 255 255 / 0.9);
+  cursor: pointer;
+}
+.numero-mapa {
+  height: 20px;
+  padding: 0 7px;
+  font: 700 0.6875rem/1 var(--sans);
+}
+.burbuja-mapa {
+  height: 28px;
+  padding: 0 12px;
+  gap: 0.15rem;
+  background: var(--zinc-900);
+  color: #fff;
+  font: 600 0.75rem/1 var(--sans);
+  transition: transform 160ms var(--curva);
+}
+.burbuja-mapa:hover { transform: translate(-50%, -50%) scale(1.08); }
+/* El dedo necesita 44 px; la burbuja mide 28. */
+.burbuja-mapa::after { content: ''; position: absolute; inset: -8px; }
+.burbuja-mapa b { font-weight: 700; }
+.burbuja-mapa__disponibles { color: rgb(255 255 255 / 0.7); }
+.burbuja-mapa__disponibles--hay { color: #4ade80; }
+.mapa--con-seleccion .numero-mapa-ancla { display: none; }
+.leaflet-tooltip.etiqueta-elegida {
+  padding: 0.3rem 0.6rem;
+  background: var(--zinc-900);
+  border: 0;
+  border-radius: var(--radio-full);
+  box-shadow: var(--sombra-hud);
+  color: #fff;
+  font: 700 0.75rem/1 var(--sans);
+}
+.leaflet-tooltip-top.etiqueta-elegida::before { border-top-color: var(--zinc-900); }
 
 .leaflet-container { background: var(--zinc-100); font: inherit; outline: none; }
 .leaflet-control-attribution {
@@ -907,9 +1089,9 @@ button { cursor: pointer; }
 /* En el plano chico de escritorio las pastillas tapaban el loteo: ahí basta el
    disco, y la altura vuelve al agrandarlo. */
 @media (min-width: 62.0625rem) {
-  .carta:not(.carta--amplia) .punto-vuelo { --disco: 24px; padding-right: 0; }
-  .carta:not(.carta--amplia) .punto-vuelo__rotulo { display: none; }
-  .carta:not(.carta--amplia) .punto-vuelo__disco { font-size: 0.625rem; }
+  body:not([data-plano="completo"]) .carta .punto-vuelo { --disco: 24px; padding-right: 0; }
+  body:not([data-plano="completo"]) .carta .punto-vuelo__rotulo { display: none; }
+  body:not([data-plano="completo"]) .carta .punto-vuelo__disco { font-size: 0.625rem; }
 }
 
 .leaflet-tooltip {
@@ -1343,7 +1525,9 @@ button { cursor: pointer; }
   :root {
     --alto-cabecera: 56px;
     --alto-hud: 40px;
-    --fila-1: calc(var(--alto-cabecera) + 0.5rem);
+    /* La cabecera es transparente: la brújula y los puntos suben a su fila, al
+       lado de los botones, y la foto gana esos 48 px. */
+    --fila-1: calc(8px + env(safe-area-inset-top));
     --tope-hud: calc(var(--fila-1) + var(--alto-hud));
     --alto-leyenda: 30px;
     --fondo-hud: calc(0.85rem + var(--alto-leyenda) + 0.5rem + env(safe-area-inset-bottom));
@@ -1351,14 +1535,27 @@ button { cursor: pointer; }
     --alto-perspectivas: calc(112px + env(safe-area-inset-bottom));
   }
 
-  /* Cabecera de una fila: el nombre y, a la derecha, lupa, filtros y WhatsApp
-     como íconos. El buscador se abre sobre la cabecera al tocar la lupa. */
-  .cabecera { gap: 0.5rem; padding: 0 0.9rem; }
-  .marca { flex: 1; }
-  .marca__hito { width: 2rem; height: 2rem; padding: 0.35rem; }
-  .marca__logo { height: 2rem; max-width: 6rem; }
-  .marca__nombre { font-size: 0.9375rem; }
+  /* Sin barra: la foto llega arriba y quedan flotando la lupa, los filtros y
+     WhatsApp a la derecha. El nombre y las coordenadas no ayudaban a mirar el
+     campo; el nombre sigue para los lectores de pantalla. La cabecera deja pasar
+     el dedo para que la foto se pueda arrastrar también por arriba. El buscador
+     se abre sobre esa fila al tocar la lupa. */
+  .cabecera {
+    height: auto;
+    padding: var(--fila-1) 0.85rem 0;
+    background: none;
+    backdrop-filter: none;
+    border-bottom: 0;
+    pointer-events: none;
+  }
+  .cabecera > * { pointer-events: auto; }
+  .marca {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
+  .escena { inset: 0; }
   .cabecera__herramientas { flex: none; gap: 0.375rem; }
+  .cabecera .pastillon { border-color: var(--linea); box-shadow: var(--sombra-hud); }
   .buscador { display: none; }
   #abrir-buscador, #cabecera-whatsapp { display: inline-flex; }
   .pastillon--icono, #abrir-filtros {
@@ -1374,11 +1571,15 @@ button { cursor: pointer; }
     display: block;
     position: absolute;
     z-index: 2;
-    inset: 8px 0.9rem;
+    top: var(--fila-1);
+    inset-inline: 0.85rem;
+    height: var(--alto-hud);
     width: auto;
   }
-  body.buscando .buscador input { height: 100%; }
-  body.buscando .marca, body.buscando .cabecera__herramientas { visibility: hidden; }
+  body.buscando .buscador input { height: 100%; box-shadow: var(--sombra-hud); }
+  /* Abierto, el buscador tapa la fila: se esconden los botones, no él (está
+     dentro de las herramientas y heredaría el hidden). */
+  body.buscando .cabecera__herramientas > :not(.buscador) { visibility: hidden; }
 
   .pista { display: none; }
   .parcela__pastilla { transform-box: fill-box; }
@@ -1408,14 +1609,14 @@ button { cursor: pointer; }
     left: calc(0.85rem + var(--alto-hud) + 0.5rem);
     right: 0.85rem;
     height: var(--alto-hud);
-    padding: 3px;
+    padding: 2px;
   }
   .puntos__rotulo { display: none; }
-  .puntos__fila { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; }
+  .puntos__fila { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; }
   .puntos__fila button {
     display: grid;
     place-content: center;
-    gap: 2px;
+    gap: 3px;
     height: 100%;
     padding: 0 0.25rem;
     font: 700 0.75rem/1 var(--sans);
@@ -1424,6 +1625,29 @@ button { cursor: pointer; }
   }
   .puntos__palabra { display: inline; }
   .puntos__altura { display: block; font: 500 0.625rem/1 var(--sans); font-variant-numeric: tabular-nums; opacity: 0.8; }
+  /* Plegados en una pastilla con el punto actual, para que la foto respire; el
+     primer toque los despliega (app.js, desplegarPuntos). */
+  .puntos:not(.puntos--abierto) { right: auto; }
+  .puntos:not(.puntos--abierto) .puntos__fila button:not([aria-pressed="true"]) { display: none; }
+  .puntos:not(.puntos--abierto) .puntos__fila button[aria-pressed="true"] {
+    position: relative;
+    min-width: 7.25rem;
+    padding: 0 2rem 0 1rem;
+  }
+  .puntos:not(.puntos--abierto) .puntos__fila button[aria-pressed="true"]::after {
+    content: '';
+    position: absolute;
+    right: 0.85rem;
+    top: 50%;
+    width: 6px; height: 6px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-70%) rotate(45deg);
+  }
+  /* Desplegados ocupan la fila entera y los botones de la cabecera se apartan
+     mientras tanto: se pliegan solos al elegir un punto o tocar fuera. */
+  .puntos--abierto { animation: aparecer 140ms ease-out; }
+  body:has(.puntos--abierto) .cabecera__herramientas { visibility: hidden; }
 
   /* Abajo: la leyenda delgada y, encima, Ver plano a la izquierda y el zoom a la
      derecha (también se acerca con dos dedos, pero no todos lo saben). */
@@ -1463,7 +1687,7 @@ button { cursor: pointer; }
      perspectivas. La leyenda se apila arriba a la izquierda, como en un plano
      de papel; lo de la vista aérea se esconde. */
   .carta {
-    inset: var(--alto-cabecera) 0 0;
+    inset: 0;
     width: auto;
     border: 0;
     border-radius: 0;
@@ -1481,8 +1705,9 @@ button { cursor: pointer; }
   body[data-panel="mapa"] .ver-plano,
   body[data-panel="mapa"] .instrumentos { display: none; }
   body[data-panel="mapa"] .leyenda {
-    top: calc(var(--alto-cabecera) + 0.75rem);
+    top: var(--fila-1);
     bottom: auto;
+    height: auto;
     right: auto;
     flex-direction: column;
     align-items: flex-start;
@@ -1526,6 +1751,10 @@ button { cursor: pointer; }
     background: var(--zinc-300);
   }
   .ficha--entera { max-height: calc(100dvh - var(--tope-hud) - 0.75rem); }
+  /* Asomada: la ficha baja hasta dejar ver solo su cabecera, y la parcela sigue
+     elegida (ficha.js, ponerNivel). Se mueve con transform, no cambia de alto. */
+  .ficha--minima { transform: translateY(calc(100% - var(--asomo, 132px))); overflow: hidden; }
+  .ficha--minima .ficha__cabecera { cursor: pointer; }
   .ficha__titulo { font-size: 22px; }
   body:has(.ficha:not([hidden])) .perspectivas,
   body:has(.ficha:not([hidden])) .entrar-360,

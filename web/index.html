@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="vendor/fuentes/fuentes.css">
 <link rel="stylesheet" href="css/estilos.css">
 </head>
-<body>
+<body data-plano="cerrado">
 
 <header class="cabecera">
   <div class="marca">
@@ -163,14 +163,6 @@
         </svg>
         <span class="accion__texto">Compartir</span>
       </button>
-      <button id="accion-plano" class="accion" type="button">
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M10 18s6-5.3 6-10a6 6 0 1 0-12 0c0 4.7 6 10 6 10Z" fill="none"
-                stroke="currentColor" stroke-width="1.5"/>
-          <circle cx="10" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
-        </svg>
-        <span class="accion__texto">Plano</span>
-      </button>
       <a id="accion-whatsapp" class="accion accion--whatsapp" target="_blank" rel="noopener">
         <svg viewBox="0 0 20 20" aria-hidden="true">
           <path d="M3 17l1-3.4A7 7 0 1 1 6.6 16L3 17Z" fill="none" stroke="currentColor"
@@ -196,16 +188,33 @@
   <section id="carta" class="carta">
     <header class="carta__barra">
       <span class="carta__titulo">Plano del loteo</span>
-      <button id="ampliar-mapa" class="carta__accion" aria-pressed="false">
-        <span class="visually-hidden">Ampliar el plano</span>
+      <button id="ampliar-mapa" class="carta__accion" type="button" aria-pressed="false">
+        <span class="visually-hidden">Plano a pantalla completa</span>
         <svg viewBox="0 0 14 14" aria-hidden="true">
           <path d="M1 5V1h4M13 9v4H9M9 1h4v4M5 13H1V9" fill="none"
                 stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         </svg>
       </button>
+      <button id="cerrar-plano" class="carta__accion carta__accion--cerrar" type="button">
+        <span class="visually-hidden">Cerrar el plano</span>
+        <svg viewBox="0 0 14 14" aria-hidden="true">
+          <path d="M3 3l8 8M11 3l-8 8" fill="none" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round"/>
+        </svg>
+      </button>
     </header>
     <div id="mapa" class="mapa" aria-label="Plano del loteo"></div>
   </section>
+
+  <!-- En escritorio, el plano empieza guardado en este botón: abre el minimapa, y
+       desde ahí se pasa a pantalla completa. -->
+  <button id="abrir-plano" class="plano-flotante" type="button" aria-controls="carta">
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M2.5 5.5 7.5 3l5 2.5 5-2.5v11.5l-5 2.5-5-2.5-5 2.5Z M7.5 3v11.5 M12.5 5.5V17"
+            fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </svg>
+    <span>Plano</span>
+  </button>
 
   <!-- Sobre la vista aérea del teléfono: pasar al plano. Su pareja es Entrar a 360°. -->
   <button id="ver-plano" class="ver-plano" type="button">

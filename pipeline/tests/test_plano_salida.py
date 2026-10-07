@@ -122,6 +122,33 @@ def test_el_nombre_va_como_en_el_plano_y_se_compara_normalizado(tmp_path):
         kml(d, _transformacion())
 
 
+def test_el_resto_de_la_propiedad_va_como_un_lote_mas(tmp_path):
+    """Con el número del cuadro sale "LOTE 8"; sin él, "RESTO", que el master lee sin id
+    (como un área común) en vez de fallar."""
+    d = _digitalizado()
+    d["lotes"][2]["numero"] = "Resto"
+    raiz = ET.fromstring(kml(d, _transformacion()))
+    marcas = list(raiz.iter(NS + "Placemark"))
+    assert [m.find(NS + "name").text for m in marcas] == ["LOTE 1", "LOTE 2", "RESTO"]
+    assert marcas[2].find(NS + "description").text.startswith("Resto de la propiedad.")
+    destino = tmp_path / "s.kmz"
+    assert escribir_kmz(destino, d, _transformacion()) == 3
+    assert sorted(str(p.id) for p in leer_kmz(destino)) == ["1", "2", "None"]
+    d["lotes"][2]["numero"] = "8"
+    assert [m.find(NS + "name").text for m in ET.fromstring(kml(d, _transformacion())).iter(NS + "Placemark")][2] \
+        == "LOTE 8"
+
+
+def test_el_resto_junto_a_los_lotes_no_se_queda_con_la_etiqueta_de_otro(tmp_path):
+    """El "RESTO" sin id pegado a los lotes: la etiqueta de un lote que ya trae su nombre
+    no se le asigna por cercanía (quedaba "A3" repetido y el master no se construía)."""
+    d = _digitalizado()
+    d["lotes"].append(dict(numero="Resto", poligono=_cuadro(800, 300, 1000, 500), huecos=[]))
+    destino = tmp_path / "s.kmz"
+    escribir_kmz(destino, d, _transformacion())
+    assert sorted(str(p.id) for p in leer_kmz(destino)) == ["1", "2", "A3", "None"]
+
+
 def test_geojson_en_lon_lat_con_huecos():
     g = geojson(_digitalizado(), _transformacion())
 

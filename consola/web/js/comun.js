@@ -100,6 +100,7 @@ export function abrirDialogo(dialogo) {
 /**
  * Qué pantalla pide el hash, y de qué loteo o KMZ si es un detalle.
  *
+ * `#/kmz/<slug>/<paso>` abre un KMZ en ese paso.
  * `#/planos/nuevo?kmz=<slug>` abre Nuevo master con ese KMZ de Mis KMZ ya elegido
  * (viene de "Usar en un master" → "Nuevo master con este KMZ").
  */
@@ -110,6 +111,8 @@ export function ruta(hash) {
   if (partes[0] === 'disenos') return { pantalla: 'disenos' };
   if (partes[0] === 'reservas') return { pantalla: 'reservas' };
   if (partes[0] === 'configuracion') return { pantalla: 'configuracion' };
+  // `#/kmz/<slug>/<paso>` abre ese paso (ver `pasoDeRuta` en kmz_geometria.js).
+  if (partes[0] === 'kmz' && partes[1] && partes[2]) return { pantalla: 'kmz', slug: partes[1], paso: partes[2] };
   if (partes[0] === 'kmz' && partes[1]) return { pantalla: 'kmz', slug: partes[1] };
   if (partes[0] === 'kmz') return { pantalla: 'kmzs' };
   if (partes[0] === 'planos' && partes[1] === 'nuevo') {

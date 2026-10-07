@@ -9,7 +9,9 @@ polígonos en el mapa, solo Points: sin él el número se ve únicamente en la l
 lugares. Sin LineStrings: así `pipeline/kmz.py` lo lee en modo polígonos y saca el id
 del nombre (el Point le llega como etiqueta, pero el polígono ya trae su id). El área
 va en m² medidos en UTM, en la descripción y en ExtendedData. Las caras sin número no
-salen.
+salen. El resto de la propiedad, si la loteadora lo incluyó, sale como un lote más: con
+el número del cuadro ("LOTE 8") o, si el cuadro no le da número, como "RESTO" (sin id
+para `pipeline/kmz.py`, como un área común).
 """
 from __future__ import annotations
 
@@ -50,9 +52,15 @@ def _poligono_lonlat(lote: dict, t: Transformacion) -> Polygon:
     return orient(Polygon(_lonlat(lote["poligono"], t), [_lonlat(h, t) for h in lote.get("huecos") or []]))
 
 
+def nombre_de(numero) -> str:
+    """El nombre del Placemark: "LOTE 8-01", o "RESTO" para el resto sin número."""
+    return str(numero).strip().upper() if numeros_lote.es_resto(numero) else f"LOTE {numero}"
+
+
 def _revisar_ids(digitalizado: dict) -> None:
     ids = [normalizar_id(f"LOTE {l['numero']}") for l in digitalizado["lotes"]]
-    malos = [str(l["numero"]) for l, i in zip(digitalizado["lotes"], ids) if i is None]
+    malos = [str(l["numero"]) for l, i in zip(digitalizado["lotes"], ids)
+             if i is None and not numeros_lote.es_resto(l["numero"])]
     if malos:
         raise ValueError(f"números de lote que el lector de KMZ no reconoce: {', '.join(malos)}")
     # Repetidos por número normalizado ("8-01" y "8-1" son el mismo lote para quien lea
@@ -89,7 +97,9 @@ def kml(digitalizado: dict, t: Transformacion, nombre: str = "Subdivisión") -> 
         if lote.get("area_oficial") is not None:
             datos += f'<Data name="area_oficial_m2"><value>{float(lote["area_oficial"]):.1f}</value></Data>'
             descripcion += f"; cuadro de superficies {float(lote['area_oficial']):,.0f} m²".replace(",", ".")
-        partes.append(f"<Placemark><name>LOTE {escape(numero)}</name>"
+        if numeros_lote.es_resto(numero):
+            descripcion = f"Resto de la propiedad. {descripcion}"
+        partes.append(f"<Placemark><name>{escape(nombre_de(numero))}</name>"
                       f"<description>{escape(descripcion)}</description>"
                       f"<styleUrl>#lote</styleUrl><ExtendedData>{datos}</ExtendedData><MultiGeometry>"
                       f"<Point><coordinates>{rotulo.x:.8f},{rotulo.y:.8f},0</coordinates></Point>"

@@ -47,7 +47,7 @@ from math import gcd, hypot
 import cv2
 import numpy as np
 
-from .numeros import mismo_lote, segun_cuadro, ultimo
+from .numeros import clave, mismo_lote, segun_cuadro, ultimo
 
 # Una hebra por proceso de Tesseract: las pasadas ya corren en paralelo. Antes de
 # lanzar el primer subproceso (lo heredan).
@@ -56,7 +56,8 @@ os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 # Cambia si cambia el método: invalida las lecturas guardadas en digitalizado.json.
 # 2: el número es el rótulo completo ("8-01"), no el último número.
 # 3: el cuadro de superficies lee "8-01" y la unidad ("5.000 m2").
-VERSION = 3
+# 4: el cuadro lee la fila del resto de la propiedad, aunque venga en dos líneas.
+VERSION = 4
 
 SIN_LECTOR = "sin lector de rótulos: tesseract no está instalado"
 
@@ -667,7 +668,7 @@ def leer(imagen: np.ndarray, ppmm: float | None = None, avance=print, hebras: in
 
 # ------------------------------------------------------------------------- semillas
 def combinar(usuario, lector: list[Rotulo], radio: float, apoyo_min: int = APOYO_MIN,
-             poligonos=(), oficiales=()) -> list[dict]:
+             poligonos=(), oficiales=(), restos=()) -> list[dict]:
     """Las semillas de digitalizar: las de la loteadora y, donde ella no marcó, las del lector.
 
     `usuario`: [(numero, x, y)] o [{"numero", "x", "y"}]; `lector`: rótulos en el mismo
@@ -685,7 +686,11 @@ def combinar(usuario, lector: list[Rotulo], radio: float, apoyo_min: int = APOYO
       leído con apoyo, no se usa (no es el de superficies).
 
     Con cuadro, un número leído con otro sector que el del cuadro se corrige antes
-    (`numeros.segun_cuadro`: "6-09" es el "8-09").
+    (`numeros.segun_cuadro`: "6-09" es el "8-09"). `oficiales` son los lotes del cuadro,
+    sin el resto de la propiedad; `restos`, su número ("8"): el resto que numeró ella no
+    descarta la lectura del "8-08". Y el lector no numera el resto: si va al KMZ lo decide
+    ella (Numerar le pregunta). En Caminos de Rapel el lector lee el "8" del resto con
+    apoyo 4, y sin esto el resto entraba al KMZ como "LOTE 8" sin preguntarle.
 
     Devuelve [{"numero", "x", "y", "origen": "usuario"|"lector", "confianza", "apoyo"}].
     """
@@ -713,8 +718,10 @@ def combinar(usuario, lector: list[Rotulo], radio: float, apoyo_min: int = APOYO
         # el de superficies (un cuadro de coordenadas de vértices numerados 1…20). En
         # Algarrobo saca 42 de 117.
         tope = None
+    del_resto = {clave(n) for n in restos}
     for r in sorted(lector, key=lambda r: (-r.apoyo, -r.confianza)):
-        if r.apoyo < apoyo_min or any(mismo_lote(r.numero, n) for n in numeros):
+        if (r.apoyo < apoyo_min or clave(r.numero) in del_resto
+                or any(mismo_lote(r.numero, n, restos) for n in numeros)):
             continue
         if tope is not None and fuera(r):
             continue
@@ -958,6 +965,8 @@ def area_m2(texto: str, unidad: str | None = None) -> float | None:
 RE_AREA = re.compile(r"\d{1,3}(?:\.\d{3})*,\d{1,2}|\d{1,3}(?:\.\d{3})+|\d{4,7}")
 # El número del lote al comienzo de la fila, como está impreso: "12", "8-01".
 RE_LOTE_FILA = re.compile(r"^\D*?(\d{1,3}(?:-\d{1,3})?)(?![\d.,])")
+# La fila del resto de la propiedad, cuando se lee la palabra.
+RE_RESTO = re.compile(r"\bresto\b", re.I)
 # Una celda numérica y, si viene pegada o a un espacio, su unidad ("5.000m2", "5,00 hás").
 RE_CELDA = re.compile(r"(\d+(?:[.,]\d+)*)(\s?(?:m2|m²|mts?2|h[aá]s?\b|hect\w*))?", re.I)
 
@@ -968,19 +977,35 @@ def filas_cuadro(texto: str) -> list[list[str]]:
     celda, la última con forma de área ('5,00', '5.000', '5.000,50', '5000', con o sin
     unidad: '5.000 m2'; no '222'). Las celdas llevan su unidad si la trae."""
     salida = []
+    # Una fila alta parte en dos líneas: el número solo arriba y las celdas abajo, sin
+    # número ("8 / o resto de la propiedad / 0.000 m2 760.000 m2" en Caminos de Rapel, que
+    # Tesseract lee "8" y "s 0.000m2 760.000m2"). Sin esto el resto no llegaba al cuadro.
+    solo, sin_digitos = None, 0
     for linea in (texto or "").splitlines():
         m = RE_LOTE_FILA.match(linea)
-        if not m or not any(int(d) for d in re.findall(r"\d+", m.group(1))[-1:]):
-            continue
-        celdas = [c.group(0).strip() for c in RE_CELDA.finditer(linea, m.end())]
-        if celdas and RE_AREA.fullmatch(RE_CELDA.match(celdas[-1]).group(1)):
+        if m and not any(int(d) for d in re.findall(r"\d+", m.group(1))[-1:]):
+            m = None
+        celdas = [c.group(0).strip() for c in RE_CELDA.finditer(linea, m.end() if m else 0)]
+        con_area = bool(celdas) and RE_AREA.fullmatch(RE_CELDA.match(celdas[-1]).group(1))
+        if m and con_area:
             salida.append([m.group(1)] + celdas)
+            solo = None
+        elif m and not linea[m.end():].strip(" .:"):
+            solo, sin_digitos = m.group(1), 0
+        elif con_area and (solo or RE_RESTO.search(linea)):
+            # Sin número arriba, la fila que dice "resto" va con ese nombre.
+            salida.append([solo or "Resto"] + celdas)
+            solo = None
+        elif solo and not re.search(r"\d", linea) and sin_digitos < 3:
+            sin_digitos += 1          # "o resto", "de la", "propiedad": la misma fila
+        else:
+            solo = None
     return salida
 
 
 def _lote_de_fila(texto: str) -> str:
-    """'012' → '12'; '8-01' queda como está impreso (así sale en el KMZ)."""
-    return texto if "-" in texto else str(int(texto))
+    """'012' → '12'; '8-01' y 'Resto' quedan como están impresos (así salen en el KMZ)."""
+    return texto if "-" in texto or not texto.isdigit() else str(int(texto))
 
 
 def areas_de_filas(filas: list[list[str]]) -> dict[str, float]:

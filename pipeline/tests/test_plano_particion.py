@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import pytest
 from shapely import affinity as shapely_affinity
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point, Polygon, box
 from shapely.ops import unary_union
 
 from pipeline.plano import particion
@@ -295,6 +295,19 @@ def test_con_cuadro_la_sugerencia_se_corrige_o_no_se_ofrece():
     assert _sugerencias(caras, [True, True], leidos, 2, ["8-08"])[1]["numero"] == "6-48"
 
 
+def test_el_numero_del_resto_de_la_propiedad_no_se_sugiere():
+    """Si el resto va al KMZ lo pregunta su propia tarjeta: el "8" leído con poco apoyo no
+    se ofrece para confirmar."""
+    from pipeline.plano.digitalizar import _sugerencias
+    from pipeline.plano.rotulos import Rotulo
+    caras = [Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])]
+    cuadro = {**{f"8-{n:02d}": 5000.0 for n in range(1, 17)}, "8": 760000.0}
+    assert _sugerencias(caras, [True], [Rotulo("8", 5, 5, 0.04, 1)], 2, [], cuadro) == [None]
+    # Sin la fila del resto, el 8 se ofrece como cualquier lectura.
+    del cuadro["8"]
+    assert _sugerencias(caras, [True], [Rotulo("8", 5, 5, 0.04, 1)], 2, [], cuadro)[0]["numero"] == "8"
+
+
 def _lotes_con_texto_en_el_borde():
     """Dos lotes de 50 × 35 mm; sobre el deslinde exterior de arriba, por dentro, un
     texto en negrita pegado a la línea ("Servidumbre de tránsito 10 m", como en Caminos
@@ -474,3 +487,168 @@ def test_enderezar_no_mueve_las_puntas_al_nodo_de_una_arista_corta():
     for uniones in ([6], [93], [6, 93]):
         segs, _ = particion._enderezar(P, tol, PPMM, uniones)
         assert segs[0][0] == 0 and segs[-1][1] == len(P) - 1
+
+
+def _loteo_con_borde(borde):
+    """Dos lotes (1, 2) con el borde sur exterior en `borde(x0, x1, y)` (los vértices de
+    entre medio, de izquierda a derecha), dos lotes al norte (3, 4) y el resto de la
+    propiedad al oriente, que comparte el lado este de 2 y 4. La divisoria 1/2 llega al
+    borde en (300, `t`): el texto puede dejar ese nodo dentro de un diente."""
+    def caras(t=200.0):
+        sur1 = [(x, y) for x, y in borde(0, 300, 200.0)][::-1]
+        sur2 = [(x, y) for x, y in borde(300, 600, 200.0)][::-1]
+        return {
+            "1": Polygon([(0, 0), (300, 0), (300, t), *sur1, (0, 200)]),
+            "2": Polygon([(300, 0), (600, 0), (600, 200), *sur2, (300, t)]),
+            "3": Polygon([(0, -200), (300, -200), (300, 0), (0, 0)]),
+            "4": Polygon([(300, -200), (600, -200), (600, 0), (300, 0)]),
+            "resto": Polygon([(600, -200), (900, -200), (900, 200), (600, 200), (600, 0)]),
+        }
+    return caras
+
+
+def _dientes(alto_px):
+    # Las letras pegadas al borde: el trazado sube y baja cada 20 px.
+    return lambda x0, x1, y: [(x, y - alto_px if (x // 20) % 2 else y + 0.3 * alto_px)
+                              for x in range(x0 + 20, x1, 20)]
+
+
+def _enderezar_borde(caras):
+    nombres = list(caras)
+    salida, n = particion.enderezar_borde_exterior([caras[k] for k in nombres], PPMM)
+    return dict(zip(nombres, salida)), n
+
+
+def test_el_borde_exterior_en_dientes_por_un_rotulo_sale_recto():
+    # Caminos de Rapel: "Servidumbre de Tránsito 8m" pegado al deslinde poniente de 8-01
+    # y 8-10; el borde seguía las letras, y el nodo de su divisoria quedaba en un diente.
+    caras = _loteo_con_borde(_dientes(1.5 * PPMM))(t=200 - 1.4 * PPMM)
+    salida, n = _enderezar_borde(caras)
+    assert n == 2
+    for numero, celda in (("1", box(0, 0, 300, 200)), ("2", box(300, 0, 600, 200))):
+        assert salida[numero].hausdorff_distance(celda) < 0.5, numero
+        assert len(salida[numero].exterior.coords) - 1 == 4, numero
+    # Los lados compartidos no se mueven: los vecinos quedan iguales.
+    for numero in ("3", "4", "resto"):
+        assert salida[numero].equals_exact(caras[numero], 1e-9), numero
+    # Sin huecos ni traslapes: los lotes siguen cubriendo la red completa.
+    todo = unary_union(list(salida.values()))
+    assert sum(g.area for g in salida.values()) - todo.area < EPSILON_PX2
+    assert todo.geom_type == "Polygon" and not list(todo.interiors)
+    assert salida["1"].intersection(salida["2"]).length > 199
+
+
+def test_el_borde_exterior_curvo_o_con_un_entrante_de_verdad_no_se_endereza():
+    # Una curva de 4 mm de flecha (una calle en arco): gira siempre al mismo lado.
+    arco = lambda x0, x1, y: [(x, y + 4 * PPMM * np.sin(np.pi * (x - x0) / (x1 - x0)))
+                              for x in range(x0 + 10, x1, 10)]
+    # Una curva suave (1 mm) tampoco: no zigzaguea.
+    suave = lambda x0, x1, y: [(x, y + PPMM * np.sin(np.pi * (x - x0) / (x1 - x0)))
+                               for x in range(x0 + 10, x1, 10)]
+    # Dientes de 4 mm: más de BORDE_MM, son del dibujo.
+    for borde in (arco, suave, _dientes(4 * PPMM)):
+        caras = _loteo_con_borde(borde)()
+        salida, n = _enderezar_borde(caras)
+        assert n == 0
+        for numero in caras:
+            assert salida[numero].equals_exact(caras[numero], 1e-9), numero
+
+
+def test_el_borde_compartido_con_el_resto_de_la_propiedad_no_se_toca():
+    # Los dientes en el lado que el lote 2 comparte con el resto: no es borde exterior.
+    caras = _loteo_con_borde(lambda x0, x1, y: [])()
+    este = [(600 + (9 if (y // 20) % 2 else 0), y) for y in range(20, 200, 20)]
+    caras["2"] = Polygon([(300, 0), (600, 0), *este, (600, 200), (300, 200)])
+    caras["resto"] = Polygon([(600, -200), (900, -200), (900, 200), (600, 200), *este[::-1], (600, 0)])
+    salida, n = _enderezar_borde(caras)
+    assert n == 0
+    for numero in caras:
+        assert salida[numero].equals_exact(caras[numero], 1e-9), numero
+
+
+def test_una_esquina_junto_a_un_tramo_corto_no_se_corta_en_diagonal(monkeypatch):
+    """Caminos de Rapel, 8-09: la grieta de su lado poniente se dobla un poco a 4,8 mm de
+    la esquina norponiente (el codo redondeado de la línea) y Douglas-Peucker lo parte
+    ahí. El tramo corto se une al lado norte para llevar la esquina al cruce de los dos
+    lados, pero el vértice quedaba en la otra punta del tramo: el lado norte bajaba en
+    diagonal hasta el doblez y el lote perdía un cuarto de su área. Que pasara dependía
+    de dónde se encerrara el dibujo (la fase de píxel de la grieta)."""
+    from skimage.draw import polygon as rellenar
+
+    L = particion.LOTE0
+    ws = np.ones((460, 680), np.int32)        # 1: el exterior
+    caras = {L: [(488, 308), (356, 316), (352, 318), (345, 344), (340, 369), (475, 362)],      # 8-09
+             L + 1: [(488, 308), (600, 300), (588, 356), (475, 362)],                          # 8-16
+             L + 2: [(340, 369), (475, 362), (462, 420), (327, 426)]}                          # 8-08
+    for etiqueta, puntos in caras.items():
+        x, y = np.array(puntos, float).T
+        ws[rellenar(y, x, ws.shape)] = etiqueta
+    p = particion.Particion(ws, {L: "8-09", L + 1: "8-16", L + 2: "8-08"})
+    verdad = Polygon([(488, 308), (351.5, 316.5), (340, 369), (475, 362)])
+
+    red = particion.red_de_deslindes(p, PPMM)
+    lote = red.lotes["8-09"]
+    assert abs(lote.area / verdad.area - 1) < 0.02
+    assert lote.hausdorff_distance(verdad) < 2.5
+    assert min(Point(v).distance(Point(351.5, 316.5)) for v in lote.exterior.coords) < 2.5
+
+    # Lo que pasaba antes: sin fijar el cruce, la esquina se cortaba.
+    original = particion._enderezar
+
+    def sin_fijar(*a, **kw):
+        segs, fijos = original(*a, **kw)
+        return segs, {}
+    monkeypatch.setattr(particion, "_enderezar", sin_fijar)
+    antes = particion.red_de_deslindes(p, PPMM).lotes["8-09"]
+    assert antes.area < 0.8 * verdad.area
+
+
+def test_un_lote_entre_lotes_sin_numero_es_un_lote_sin_numero(monkeypatch):
+    # Caminos de Rapel en la primera lectura: 8-09 y 8-16 solo lindan entre ellos, con
+    # 8-08 y 8-15 (que el lector tampoco leyó) y con el resto. Salían como "partes chicas"
+    # aunque son del tamaño de un lote: el criterio miraba solo las regiones que lindan
+    # con un lote numerado.
+    img, semillas, celdas = _grilla_tenue(sin_semilla=("2", "3", "4", "6", "7", "8"), franja=False)
+    alto, ancho = img.shape[:2]
+    r = digitalizar_imagen(img, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+
+    assert sorted(r.lotes) == ["1", "5"]
+    assert r.estadisticas["sin_numero_lote"] == 6
+    de_lote = [c for c, es in zip(r.sin_numero, r.sin_numero_lote) if es]
+    for n in ("2", "3", "4", "6", "7", "8"):
+        assert sum(iou(c, celdas[n]) > 0.9 for c in de_lote) == 1, n
+
+    # Lo que pasaba antes: solo los que lindan con 1 y 5.
+    monkeypatch.setattr(particion, "_lotes_sin_numero", lambda *a: set())
+    antes = digitalizar_imagen(img, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+    assert antes.estadisticas["sin_numero_lote"] == 2
+
+
+def test_una_parte_chica_entre_lotes_sin_numero_no_es_un_lote():
+    # Bajo LOTE_FRAC de la mediana sigue siendo una parte chica (un área verde, un
+    # camino), aunque no linde con ningún lote numerado.
+    L = particion.LOTE0
+    ws = np.ones((300, 400), np.int32)
+    ws[20:120, 20:120] = L                  # el lote con número
+    ws[20:120, 140:240] = 2                 # un lote sin número, separado por el exterior
+    ws[20:120, 240:340] = 3                 # su vecino sin número
+    ws[120:130, 140:340] = 4                # una franja bajo ellos: 0,2 de un lote
+    _, retenidas = particion._fusionar_sin_tinta(ws, np.ones_like(ws, bool), PPMM)
+    assert retenidas == [2, 3]
+
+
+def test_con_lineas_firmes_todo_lote_sin_numero_es_de_lote_y_el_camino_no():
+    # Con las divisorias en línea firme nada se une, y el criterio de los bolsillos no
+    # veía los lotes sin número que lindan con uno numerado: salían como "partes chicas"
+    # y el KMZ los dejaba fuera sin preguntar. El camino (0,69 del área de un lote) es
+    # una franja: no es un lote, lea el lector lo que lea a su alrededor.
+    plano = dibujar()
+    alto, ancho = plano.imagen.shape[:2]
+    for leidos in (("9",), ("5", "9"), ("1", "12")):
+        semillas = [s for s in plano.semillas if s[0] in leidos]
+        r = digitalizar_imagen(plano.imagen, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+        de_lote = [c for c, es in zip(r.sin_numero, r.sin_numero_lote) if es]
+        for n in set(plano.celdas) - set(leidos):
+            assert sum(iou(c, plano.celdas[n]) > 0.9 for c in de_lote) == 1, (leidos, n)
+        assert len(de_lote) == len(plano.celdas) - len(leidos), leidos
+        assert [es for c, es in zip(r.sin_numero, r.sin_numero_lote) if iou(c, plano.camino) > 0.9] == [False], leidos

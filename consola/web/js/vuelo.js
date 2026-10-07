@@ -68,7 +68,7 @@ const RESUMENES = {
   },
   'digitalizar-plano': (lineas) => {
     const lotes = lineas.map((l) => String(l).trim()).find((l) => /^Lotes: \d+/.test(l));
-    return lotes ? `Plano digitalizado: ${lotes.match(/^Lotes: (\d+)/)[1]} lotes` : 'Plano digitalizado';
+    return lotes ? `Plano leído: ${lotes.match(/^Lotes: (\d+)/)[1]} lotes` : 'Plano leído';
   },
 };
 
@@ -77,7 +77,7 @@ const NOMBRES = {
   construir: ['Construyendo', 'construir'],
   publicar: ['Publicando', 'publicar'],
   actualizar: ['Actualizando el sitio', 'actualizar el sitio'],
-  'digitalizar-plano': ['Digitalizando el plano', 'digitalizar el plano'],
+  'digitalizar-plano': ['Leyendo el plano', 'leer el plano'],
 };
 
 const LOTES = 15;     // los que tiene el loteo dibujado en index.html

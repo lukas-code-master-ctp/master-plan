@@ -433,6 +433,13 @@ class Vista:
         if len(llegados) == 1:
             for otro in set(config.INVENTARIOS) - llegados:
                 (carpeta / otro).unlink(missing_ok=True)
+        # Lo mismo con el KMZ: con dos en las fuentes, construir toma el primero por
+        # orden alfabético sin avisar. El anterior se aparta como en `poner_kmz`.
+        kmz_nuevos = {destino.resolve() for _, destino in destinos if destino.suffix.lower() == ".kmz"}
+        if kmz_nuevos:
+            for viejo in config.kmz_en(carpeta):
+                if viejo.resolve() not in kmz_nuevos:
+                    os.replace(viejo, viejo.with_name(viejo.name + ANTERIOR))
         # El KMZ puede venir en esta tanda o de una anterior; lo que no puede es
         # faltar, porque sin él no hay nada que proyectar.
         if not any(carpeta.rglob("*.kmz")):

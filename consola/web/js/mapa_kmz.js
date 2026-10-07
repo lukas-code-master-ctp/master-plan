@@ -45,11 +45,14 @@ export class MapaKmz {
     this.L = L;
     this.mapa = L.map(elemento, { zoomControl: true, attributionControl: true, maxZoom: 21 })
       .setView(SANTIAGO, 12);
-    L.tileLayer(TESELAS, { maxZoom: 21, maxNativeZoom: 19, attribution: ATRIBUCION }).addTo(this.mapa);
+    // Esri no tiene imagen a zoom 19 en todo Chile (en Rapel dice "Map data not yet
+    // available"): desde el 18 se agranda la tesela del 18, hasta 21.
+    L.tileLayer(TESELAS, { maxZoom: 21, maxNativeZoom: 18, attribution: ATRIBUCION }).addTo(this.mapa);
     this.panel = this.mapa.createPane('kmz-lotes');
     this.panel.style.zIndex = 450;
     this.lotes = L.layerGroup().addTo(this.mapa);
     this.anclas = L.layerGroup().addTo(this.mapa);
+    this.alfiler = L.layerGroup().addTo(this.mapa);
     this.vertices = L.layerGroup().addTo(this.mapa);
     this.puntos = [];
     this.marcas = new Map();   // clave del punto → su marcador en el mapa
@@ -73,17 +76,38 @@ export class MapaKmz {
 
   ir(lat, lon, zoom = Math.max(this.mapa.getZoom(), 16)) { this.mapa.setView([lat, lon], zoom); }
 
+  /**
+   * Si los lotes se salieron de la vista (al girar el plano en torno a su punto se
+   * barren lejos), los vuelve a mostrar sin acercar más de lo que ella dejó el mapa.
+   */
+  seguirLotes() {
+    const caja = this.L.latLngBounds([]);
+    this.lotes.eachLayer((capa) => {
+      const p = capa.feature?.properties;
+      if (!(p?.fuera || (p?.resto && p?.numero == null)) && capa.getBounds) caja.extend(capa.getBounds());
+    });
+    if (!caja.isValid() || this.mapa.getBounds().contains(caja)) return;
+    this.mapa.fitBounds(caja, { padding: [24, 24], maxZoom: this.mapa.getZoom() });
+  }
+
   /** Encuadra los lotes y las anclas que haya. */
   encuadrar() {
     const caja = this.L.latLngBounds([]);
-    for (const grupo of [this.lotes, this.anclas]) {
-      grupo.eachLayer((capa) => {
-        if (capa.getBounds) caja.extend(capa.getBounds());
-        else if (capa.getLatLng) caja.extend(capa.getLatLng());
-      });
-    }
-    if (caja.isValid()) this.mapa.fitBounds(caja, { padding: [24, 24], maxZoom: 18 });
-    return caja.isValid();
+    const fuera = this.L.latLngBounds([]);
+    // Lo dejado fuera del KMZ y el resto de la propiedad sin número no entran al encuadre:
+    // son decenas de veces más grandes que los lotes y los dejan chicos en una esquina.
+    // Solo si no hay nada más se encuadra en ellos.
+    const sumar = (capa) => {
+      if (capa.eachLayer && !capa.feature) { capa.eachLayer(sumar); return; }
+      const p = capa.feature?.properties;
+      const destino = p?.fuera || (p?.resto && p?.numero == null) ? fuera : caja;
+      if (capa.getBounds) destino.extend(capa.getBounds());
+      else if (capa.getLatLng) destino.extend(capa.getLatLng());
+    };
+    for (const grupo of [this.lotes, this.anclas, this.alfiler]) grupo.eachLayer(sumar);
+    const final = caja.isValid() ? caja : fuera;
+    if (final.isValid()) this.mapa.fitBounds(final, { padding: [24, 24], maxZoom: 18 });
+    return final.isValid();
   }
 
   /** Las anclas marcadas: un punto con su nombre; las atípicas, en rojo. */
@@ -104,6 +128,18 @@ export class MapaKmz {
   }
 
   /**
+   * El alfiler en la coordenada que pegó la loteadora (sin lat/lon, se quita). No toma
+   * clics: debajo puede haber un lote que arrastrar o un punto que marcar.
+   */
+  ponerAlfiler(lat, lon) {
+    this.alfiler.clearLayers();
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    const icono = this.L.divIcon({ className: 'kmz-alfiler', iconSize: [28, 40], iconAnchor: [14, 40], html: '<span></span>' });
+    this.L.marker([lat, lon], { icon: icono, interactive: false, keyboard: false, zIndexOffset: 1000 })
+      .addTo(this.alfiler);
+  }
+
+  /**
    * Los lotes (GeoJSON en lon/lat). `modo` "contorno" los dibuja finos para
    * calzarlos con la imagen; "nivel", rellenos según el error de área.
    */
@@ -114,6 +150,10 @@ export class MapaKmz {
     const L = this.L;
     const estilo = (rasgo) => {
       const p = rasgo.properties;
+      if (p.fuera) {
+        // Lo que ella dejó fuera del KMZ (el resto de la propiedad): gris, ya decidido.
+        return { color: COLORES.gris, weight: 1.5, dashArray: '5 4', fill: true, fillColor: COLORES.gris, fillOpacity: 0.1 };
+      }
       const marcado = (p.banderas ?? []).length > 0;
       if (modo === 'contorno') {
         return { color: marcado ? COLORES.rojo : COLORES.contorno, weight: 1.5, fill: true, fillOpacity: 0.05 };

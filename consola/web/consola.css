@@ -786,6 +786,26 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .pasos button[aria-current="step"] b { background: #fff; color: var(--marca-800); }
 .pasos button.paso--hecho b { background: var(--verde-100); color: var(--verde-800); }
 .pasos button[disabled] { color: var(--zinc-400); cursor: not-allowed; background: var(--zinc-50); }
+/* En el teléfono los cuatro pasos van en una fila: sin "el plano" ni "y descargar", con
+   menos relleno, y cada pastilla se achica antes que envolver a otra línea. */
+@media (max-width: 40rem) {
+  .pasos { flex-wrap: nowrap; gap: 0.25rem; }
+  .pasos li { flex: 1 1 auto; min-width: 0; }
+  .pasos button { width: 100%; min-width: 0; justify-content: center; gap: 0.3rem; height: 2.5rem; padding: 0 0.5rem 0 0.25rem; font-size: 0.8125rem; }
+  .pasos button b { flex: none; width: 1.375rem; height: 1.375rem; }
+  .pasos__resto { display: none; }
+  /* La barra es hija de la grilla de la pantalla: sin esto, su ancho mínimo es el de las
+     cuatro pastillas y a 320 px empujaba la página hacia el lado. */
+  #pantalla-kmz > nav { min-width: 0; }
+}
+/* A 320 px las cuatro no caben ni con lo de arriba: letra y número más chicos. */
+@media (max-width: 23rem) {
+  .pasos { gap: 0.2rem; }
+  .pasos button { gap: 0.15rem; padding: 0 0.3rem 0 0.15rem; font-size: 0.75rem; }
+  .pasos button b { width: 1.125rem; height: 1.125rem; font-size: 0.6875rem; }
+}
+/* "Revisar los números" desde Ubicar y Revisar: un enlace a su ancho, no a todo el panel. */
+.kmz-a-numerar { justify-self: start; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
 
 .kmz-atrasado {
   position: absolute; left: 0.5rem; right: 0.5rem; bottom: 0.5rem; z-index: 4;
@@ -799,7 +819,9 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-panel {
   display: grid; gap: 0.75rem; align-content: start; padding: 1.25rem;
   background: #fff; border: 1px solid var(--zinc-200); border-radius: var(--radio-lg); box-shadow: var(--sombra);
-  max-height: calc(100vh - 12rem); overflow-y: auto;
+  /* `--kmz-arriba` es dónde empieza el panel en la página (lo mide kmz.js): así termina sobre
+     el borde de abajo y el pie se ve sin desplazar. Sin medir, el alto de antes. */
+  max-height: max(20rem, calc(100vh - var(--kmz-arriba, 11rem) - 1rem)); overflow-y: auto;
 }
 .kmz-cuerpo--solo .kmz-panel { max-height: none; }
 .kmz-panel h2 { margin: 0; font: 700 1.125rem/1.25 var(--sans); letter-spacing: -0.01em; }
@@ -807,7 +829,26 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-panel h3 { margin: 0.5rem 0 0.25rem; font: 600 0.75rem/1.2 var(--sans); letter-spacing: 0.04em; text-transform: uppercase; color: var(--zinc-500); }
 .kmz-panel .ayuda, .kmz-panel .nota { margin: 0; }
 .kmz-panel .soltadero { margin: 0; }
-.kmz-panel__pie { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid var(--zinc-100); }
+/* El pie con "Seguir" queda pegado abajo del panel aunque el panel sea largo: si no, en
+   Marcar (instrucciones, lista de lo marcado) quedaba fuera de la vista y no se sabía
+   cómo avanzar. Ocupa el ancho del panel y tapa su relleno de abajo, con fondo, para
+   que lo que pasa por detrás al desplazar no se lea a través. Al final del panel queda
+   en su lugar, así que no tapa nada. */
+.kmz-panel__pie {
+  position: sticky; bottom: -1.25rem; z-index: 2;
+  display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end;
+  margin: 0 -1.25rem -1.25rem; padding: 0.75rem 1.25rem 1.25rem;
+  background: #fff; border-top: 1px solid var(--zinc-100); border-radius: 0 0 var(--radio-lg) var(--radio-lg);
+}
+/* El motivo de un "Seguir" apagado: en su propia línea, bajo el botón. */
+.kmz-panel__pie .kmz-por-que { flex-basis: 100%; margin: 0; text-align: right; }
+.kmz-actualizando { margin: 0; font-size: 0.8125rem; font-weight: 600; color: var(--zinc-600); }
+.kmz-actualizando::before {
+  content: ""; display: inline-block; width: 0.75rem; height: 0.75rem; margin-right: 0.4rem; vertical-align: -0.1rem;
+  border: 2px solid var(--zinc-300); border-top-color: var(--zinc-700); border-radius: 50%; animation: kmz-girar 0.8s linear infinite;
+}
+@keyframes kmz-girar { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .kmz-actualizando::before { animation: none; } }
 .kmz-instrucciones { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.35rem; color: var(--zinc-700); font-size: 0.8125rem; }
 .kmz-nota-fuerte { margin: 0; padding: 0.625rem 0.75rem; border-radius: var(--radio-sm); background: var(--zinc-100); color: var(--zinc-800); font-size: 0.8125rem; }
 .kmz-estado { margin: 0; min-height: 1.25rem; font-weight: 600; color: var(--zinc-800); }
@@ -879,9 +920,78 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-tabla td { padding: 0.25rem; border-bottom: 1px solid var(--zinc-100); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .kmz-tabla td:last-child { text-align: right; white-space: nowrap; }
 .kmz-tabla .kmz-atipica td { background: var(--rojo-50); color: var(--rojo-700); font-weight: 600; }
+.kmz-resto { display: grid; gap: 0.5rem; padding: 0.75rem; border-radius: var(--radio-md); background: var(--ambar-50); border: 1px solid var(--ambar-200); }
+.kmz-resto p { margin: 0; }
+.kmz-resto__pregunta { font-weight: 600; color: var(--zinc-800); font-size: 0.875rem; }
+.kmz-resto--decidido { background: var(--zinc-50); border-color: var(--zinc-200); }
 .kmz-cuadricula { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.75rem; border-radius: var(--radio-md); background: var(--verde-50); border: 1px solid var(--verde-100); }
 .kmz-cuadricula .nota { flex-basis: 100%; color: var(--verde-800); }
 .kmz-ubicacion p { margin: 0; font-weight: 600; }
+/* "Ajustar el tamaño con el cuadro" a su ancho, y "Tamaño ajustado con el cuadro · Deshacer
+   el ajuste" en una línea: el deshacer es parte de la frase, no un botón aparte. */
+.kmz-panel > [data-accion="kmz-ajustar-cuadro"] { justify-self: start; }
+.kmz-panel p.kmz-ajustado { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.25rem; font-weight: 400; color: var(--zinc-600); }
+.kmz-ajustado .boton--texto { padding: 0 0.25rem; text-decoration: underline; text-underline-offset: 2px; }
+/* En el teléfono se tocan con el dedo: 44 px de alto, aunque sean "chicos" en la vista. */
+@media (max-width: 40rem) {
+  .kmz-panel [data-accion="kmz-ajustar-cuadro"], .kmz-ajustado .boton--texto,
+  #kmz-semaforo-acciones .boton, .kmz-a-numerar { height: 2.75rem; }
+}
+/* Ubicar con un punto: los tres pasos numerados en el texto (el <ol> no pone números,
+   así se leen igual en el lector de pantalla y en la vista). */
+.kmz-guia { display: grid; gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
+.kmz-guia > li { display: grid; gap: 0.4rem; justify-items: start; padding: 0.75rem; border: 1px solid var(--zinc-200); border-radius: var(--radio-md); }
+.kmz-guia > li > strong { font-size: 0.875rem; color: var(--zinc-900); }
+.kmz-guia > li[data-estado="hecho"] { border-color: var(--verde-100); background: var(--verde-50); }
+.kmz-guia > li[data-estado="hecho"] > strong::after { content: " ✓"; color: var(--verde-700); }
+.kmz-guia > li[data-estado="ahora"] { border-color: var(--zinc-400); box-shadow: 0 0 0 2px var(--marca-anillo); }
+.kmz-guia .fila { width: 100%; }
+.kmz-guia .boton[aria-pressed="true"] { background: var(--marca-800); border-color: var(--marca-800); color: #fff; }
+.kmz-guia__hecho { color: var(--verde-800); }
+.kmz-giro { display: grid; gap: 0.35rem; width: 100%; }
+.kmz-giro label { font-size: 0.8125rem; font-weight: 600; color: var(--zinc-700); }
+/* El deslizador va arriba, a todo el ancho (el panel es angosto): entre los botones
+   quedaba de unos 90 px y no se podía afinar el décimo de grado. */
+.kmz-giro__fila { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+.kmz-giro__fila .boton { flex: 1 1 0; padding: 0 0.5rem; font-variant-numeric: tabular-nums; }
+.kmz-giro__fila input[type="range"] { order: -1; flex: 1 1 100%; height: 2rem; accent-color: var(--marca-800); }
+.kmz-giro output { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--zinc-800); }
+/* El giro sobre el mapa: solo en pantalla angosta, donde el del panel queda lejos de los lotes. */
+.kmz-giro-mapa {
+  position: absolute; top: 0.5rem; right: 0.5rem; z-index: 1000; display: none; align-items: center; gap: 0.25rem;
+  padding: 0.25rem; background: rgb(255 255 255 / 0.94); border: 1px solid var(--zinc-200); border-radius: var(--radio-md); box-shadow: var(--sombra);
+}
+.kmz-giro-mapa .boton { padding: 0 0.45rem; font-variant-numeric: tabular-nums; }
+.kmz-giro-mapa output { min-width: 3.25rem; text-align: center; font: 600 0.8125rem var(--sans); font-variant-numeric: tabular-nums; color: var(--zinc-800); }
+@media (max-width: 70rem) { .kmz-giro-mapa:not([hidden]) { display: flex; } }
+.kmz-escala { display: grid; gap: 0.35rem; padding: 0.75rem; border-radius: var(--radio-md); background: var(--ambar-50); border: 1px solid var(--ambar-200); }
+.kmz-escala__campo { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; font-size: 0.875rem; font-weight: 600; color: var(--zinc-800); }
+.kmz-escala__campo input { width: 7rem; height: 2rem; padding: 0 0.5rem; border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); font: 600 0.9375rem var(--sans); }
+.kmz-escala__campo input:focus { border-color: var(--marca-700); box-shadow: 0 0 0 3px var(--marca-anillo); outline: none; }
+/* El alfiler de la coordenada: una gota naranja con la punta en el lugar exacto. */
+.kmz-alfiler { pointer-events: none; }
+.kmz-alfiler span {
+  position: absolute; left: 3px; top: 0; width: 22px; height: 22px; box-sizing: border-box;
+  background: #ea580c; border: 3px solid #fff; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+}
+.kmz-alfiler::after {
+  content: ''; position: absolute; left: 11px; bottom: -3px; width: 6px; height: 6px; border-radius: 50%;
+  background: #ea580c; box-shadow: 0 0 0 2px #fff;
+}
+/* "Afinar con puntos": plegada debajo de la guía. El summary lleva el para qué, así se
+   entiende sin abrirla; abierta, se marca con el mismo anillo que el paso que toca. */
+.kmz-afinar { border: 1px solid var(--zinc-200); border-radius: var(--radio-md); }
+.kmz-afinar[open] { border-color: var(--zinc-400); }
+.kmz-afinar > summary { display: grid; gap: 0.2rem; padding: 0.75rem 0.75rem 0.75rem 2rem; cursor: pointer; list-style: none; position: relative; }
+.kmz-afinar > summary::-webkit-details-marker { display: none; }
+.kmz-afinar > summary::before { content: '▸'; position: absolute; left: 0.8rem; top: 0.7rem; color: var(--zinc-600); transition: transform 0.15s; }
+.kmz-afinar[open] > summary::before { transform: rotate(90deg); }
+.kmz-afinar > summary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--marca-anillo); border-radius: var(--radio-md); }
+.kmz-afinar__titulo { font-size: 0.875rem; font-weight: 600; color: var(--zinc-900); }
+.kmz-afinar__para { font-size: 0.8125rem; color: var(--zinc-600); }
+.kmz-afinar__cuerpo { display: grid; gap: 0.5rem; justify-items: start; padding: 0 0.75rem 0.75rem; }
+.kmz-afinar__cuerpo .kmz-cuadricula, .kmz-afinar__cuerpo .kmz-tabla { justify-self: stretch; }
 .kmz-avisos { margin: 0.35rem 0 0; padding-left: 1.1rem; color: var(--ambar-800); font-size: 0.8125rem; }
 .kmz-ajuste { display: grid; gap: 0.5rem; margin: 0; padding: 0.75rem; border: 1px solid var(--zinc-200); border-radius: var(--radio-md); }
 .kmz-ajuste legend { padding: 0 0.25rem; font-weight: 600; }
@@ -893,6 +1003,12 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-flechas [data-accion="kmz-este"] { grid-area: e; }
 .kmz-flechas [data-accion="kmz-sur"] { grid-area: s; }
 .kmz-ajuste .campo select { height: 2rem; border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); padding: 0 0.5rem; background: #fff; }
+/* El semáforo de Crear: los tonos 800 sobre su 50 pasan AA (≈7:1); el borde grueso
+   distingue verde de ámbar también sin color, junto con el texto. */
+.kmz-semaforo { display: grid; gap: 0.5rem; justify-items: start; padding: 0.75rem; border-radius: var(--radio-md); border: 1px solid; border-left-width: 4px; font-size: 0.875rem; }
+.kmz-semaforo p { margin: 0; }
+.kmz-semaforo[data-tono="verde"] { background: var(--verde-50); border-color: var(--verde-100); border-left-color: var(--verde-700); color: var(--verde-800); }
+.kmz-semaforo[data-tono="ambar"] { background: var(--ambar-50); border-color: var(--ambar-200); border-left-color: var(--ambar-800); color: var(--ambar-800); }
 .kmz-listo { display: grid; gap: 0.5rem; justify-items: start; padding: 1rem; border-radius: var(--radio-md); background: var(--verde-50); border: 1px solid var(--verde-100); color: var(--verde-800); }
 .kmz-listo p { margin: 0; }
 /* Al crear (o crear de nuevo) el KMZ, el aviso destella una vez: el texto cambia poco y
@@ -971,7 +1087,10 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 
 @media (max-width: 70rem) {
   .kmz-cuerpo { grid-template-columns: minmax(0, 1fr); }
-  .kmz-panel { max-height: none; }
+  /* Sin desplazamiento propio: así el pie se pega al borde de abajo de la pantalla mientras
+     el panel está a la vista (con `overflow` el panel sería su contenedor y no se pegaría). */
+  .kmz-panel { max-height: none; overflow: visible; }
+  .kmz-panel__pie { bottom: 0; margin-bottom: -1.25rem; padding-bottom: calc(0.75rem + env(safe-area-inset-bottom)); box-shadow: 0 -6px 12px -10px rgb(0 0 0 / 0.25); }
   .kmz-escena { height: auto; min-height: 0; }
   .kmz-escena > * { height: 70vh; min-height: 22rem; }
   .kmz-escena--doble { grid-template-columns: minmax(0, 1fr); }
@@ -984,9 +1103,15 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
   /* En el celular se puede, pero cuesta: lo dice, y solo la hoja elegida muestra sus controles. */
   .union-movil { display: block; }
   .union-hoja:not([aria-current="true"]) .union-hoja__controles { display: none; }
-  .barra { grid-template-columns: auto 1fr auto; padding: 0 1rem; gap: 0.5rem; }
+  /* A 320 px las cuatro pestañas no caben: se deslizan dentro de la barra en vez de
+     empujar la página hacia el lado. Los márgenes automáticos las centran cuando caben
+     sin esconder la primera cuando no (lo que haría justify-content: center). */
+  .barra { grid-template-columns: auto minmax(0, 1fr) auto; padding: 0 1rem; gap: 0.5rem; }
   .marca__texto { display: none; }
-  .pestanas { justify-content: center; }
+  .pestanas { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .pestanas::-webkit-scrollbar { display: none; }
+  .pestanas a:first-child { margin-left: auto; }
+  .pestanas a:last-child { margin-right: auto; }
   .pestanas a { padding: 0 0.5rem; font-size: 0.8125rem; }
   .pestanas a::after { left: 0.5rem; right: 0.5rem; }
   .lienzo { padding: 1.25rem 1rem 3rem; }

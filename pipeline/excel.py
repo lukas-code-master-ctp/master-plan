@@ -13,7 +13,7 @@ from __future__ import annotations
 import csv
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import openpyxl
@@ -88,6 +88,24 @@ class FichaComercial:
     cuotas: int | None = None
     valor_cuota: float | None = None
     reserva: float | None = None
+
+
+def alinear_con(fichas: dict[str, FichaComercial], ids: set[str] | dict) -> dict[str, FichaComercial]:
+    """Las fichas con el id que usa el KMZ cuando la planilla trae etapas y el KMZ no.
+
+    Con varias etapas la planilla arma "etapa-número" ("1-A1"), pero hay KMZ que no
+    distinguen etapas porque el lote ya es único en todo el loteo ("A1"). Entonces se
+    cruza por el número, siempre que no se repita entre etapas (si "7" está en la
+    etapa 1 y en la 2, sin etapa no hay cómo saber cuál es) y que así calcen más.
+    """
+    conocidos = set(ids)
+    numeros = [f.numero for f in fichas.values()]
+    if not numeros or None in numeros or len(set(numeros)) != len(numeros):
+        return fichas
+    calzan_por_numero = sum(numero in conocidos for numero in numeros)
+    if calzan_por_numero <= len(conocidos & set(fichas)):
+        return fichas
+    return {f.numero: replace(f, id=f.numero) for f in fichas.values()}
 
 
 def leer_planilla(ruta: Path, parcelacion: str | None = None) -> dict[str, FichaComercial]:

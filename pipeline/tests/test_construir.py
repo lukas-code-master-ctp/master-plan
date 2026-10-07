@@ -38,6 +38,7 @@ def test_el_aviso_nombra_los_archivos_en_conflicto(tmp_path):
 # --- orden, número y rótulo de cada parcela ------------------------------------
 
 from pipeline.construir import _armar_parcelas, _orden_lote
+from pipeline.excel import FichaComercial
 from pipeline.kmz import ParcelaGeometrica
 
 ANILLO = [(-72.0, -35.0), (-71.999, -35.0), (-71.999, -34.999), (-72.0, -34.999)]
@@ -91,6 +92,23 @@ def test_con_varias_etapas_el_rotulo_lleva_la_etapa():
     assert (parcelas["2-7"]["numero"], parcelas["2-7"]["etapa"]) == (7, 2)
 
 
+def test_con_etapas_pero_sin_numeros_repetidos_el_rotulo_no_lleva_la_etapa():
+    """Hacienda Vichuquén: dos etapas, pero los lotes van del A1 al A579 sin repetirse.
+    La etapa delante ("1-1", "2-181") no distingue nada y no es como se llama el lote."""
+    fichas = {
+        "A1": FichaComercial(id="A1", numero="A1", etapa=1),
+        "A181": FichaComercial(id="A181", numero="A181", etapa=2),
+    }
+    geometrias = {i: ParcelaGeometrica(id=i, anillo=ANILLO) for i in fichas}
+
+    parcelas = {p["id"]: p for p in _armar_parcelas(fichas, geometrias, {})}
+
+    assert parcelas["A1"]["rotulo"] == "1"
+    assert parcelas["A181"]["rotulo"] == "181"
+    # La etapa se sigue guardando: el filtro por etapa la usa.
+    assert (parcelas["A181"]["numero"], parcelas["A181"]["etapa"]) == (181, 2)
+
+
 def test_con_una_sola_etapa_el_rotulo_sigue_siendo_el_numero():
     """Si hay una etapa sola, anteponerla no distingue nada y ensucia la foto."""
     geometrias = {
@@ -119,3 +137,14 @@ def test_si_el_loteo_no_esta_en_el_crm_avisa_y_sigue(tmp_path, capsys):
 
     assert fichas == {}
     assert any("LAS ARAUCARIAS" in linea for linea in avisos.lineas)
+
+
+def test_cuenta_los_vuelos_por_la_altura_del_despegue_que_guarda_el_dron():
+    from types import SimpleNamespace as P
+
+    from pipeline.construir import _vuelos
+
+    panoramas = [P(altura_absoluta=576.2, altura_relativa=499.7), P(altura_absoluta=384.4, altura_relativa=299.6),
+                 P(altura_absoluta=576.2, altura_relativa=499.7), P(altura_absoluta=584.5, altura_relativa=499.6)]
+
+    assert _vuelos(panoramas) == [pytest.approx(76.5), pytest.approx(84.85)]

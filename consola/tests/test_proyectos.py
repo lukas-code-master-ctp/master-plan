@@ -468,6 +468,30 @@ def test_el_tope_de_tamano_cuenta_lo_que_ya_estaba(base, tmp_path):
         ana.subir("x", [Subida("b.JPG", medio)])
 
 
+def test_un_kmz_nuevo_aparta_al_anterior(base, registro, ana):
+    """tesitng 2.1: primero se subió la cancha de footgolf y después el loteo. Con los
+    dos en las fuentes, construir tomaba el primero por orden alfabético, el de la
+    cancha, y el sitio salía sin un solo trazo."""
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "X", nota_cobro="ok")
+    ana.subir("x", [Subida("Club El Principal - FootGolf.kmz", b"cancha")])
+
+    proyecto = ana.subir("x", [Subida("Lomas de Constitucion (2).kmz", b"loteo")])
+
+    assert proyecto.fuentes_encontradas()["kmz"] == "Lomas de Constitucion (2).kmz"
+    # Apartado y no borrado, como cuando se reemplaza desde Mis KMZ.
+    assert (proyecto.fuentes / "Club El Principal - FootGolf.kmz.anterior").read_bytes() == b"cancha"
+
+
+def test_volver_a_subir_el_mismo_kmz_lo_reemplaza_sin_apartarlo(base, registro, ana):
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "X", nota_cobro="ok")
+    ana.subir("x", [Subida("loteo.kmz", b"v1")])
+
+    proyecto = ana.subir("x", [Subida("loteo.kmz", b"v2")])
+
+    assert (proyecto.fuentes / "loteo.kmz").read_bytes() == b"v2"
+    assert not (proyecto.fuentes / "loteo.kmz.anterior").exists()
+
+
 @pytest.mark.parametrize("viejo, nuevo", [("inventario.xlsx", "inventario.csv"),
                                          ("inventario.csv", "inventario.xlsx")])
 def test_un_inventario_nuevo_reemplaza_al_anterior_aunque_cambie_de_formato(

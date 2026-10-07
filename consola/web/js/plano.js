@@ -408,7 +408,7 @@ export function seguir(slug, identificador) {
         await refrescar();
         if (trabajo.estado === 'falló') {
           avisar(slug.startsWith('kmz:')
-            ? 'La digitalización del plano falló. El detalle está en el registro del paso 3.'
+            ? 'La lectura del plano falló. El detalle está en "Ver el detalle técnico", bajo el escáner.'
             : `El ${trabajo.accion} de ${slug} falló. El detalle está en el registro.`);
         }
         return;

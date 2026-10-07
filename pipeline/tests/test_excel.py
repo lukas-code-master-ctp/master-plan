@@ -1,7 +1,7 @@
 import openpyxl
 import pytest
 
-from pipeline.excel import leer_excel, normalizar_estado
+from pipeline.excel import FichaComercial, alinear_con, leer_excel, normalizar_estado
 
 
 def planilla(tmp_path, filas, nombre="datos.xlsx"):
@@ -285,3 +285,41 @@ def test_sin_columnas_nuevas_las_fichas_las_traen_vacias(tmp_path):
 
     assert (ficha.rol, ficha.topografia, ficha.pie, ficha.cuotas, ficha.valor_cuota,
             ficha.reserva) == (None,) * 6
+
+
+# --- cruce con el KMZ cuando la planilla trae etapas y el KMZ no ------------------
+
+
+def _fichas(*pares):
+    return {f"{etapa}-{numero}": FichaComercial(id=f"{etapa}-{numero}", numero=numero, etapa=etapa)
+            for etapa, numero in pares}
+
+
+def test_con_el_kmz_sin_etapas_la_planilla_se_cruza_por_el_numero_del_lote():
+    """Hacienda Vichuquén: la planilla dice 1-A1, 2-A300; el KMZ, A1 y A300."""
+    fichas = _fichas((1, "A1"), (1, "A2"), (2, "A300"))
+
+    alineadas = alinear_con(fichas, {"A1", "A2", "A300", "A301"})
+
+    assert set(alineadas) == {"A1", "A2", "A300"}
+    assert alineadas["A300"].id == "A300"
+    assert alineadas["A300"].etapa == 2
+    assert fichas["2-A300"].id == "2-A300"   # no toca las de entrada
+
+
+def test_si_el_numero_se_repite_entre_etapas_no_se_puede_cruzar_sin_etapa():
+    fichas = _fichas((1, "7"), (2, "7"))
+
+    assert alinear_con(fichas, {"7"}) == fichas
+
+
+def test_si_el_kmz_ya_trae_las_etapas_no_cambia_nada():
+    fichas = _fichas((1, "7"), (2, "7"))
+
+    assert alinear_con(fichas, {"1-7", "2-7"}) == fichas
+
+
+def test_sin_etapas_no_cambia_nada():
+    fichas = {"A1": FichaComercial(id="A1", numero="A1")}
+
+    assert alinear_con(fichas, {"A1"}) == fichas

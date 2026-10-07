@@ -14,11 +14,13 @@ distingue por color. La leyenda —un cuadrito de cada color junto a un rótulo
 """
 from __future__ import annotations
 
+import math
 import re
 import zipfile
-from collections import Counter
-from dataclasses import dataclass, field
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from statistics import median
 from xml.etree import ElementTree as ET
 
 from shapely import STRtree, prepare
@@ -41,6 +43,17 @@ FRANJA_BORDE_M = 0.3
 
 # El cuadrito de la leyenda está a pocos metros de su rótulo "ETAPA n".
 DISTANCIA_MAXIMA_LEYENDA_M = 100.0
+
+# El CAD rellena algunos sectores con achurado: rayas rectas y paralelas, a pocos
+# metros unas de otras, todas de un color. No son deslindes, y en la red parten cada
+# lote en tiras (Hacienda Vichuquén: el 112 quedaba de 161 m² en vez de 6.000). Un
+# color es achurado si casi todo su largo va en una sola dirección y sus rayas
+# vecinas están más cerca que el frente de cualquier lote. Las divisorias de una
+# hilera de lotes también son paralelas, pero a 20 m o más.
+ACHURADO_MIN_RAYAS = 20
+ACHURADO_FRACCION_PARALELA = 0.9
+ACHURADO_TOLERANCIA_GRADOS = 2.0
+ACHURADO_SEPARACION_MAX_M = 8.0
 
 
 @dataclass
@@ -183,7 +196,63 @@ def _leer_dibujo(raiz: ET.Element, colores: dict[str, str]) -> _Dibujo:
             coordenadas = linea.find(NS + "coordinates")
             if coordenadas is not None and coordenadas.text:
                 dibujo.lineas.append((_coordenadas(coordenadas.text), color))
-    return dibujo
+    if not dibujo.lineas:
+        return dibujo
+    return replace(dibujo, lineas=_sin_achurado(dibujo.lineas, _origen(dibujo)))
+
+
+def _sin_achurado(lineas: list[tuple[list[geo.Punto], str | None]],
+                  origen: geo.Punto) -> list[tuple[list[geo.Punto], str | None]]:
+    """Las líneas del dibujo menos las rayas de achurado (ver ACHURADO_*)."""
+    por_color: dict[str, list[int]] = defaultdict(list)
+    for indice, (puntos, color) in enumerate(lineas):
+        if color and len(puntos) >= 2:
+            por_color[color].append(indice)
+    achurado: set[int] = set()
+    for indices in por_color.values():
+        formas = [LineString([geo.a_metros(p, origen) for p in lineas[i][0]]) for i in indices]
+        achurado.update(indices[j] for j in _rayas_de_achurado(formas))
+    return [linea for indice, linea in enumerate(lineas) if indice not in achurado]
+
+
+def _rayas_de_achurado(formas: list[LineString]) -> list[int]:
+    """Las posiciones de `formas` (todas de un color, en metros) que son achurado;
+    ninguna si el color no lo es."""
+    if len(formas) < ACHURADO_MIN_RAYAS:
+        return []
+    rumbos = [_rumbo(forma) for forma in formas]
+    largo_por_rumbo: Counter = Counter()
+    for forma, rumbo in zip(formas, rumbos):
+        if rumbo is not None:
+            largo_por_rumbo[round(rumbo) % 180] += forma.length
+    if not largo_por_rumbo:
+        return []
+    dominante = largo_por_rumbo.most_common(1)[0][0]
+    rayas = [i for i, rumbo in enumerate(rumbos)
+             if rumbo is not None and _entre_rumbos(rumbo, dominante) <= ACHURADO_TOLERANCIA_GRADOS]
+    largo_total = sum(forma.length for forma in formas)
+    if len(rayas) < ACHURADO_MIN_RAYAS \
+            or sum(formas[i].length for i in rayas) < ACHURADO_FRACCION_PARALELA * largo_total:
+        return []
+    paralelas = [formas[i] for i in rayas]
+    _, distancias = STRtree(paralelas).query_nearest(paralelas, exclusive=True, return_distance=True)
+    if median(distancias) > ACHURADO_SEPARACION_MAX_M:
+        return []
+    return rayas
+
+
+def _rumbo(forma: LineString) -> float | None:
+    """Rumbo de una línea recta, en grados entre 0 y 180; None si no es recta."""
+    (x0, y0), (x1, y1) = forma.coords[0], forma.coords[-1]
+    cuerda = math.hypot(x1 - x0, y1 - y0)
+    if cuerda < TOLERANCIA_RED_M or forma.length > cuerda * 1.01:
+        return None
+    return math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180
+
+
+def _entre_rumbos(a: float, b: float) -> float:
+    diferencia = abs(a - b) % 180
+    return min(diferencia, 180 - diferencia)
 
 
 def _colores_de_estilo(raiz: ET.Element) -> dict[str, str]:
@@ -257,18 +326,54 @@ def _cerrar_red(dibujo: _Dibujo) -> list[ParcelaGeometrica]:
     red = unary_union(_pegar_extremos([linea for linea, _ in bordes]))
     etiquetas = [(identificador, Point(metros(p))) for identificador, p in dibujo.etiquetas]
 
+    dibujados = _lotes_dibujados(dibujo, etiquetas, metros)
+
     parcelas = []
     for cara in polygonize(red):
         dentro = [identificador for identificador, punto in etiquetas if cara.contains(punto)]
         if not dentro:
             continue
         anillo = [geo.desde_metros(xy, origen) for xy in list(cara.exterior.coords)[:-1]]
+        if len(dentro) == 1 and dentro[0] in dibujados:
+            anillo = dibujados[dentro[0]]
         parcelas.append(ParcelaGeometrica(
             id=dentro[0] if len(dentro) == 1 else None,
             anillo=anillo,
             color=_color_dominante(cara, bordes),
         ))
     return parcelas
+
+
+def _lotes_dibujados(dibujo: _Dibujo, etiquetas: list[tuple[str, Point]],
+                     metros) -> dict[str, geo.Anillo]:
+    """id → el polígono cerrado que el dibujo trae para ese lote, si lo trae.
+
+    La red de líneas también carga franjas (servidumbres, cercos) que parten el lote,
+    y el rótulo puede caer en la franja. Si el lote viene además cerrado, ese polígono
+    es el lote. Uno que encierra varios rótulos (el deslinde, una manzana) no lo es.
+    """
+    poligonos = []
+    for pg in dibujo.poligonos:
+        if len(pg.anillo) < 3:
+            continue
+        forma = Polygon([metros(p) for p in pg.anillo])
+        poligonos.append((forma if forma.is_valid else forma.buffer(0), pg.anillo))
+    if not poligonos:
+        return {}
+    arbol = STRtree([forma for forma, _ in poligonos])
+    rotulos_por_poligono: Counter = Counter()
+    candidatos: dict[str, list[int]] = {}
+    for identificador, punto in etiquetas:
+        dentro = [i for i in arbol.query(punto) if poligonos[i][0].contains(punto)]
+        rotulos_por_poligono.update(dentro)
+        candidatos[identificador] = dentro
+    dibujados = {}
+    for identificador, dentro in candidatos.items():
+        propios = [i for i in dentro if rotulos_por_poligono[i] == 1]
+        if propios:
+            elegido = min(propios, key=lambda i: poligonos[i][0].area)
+            dibujados[identificador] = poligonos[elegido][1]
+    return dibujados
 
 
 def _pegar_extremos(lineas: list[LineString]) -> list[LineString]:
@@ -320,6 +425,11 @@ def _asignar_etiquetas(etiquetas: list[tuple[str, geo.Punto]],
     """
     sin_asignar = [p for p in parcelas if p.id is None]
     pendientes: list[tuple[str, geo.Punto]] = []
+    # La etiqueta de un polígono que ya trae su nombre (el KMZ de Crea tu KMZ: "LOTE 8-01"
+    # con su Point) no busca otro: daría ese id a un polígono sin nombre cercano (el
+    # "RESTO", un área común) y el KMZ quedaría con el lote repetido.
+    nombrados = {p.id for p in parcelas if p.id}
+    etiquetas = [(i, punto) for i, punto in etiquetas if i not in nombrados]
 
     for identificador, punto in etiquetas:
         contenedores = [p for p in sin_asignar if p.id is None and geo.contiene(p.anillo, punto)]

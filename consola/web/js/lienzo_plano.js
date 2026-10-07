@@ -9,9 +9,14 @@
  * Arrastrar mueve el plano (con la herramienta "rectangulo", dibuja; ahí se mueve
  * con el botón del medio o el derecho, o manteniendo la barra espaciadora). La
  * rueda y el pellizco acercan donde está el puntero.
+ *
+ * En Ubicar el plano además se muestra girado `giro` grados (horario, en torno al centro
+ * del lienzo) para que se vea con el norte arriba, como el mapa. La vista
+ * ({escala, dx, dy}) sigue sin girar: el giro se aplica al pintar y se deshace al leer el
+ * puntero, así los clics siguen llegando en px de página.
  */
 import {
-  aPagina, aPantalla, centrarEn, matrizRotacion, rectanguloDe, tamanoRotado, vistaAjustada, zoomEn,
+  aPagina, aPantalla, cajaGirada, centrarEn, girarEnPantalla, matrizRotacion, rectanguloDe, tamanoRotado, vistaAjustada, zoomEn,
 } from './kmz_geometria.js';
 
 const UMBRAL_ARRASTRE = 4;      // px de pantalla: menos que esto es un clic
@@ -25,6 +30,7 @@ export class LienzoPlano {
     this.ancho = 0;
     this.alto = 0;
     this.rotacion = 0;
+    this.giro = 0;
     this.vista = { escala: 1, dx: 0, dy: 0 };
     this.ajustada = false;
     this.herramienta = 'mover';
@@ -87,6 +93,17 @@ export class LienzoPlano {
 
   get pagina() { return tamanoRotado(this.ancho, this.alto, this.rotacion); }
 
+  /** El centro del lienzo (px CSS): en torno a él se gira el plano. */
+  get centro() { return [this.contenedor.clientWidth / 2, this.contenedor.clientHeight / 2]; }
+
+  /** Gira el plano en pantalla `grados` (horario). Con `ajustar`, lo vuelve a encuadrar. */
+  ponerGiro(grados, ajustar = false) {
+    const nuevo = Number.isFinite(grados) ? grados : 0;
+    if (nuevo === this.giro && !ajustar) return;
+    this.giro = nuevo;
+    if (ajustar) this.ajustar(); else this.redibujar();
+  }
+
   medir() {
     const { clientWidth: W, clientHeight: H } = this.contenedor;
     if (!W || !H) return;
@@ -105,8 +122,16 @@ export class LienzoPlano {
 
   ajustar() {
     const [w, h] = this.pagina;
-    if (!w || !this.contenedor.clientWidth) return;
-    this.vista = vistaAjustada(w, h, this.contenedor.clientWidth, this.contenedor.clientHeight);
+    const [W, H] = [this.contenedor.clientWidth, this.contenedor.clientHeight];
+    if (!w || !W) return;
+    if (this.giro) {
+      // Girada, la página ocupa su caja girada: se encuadra esa, con el centro en el centro.
+      const [cw, ch] = cajaGirada(w, h, this.giro);
+      const { escala } = vistaAjustada(cw, ch, W, H);
+      this.vista = { escala, dx: W / 2 - (w / 2) * escala, dy: H / 2 - (h / 2) * escala };
+    } else {
+      this.vista = vistaAjustada(w, h, W, H);
+    }
     this.ajustada = true;
     this.redibujar();
   }
@@ -128,7 +153,7 @@ export class LienzoPlano {
   }
 
   /** px de página → px de pantalla (CSS), para pintar encima. */
-  aPantalla(x, y) { return aPantalla(this.vista, x, y); }
+  aPantalla(x, y) { return girarEnPantalla(...aPantalla(this.vista, x, y), this.giro, ...this.centro); }
 
   redibujar() {
     if (this.pendiente) return;
@@ -146,7 +171,14 @@ export class LienzoPlano {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (this.imagen) {
       const { escala, dx, dy } = this.vista;
-      ctx.setTransform(dpr * escala, 0, 0, dpr * escala, dpr * dx, dpr * dy);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (this.giro) {
+        const [cx, cy] = this.centro;
+        ctx.translate(cx, cy);
+        ctx.rotate((this.giro * Math.PI) / 180);
+        ctx.translate(-cx, -cy);
+      }
+      ctx.transform(escala, 0, 0, escala, dx, dy);
       ctx.transform(...matrizRotacion(this.rotacion, this.ancho, this.alto));
       // El centro del píxel está en el entero: el píxel i cubre [i − ½, i + ½].
       ctx.translate(-0.5, -0.5);
@@ -182,9 +214,10 @@ export class LienzoPlano {
 
   // --- puntero -------------------------------------------------------------------
 
+  /** El puntero en px de la vista sin girar (lo que entienden `vista` y `aPagina`). */
   posicion(e) {
     const caja = this.canvas.getBoundingClientRect();
-    return [e.clientX - caja.left, e.clientY - caja.top];
+    return girarEnPantalla(e.clientX - caja.left, e.clientY - caja.top, -this.giro, ...this.centro);
   }
 
   bajar(e) {
@@ -261,7 +294,9 @@ export class LienzoPlano {
   tecla(e) {
     if (e.code === 'Space') { e.preventDefault(); return; }     // mover con el espacio, sin bajar la página
     const paso = 60;
-    const mover = { ArrowLeft: [paso, 0], ArrowRight: [-paso, 0], ArrowUp: [0, paso], ArrowDown: [0, -paso] }[e.key];
+    let mover = { ArrowLeft: [paso, 0], ArrowRight: [-paso, 0], ArrowUp: [0, paso], ArrowDown: [0, -paso] }[e.key];
+    // Con el plano girado, la flecha mueve lo que se ve, no la vista sin girar.
+    if (mover) mover = girarEnPantalla(...mover, -this.giro, 0, 0);
     if (mover) {
       this.vista = { ...this.vista, dx: this.vista.dx + mover[0], dy: this.vista.dy + mover[1] };
       this.redibujar();

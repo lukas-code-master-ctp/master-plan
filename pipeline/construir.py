@@ -17,12 +17,17 @@ from pathlib import Path
 
 from . import config, geo, referencias, terreno, visor
 from .crm import leer_crm
-from .excel import FichaComercial, leer_planilla
+from .excel import FichaComercial, alinear_con, leer_planilla
 from .calibracion import Ajuste, aplicar, calibrar, mapa_de_caminos
 from .imagenes import generar_niveles
 from .kmz import ParcelaGeometrica, leer_kmz, leer_lineas
 from .panoramas import Panorama, RumboResuelto, a_vista, buscar_panoramas, resolver_rumbo
 from .proyeccion import Vista, proyectar_vista
+
+# Dos fotos son del mismo vuelo si el dron dice que despegaron a menos de esto. Entre
+# vuelos del mismo día la diferencia es de metros (Vichuquén: 76,5 y 84,9 m); dentro
+# de un vuelo, de décimas.
+TOLERANCIA_VUELO_M = 3.0
 
 # Por sobre esta diferencia entre la elevación solar calculada y la medida,
 # la detección es sospechosa y hay que revisarla a mano.
@@ -66,6 +71,10 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
           f"{f', {len(etapas)} etapas' if etapas else ''}")
 
     fichas = _leer_fichas(fuentes, proyecto, avisos)
+    alineadas = alinear_con(fichas, con_id)
+    if alineadas is not fichas:
+        print("  la planilla separa etapas y el KMZ no: se cruzan por el número del lote")
+    fichas = alineadas
     _revisar_cobertura(fichas, con_id, avisos)
 
     print("Leyendo las panorámicas...")
@@ -96,6 +105,13 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
               f"{relieve.cota(despegue):.0f} m"
               f"{'' if proyecto.despegue else '  (supuesto: bajo la primera toma)'}")
 
+    vuelos = _vuelos(sorted(panoramas, key=lambda p: p.momento))
+    if len(vuelos) > 1:
+        print(f"  {len(vuelos)} vuelos, despegues a " + ", ".join(f"{v:.1f}" for v in vuelos)
+              + " m según el dron: se anclan al despegue del primero")
+    # El despegue indicado (o el supuesto, bajo la primera toma) es el del primer vuelo.
+    referencia = min(vistas, key=lambda t: t[0].momento)[2] if vistas else None
+
     hitos = _resolver_referencias(proyecto, geometrias, avisos)
     cota_despegue = relieve.cota(despegue) if relieve else None
 
@@ -107,7 +123,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         lineas = leer_lineas(fuentes.kmz)
         calibradas = []
         for panorama, rumbo, vista in vistas:
-            modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
+            modelo = terreno.modelo_para_vista(relieve, vista, despegue, referencia) if relieve else None
             ajuste = calibrar(vista, lineas, modelo, mapa_de_caminos(panorama.ruta))
             ajustes[vista.id] = ajuste
             print(f"  {vista.id}: giro {ajuste.giro:+.2f}°, inclinación E {ajuste.inclinacion_este:+.2f}° "
@@ -123,7 +139,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
     resumen_vistas = []
 
     for panorama, rumbo, vista in vistas:
-        modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
+        modelo = terreno.modelo_para_vista(relieve, vista, despegue, referencia) if relieve else None
         proyectadas = proyectar_vista(vista, [(g.id, g.anillo) for g in con_id.values()],
                                       terreno=modelo)
         for parcela in proyectadas:
@@ -135,7 +151,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         _escribir_json(salida.vistas / f"{vista.id}.json", {
             "id": vista.id,
             "referencias": [
-                referencias.proyectar(vista, hito, _cota_en_datum_dron(vista, hito, cota_despegue))
+                referencias.proyectar(vista, hito, _cota_en_datum_dron(vista, hito, cota_despegue, referencia))
                 for hito in hitos
             ],
             "parcelas": [
@@ -272,11 +288,30 @@ def _resolver_referencias(proyecto: config.Proyecto, geometrias: list[ParcelaGeo
 
 
 def _cota_en_datum_dron(vista: Vista, hito: referencias.Referencia,
-                        cota_despegue: float | None) -> float:
-    """La cota del hito en el datum del dron: la del despegue más el desnivel real."""
+                        cota_despegue: float | None, referencia: Vista | None = None) -> float:
+    """La cota del hito en el datum del dron: la del despegue más el desnivel real.
+    Como en `terreno.modelo_para_vista`, anclada al vuelo de `referencia`."""
+    base = (referencia or vista).terreno_plano()
     if hito.cota is None or cota_despegue is None:
-        return vista.terreno_plano()
-    return vista.terreno_plano() + (hito.cota - cota_despegue)
+        return base
+    return base + (hito.cota - cota_despegue)
+
+
+def _vuelos(panoramas: list[Panorama]) -> list[float]:
+    """La cota de despegue de cada vuelo según el dron, en el orden en que aparecen.
+
+    El dron guarda en cada foto su altura absoluta y la relativa al despegue: la resta
+    es la cota del despegue, igual para todas las fotos de un vuelo.
+    """
+    grupos: list[list[float]] = []
+    for panorama in panoramas:
+        cota = panorama.altura_absoluta - panorama.altura_relativa
+        grupo = next((g for g in grupos if abs(sum(g) / len(g) - cota) <= TOLERANCIA_VUELO_M), None)
+        if grupo is None:
+            grupos.append([cota])
+        else:
+            grupo.append(cota)
+    return [sum(g) / len(g) for g in grupos]
 
 
 def _despegue_por_defecto(panoramas: list[Panorama]) -> geo.Punto:
@@ -323,13 +358,18 @@ def _armar_parcelas(fichas: dict[str, FichaComercial],
                     geometrias: dict[str, ParcelaGeometrica],
                     apariciones: dict[str, list[tuple[str, float]]]) -> list[dict]:
     parcelas = []
-    # Con más de una etapa los números se repiten —Cauquenes tiene cuatro, así que
-    # del 1 al 12 cada número aparece cuatro veces— y hay que decir cuál es cuál.
-    varias_etapas = len({e for e in (
-        (g.etapa if g and g.etapa is not None else f.etapa if f else None)
-        for identificador in set(fichas) | set(geometrias)
-        for g, f in [(geometrias.get(identificador), fichas.get(identificador))]
-    ) if e is not None}) > 1
+    # Con etapas que repiten la numeración —Cauquenes tiene cuatro, así que del 1 al
+    # 12 cada número aparece cuatro veces— hay que decir cuál es cuál. Si las etapas
+    # no repiten números (Vichuquén: A1 a A579), la etapa delante sobra.
+    etapas_por_numero: dict[int, set[int]] = {}
+    for identificador in set(fichas) | set(geometrias):
+        geometria, ficha = geometrias.get(identificador), fichas.get(identificador)
+        etapa = (geometria.etapa if geometria and geometria.etapa is not None
+                 else ficha.etapa if ficha else None)
+        if etapa is not None:
+            numero = _descomponer(identificador, etapa)[1]
+            etapas_por_numero.setdefault(numero, set()).add(etapa)
+    varias_etapas = any(len(etapas) > 1 for etapas in etapas_por_numero.values())
 
     for identificador in sorted(set(fichas) | set(geometrias), key=_orden_lote):
         ficha = fichas.get(identificador)

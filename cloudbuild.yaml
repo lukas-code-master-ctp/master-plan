@@ -54,7 +54,10 @@ steps:
       # mientras el navegador sondea. Al cerrar la pestaña se arrastraría, y
       # --timeout no la rescata porque no hay petición que expire.
       - '--no-cpu-throttling'
-      - '--memory=4Gi'                     # una panorámica son 104 megapíxeles
+      # Una panorámica son 104 megapíxeles. Con 4Gi la instancia moría en silencio
+      # (sin "Memory limit exceeded" en los logs) al generar los niveles de imagen
+      # de un vuelo de 29 fotos; con 8Gi la misma construcción termina.
+      - '--memory=8Gi'
       - '--cpu=2'
       - '--timeout=1800'                   # construir un loteo con imágenes
       - '--port=8080'

@@ -445,7 +445,8 @@ master cuando quiera (o nunca).
 - **Dónde se entra.** La pestaña **Mis KMZ** (`#/kmz`), con su botón **Nuevo KMZ** y
   los KMZ en curso y terminados: el
   paso en que va cada uno, cuántos lotes tiene y la fecha. Nuevo KMZ pide un nombre y
-  lleva a los 7 pasos (`#/kmz/<slug>`).
+  lleva a los 4 pasos (`#/kmz/<slug>`; `#/kmz/<slug>/<paso>` abre uno, y las rutas de
+  los 7 pasos de antes llevan al paso que hoy las contiene).
 - **Al terminar**, **Descargar** entrega el `.kmz` con el nombre que le pusiste, y
   **Usar en un master** lo pone en uno existente o en un "Nuevo master con este KMZ".
   También se elige desde el otro lado: en *Nuevo master* el KMZ se sube o se elige de
@@ -472,6 +473,9 @@ Resultados: [lectura de rótulos](docs/specs/2026-10-01-crea-tu-kmz-rotulos.md) 
 
 ### El flujo
 
+Cuatro pastillas a la vista: **1 Subir el plano · 2 Marcar · 3 Ubicar · 4 Revisar y
+descargar**. Leer el plano y Numerar no tienen pastilla: son parte de Marcar.
+
 1. **Subir el plano** (PDF). De cada página se saca la imagen embebida **sin
    rerasterizar**; si no hay, se renderiza a 200 dpi. Se elige la página y la rotación,
    o se **unen varias hojas** (ver abajo).
@@ -481,21 +485,26 @@ Resultados: [lectura de rótulos](docs/specs/2026-10-01-crea-tu-kmz-rotulos.md) 
    **Cuadro de superficies** se encierra el cuadro de áreas del plano, **aunque quede
    fuera del dibujo** (en Caminos de Rapel lo estaba, y no se leía): de ahí salen las
    áreas oficiales y la lista de números que el plano debería tener.
-3. **Digitalizar**, en un trabajo de fondo con avance en vivo: la tinta de los deslindes
-   (roja o negra; se descartan verde, azul, achurados y cuadrícula), regiones cerradas
-   separadas con los rótulos, una red de deslindes compartida entre vecinos, aristas
-   enderezadas y los polígonos desde las caras. Sin traslapes ni huecos por
-   construcción, y el deslinde va por el eje del camino: no hay polígonos de camino.
-4. **Numerar**: el lector propone los números; la loteadora corrige o completa con un
-   clic sobre el lote, y sus clics mandan. Se destacan los lotes sin número y los
-   repetidos. Ver abajo *Los números de lote*.
-5. **Ubicar en el mapa**, plano y mapa Esri lado a lado. Ver abajo.
-6. **Revisar**: los lotes sobre la imagen satelital, coloreados por error de área contra
-   el cuadro de superficies del plano, si se pudo leer (el marcado o, si no, el que se
-   encuentre dentro del dibujo): verde ±2 %, ámbar ±5 %, rojo más. Sin cuadro, la
-   pantalla sugiere marcarlo o revisar a ojo que los lotes calcen con los caminos.
-7. **Crear el KMZ.** Si quedan lotes sin número, pide confirmación: esos lotes no van
-   al KMZ, y lo normal es volver a Numerar.
+   - **Leer el plano** (por dentro, `digitalizar`) lo lanza "Seguir" de Marcar, en un
+     trabajo de fondo con avance en vivo: la tinta de los deslindes (roja o negra; se
+     descartan verde, azul, achurados y cuadrícula), regiones cerradas separadas con los
+     rótulos, una red de deslindes compartida entre vecinos, aristas enderezadas y los
+     polígonos desde las caras. Sin traslapes ni huecos por construcción, y el deslinde va
+     por el eje del camino: no hay polígonos de camino.
+   - **Numerar** ("Antes de ubicar: revisa los números") aparece al terminar de leer solo
+     si hace falta (`hayQueNumerar`): un lote sin número, un número del cuadro o de la
+     numeración que ningún lote tiene, lecturas por confirmar, repetidos o la pregunta del
+     resto de la propiedad. Si no, se va directo a Ubicar. El lector propone los números;
+     la loteadora corrige o completa con un clic sobre el lote, y sus clics mandan. Desde
+     Ubicar y Revisar se abre con "Revisar los números". Ver abajo *Los números de lote*.
+3. **Ubicar en el mapa**, plano y mapa Esri lado a lado. Ver abajo.
+4. **Revisar y descargar**: los lotes sobre la imagen satelital, coloreados por error de
+   área contra el cuadro de superficies del plano, si se pudo leer (el marcado o, si no, el
+   que se encuentre dentro del dibujo): verde ±2 %, ámbar ±5 %, rojo más. Sin cuadro, la
+   pantalla sugiere marcarlo o revisar a ojo que los lotes calcen con los caminos. En el
+   mismo panel, el semáforo (cuántos lotes calzan con el cuadro), corregir vértices a mano
+   y **Crear el KMZ**, que después se descarga o se usa en un master. Si quedan lotes sin
+   número, pide confirmación: esos lotes no van al KMZ, y lo normal es numerarlos.
 
 Todo se puede retomar y rehacer: cambiar una entrada vuelve a calcular solo lo que
 depende de ella (`huellas.json` dice qué quedó atrasado). Si un lote sale mal se
@@ -871,7 +880,7 @@ tumasterplan/
 │   ├── republicar.py  Al arrancar, republica los loteos con el visor atrasado
 │   └── web/           La página
 │       ├── js/kmzs.js     Mis KMZ: la lista, el nombre y "usar en un master"
-│       └── js/kmz.js, kmz_geometria.js, lienzo_plano.js, mapa_kmz.js   Los 7 pasos de un KMZ
+│       └── js/kmz.js, kmz_geometria.js, lienzo_plano.js, mapa_kmz.js   Los 4 pasos de un KMZ
 ├── web/               El sitio (html, css, js): la plantilla de la que se copia cada salida
 │   ├── js/            Visor WebGL, mapa, ficha, filtros
 │   ├── vercel.json    Cabeceras (caché, CSP) que viajan con cada sitio
