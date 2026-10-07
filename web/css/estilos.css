@@ -519,6 +519,33 @@ button { cursor: pointer; }
 .overlay--con-seleccion .parcela:not(.parcela--seleccionada):hover { opacity: 0.75; }
 .overlay--con-seleccion .parcela:not(.parcela--seleccionada) .parcela__pastilla { display: none; }
 
+/* Un grupo de parcelas vecinas cuyos números no caben (grupos.js): su rango y
+   cuántas quedan disponibles. Al tocarlo, la cámara se acerca y aparecen. */
+.burbuja { pointer-events: auto; cursor: pointer; }
+.burbuja__toque { fill: transparent; }
+.burbuja__fondo {
+  fill: var(--zinc-900);
+  stroke: rgb(255 255 255 / 0.9);
+  stroke-width: 1.5;
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / 0.45));
+  transition: transform 160ms var(--curva);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.burbuja:hover .burbuja__fondo { transform: scale(1.08); }
+.burbuja__texto {
+  font: 600 0.75rem var(--sans);
+  font-variant-numeric: tabular-nums;
+  text-anchor: middle;
+  fill: #fff;
+  pointer-events: none;
+}
+.burbuja__rango { font-weight: 700; }
+.burbuja__disponibles { fill: rgb(255 255 255 / 0.7); }
+/* Verde claro y no el #15803d de disponible: sobre el fondo oscuro no se leería. */
+.burbuja__disponibles--hay { fill: #4ade80; }
+.overlay--con-seleccion .burbuja { display: none; }
+
 /* El brillo que late alrededor de la elegida, del color de su estado. Solo se
    anima la opacidad. */
 .parcela-halo {
@@ -909,6 +936,10 @@ button { cursor: pointer; }
   body[data-plano="completo"] .barra-inferior,
   body[data-plano="completo"] .instrumentos { display: none; }
   body[data-plano="completo"] .leyenda { z-index: 22; }
+  /* Volver a la vista aérea: el mismo botón del teléfono, en la esquina donde la
+     vista aérea tiene el botón Plano. El zoom del plano sube para no quedar debajo. */
+  body[data-plano="completo"] .entrar-360 { display: flex; left: auto; right: 1.25rem; bottom: 1.25rem; }
+  body[data-plano="completo"] .carta .leaflet-control-zoom { margin-bottom: 6rem; }
 }
 
 /* En el plano, la elegida late y lleva su nombre fijo; las demás no muestran el
@@ -922,6 +953,42 @@ button { cursor: pointer; }
   50% { stroke-opacity: 1; stroke-width: 6px; }
 }
 .mapa--con-seleccion .leaflet-tooltip:not(.etiqueta-elegida) { display: none; }
+
+/* Los números del plano y, cuando no caben, la burbuja de su grupo (grupos.js).
+   Cuelgan de un ancla de tamaño cero para quedar centrados en la parcela. */
+.numero-mapa-ancla { width: 0 !important; height: 0 !important; }
+.numero-mapa, .burbuja-mapa {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  border-radius: var(--radio-full);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 1.5px rgb(255 255 255 / 0.9);
+  cursor: pointer;
+}
+.numero-mapa {
+  height: 20px;
+  padding: 0 7px;
+  font: 700 0.6875rem/1 var(--sans);
+}
+.burbuja-mapa {
+  height: 28px;
+  padding: 0 12px;
+  gap: 0.15rem;
+  background: var(--zinc-900);
+  color: #fff;
+  font: 600 0.75rem/1 var(--sans);
+  transition: transform 160ms var(--curva);
+}
+.burbuja-mapa:hover { transform: translate(-50%, -50%) scale(1.08); }
+/* El dedo necesita 44 px; la burbuja mide 28. */
+.burbuja-mapa::after { content: ''; position: absolute; inset: -8px; }
+.burbuja-mapa b { font-weight: 700; }
+.burbuja-mapa__disponibles { color: rgb(255 255 255 / 0.7); }
+.burbuja-mapa__disponibles--hay { color: #4ade80; }
+.mapa--con-seleccion .numero-mapa-ancla { display: none; }
 .leaflet-tooltip.etiqueta-elegida {
   padding: 0.3rem 0.6rem;
   background: var(--zinc-900);
