@@ -1,27 +1,19 @@
 /**
  * Ficha comercial de una parcela, como la pantalla "Ficha de Parcela" de Stitch.
  *
- * En el teléfono es un panel que sube desde abajo y se cierra arrastrándolo; en
- * escritorio, una tarjeta flotante. Lo que dice y en qué orden lo ofrece sale de
+ * En el teléfono es una hoja que sube desde abajo y se baja sin cerrarse (hoja.js);
+ * en escritorio, una tarjeta flotante. Lo que dice y en qué orden lo ofrece sale de
  * funciones puras (formatos, tarjetas, financiamiento, acciones, KML) que se
  * prueban sin navegador. Lo que depende de columnas opcionales de la planilla
  * (topografía, rol, pie, cuotas, reserva) no se dibuja vacío: si no viene, no está.
  */
+import { abrirHoja } from './hoja.js';
 import { TEXTOS_POR_DEFECTO } from './marca.js';
 import { conReservas } from './reserva.js';
 
 const NUMERO = new Intl.NumberFormat('es-CL');
 const HECTAREAS = new Intl.NumberFormat('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const M2_POR_HECTAREA = 10000;
-
-// Un tercio del panel, o un tirón de más de medio píxel por milisegundo: lo que
-// se siente como "lo bajé a propósito". Bajo 24 px es el dedo que tembló.
-const FRACCION_PARA_BAJAR = 1 / 3;
-const VELOCIDAD_PARA_BAJAR = 0.5;
-const ARRASTRE_MINIMO = 24;
-// Un toque en el asa (sin arrastrar) alterna entre media altura y entero.
-const TOQUE_MAXIMO_PX = 6;
-const TOQUE_MAXIMO_MS = 300;
 
 const TRAZO = 'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"';
 const ICONOS = {
@@ -209,21 +201,6 @@ export function kmlDeParcela(parcela, nombre, proyecto) {
 `;
 }
 
-/**
- * A qué altura queda el panel al soltar el asa: 'entera', 'media' o 'minima'
- * (asomada solo la cabecera). Abre a media altura para que la foto se siga
- * viendo; subir lo abre entero; bajar con decisión lo deja asomado. Bajarlo nunca
- * lo cierra: en el celular se baja para mirar el campo sin perder la parcela, y
- * para cerrarla está la ×. `desplazamiento` es positivo hacia abajo.
- */
-export function destinoDelArrastre(desplazamiento, alto, velocidad, nivel) {
-  if (Math.abs(desplazamiento) < ARRASTRE_MINIMO) return nivel;
-  if (desplazamiento < 0) return nivel === 'minima' ? 'media' : 'entera';
-  if (nivel !== 'media') return nivel === 'entera' ? 'media' : 'minima';
-  const decidido = desplazamiento > alto * FRACCION_PARA_BAJAR || velocidad > VELOCIDAD_PARA_BAJAR;
-  return decidido ? 'minima' : 'media';
-}
-
 // --- Dibujo --------------------------------------------------------------------
 
 export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
@@ -233,13 +210,15 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
   const financiamiento = financiamientoDe(parcela);
   const titulo = catalogo.titulo(parcela);
 
+  const venia = !contenedor.hidden;
   contenedor.replaceChildren();
   contenedor.hidden = false;
-  contenedor.style.transform = '';
-  // Cada parcela abre a media altura, aunque la anterior haya quedado entera o asomada.
-  contenedor.classList.remove('ficha--entera', 'ficha--minima');
   contenedor.innerHTML = `
-    <div class="ficha__asa" aria-hidden="true"></div>
+    <div class="ficha__asa">
+      <button class="ficha__bajar" type="button" aria-label="Bajar la ficha" aria-expanded="true">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" ${TRAZO}/></svg>
+      </button>
+    </div>
     <div class="ficha__cabecera">
       <div class="ficha__identidad">
         <div class="ficha__meta">
@@ -286,7 +265,9 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
   const lista = accionesDe(parcela, catalogo, { url: urlDeParcela(parcela) });
   pintarBotones(contenedor.querySelector('.acciones'), lista, () => acciones.alReservar?.(parcela));
   pintarEnlaces(contenedor, parcela, catalogo, lista.find((a) => a.tipo === 'aire'), acciones);
-  permitirArrastre(contenedor);
+  // En el celular, cada parcela abre a media altura, aunque la anterior haya quedado
+  // entera o asomada.
+  abrirHoja(contenedor, { venia });
 
   if (!parcela.poligono) {
     mostrarNota(contenedor,
@@ -362,76 +343,6 @@ async function compartir(contenedor, parcela, titulo) {
   } catch {
     mostrarNota(contenedor, url);
   }
-}
-
-/** La altura del panel: 'entera', 'media' o 'minima'. */
-function nivelDe(contenedor) {
-  if (contenedor.classList.contains('ficha--entera')) return 'entera';
-  return contenedor.classList.contains('ficha--minima') ? 'minima' : 'media';
-}
-
-function ponerNivel(contenedor, nivel) {
-  if (nivel === 'minima') {
-    // Asomada queda la cabecera entera (estado, nombre, compartir y la ×), mida lo
-    // que mida según el largo del nombre.
-    // Más el margen de abajo del iPhone (la barra de inicio), que tapa lo último.
-    const cabecera = contenedor.querySelector('.ficha__cabecera');
-    const raiz = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    const margenSeguro = Math.max(0, (parseFloat(getComputedStyle(contenedor).paddingBottom) || 0) - 1.25 * raiz);
-    contenedor.style.setProperty('--asomo', `${cabecera.offsetTop + cabecera.offsetHeight + 14 + margenSeguro}px`);
-    contenedor.scrollTop = 0;
-  }
-  contenedor.classList.toggle('ficha--entera', nivel === 'entera');
-  contenedor.classList.toggle('ficha--minima', nivel === 'minima');
-}
-
-/**
- * El asa: arrastrarla hacia abajo baja el panel con el dedo y, al soltar, decide
- * destinoDelArrastre. Hacia arriba no se arrastra el dibujo: al soltar, el panel
- * sube. Un toque sube un nivel (entero vuelve a media altura). Asomado, tocar la
- * cabecera también lo vuelve a media altura.
- */
-function permitirArrastre(contenedor) {
-  const asa = contenedor.querySelector('.ficha__asa');
-  let inicio = null;
-
-  asa.addEventListener('pointerdown', (evento) => {
-    inicio = { y: evento.clientY, t: evento.timeStamp };
-    asa.setPointerCapture(evento.pointerId);
-    contenedor.classList.add('ficha--arrastrando');
-  });
-  asa.addEventListener('pointermove', (evento) => {
-    if (!inicio) return;
-    const delta = evento.clientY - inicio.y;
-    if (nivelDe(contenedor) === 'minima') {
-      // Asomado se arrastra desde donde está, y hacia arriba hasta media altura.
-      const asomo = parseFloat(contenedor.style.getPropertyValue('--asomo')) || 0;
-      const subida = Math.max(delta, -(contenedor.offsetHeight - asomo));
-      contenedor.style.transform = `translateY(calc(100% - var(--asomo) + ${subida}px))`;
-      return;
-    }
-    contenedor.style.transform = `translateY(${Math.max(0, delta)}px)`;
-  });
-  const soltar = (evento) => {
-    if (!inicio) return;
-    const desplazamiento = evento.clientY - inicio.y;
-    const duracion = evento.timeStamp - inicio.t;
-    const velocidad = Math.max(0, desplazamiento) / Math.max(1, duracion);
-    inicio = null;
-    contenedor.classList.remove('ficha--arrastrando');
-    contenedor.style.transform = '';
-    const nivel = nivelDe(contenedor);
-    if (Math.abs(desplazamiento) <= TOQUE_MAXIMO_PX && duracion <= TOQUE_MAXIMO_MS) {
-      ponerNivel(contenedor, nivel === 'media' ? 'entera' : 'media');
-      return;
-    }
-    ponerNivel(contenedor, destinoDelArrastre(desplazamiento, contenedor.offsetHeight, velocidad, nivel));
-  };
-  asa.addEventListener('pointerup', soltar);
-  asa.addEventListener('pointercancel', soltar);
-  contenedor.querySelector('.ficha__cabecera').addEventListener('click', (evento) => {
-    if (nivelDe(contenedor) === 'minima' && !evento.target.closest('button, a')) ponerNivel(contenedor, 'media');
-  });
 }
 
 function enlace(accion, clase) {
