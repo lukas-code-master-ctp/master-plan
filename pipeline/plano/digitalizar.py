@@ -73,7 +73,8 @@ entero. Si cambia la rotación, cambian las coordenadas.
                                                    todo en px de página
       "sin_numero": [{"poligono", "area_px",       caras dentro del contorno sin lote
                       "de_lote",                   del tamaño de un lote: un lote cuyo número
-                                                   no se leyó (no se unió a su vecino); hay que
+                                                   no se leyó (no se unió a su vecino y no
+                                                   es una franja como un camino); hay que
                                                    numerarlo o crear el KMZ sin él
                       "sugerencia"}],              {"numero", "confianza", "apoyo"} o null: lo
                                                    que leyó el lector dentro, con menos apoyo

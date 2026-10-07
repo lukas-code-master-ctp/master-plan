@@ -19,7 +19,9 @@
    el cierre, no el dibujo, o es el texto del rótulo) se une a ese lote. Salvo si es
    del tamaño de un lote (≥ LOTE_FRAC de la mediana de los lotes con número): es un
    lote cuyo número no se leyó, y queda como cara sin número "de lote" para que la
-   loteadora lo numere. Pegarlo al vecino duplica ese lote sin aviso.
+   loteadora lo numere. Pegarlo al vecino duplica ese lote sin aviso. Lo mismo cualquier
+   otra región de ese tamaño que quede (entre lotes sin número, o separada de su vecino
+   por una línea firme), salvo una franja angosta (GROSOR_FRAC: un camino).
 4. Red de deslindes: las grietas entre etiquetas forman una red plana. Cada deslinde
    entre dos regiones es UNA arista, compartida por ambas. Las aristas que siguen
    derecho por un nodo (el borde del loteo que pasa por donde llega una divisoria, en
@@ -78,6 +80,10 @@ MERGE_INK_FRAC = 0.85  # región sin número cuyo límite con un lote tiene meno
 # distinguir es un lado común corto (≲ 10 mm) tapado por el rótulo.
 LOTE_FRAC = 0.4
 CORTE_ROTULO_MM = 2.0
+# Una región sin número del tamaño de un lote pero más angosta que esto (en grosor,
+# 2 × área / perímetro, relativo al mediano de los lotes) es una franja: un camino o una
+# servidumbre, no un lote. En el plano sintético el camino mide 0,28 de un lote.
+GROSOR_FRAC = 0.5
 BLUR_MM = 0.25         # suavizado de la tinta para el watershed
 DP_MM = 0.34           # tolerancia del enderezado (≈ 2 px a 6 px/mm: el ancho de la línea)
 NODE_MOV_MM = 0.5      # lo más que se mueve un nodo hacia la intersección de sus rectas
@@ -449,7 +455,40 @@ def _fusionar_sin_tinta(ws: np.ndarray, firme: np.ndarray, ppmm: float,
             tabla[r] = lote
             fusiones.append((int(r), int(lote) - LOTE0))
         ws[...] = tabla[ws]
+    retenidas |= _lotes_sin_numero(ws, tope)
     return fusiones, sorted(int(r) for r in retenidas)
+
+
+def _lotes_sin_numero(ws: np.ndarray, tope: float) -> set[int]:
+    """Las regiones sin número que quedaron después de unir los bolsillos, del tamaño de
+    un lote (`tope`) y no más angostas que un lote: también son lotes sin número. El
+    criterio de `_fusionar_sin_tinta` solo ve las que lindan con un lote numerado por un
+    límite casi sin tinta (decide si se unen a él). Quedaban fuera un lote sin número
+    entre lotes sin número (Caminos de Rapel en la primera lectura: 8-09 y 8-16 solo
+    lindan entre ellos, con 8-08 y 8-15 sin leer y con el resto de la propiedad) y uno
+    separado de su vecino numerado por una línea firme: los dos salían como "partes
+    chicas" y el KMZ los dejaba fuera sin preguntar.
+
+    Un camino o una servidumbre puede tener el área de un lote, pero es una franja: su
+    grosor (2 × área / perímetro) es menos de GROSOR_FRAC del grosor mediano de los
+    lotes con número, y sigue siendo una parte sin número."""
+    if not np.isfinite(tope):
+        return set()
+    area = np.bincount(ws.ravel())
+    candidatas = {r for r in range(2, min(LOTE0, len(area))) if area[r] >= tope}
+    candidatas -= set(np.unique(np.concatenate([ws[0], ws[-1], ws[:, 0], ws[:, -1]])).tolist())
+    if not candidatas:
+        return set()
+    # Perímetro en píxeles: los pares de vecinos con distinta etiqueta, para las dos.
+    dv, dh = ws[1:, :] != ws[:-1, :], ws[:, 1:] != ws[:, :-1]
+    lados = np.concatenate([ws[1:, :][dv], ws[:-1, :][dv], ws[:, 1:][dh], ws[:, :-1][dh]])
+    perimetro = np.bincount(lados, minlength=len(area)).astype(float)
+    grosor = 2 * area / np.maximum(perimetro, 1)
+    numerados = grosor[LOTE0:][area[LOTE0:] > 0]
+    if not numerados.size:
+        return set()
+    minimo = GROSOR_FRAC * float(np.median(numerados))
+    return {r for r in candidatas if grosor[r] >= minimo}
 
 
 # ---------------------------------------------------------------------------- red de deslindes
@@ -1022,7 +1061,13 @@ def _enderezar(P: np.ndarray, tolerancia: float, ppmm: float, uniones=(), puntas
     fijos = {}
     largo = lambda t: math.hypot(*(P[t[1]] - P[t[0]]))
     # 0. Un tramo de pocos píxeles en una esquina (el codo de una línea gruesa) no es un
-    # lado: la esquina va al cruce de los dos lados.
+    # lado: la esquina va al cruce de los dos lados. El cruce queda fijo: el tramo corto
+    # pasa a ser parte del lado anterior, así que la unión con el siguiente está en la
+    # otra punta del tramo, hasta ANCLA_MM del cruce, y `_vertices` (que solo acepta el
+    # cruce a 3 tolerancias de la unión) dejaría el vértice ahí y cortaría la esquina en
+    # diagonal. En Caminos de Rapel, según dónde se encerraba el dibujo, Douglas-Peucker
+    # partía el lado poniente de 8-09 a 4,8 mm de su esquina norponiente y el lote perdía
+    # un cuarto de su área.
     k = 1
     while k < len(segs) - 1:
         a, t, b = segs[k - 1], segs[k], segs[k + 1]
@@ -1030,6 +1075,8 @@ def _enderezar(P: np.ndarray, tolerancia: float, ppmm: float, uniones=(), puntas
         x = _cruce(a[2], b[2]) if largo(t) < ancla and esquina else None
         if x is not None and LineString(P[t[0]:t[1] + 1]).distance(Point(x)) < 3 * tolerancia:
             segs[k - 1:k + 1] = [(a[0], t[1], a[2], a[3])]
+            fijos.pop(t[0], None)       # si `a` ya había absorbido otro tramo, ese cruce quedó dentro
+            fijos[t[1]] = x
         else:
             k += 1
     extremos = largo(segs[0]) + largo(segs[-1]) if anillo and len(segs) >= 2 else 0.0
