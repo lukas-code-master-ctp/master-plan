@@ -2,7 +2,7 @@
 import { rumboCardinal, rumboCorto } from './camara.js';
 import { Catalogo, ErrorDeDatos, buscar, conteoPorEstado, filtrar, romano } from './datos.js';
 import { aplicarMarca, ponerLogo } from './marca.js';
-import { mensajeWhatsapp, renderizarFicha, rotuloConPrecio } from './ficha.js';
+import { mensajeWhatsapp, renderizarFicha } from './ficha.js';
 import { agruparParcelas, resumenDeGrupo } from './grupos.js';
 import { abrirFormulario } from './reserva.js';
 import { Mapa } from './mapa.js';
@@ -65,7 +65,6 @@ async function arrancar() {
 
   estado.visor = new Visor($('#visor'), {
     rotuloDe: (id) => catalogo.rotulo(id),
-    rotuloSeleccionadoDe: (id) => rotuloConPrecio(catalogo.porId.get(id), catalogo.rotulo(id)),
     alElegirParcela: (id) => seleccionar(id),
     alPasarSobreParcela: (id) => destacar(id),
     alMoverCamara: (camara) => {

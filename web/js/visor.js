@@ -38,6 +38,9 @@ const ARRASTRE_MINIMO_PX = 5;
 const ALTO_PASTILLA = 26;
 // La elegida se dibuja agrandada (.parcela--seleccionada en estilos.css): ocupa más.
 const ESCALA_ELEGIDA = 1.22;
+// El globo de la elegida flota sobre la parcela, unido por una patita, para no
+// taparla: de lejos la parcela es más chica que su propio rótulo.
+const PATITA_PX = 16;
 // Aire mínimo entre dos pastillas para que cada número se lea por separado.
 const SEPARACION_PASTILLAS = 3;
 // Por debajo de esto las pastillas se amontonan y tapan el terreno.
@@ -333,12 +336,13 @@ export class Visor {
       }
       if ((elegida || anchoEnPantalla >= ANCHO_MINIMO_ETIQUETA_PX) && !estilo.atenuada) {
         const [cx, cy] = centro(pixeles);
-        nodo.pastilla.setAttribute('transform', `translate(${cx.toFixed(1)} ${cy.toFixed(1)})`);
+        const y = elegida ? this._ponerGlobo(nodo, pixeles) : cy;
+        nodo.pastilla.setAttribute('transform', `translate(${cx.toFixed(1)} ${y.toFixed(1)})`);
         nodo.disco.style.fill = estilo.color;
         nodo.numero.style.fill = estilo.texto;
         const escala = elegida ? ESCALA_ELEGIDA : 1;
         candidatas.push({
-          id, x: cx, y: cy,
+          id, x: cx, y,
           ancho: Number(nodo.disco.getAttribute('width')) * escala,
           alto: ALTO_PASTILLA * escala,
           // Primero la elegida; después lo que se vende; después lo más cercano,
@@ -355,7 +359,24 @@ export class Visor {
     for (const id of mostradas) {
       this.nodos.get(id).pastilla.style.display = '';
     }
-    this._dibujarHalo(rutaElegida);
+    this._dibujarHalo(rutaElegida, this.nodos.get(this.seleccionada));
+  }
+
+  /**
+   * Sube la pastilla de la elegida por sobre el borde de arriba de la parcela y
+   * tiende la patita hasta él. Devuelve dónde queda el centro de la pastilla.
+   */
+  _ponerGlobo(nodo, pixeles) {
+    let tope = Infinity;
+    for (const [, py] of pixeles) tope = Math.min(tope, py);
+    const medioAlto = (ALTO_PASTILLA * ESCALA_ELEGIDA) / 2;
+    // Pegada al borde de la pantalla no puede subir más: ahí tapa un poco, pero se lee.
+    const y = Math.max(tope - PATITA_PX - medioAlto, medioAlto + 4);
+    const largo = Math.max(tope - y, medioAlto);
+    nodo.patita.setAttribute('y1', medioAlto.toFixed(1));
+    nodo.patita.setAttribute('y2', largo.toFixed(1));
+    nodo.punta.setAttribute('cy', largo.toFixed(1));
+    return y;
   }
 
   /**
@@ -468,10 +489,10 @@ export class Visor {
 
   /**
    * El brillo que late alrededor de la elegida (.parcela-halo en estilos.css). Va
-   * encima de todo y sin clic: es solo luz. Un filtro SVG y no `filter: drop-shadow`
+   * sobre las demás parcelas, justo debajo de la elegida, y sin clic: es solo luz. Un filtro SVG y no `filter: drop-shadow`
    * de CSS, que Safari no aplica a los elementos de dentro de un SVG.
    */
-  _dibujarHalo(ruta) {
+  _dibujarHalo(ruta, elegida) {
     if (!this.halo) {
       const defs = document.createElementNS(SVG_NS, 'defs');
       defs.innerHTML = '<filter id="brillo-parcela" x="-25%" y="-25%" width="150%" height="150%">'
@@ -481,10 +502,14 @@ export class Visor {
       this.halo.setAttribute('filter', 'url(#brillo-parcela)');
       this.svg.append(defs, this.halo);
     }
-    // Al final del SVG, por si después se agregaron parcelas: el brillo va arriba.
-    if (this.svg.lastChild !== this.halo) this.svg.append(this.halo);
     this.halo.style.display = ruta ? '' : 'none';
     if (!ruta) return;
+    // Al final del SVG: el brillo sobre las demás parcelas y la elegida al frente,
+    // sobre su brillo; si no, los contornos de las vecinas cruzaban su globo. Solo
+    // se mueven si algo quedó encima (una parcela o una burbuja recién creadas).
+    if (elegida && (this.svg.lastChild !== elegida.grupo || elegida.grupo.previousSibling !== this.halo)) {
+      this.svg.append(this.halo, elegida.grupo);
+    }
     this.halo.setAttribute('d', ruta.d);
     this.halo.style.color = ruta.color;
   }
@@ -505,11 +530,17 @@ export class Visor {
     // dígito queda igual de redondo que antes.
     const disco = document.createElementNS(SVG_NS, 'rect');
     disco.setAttribute('class', 'parcela__disco');
+    // La patita y la punta del globo: solo se ven en la elegida (estilos.css).
+    const patita = document.createElementNS(SVG_NS, 'line');
+    patita.setAttribute('class', 'parcela__patita');
+    const punta = document.createElementNS(SVG_NS, 'circle');
+    punta.setAttribute('class', 'parcela__punta');
+    punta.setAttribute('r', '3.5');
     const numero = document.createElementNS(SVG_NS, 'text');
     numero.setAttribute('class', 'parcela__numero');
     numero.setAttribute('dy', '0.34em');
     numero.textContent = this.rotuloDe(id);
-    pastilla.append(disco, numero);
+    pastilla.append(patita, punta, disco, numero);
 
     grupo.append(forma, pastilla);
 
@@ -517,7 +548,7 @@ export class Visor {
     grupo.addEventListener('pointerleave', () => this.alPasarSobreParcela(null));
     this.svg.append(grupo);
 
-    nodo = { grupo, forma, pastilla, disco, numero };
+    nodo = { grupo, forma, pastilla, disco, numero, patita, punta };
     this.nodos.set(id, nodo);
     dimensionarPastilla(nodo);
     return nodo;

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { Catalogo } from './datos.js';
 import {
   accionesDe, atributosDe, destinoDelArrastre, escapar, financiamientoDe, formatearPrecio,
-  kmlDeParcela, mensajeWhatsapp, rotuloConPrecio,
+  kmlDeParcela, mensajeWhatsapp,
 } from './ficha.js';
 
 const ESTADOS = {
