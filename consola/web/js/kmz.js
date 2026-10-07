@@ -1201,9 +1201,14 @@ async function crearKmz(omitir = false) {
     } catch (error) {
       // Quedan lotes sin número: se crea igual solo si ella lo confirma en el diálogo.
       // El `finally` suelta el botón: mientras decide, nada está trabajando.
-      if (omitir || error.estado !== 409 || !error.cuerpo?.sin_numero) throw error;
+      if (omitir || error.estado !== 409 || !(error.cuerpo?.sin_numero || error.cuerpo?.resto)) throw error;
       if (mio !== slug) return;
       sinNumeroPendiente = mio;
+      // Solo el resto sin decidir: se nombra como la pregunta que es, no como lotes sin número.
+      const soloResto = !error.cuerpo.sin_numero;
+      $('#kmz-sin-numero-titulo').textContent = soloResto ? 'Falta decidir el resto de la propiedad'
+        : 'Quedan lotes sin número';
+      $('#kmz-crear-sin-numero').textContent = soloResto ? 'Crear sin el resto' : 'Crear sin ellos';
       $('#kmz-sin-numero-texto').textContent = error.message;
       abrirDialogo($('#kmz-sin-numero-dialogo'));
       return;
@@ -1465,7 +1470,8 @@ function pintarDigitalizar() {
   const lineas = [
     ['Lotes', d.lotes],
     ['Lotes sin número', d.sin_numero_lote ?? 0],
-    ['Otras partes sin número', d.sin_numero - (d.sin_numero_lote ?? 0)],
+    ['Otras partes sin número', d.sin_numero - (d.sin_numero_lote ?? 0) - (d.resto_pendiente ? 1 : 0)],
+    ...(d.resto_pendiente ? [['Resto de la propiedad', 'sin decidir']] : []),
     ['Faltan en la numeración', huecos.length ? huecos.join(', ') : '—'],
     ['Números sin lote', d.faltantes.length ? d.faltantes.join(', ') : '—'],
     ['Lector', !lector ? 'apagado' : lector.disponible === false ? 'no disponible'
@@ -1742,6 +1748,7 @@ function pintarRevisar() {
     ['Otras partes sin número', cuenta.sin_numero - cuenta.sin_numero_lote, null],
     ['Repetidos', cuenta.duplicados, cuenta.duplicados ? 'rojo' : null],
     ...(cuenta.fuera ? [['Fuera del KMZ', cuenta.fuera, 'gris']] : []),
+    ...(cuenta.resto_pendiente ? [['Resto de la propiedad', 'sin decidir', 'ambar']] : []),
   ];
   $('#kmz-revision').replaceChildren(...datos.map(([rotulo, valor, color]) => {
     const div = document.createElement('div');
@@ -1767,6 +1774,11 @@ function pintarRevisar() {
   const conSemaforo = Boolean(luz.tono);
   $('#kmz-revision-nota').textContent = problemas
     ? 'Hay números repetidos: el KMZ no se puede crear así. Corrígelos en "Revisar los números".'
+    : cuenta.resto_pendiente
+      ? (cuenta.sin_numero_lote
+        ? `${cuenta.sin_numero_lote === 1 ? 'Un lote quedó' : `${cuenta.sin_numero_lote} lotes quedaron`} sin número`
+          + ' y falta decidir si el resto de la propiedad va en el KMZ: Revisar los números.'
+        : 'Falta decidir si el resto de la propiedad va en el KMZ: Revisar los números.')
     : cuenta.sin_numero_lote
       ? (cuenta.sin_numero_lote === 1 ? 'Un lote quedó sin número y no iría al KMZ. Ponle su número'
         : `${cuenta.sin_numero_lote} lotes quedaron sin número y no irían al KMZ. Ponles su número`)

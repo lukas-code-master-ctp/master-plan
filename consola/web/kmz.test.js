@@ -649,7 +649,7 @@ test('la revisión cuenta por color y marca los sin número y repetidos', () => 
     lote(null, [], { banderas: ['sin_numero', 'de_lote'], de_lote: true }),
   ];
   assert.deepEqual(resumenRevision(rasgos),
-    { lotes: 4, verde: 2, ambar: 0, rojo: 1, gris: 1, sin_numero: 2, sin_numero_lote: 1, duplicados: 1, fuera: 0 });
+    { lotes: 4, verde: 2, ambar: 0, rojo: 1, gris: 1, sin_numero: 2, sin_numero_lote: 1, duplicados: 1, fuera: 0, resto_pendiente: false });
 });
 
 test('el sesgo de escala: casi todos los lotes hacia el mismo lado y más de 3 %', () => {
@@ -1088,8 +1088,12 @@ test('dejar fuera el resto: se anota un punto dentro y deja de contar en Revisar
   assert.equal(cuenta.sin_numero, 0);
   assert.equal(cuenta.fuera, 1);
   assert.equal(rasgos[2].properties.fuera, undefined);          // no toca los que recibe
-  // Antes de decidir, en Revisar sí cuenta como lote sin número.
-  assert.equal(resumenRevision(rasgos).sin_numero_lote, 1);
+  // Antes de decidir es la pregunta del resto, no un lote sin número (como al crear).
+  const antes = resumenRevision(rasgos);
+  assert.equal(antes.sin_numero_lote, 0);
+  assert.equal(antes.sin_numero, 0);
+  assert.equal(antes.resto_pendiente, true);
+  assert.equal(cuenta.resto_pendiente, false);
 });
 
 test('incluir el resto pone su número del cuadro, y se puede cambiar de idea', () => {

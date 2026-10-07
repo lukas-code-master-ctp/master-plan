@@ -935,7 +935,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     @app.exception_handler(LotesSinNumero)
     async def lotes_sin_numero(peticion: Request, error: LotesSinNumero):
         """Dice cuántos, para que la pantalla ofrezca crearlo igual sin ellos."""
-        return JSONResponse(status_code=409, content={"detail": str(error), "sin_numero": error.cuantos})
+        return JSONResponse(status_code=409, content={"detail": str(error), "sin_numero": error.cuantos,
+                                                      "resto": error.resto})
 
     @app.exception_handler(KmzExistente)
     async def kmz_existente(peticion: Request, error: KmzExistente):

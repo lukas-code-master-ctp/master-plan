@@ -439,12 +439,19 @@ export function nivelDe(propiedades) {
 export function resumenRevision(rasgos) {
   const cuenta = {
     lotes: 0, verde: 0, ambar: 0, rojo: 0, gris: 0, sin_numero: 0, sin_numero_lote: 0, duplicados: 0, fuera: 0,
+    resto_pendiente: false,
   };
   for (const { properties: p } of rasgos) {
     const banderas = p.banderas ?? [];
     // Lo que ella dejó fuera del KMZ (el resto de la propiedad) ya está decidido: no es un aviso.
     if (p.fuera) {
       cuenta.fuera += 1;
+      continue;
+    }
+    // El resto sin decidir es la pregunta de Numerar, no un lote sin número (como lo cuenta
+    // el servidor al crear): se avisa aparte.
+    if (p.resto && p.numero == null) {
+      cuenta.resto_pendiente = true;
       continue;
     }
     if (banderas.includes('sin_numero')) {

@@ -920,8 +920,15 @@ def test_dejar_fuera_el_resto_no_lo_cuenta_ni_pide_confirmar_al_crear(ana):
     (carpeta / "huellas.json").write_text(
         json.dumps(dict(digitalizado=huella_digitalizar(leer_entradas(carpeta)))), encoding="utf-8")
     assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
-    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["sin_numero_lote"] == 1
-    assert web.post(f"/api/kmz/{slug}/crear").status_code == 409
+    # Sin decidir, el resto es una pregunta, no "1 lote sin número": el 409 la nombra así.
+    d = web.get(f"/api/kmz/{slug}").json()["digitalizado"]
+    assert (d["sin_numero_lote"], d["resto_pendiente"]) == (0, True)
+    respuesta = web.post(f"/api/kmz/{slug}/crear")
+    assert respuesta.status_code == 409
+    cuerpo = respuesta.json()
+    assert (cuerpo["sin_numero"], cuerpo["resto"]) == (0, True)
+    assert cuerpo["detail"].startswith("Falta decidir si el resto de la propiedad va en el KMZ")
+    assert "sin número" not in cuerpo["detail"]
 
     respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, fuera=[EN_EL_RESTO]))
 
@@ -930,13 +937,41 @@ def test_dejar_fuera_el_resto_no_lo_cuenta_ni_pide_confirmar_al_crear(ana):
     # Es qué va al KMZ, no cómo se parte el dibujo: no hay que volver a leer ni a ubicar.
     assert estado["digitalizado"]["vigente"] is True and estado["georreferencia"]["vigente"] is True
     d = estado["digitalizado"]
-    assert (d["sin_numero_lote"], d["sin_numero"], d["fuera"]) == (0, 1, 1)
+    assert (d["sin_numero_lote"], d["sin_numero"], d["fuera"], d["resto_pendiente"]) == (0, 1, 1, False)
     resto = web.get(f"/api/kmz/{slug}/lotes", params={"en": "lonlat"}).json()["features"][3]["properties"]
     assert resto["banderas"] == ["sin_numero", "fuera"] and resto["fuera"] is True and resto["de_lote"] is False
     assert resto["resto"] is True                       # la tarjeta lo muestra para poder cambiarlo
     respuesta = web.post(f"/api/kmz/{slug}/crear")
     assert respuesta.status_code == 201, respuesta.text
     assert respuesta.json()["lotes"] == 3
+
+
+def test_el_resto_sin_decidir_y_un_lote_sin_numero_se_nombran_por_separado(ana):
+    """Con un lote sin número y la pregunta del resto sin contestar, el 409 dice 1 lote (no
+    2) y la pregunta; crear sin ellos deja fuera los dos."""
+    from consola.plano import huella_digitalizar
+    from pipeline.plano.digitalizar import leer_entradas
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    _con_resto(carpeta, RAPEL)
+    ruta = carpeta / "digitalizado.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["sin_numero"][1]["de_lote"] = True
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+    (carpeta / "huellas.json").write_text(
+        json.dumps(dict(digitalizado=huella_digitalizar(leer_entradas(carpeta)))), encoding="utf-8")
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
+    d = web.get(f"/api/kmz/{slug}").json()["digitalizado"]
+    assert (d["sin_numero_lote"], d["resto_pendiente"]) == (1, True)
+
+    cuerpo = web.post(f"/api/kmz/{slug}/crear").json()
+
+    assert (cuerpo["sin_numero"], cuerpo["resto"]) == (1, True)
+    assert cuerpo["detail"].startswith("Queda 1 lote sin número (en rojo) y falta decidir si el resto")
+    respuesta = web.post(f"/api/kmz/{slug}/crear", json={"omitir_sin_numero": True})
+    assert respuesta.status_code == 201 and respuesta.json()["lotes"] == 3
 
 
 def test_el_resto_incluido_va_al_kmz_con_su_numero(ana):
