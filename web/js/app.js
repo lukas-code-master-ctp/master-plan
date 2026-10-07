@@ -3,6 +3,7 @@ import { rumboCardinal, rumboCorto } from './camara.js';
 import { Catalogo, ErrorDeDatos, buscar, conteoPorEstado, filtrar, romano } from './datos.js';
 import { aplicarMarca, ponerLogo } from './marca.js';
 import { mensajeWhatsapp, renderizarFicha, rotuloConPrecio } from './ficha.js';
+import { agruparParcelas, resumenDeGrupo } from './grupos.js';
 import { abrirFormulario } from './reserva.js';
 import { Mapa } from './mapa.js';
 import {
@@ -84,6 +85,17 @@ async function arrancar() {
     alPasarSobreParcela: (id) => destacar(id),
     alElegirVista: (posicion) => irAPosicion(posicion),
   });
+
+  // De lejos, los grupos de parcelas vecinas cuyos números no caben se muestran
+  // como una burbuja con su rango y sus disponibles (grupos.js).
+  const grupos = agruparParcelas(catalogo.parcelas);
+  const resumenDe = (grupo) => resumenDeGrupo(grupo, {
+    parcela: (id) => catalogo.porId.get(id),
+    esDisponible: (parcela) => Boolean(catalogo.estados[parcela.estado]?.vendible) && !parcela.apartada,
+    visible: (id) => estado.visibles.has(id),
+  });
+  estado.visor.ponerGrupos(grupos, resumenDe);
+  estado.mapa.ponerGrupos(grupos, resumenDe);
 
   construirLeyenda();
   construirFiltros();
@@ -188,6 +200,10 @@ async function verDesdeElAire(parcela) {
 }
 
 function destacar(id) {
+  // El nombre que se abrió al pasar sobre la vista aérea se cierra al salir: si
+  // no, quedaban decenas abiertos en el plano. El de la elegida es fijo y se queda.
+  const anterior = estado.mapa.formas.get(estado.destacada);
+  if (anterior && estado.destacada !== estado.seleccionada) anterior.closeTooltip();
   estado.destacada = id;
   const forma = estado.mapa.formas.get(id);
   if (forma) forma.openTooltip();
@@ -507,7 +523,11 @@ function conectarPaneles() {
     mostrarPanel('mapa');
     enfocarEnElPlano();
   });
-  $('#entrar-360').addEventListener('click', () => mostrarPanel('visor'));
+  $('#entrar-360').addEventListener('click', () => {
+    // En escritorio el plano a pantalla completa tapa la vista aérea: se vuelve al minimapa.
+    if (document.body.dataset.plano === 'completo') ponerPlano('mini');
+    mostrarPanel('visor');
+  });
   const pista = $('#pista');
   $('#visor').addEventListener('pointerdown', () => pista.classList.add('pista--oculta'),
                                { once: true });
@@ -529,6 +549,8 @@ function ponerPlano(modo, { alTerminar } = {}) {
   ampliar.querySelector('.visually-hidden').textContent =
     completo ? 'Volver al minimapa' : 'Plano a pantalla completa';
   if (modo === 'cerrado') return;
+  // El botón para volver a la vista aérea muestra dónde se estaba mirando.
+  if (completo) pintarMiniatura($('#entrar-360-miniatura'), estado.vista, estado.camara);
   // Leaflet mide su contenedor: hay que esperar a que el cambio de tamaño se pinte.
   requestAnimationFrame(() => requestAnimationFrame(() => {
     estado.mapa?.refrescar();

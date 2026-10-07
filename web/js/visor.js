@@ -7,6 +7,7 @@
  * así que imagen y polígonos no pueden desincronizarse.
  */
 import { Camara, acotar } from './camara.js';
+import { debeColapsar } from './grupos.js';
 import { rotulosSinChoques } from './rotulos.js';
 
 const VERTICE = `
@@ -41,6 +42,10 @@ const ESCALA_ELEGIDA = 1.22;
 const SEPARACION_PASTILLAS = 3;
 // Por debajo de esto las pastillas se amontonan y tapan el terreno.
 const ANCHO_MINIMO_ETIQUETA_PX = 42;
+// La burbuja de un grupo: más alta que una pastilla, porque dice más.
+const ALTO_BURBUJA = 30;
+// Por sobre las pastillas sueltas (que van hasta ~1e7) y bajo la elegida (1e9).
+const PRIORIDAD_BURBUJA = 5e8;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export class Visor {
@@ -62,6 +67,14 @@ export class Visor {
     this.capaReferencias = null;
     this.halo = null;
     this.nodos = new Map();
+    // Grupos de parcelas vecinas (grupos.js): cuáles se ven como burbuja y cuál
+    // abrió la persona tocándola.
+    this.grupos = new Map();
+    this.grupoDe = new Map();
+    this.resumenDe = () => null;
+    this.colapsados = new Set();
+    this.grupoAbierto = null;
+    this.nodosGrupo = new Map();
     this.seleccionada = null;
     this.estiloParcela = () => ({ color: '#ffffff', texto: '#1c1a17', atenuada: false });
     this.rotuloDe = rotuloDe ?? ((id) => id.replace(/^A/, ''));
@@ -285,6 +298,7 @@ export class Visor {
     this._dibujarReferencias(ancho, alto);
 
     const candidatas = [];
+    const enPantalla = [];
     let rutaElegida = null;
     for (const [id, parcela] of this.overlay) {
       const nodo = this._nodoDe(id);
@@ -313,6 +327,10 @@ export class Visor {
       // elegida se muestra aunque la parcela se vea chica: es la que se busca.
       const anchoEnPantalla = extension(pixeles, 0);
       nodo.pastilla.style.display = 'none';
+      if (!estilo.atenuada && !elegida) {
+        const [x, y] = centro(pixeles);
+        enPantalla.push({ id, x, y });
+      }
       if ((elegida || anchoEnPantalla >= ANCHO_MINIMO_ETIQUETA_PX) && !estilo.atenuada) {
         const [cx, cy] = centro(pixeles);
         nodo.pastilla.setAttribute('transform', `translate(${cx.toFixed(1)} ${cy.toFixed(1)})`);
@@ -332,10 +350,120 @@ export class Visor {
 
     // Solo las pastillas que caben sin encimarse: de lejos, las del fondo se
     // apilaban y no se leía ninguna.
-    for (const id of rotulosSinChoques(candidatas, SEPARACION_PASTILLAS)) {
+    let mostradas = rotulosSinChoques(candidatas, SEPARACION_PASTILLAS);
+    mostradas = this._agruparRotulos(candidatas, mostradas, enPantalla);
+    for (const id of mostradas) {
       this.nodos.get(id).pastilla.style.display = '';
     }
     this._dibujarHalo(rutaElegida);
+  }
+
+  /**
+   * Los grupos cuyos números no caben pasan a ser una burbuja con su rango y sus
+   * disponibles (grupos.js). Devuelve qué pastillas sueltas se dibujan al final.
+   */
+  _agruparRotulos(candidatas, mostradas, enPantalla) {
+    const porGrupo = new Map();
+    for (const { id, x, y } of enPantalla) {
+      const grupoId = this.grupoDe.get(id);
+      if (!grupoId) continue;
+      const cuenta = porGrupo.get(grupoId) ?? { total: 0, ocultas: 0, x: 0, y: 0 };
+      cuenta.total += 1;
+      cuenta.ocultas += mostradas.has(id) ? 0 : 1;
+      cuenta.x += x;
+      cuenta.y += y;
+      porGrupo.set(grupoId, cuenta);
+    }
+    const colapsados = new Set();
+    for (const [grupoId, cuenta] of porGrupo) {
+      if (grupoId === this.grupoAbierto) continue;
+      if (debeColapsar(cuenta.ocultas, cuenta.total, this.colapsados.has(grupoId))) colapsados.add(grupoId);
+    }
+    this.colapsados = colapsados;
+
+    const segunda = candidatas.filter((c) => c.id === this.seleccionada
+                                             || !colapsados.has(this.grupoDe.get(c.id)));
+    const burbujas = new Map();
+    for (const grupoId of colapsados) {
+      const cuenta = porGrupo.get(grupoId);
+      const resumen = this.resumenDe(this.grupos.get(grupoId));
+      if (!resumen?.total) continue;
+      const nodo = this._nodoGrupo(grupoId);
+      ponerTextoBurbuja(nodo, resumen);
+      const posicion = { x: cuenta.x / cuenta.total, y: cuenta.y / cuenta.total };
+      burbujas.set(`grupo:${grupoId}`, { grupoId, ...posicion });
+      segunda.push({
+        id: `grupo:${grupoId}`, ...posicion, ancho: nodo.ancho, alto: ALTO_BURBUJA,
+        prioridad: PRIORIDAD_BURBUJA + resumen.disponibles * 1e3 + resumen.total,
+      });
+    }
+    if (!burbujas.size) {
+      for (const nodo of this.nodosGrupo.values()) nodo.grupo.style.display = 'none';
+      return mostradas;
+    }
+
+    const elegidas = rotulosSinChoques(segunda, SEPARACION_PASTILLAS);
+    for (const [grupoId, nodo] of this.nodosGrupo) {
+      const burbuja = burbujas.get(`grupo:${grupoId}`);
+      const visible = Boolean(burbuja) && elegidas.has(`grupo:${grupoId}`);
+      nodo.grupo.style.display = visible ? '' : 'none';
+      if (visible) {
+        nodo.grupo.setAttribute('transform', `translate(${burbuja.x.toFixed(1)} ${burbuja.y.toFixed(1)})`);
+      }
+    }
+    return new Set([...elegidas].filter((id) => !burbujas.has(id)));
+  }
+
+  _nodoGrupo(grupoId) {
+    let nodo = this.nodosGrupo.get(grupoId);
+    if (nodo) return nodo;
+    const grupo = document.createElementNS(SVG_NS, 'g');
+    grupo.setAttribute('class', 'burbuja');
+    // El dedo necesita 44 px; la burbuja mide 30. Un rectángulo invisible da el resto.
+    const toque = document.createElementNS(SVG_NS, 'rect');
+    toque.setAttribute('class', 'burbuja__toque');
+    const fondo = document.createElementNS(SVG_NS, 'rect');
+    fondo.setAttribute('class', 'burbuja__fondo');
+    const texto = document.createElementNS(SVG_NS, 'text');
+    texto.setAttribute('class', 'burbuja__texto');
+    texto.setAttribute('dy', '0.34em');
+    const rango = document.createElementNS(SVG_NS, 'tspan');
+    rango.setAttribute('class', 'burbuja__rango');
+    const disponibles = document.createElementNS(SVG_NS, 'tspan');
+    disponibles.setAttribute('class', 'burbuja__disponibles');
+    texto.append(rango, disponibles);
+    grupo.append(toque, fondo, texto);
+    this.svg.append(grupo);
+    nodo = { grupo, toque, fondo, texto, rango, disponibles, ancho: ALTO_BURBUJA, firma: '' };
+    this.nodosGrupo.set(grupoId, nodo);
+    return nodo;
+  }
+
+  /** Los grupos de parcelas vecinas y cómo resumir uno (rango, disponibles). */
+  ponerGrupos(grupos, resumenDe) {
+    this.grupos = new Map(grupos.map((g) => [g.id, g]));
+    this.grupoDe = new Map(grupos.flatMap((g) => g.ids.map((id) => [id, g.id])));
+    this.resumenDe = resumenDe;
+    this._pintar();
+  }
+
+  /**
+   * Acerca la cámara al grupo y lo deja abierto: sus números se ven aunque haya
+   * que esconder los de al lado. Un grupo muy lejano puede no caber ni con el
+   * zoom al máximo, y tocar la burbuja tiene que mostrar algo.
+   */
+  enfocarGrupo(grupoId) {
+    const centros = (this.grupos.get(grupoId)?.ids ?? [])
+      .map((id) => this.overlay.get(id)?.centro).filter(Boolean);
+    if (!centros.length) return;
+    const [azimutBase] = centros[0];
+    // Relativos al primero, para no partir el grupo en el corte 0°/360°.
+    const azimutes = centros.map(([a]) => azimutBase + ((((a - azimutBase) % 360) + 540) % 360) - 180);
+    const elevaciones = centros.map(([, e]) => e);
+    const aspecto = this.ancho / Math.max(this.alto, 1) || 1;
+    const fov = Math.max(extensionDe(elevaciones), extensionDe(azimutes) / aspecto) * 1.8;
+    this.grupoAbierto = grupoId;
+    this.apuntarA(promedioDe(azimutes), promedioDe(elevaciones), acotar(fov, 22, 90));
   }
 
   /**
@@ -398,6 +526,9 @@ export class Visor {
   _limpiarNodos() {
     this.svg.replaceChildren();
     this.halo = null;
+    this.nodosGrupo.clear();
+    this.colapsados = new Set();
+    this.grupoAbierto = null;
     this.nodos.clear();
     this.nodosReferencia = [];
     this.capaReferencias = null;
@@ -542,6 +673,13 @@ export class Visor {
 
   _clic(evento) {
     const objetivo = document.elementFromPoint(evento.clientX, evento.clientY);
+    const burbuja = objetivo?.closest?.('.burbuja');
+    if (burbuja) {
+      for (const [grupoId, nodo] of this.nodosGrupo) {
+        if (nodo.grupo === burbuja) this.enfocarGrupo(grupoId);
+      }
+      return;
+    }
     const grupo = objetivo?.closest?.('.parcela');
     if (!grupo) {
       this.alElegirParcela(null);
@@ -617,6 +755,52 @@ function dimensionarPastilla(nodo) {
   nodo.disco.setAttribute('width', w);
   nodo.disco.setAttribute('height', ALTO);
   nodo.disco.setAttribute('rx', ALTO / 2);
+}
+
+/** Rango y disponibles en la burbuja; se mide de nuevo solo si cambió el texto. */
+function ponerTextoBurbuja(nodo, { rango, disponibles }) {
+  const detalle = disponibles ? ` · ${disponibles} disp.` : ' · sin disp.';
+  const firma = rango + detalle;
+  if (nodo.firma === firma) return;
+  nodo.firma = firma;
+  nodo.rango.textContent = rango;
+  nodo.disponibles.textContent = detalle;
+  nodo.disponibles.classList.toggle('burbuja__disponibles--hay', disponibles > 0);
+  const w = Math.round(anchoDeTexto(rango, 700) + anchoDeTexto(detalle, 600)) + 24;
+  nodo.ancho = w;
+  nodo.fondo.setAttribute('x', (-w / 2).toFixed(1));
+  nodo.fondo.setAttribute('y', (-ALTO_BURBUJA / 2).toFixed(1));
+  nodo.fondo.setAttribute('width', w);
+  nodo.fondo.setAttribute('height', ALTO_BURBUJA);
+  nodo.fondo.setAttribute('rx', ALTO_BURBUJA / 2);
+  nodo.toque.setAttribute('x', (-w / 2 - 7).toFixed(1));
+  nodo.toque.setAttribute('y', '-22');
+  nodo.toque.setAttribute('width', w + 14);
+  nodo.toque.setAttribute('height', 44);
+}
+
+/**
+ * Ancho del texto de una burbuja, medido en un canvas aparte. `getComputedTextLength`
+ * obliga a recalcular el SVG entero (cientos de parcelas) cada vez que aparece una
+ * burbuja; el canvas no toca el documento.
+ */
+let medidor = null;
+let familia = 'sans-serif';
+function anchoDeTexto(texto, peso) {
+  if (!medidor) {
+    medidor = document.createElement('canvas').getContext('2d');
+    familia = getComputedStyle(document.documentElement).getPropertyValue('--sans').trim() || familia;
+  }
+  medidor.font = `${peso} 12px ${familia}`;
+  return medidor.measureText(texto).width || texto.length * 6.8;
+}
+
+function extensionDe(valores) {
+  return Math.max(...valores) - Math.min(...valores);
+}
+
+function promedioDe(valores) {
+  return valores.reduce((suma, v) => suma + v, 0) / valores.length;
 }
 
 function aRuta(pixeles) {
