@@ -1021,7 +1021,12 @@ function girarA(grados) {
   if (!Number.isFinite(grados)) return;
   // Se redondea después de normalizar: el módulo deja colas como 89.29999999999995.
   cambiarUbicacion({ giro: Math.round(normalizarGiro(grados) * 10) / 10 });
+  // Al girar, los lotes barren en torno al punto y se salen del mapa (en Rapel, a 89°
+  // quedaban abajo, fuera de la vista): al soltar, el mapa los vuelve a mostrar.
+  clearTimeout(seguirLuego);
+  seguirLuego = setTimeout(() => { seguirLuego = 0; if (paso === 'ubicar') mapa?.seguirLotes(); }, UBICAR_MS);
 }
+let seguirLuego = 0;
 
 /** El giro con que se muestra el plano: el de la ubicación, y solo en Ubicar. */
 const giroDelPlano = () => (paso === 'ubicar' ? entradas.ubicacion?.giro ?? 0 : 0);

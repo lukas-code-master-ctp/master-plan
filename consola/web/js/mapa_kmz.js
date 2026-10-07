@@ -76,6 +76,20 @@ export class MapaKmz {
 
   ir(lat, lon, zoom = Math.max(this.mapa.getZoom(), 16)) { this.mapa.setView([lat, lon], zoom); }
 
+  /**
+   * Si los lotes se salieron de la vista (al girar el plano en torno a su punto se
+   * barren lejos), los vuelve a mostrar sin acercar más de lo que ella dejó el mapa.
+   */
+  seguirLotes() {
+    const caja = this.L.latLngBounds([]);
+    this.lotes.eachLayer((capa) => {
+      const p = capa.feature?.properties;
+      if (!(p?.fuera || (p?.resto && p?.numero == null)) && capa.getBounds) caja.extend(capa.getBounds());
+    });
+    if (!caja.isValid() || this.mapa.getBounds().contains(caja)) return;
+    this.mapa.fitBounds(caja, { padding: [24, 24], maxZoom: this.mapa.getZoom() });
+  }
+
   /** Encuadra los lotes y las anclas que haya. */
   encuadrar() {
     const caja = this.L.latLngBounds([]);
