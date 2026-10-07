@@ -3,8 +3,9 @@
  * Todo va contra `/api/kmz/<slug>/...`; el KMZ no es de ningún master. Al crearlo
  * se descarga o se usa en un master (ver `kmzs.js`).
  *
- * Siete pasos, como el spec: subir el PDF, marcar el dibujo, digitalizar, numerar,
- * ubicar en el mapa, revisar y crear el KMZ. Lo que marca la loteadora vive en
+ * Cuatro pasos a la vista: subir el PDF, marcar el dibujo, ubicar en el mapa, y revisar y
+ * descargar el KMZ. Leer el plano (`digitalizar`) y Numerar son paneles de Marcar: "Seguir"
+ * lee el plano y pasa por Numerar solo si hace falta. Lo que marca la loteadora vive en
  * `entradas` (el mismo `entradas.json` del servidor, en píxeles de página) y se
  * guarda solo, un momento después de cada cambio. El servidor dice qué quedó
  * atrasado (`vigente`) y qué paso sigue (`paso`).
@@ -13,8 +14,10 @@ import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
   anclaDesde, aplicarFuera, aplicarNumero, claveLote, conSemillas, decidirResto, devolverAlKmz, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, detalleUbicacion, filaDelPunto, numerosQueFaltan,
-  ordenarEsquinas, PASOS, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puntoDeRotulo,
+  ordenarEsquinas, PASTILLAS, pastillaDe, pasoDeRuta, pasoSiguiente, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puedeUbicar, puntoDeRotulo,
   puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, siguienteNombre, sinNumero, sugerencias, textoSemaforo, verticesDe,
+  escalaDeUbicacion, leerEscala, lotesEnElMapa, normalizarGiro, similitudPorPunto, usaUbicacion,
+  afinarAbierta, similitudPorAnclas, textoPuntos, ubicacionCompleta, ajustaConElCuadro, ofrecerAjusteDelCuadro,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
 import { abrirNombre, abrirUsarKmz, descargaDe, textoDeCreado } from './kmzs.js';
@@ -54,10 +57,30 @@ let corrigiendo = false;      // Revisar: los vértices se arrastran o se borran
 let corrigiendoYa = false;    // una corrección sin respuesta: los vértices del mapa están viejos
 let esquinasMarcando = [];    // las esquinas del marco mientras faltan: el servidor pide 4 o ninguna
 let ubicandoYa = false;       // se está calculando la ubicación: "Seguir" espera eso, no más puntos
+let ajustandoCuadro = false;  // se está ajustando (o deshaciendo) el tamaño con el cuadro
 let restoCentrado = null;     // dónde ya se centró el plano para preguntar por el resto (una vez)
+let rutaAplicada = null;      // el paso de la ruta (`#/kmz/<slug>/<paso>`) que ya se abrió
 let pasoPintado = null;       // el paso de la última pintada: la herramienta de Marcar se elige al entrar
 let lanzando = null;          // el KMZ (slug) cuya lectura se está pidiendo: un segundo clic no lanza otra
 let falloAlPedir = '';        // por qué no se pudo lanzar la lectura: queda escrito en el paso 3, sobre el botón
+// Ubicar, a dónde va un clic en el plano (en este orden):
+// 1. `marcandoPunto`: es el punto de la coordenada (lo pidió con "Marcar el punto en el plano",
+//    o recién llega sin él).
+// 2. `afinando`: "Afinar con puntos" está abierta, y el clic es un punto (o el que está a
+//    medias, o el que rehace). Abrirla es pedirlo y plegarla lo apaga: un toque suelto (en el
+//    celular, al tocar para desplazar) dejaba un punto A a medias y bajaba la página al mapa.
+// 3. Si no, no marca nada: se dice cómo (`pistaSuelta`).
+let marcandoPunto = false;
+let afinando = false;
+let pistaSuelta = '';
+// Cuándo fue el último toque (dedo o lápiz, no mouse) en el plano de Ubicar. En el celular,
+// tras marcar en el plano la página baja al mapa en el mismo toque, y el clic que el
+// navegador sintetiza al final cae en lo que quedó debajo del dedo: el mapa (marcaba el punto
+// ahí mismo, en cualquier lugar) o los botones de giro sobre él (giraba el plano 1° o 15° sin
+// que ella los tocara). Un clic fuera del plano tan seguido no lo hizo ella.
+let tocadoEnPlano = -Infinity;
+const CLIC_FANTASMA_MS = 500;
+let ubicarVez = 0;            // la última `ubicar` pedida: una anterior que llega tarde no pisa nada
 
 // --- guardar ---------------------------------------------------------------------------
 
@@ -172,7 +195,7 @@ export function prepararKmz(opciones) {
   pantalla.addEventListener('click', (evento) => {
     const nodo = evento.target.closest('[data-accion], [data-paso], [data-pagina], [data-herramienta],'
       + ' [data-quitar-mascara], [data-quitar-cuadro], [data-quitar-semilla], [data-ancla-quitar], [data-ancla-rehacer],'
-      + ' [data-centrar],'
+      + ' [data-centrar], [data-giro],'
       + ' [data-confirmar]');
     if (!nodo || nodo.disabled) return;
     manejar(nodo).catch((error) => avisar(error.message));
@@ -217,6 +240,30 @@ export function prepararKmz(opciones) {
   $('#kmz-numero-valor').addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.stopPropagation(); cerrarNumero(); }
   });
+  // Mientras se arrastra el deslizador solo se mueve la vista previa; al soltar, un
+  // momento después, se guarda y se ubica en el servidor (`programarUbicar`).
+  $('#kmz-giro').addEventListener('input', (e) => girarA(Number(e.target.value)));
+  // El `open` de "Afinar con puntos" lo pone `pintarUbicar` según `afinando`; aquí llega
+  // también el de ella al abrirla o plegarla. Plegarla deja de marcar y suelta lo a medias.
+  $('#kmz-afinar').addEventListener('toggle', (e) => {
+    const abierta = e.target.open;
+    if (abierta === afinando || paso !== 'ubicar') return;
+    afinando = abierta;
+    if (abierta) marcandoPunto = false;
+    else { pendiente = null; rehacer = null; }
+    pistaSuelta = '';
+    lienzo.redibujar();
+    pintarPanel();
+  });
+  $('#kmz-escala-impresa').addEventListener('change', (e) => {
+    const n = leerEscala(e.target.value);
+    if (Number.isNaN(n)) {
+      avisar('Escribe la escala como dice el plano, por ejemplo 1:5.000 (entre 1:100 y 1:1.000.000).');
+      return;
+    }
+    avisar(null);
+    cambiarUbicacion({ escala_impresa: n });
+  });
   $('#kmz-ir-a').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); (pendiente ? usarCoordenadas : irA)().catch((error) => avisar(error.message)); }
   });
@@ -224,11 +271,21 @@ export function prepararKmz(opciones) {
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || pantalla.hidden || document.querySelector('dialog[open]')) return;
     if (pendiente) { cancelarAncla(); e.preventDefault(); }
+    else if (marcandoPunto && paso === 'ubicar') { marcandoPunto = false; pintarPanel(); e.preventDefault(); }
     else if (numerando) { cerrarNumero(); e.preventDefault(); }
   });
 
   // Al cambiar el ancho la cabecera puede envolver (pasos en dos líneas): se vuelve a medir.
   window.addEventListener('resize', medirPanel);
+
+  // El clic fantasma tras un toque en el plano (ver `tocadoEnPlano`) no llega a nadie: en
+  // captura, antes que Leaflet y que `manejar`.
+  document.addEventListener('click', (evento) => {
+    if (performance.now() - tocadoEnPlano >= CLIC_FANTASMA_MS || evento.target.closest?.('#kmz-plano')) return;
+    tocadoEnPlano = -Infinity;
+    evento.preventDefault();
+    evento.stopPropagation();
+  }, true);
 
   lienzo = new LienzoPlano($('#kmz-plano'), $('#kmz-lienzo'));
   lienzo.alDibujar = dibujar;
@@ -236,10 +293,21 @@ export function prepararKmz(opciones) {
   lienzo.alRectangulo = rectangulo;
 }
 
-/** Llega a la pantalla (`nuevo`) o se repinta tras un refresco de la lista. */
-export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
+/**
+ * Llega a la pantalla (`nuevo`) o se repinta tras un refresco de la lista. `pasoPedido`: el
+ * de `#/kmz/<slug>/<paso>` (también los nombres de antes, ver `pasoDeRuta`).
+ */
+export function pintarKmz(nuevoSlug, { nuevo = false, paso: pasoPedido = null } = {}) {
   pintarCabecera(nuevoSlug);
-  if (!nuevo && nuevoSlug === slug) return;
+  if (!nuevo && nuevoSlug === slug) {
+    // El mismo KMZ con otro paso en la ruta: se va a ese paso, si ya se puede abrir.
+    if (pasoPedido && plano && pasoPedido !== rutaAplicada) {
+      rutaAplicada = pasoPedido;
+      irAlPaso(pasoDeRuta(pasoPedido, plano)).catch((error) => avisar(error.message));
+    }
+    return;
+  }
+  rutaAplicada = pasoPedido;
   if (sucio && slug) {
     // Lo marcado hace un instante (aún en la espera del guardado) no se pierde al volver
     // a entrar ni al pasar a otro KMZ: se guarda en el suyo antes de limpiar.
@@ -260,6 +328,11 @@ export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
   rasgosGeo = null;
   pendiente = null;
   rehacer = null;
+  marcandoPunto = false;
+  afinando = false;
+  pistaSuelta = '';
+  clearTimeout(ubicarLuego);
+  ubicarLuego = 0;
   avisoCuadricula = '';
   cuadriculaNoSirve = false;
   sucio = false;
@@ -306,6 +379,9 @@ async function cargarTodo(alLlegar = false) {
       escuchar();
       if (!estado.sondeos.has(clave())) seguir(clave(), plano.trabajo.id);
     }
+    // El paso de la ruta gana si ya se puede abrir; si no, el sugerido.
+    const pedido = pasoDeRuta(rutaAplicada, plano);
+    if (pedido && pasosHabilitados(plano)[pedido]) paso = pedido;
   }
   mostrarPagina().catch((error) => avisar(error.message));
   await pintarPaso();
@@ -363,11 +439,12 @@ async function manejar(nodo) {
     return lienzo.centrar(x, y, Math.max(lienzo.vista.escala, 0.6));
   }
   if (dataset.confirmar) return confirmarSugerencia(Number(dataset.confirmar));
+  if (dataset.giro) return girarA((entradas.ubicacion?.giro ?? 0) + Number(dataset.giro));
 
   const accion = dataset.accion;
-  // "Seguir" de Marcar no solo abre el paso 3: lee el plano, que es lo único que se hace ahí.
+  // "Seguir" de Marcar no solo cambia de panel: lee el plano, y al terminar va a Numerar o a Ubicar.
   if (accion === 'kmz-siguiente' && paso === 'marcar') return digitalizar({ desdeMarcar: true });
-  if (accion === 'kmz-siguiente') return irAlPaso(PASOS[PASOS.indexOf(paso) + 1]);
+  if (accion === 'kmz-siguiente') return irAlPaso(pasoSiguiente(paso, plano, rasgos));
   if (accion === 'kmz-girar-izq') return girar(-90);
   if (accion === 'kmz-girar-der') return girar(90);
   if (accion === 'kmz-acercar') return lienzo.acercar(1.5);
@@ -389,6 +466,14 @@ async function manejar(nodo) {
   if (accion === 'kmz-ir') return irA();
   if (accion === 'kmz-usar-coordenadas') return usarCoordenadas();
   if (accion === 'kmz-cancelar-ancla') return cancelarAncla();
+  if (accion === 'kmz-marcar-punto') {
+    marcandoPunto = !marcandoPunto;
+    // El punto de la coordenada gana al de afinar; "Afinar" sigue abierta si lo estaba.
+    if (marcandoPunto) { pendiente = null; rehacer = null; }
+    pistaSuelta = '';
+    lienzo.redibujar();
+    return pintarPanel();
+  }
   if (accion === 'kmz-usar-cuadricula') return usarCuadricula(true);
   if (accion === 'kmz-quitar-cuadricula') return usarCuadricula(false);
   if (accion === 'kmz-norte') return moverAjuste(0, 1);
@@ -410,6 +495,8 @@ async function manejar(nodo) {
   if (accion === 'kmz-georreferenciar') return ubicar();
   if (accion === 'kmz-crear') return crearKmz();
   if (accion === 'kmz-volver-ubicar') return irAlPaso('ubicar');
+  if (accion === 'kmz-ajustar-cuadro') return ajustarConElCuadro(true);
+  if (accion === 'kmz-deshacer-cuadro') return ajustarConElCuadro(false);
   if (accion === 'kmz-renombrar') return renombrar();
   if (accion === 'kmz-usar') return usar();
   return undefined;
@@ -473,7 +560,10 @@ function subirPdf(archivo) {
 }
 
 const hayMarcas = () => Boolean(entradas.rectangulo || entradas.mascaras.length || entradas.cuadro || entradas.esquinas
-  || entradas.semillas.length || entradas.anclas.length);
+  || entradas.semillas.length || entradas.anclas.length || hayUbicacion(entradas.ubicacion));
+
+/** ¿Ya puso algo de la ubicación con un punto (la coordenada, el punto o la escala)? */
+const hayUbicacion = (u) => Boolean(u) && ['x', 'lon', 'escala_impresa'].some((k) => u[k] != null);
 
 async function elegirPagina(n) {
   if (n === entradas.pagina && plano.entradas) return;
@@ -515,7 +605,7 @@ function rectangulo(rect) {
   if (despues !== herramienta) elegirHerramienta(despues);
 }
 
-function tocarPlano(x, y) {
+function tocarPlano(x, y, evento) {
   if (paso === 'marcar' && herramienta === 'esquinas') {
     esquinasMarcando = [...esquinasMarcando, [round(x), round(y)]];
     if (esquinasMarcando.length < 4) {
@@ -528,7 +618,13 @@ function tocarPlano(x, y) {
     return cambiar({ ...entradas, esquinas });
   }
   if ((paso === 'marcar' && herramienta === 'numero') || paso === 'numerar') return abrirNumero(x, y);
-  if (paso === 'ubicar') return marcarEnPlano(x, y);
+  if (paso === 'ubicar') {
+    // Con el mouse no hay clic sintetizado: un clic rápido en el mapa es de ella.
+    if (evento?.pointerType && evento.pointerType !== 'mouse') tocadoEnPlano = performance.now();
+    if (marcandoPunto) return ponerPunto(x, y);
+    if (afinando) return marcarEnPlano(x, y);
+    return clicSuelto();
+  }
   return undefined;
 }
 
@@ -574,8 +670,13 @@ async function digitalizar({ solo = false, desdeMarcar = false } = {}) {
       // La relectura sola de Numerar o una lectura que ya corre: lanzar otra la choca en el
       // servidor. Leído con lo mismo que está marcado (volvió a Marcar a mirar), no hay qué leer.
       const enCamino = trabajando() || releyendo === mio;
-      if (enCamino || (desdeMarcar && plano?.digitalizado?.vigente)) {
+      if (enCamino) {
         await irAlPaso('digitalizar');
+        return;
+      }
+      // Ya leído con esto mismo: no se lee de nuevo, se sigue a Numerar (si hace falta) o a Ubicar.
+      if (desdeMarcar && plano?.digitalizado?.vigente) {
+        await irAlPaso(pasoSiguiente('marcar', plano, rasgos));
         return;
       }
     }
@@ -632,7 +733,8 @@ async function terminoDigitalizar(trabajo) {
     pintar();
     releerSiHaceFalta();
   } else if (trabajo.estado === 'listo') {
-    await irAlPaso(plano.digitalizado?.sin_numero || plano.digitalizado?.faltantes?.length || plano.digitalizado?.huecos?.length ? 'numerar' : 'ubicar');
+    // Numerar es una pantalla intermedia: solo si falta algo de los números (`hayQueNumerar`).
+    await irAlPaso(pasoSiguiente('digitalizar', plano, rasgos));
   } else {
     pintarPaso();
   }
@@ -783,10 +885,23 @@ function marcarEnPlano(x, y) {
   if (!caja.hidden && (top < 0 || bottom > window.innerHeight)) caja.scrollIntoView({ block: 'nearest' });
 }
 
+/** Un clic en el plano de Ubicar sin nada que marcar: se dice cómo, sin marcar nada. */
+function clicSuelto() {
+  // Con 2 o más puntos ellos mandan: "Mover el punto" ya no cambiaría lo que se ve.
+  // Con la cuadrícula elegida tampoco: manda ella.
+  pistaSuelta = entradas.cuadricula ? 'Se ubica con la cuadrícula impresa. Para comprobarla con puntos, abre "Afinar con puntos".'
+    : entradas.anclas.length >= 2 ? 'Para marcar más puntos o rehacerlos, abre "Afinar con puntos".'
+    : Number.isFinite(entradas.ubicacion?.x)
+    ? 'Para cambiar tu punto, aprieta "Mover el punto". Para marcar más puntos, abre "Afinar con puntos".'
+    : 'Para poner tu punto, aprieta "Marcar el punto en el plano", o abre "Afinar con puntos" para marcar varios.';
+  pintarPanel();
+}
+
 function marcarEnMapa(lat, lon) {
   if (paso !== 'ubicar') return;
   if (!pendiente) {
-    $('#kmz-ancla-estado').textContent = 'Primero haz clic en el punto del plano; después, en el mismo punto del mapa.';
+    // Con "Afinar" plegada un clic en el mapa es mirar, no marcar: no se dice nada.
+    if (afinando) $('#kmz-ancla-estado').textContent = 'Primero haz clic en el punto del plano; después, en el mismo punto del mapa.';
     return;
   }
   const ancla = anclaDesde(pendiente, lat, lon);
@@ -794,8 +909,9 @@ function marcarEnMapa(lat, lon) {
   rehacer = null;
   avisoCuadricula = '';
   cambiar({ ...entradas, anclas: [...entradas.anclas.filter((a) => a.nombre !== ancla.nombre), ancla] });
-  pintarMapa();
-  if (entradas.anclas.length >= 2 || entradas.cuadricula) ubicar().catch((e) => avisar(e.message));
+  // Desde el segundo punto los lotes ya se ven (vista previa); el servidor llega después.
+  pintarMapa(entradas.anclas.length === 2);
+  if (puedeUbicar(entradas)) ubicar().catch((e) => avisar(e.message));
 }
 
 function cancelarAncla() {
@@ -810,7 +926,7 @@ function quitarAncla(nombre, otraVez) {
   rehacer = otraVez ? nombre : null;
   cambiar({ ...entradas, anclas: entradas.anclas.filter((a) => a.nombre !== nombre) });
   pintarMapa();
-  if (!otraVez && (entradas.anclas.length >= 2 || entradas.cuadricula)) ubicar().catch((e) => avisar(e.message));
+  if (!otraVez && puedeUbicar(entradas)) ubicar().catch((e) => avisar(e.message));
 }
 
 const NO_UBICO_CUADRICULA = 'No se pudo ubicar con la cuadrícula del plano. Marca los puntos a mano.';
@@ -826,7 +942,7 @@ async function usarCuadricula(si) {
   if (si) nuevas.cuadricula = propuesta; else delete nuevas.cuadricula;
   cambiar(nuevas);
   if (!si) {
-    if (entradas.anclas.length >= 2) await ubicar();
+    if (puedeUbicar(entradas)) await ubicar();
     return;
   }
   let sirvio = false;
@@ -850,7 +966,7 @@ async function usarCuadricula(si) {
   cambiar(sinCuadricula);
   avisoCuadricula = NO_UBICO_CUADRICULA;
   cuadriculaNoSirve = true;
-  if (entradas.anclas.length >= 2) await ubicar().catch((e) => avisar(e.message));
+  if (puedeUbicar(entradas)) await ubicar().catch((e) => avisar(e.message));
   else await guardar();
   pintarPanel();
 }
@@ -859,45 +975,177 @@ function moverAjuste(de, dn) {
   const paso1 = Number($('#kmz-paso-ajuste').value) || 1;
   const ajuste = de === null ? { de: 0, dn: 0 } : empujar(entradas.ajuste, de * paso1, dn * paso1);
   cambiar({ ...entradas, ajuste });
-  // Varias flechas seguidas son un solo cálculo.
-  clearTimeout(ubicarLuego);
-  ubicarLuego = setTimeout(() => ubicar().catch((e) => avisar(e.message)), 500);
+  // Con la vista previa los lotes se mueven al tiro; varias flechas seguidas son un solo cálculo.
+  pintarMapa();
+  programarUbicar();
 }
 
 function arrastreDelMapa(de, dn) {
   cambiar({ ...entradas, ajuste: empujar(entradas.ajuste, de, dn) });
+  if (vistaPrevia()) {
+    // Los lotes ya quedan donde se soltaron (vista previa): el servidor, un momento después.
+    pintarMapa();
+    programarUbicar();
+    return;
+  }
   // Si no se pudo recalcular, los lotes no se quedan corridos con el arrastre a medias.
   ubicar().catch((e) => avisar(e.message)).finally(() => pintarMapa());
+}
+
+// --- ubicar con un punto ------------------------------------------------------------------
+//
+// La coordenada (alfiler en el mapa), su punto en el plano y el giro van en
+// `entradas.ubicacion`. Cada cambio se ve al tiro con la vista previa (la misma similitud
+// del servidor, calculada aquí) y, un momento después del último, se guarda y se ubica en
+// el servidor: girar con el deslizador es una ráfaga de cambios y un solo cálculo.
+
+const UBICAR_MS = 600;
+
+function cambiarUbicacion(cambios, { encuadrar = false } = {}) {
+  const ubicacion = { giro: 0, escala_impresa: null, ...(entradas.ubicacion ?? {}), ...cambios };
+  cambiar({ ...entradas, ubicacion });
+  lienzo.ponerGiro(giroDelPlano());
+  pintarMapa(encuadrar && Boolean(vistaPrevia()));
+  programarUbicar();
+}
+
+function ponerPunto(x, y) {
+  marcandoPunto = false;
+  pistaSuelta = '';
+  // La primera vez que hay lotes que ver, el mapa se acerca a ellos.
+  cambiarUbicacion({ x: round(x), y: round(y) }, { encuadrar: !vistaPrevia() });
+}
+
+/** Gira el plano a `grados` (horario), al décimo de grado y dentro de −180..180. */
+function girarA(grados) {
+  if (!Number.isFinite(grados)) return;
+  // Se redondea después de normalizar: el módulo deja colas como 89.29999999999995.
+  cambiarUbicacion({ giro: Math.round(normalizarGiro(grados) * 10) / 10 });
+  // Al girar, los lotes barren en torno al punto y se salen del mapa (en Rapel, a 89°
+  // quedaban abajo, fuera de la vista): al soltar, el mapa los vuelve a mostrar.
+  clearTimeout(seguirLuego);
+  seguirLuego = setTimeout(() => { seguirLuego = 0; if (paso === 'ubicar') mapa?.seguirLotes(); }, UBICAR_MS);
+}
+let seguirLuego = 0;
+
+/** El giro con que se muestra el plano: el de la ubicación, y solo en Ubicar. */
+const giroDelPlano = () => (paso === 'ubicar' ? entradas.ubicacion?.giro ?? 0 : 0);
+
+/** Ubica en el servidor un momento después del último cambio, si hay con qué. */
+function programarUbicar() {
+  clearTimeout(ubicarLuego);
+  ubicarLuego = 0;
+  if (!puedeUbicar(entradas) || !plano?.digitalizado?.vigente) return;
+  // Con la coordenada y sin escala el servidor solo diría lo que ya dice la línea bajo "Seguir".
+  if (usaUbicacion(entradas) && !escalaDeUbicacion(plano.digitalizado, entradas.ubicacion)) return;
+  ubicarLuego = setTimeout(() => {
+    ubicarLuego = 0;
+    ubicar().catch((e) => avisar(e.message));
+  }, UBICAR_MS);
+  pintarPorQue();
+}
+
+/**
+ * Los lotes sobre el mapa calculados aquí (GeoJSON lon/lat), con lo mismo que usará el
+ * servidor: 2 o más puntos, o la coordenada con su punto y la escala. Con la cuadrícula
+ * elegida no hay vista previa (esa la calcula solo el servidor).
+ */
+function vistaPrevia() {
+  const d = plano?.digitalizado;
+  if (!d || !rasgos.length || entradas.cuadricula) return null;
+  const hoja = d.pagina;
+  if (hoja && (hoja.numero !== entradas.pagina || hoja.rotacion !== entradas.rotacion)) return null;
+  // Con 2 o más puntos mandan ellos (`por_anclas`), como en el servidor; si no, la coordenada.
+  // Con "Ajustar el tamaño con el cuadro", el tamaño del cuadro, como en el servidor: si no,
+  // los lotes saltarían al soltar el último cambio.
+  const ajuste = ajustaConElCuadro(entradas) && d.escala_m_px > 0
+    ? { escalaMPx: d.escala_m_px, homografiaTrabajo: d.homografia } : {};
+  const t = entradas.anclas.length >= 2
+    ? similitudPorAnclas(entradas.anclas, d.perspectiva ? d.homografia : null, ajuste)
+    : usaUbicacion(entradas) && similitudPorPunto(entradas.ubicacion, escalaDeUbicacion(d, entradas.ubicacion), d.homografia);
+  return t ? lotesEnElMapa(rasgos, t, entradas.ajuste) : null;
+}
+
+/**
+ * "Ajustar el tamaño con el cuadro" (o deshacerlo): los puntos dejan la posición y el giro,
+ * el cuadro de superficies el tamaño. Ubica de nuevo al tiro, que trae los lotes al día.
+ */
+async function ajustarConElCuadro(ajustar) {
+  if (ajustandoCuadro) return;
+  ajustandoCuadro = true;
+  try {
+    cambiar({ ...entradas, escala_cuadro: ajustar });
+    await ubicar();
+  } finally {
+    ajustandoCuadro = false;
+    pintarPanel();
+  }
+}
+
+/**
+ * En el panel `raiz`: el botón de ajustar (Revisar y el semáforo, si hay `sesgo`) y la línea
+ * "Tamaño ajustado con el cuadro · Deshacer el ajuste" (Revisar y Ubicar). Devuelve si se
+ * ofrece ajustar.
+ */
+function pintarAjusteDelCuadro(raiz, sesgo = null) {
+  const conCuadro = plano?.digitalizado?.escala_m_px > 0;
+  const ajustado = ajustaConElCuadro(entradas) && conCuadro;
+  for (const p of $$('.kmz-ajustado', raiz)) p.hidden = !ajustado;
+  for (const b of $$('[data-accion="kmz-deshacer-cuadro"]', raiz)) b.disabled = ajustandoCuadro;
+  // Mientras ajusta, el botón sigue a la vista (apagado) en vez de desaparecer de golpe.
+  // El sesgo es de lo ubicado: si la ubicación quedó atrasada, ajustar sería sobre lotes viejos.
+  const vigente = Boolean(plano?.georreferencia?.vigente);
+  const ofrecer = (vigente && ofrecerAjusteDelCuadro(entradas, sesgo) || (ajustandoCuadro && entradas.escala_cuadro))
+    && conCuadro;
+  for (const b of $$('[data-accion="kmz-ajustar-cuadro"]', raiz)) {
+    b.hidden = !ofrecer;
+    b.disabled = ajustandoCuadro;
+    b.textContent = ajustandoCuadro && entradas.escala_cuadro ? 'Ajustando el tamaño…' : 'Ajustar el tamaño con el cuadro';
+  }
+  return Boolean(ofrecer);
 }
 
 /** Devuelve si de verdad ubicó (no corre con el digitalizado atrasado o sin con qué). */
 async function ubicar() {
   clearTimeout(ubicarLuego);
+  ubicarLuego = 0;
   const mio = slug;
-  await guardar();
-  // Se pasó a otro KMZ mientras se guardaba: ubicar ese no lo pidió nadie.
-  if (mio !== slug) return false;
-  if (!plano?.digitalizado?.vigente) return false;
-  if (entradas.anclas.length < 2 && !entradas.cuadricula) return false;
-  $('#kmz-ancla-estado').textContent = 'Ubicando…';
+  const vez = ++ubicarVez;
+  // "Seguir" espera desde ya: mientras se guarda, `plano` aún dice vigente lo ubicado antes
+  // del último giro, y se podía pasar a Revisar con eso.
   ubicandoYa = true;
   pintarPorQue();
+  // Al girar seguido se encadenan varias: solo la última suelta "Seguir" y pinta lo suyo.
+  const vigenteYo = () => mio === slug && vez === ubicarVez;
+  const soltar = () => { if (vez === ubicarVez) { ubicandoYa = false; pintarPorQue(); } };
+  try {
+    await guardar();
+  } catch (error) {
+    soltar();
+    throw error;
+  }
+  // Se pasó a otro KMZ mientras se guardaba: ubicar ese no lo pidió nadie.
+  if (!vigenteYo() || !plano?.digitalizado?.vigente || !puedeUbicar(entradas)) {
+    soltar();
+    return false;
+  }
+  $('#kmz-ancla-estado').textContent = 'Ubicando…';
+  let nuevo;
+  let geo;
   try {
     const georreferencia = await pedir(`${api(mio)}/georreferenciar`, json({}));
-    if (mio !== slug) return false;
+    if (!vigenteYo()) return false;
     plano.georreferencia = georreferencia;
+    nuevo = await pedir(api(mio));
+    geo = await pedir(`${api(mio)}/lotes?en=lonlat`);
   } catch (error) {
-    if (mio !== slug) return false;
+    if (!vigenteYo()) return false;
     $('#kmz-ancla-estado').textContent = '';
-    ubicandoYa = false;
-    pintarPorQue();
     throw error;
   } finally {
-    ubicandoYa = false;
+    soltar();
   }
-  const nuevo = await pedir(api(mio));
-  const geo = await pedir(`${api(mio)}/lotes?en=lonlat`);
-  if (mio !== slug) return false;
+  if (!vigenteYo()) return false;
   plano = nuevo;
   rasgosGeo = geo;
   pintar();
@@ -907,11 +1155,22 @@ async function ubicar() {
 
 const NO_ENTENDI = `No entendí esas coordenadas. Escríbelas como -34.98, -71.24 o como 34°10'37.5"S 71°32'53.9"W.`;
 
+/** "Ir": la coordenada que tiene es el paso 1 de ubicar con un punto. Queda el alfiler y
+ * se guarda; si aún no marca su punto en el plano, el próximo clic en el plano es ese. */
 async function irA() {
   const punto = leerCoordenadas($('#kmz-ir-a').value);
   if (!punto) throw new Error(NO_ENTENDI);
   await prepararMapa();
-  mapa.ir(punto.lat, punto.lon, 16);
+  mapa.ir(punto.lat, punto.lon, 17);
+  // Con un punto de "Afinar" a medias, Ir solo lleva el mapa allá (para buscar ese punto):
+  // cambiar la coordenada movería lo ya ubicado con ella.
+  if (pendiente) return;
+  if (!Number.isFinite(entradas.ubicacion?.x)) {
+    marcandoPunto = true;
+    pendiente = null;
+    rehacer = null;
+  }
+  cambiarUbicacion({ lon: Number(punto.lon.toFixed(7)), lat: Number(punto.lat.toFixed(7)) });
 }
 
 /** Con un punto marcado en el plano, las coordenadas escritas son su lugar en el mapa. */
@@ -947,9 +1206,14 @@ async function crearKmz(omitir = false) {
     } catch (error) {
       // Quedan lotes sin número: se crea igual solo si ella lo confirma en el diálogo.
       // El `finally` suelta el botón: mientras decide, nada está trabajando.
-      if (omitir || error.estado !== 409 || !error.cuerpo?.sin_numero) throw error;
+      if (omitir || error.estado !== 409 || !(error.cuerpo?.sin_numero || error.cuerpo?.resto)) throw error;
       if (mio !== slug) return;
       sinNumeroPendiente = mio;
+      // Solo el resto sin decidir: se nombra como la pregunta que es, no como lotes sin número.
+      const soloResto = !error.cuerpo.sin_numero;
+      $('#kmz-sin-numero-titulo').textContent = soloResto ? 'Falta decidir el resto de la propiedad'
+        : 'Quedan lotes sin número';
+      $('#kmz-crear-sin-numero').textContent = soloResto ? 'Crear sin el resto' : 'Crear sin ellos';
       $('#kmz-sin-numero-texto').textContent = error.message;
       abrirDialogo($('#kmz-sin-numero-dialogo'));
       return;
@@ -960,6 +1224,7 @@ async function crearKmz(omitir = false) {
     if (mio !== slug) return;
     plano = fresco;
     $('#kmz-listo-texto').textContent = textoDeCreado(plano.nombre, creado.lotes);
+    $('#kmz-listo-texto').dataset.alDia = String(plano.paso === 'listo');
     await refrescar();
     pintar();
     destellarListo();
@@ -982,6 +1247,8 @@ function destellarListo() {
   // Se saca al terminar: si quedara puesta, volvería a destellar cada vez que el aviso
   // se muestra de nuevo (al volver a este KMZ desde otro).
   listo.addEventListener('animationend', () => listo.classList.remove('kmz-listo--nuevo'), { once: true });
+  // Crear está en el pie y el aviso arriba en el panel: se trae a la vista.
+  listo.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 const terminado = () => Boolean(plano?.kmz?.length);
@@ -1021,9 +1288,22 @@ async function pintarPaso() {
   $('#kmz-mapa-caja').hidden = !conMapa;
   $('#kmz-escena').classList.toggle('kmz-escena--doble', conPlano && conMapa);
   $('#kmz-plano').dataset.modo = paso;
-  $('#kmz-cuerpo').classList.toggle('kmz-cuerpo--solo', paso === 'subir' && !plano?.pdf || paso === 'crear');
+  $('#kmz-cuerpo').classList.toggle('kmz-cuerpo--solo', paso === 'subir' && !plano?.pdf);
   if (paso !== 'marcar') elegirHerramienta('mover');
   else if (pasoPintado !== 'marcar') elegirHerramienta(herramientaAlEntrar(entradas, Boolean(plano?.digitalizado)));
+  if (paso === 'ubicar' && pasoPintado !== 'ubicar') {
+    // Al llegar sin su punto en el plano (y sin puntos que manden), el clic en el plano es ese.
+    marcandoPunto = !Number.isFinite(entradas.ubicacion?.x) && entradas.anclas.length < 2 && !entradas.cuadricula;
+    // Con puntos ya marcados (o la cuadrícula elegida), "Afinar" llega abierta: es lo que manda.
+    afinando = afinarAbierta(entradas, { pendiente, rehacer });
+  }
+  if (paso !== 'ubicar') {
+    marcandoPunto = false;
+    afinando = false;
+    pistaSuelta = '';
+  }
+  // En Ubicar el plano se ve girado como el mapa; al entrar o salir se vuelve a encuadrar.
+  if (giroDelPlano() !== lienzo.giro) lienzo.ponerGiro(giroDelPlano(), true);
   pasoPintado = paso;
   medirPanel();
   pintar();
@@ -1050,11 +1330,14 @@ function medirPanel() {
 function pintarPasos() {
   const habilitados = pasosHabilitados(plano);
   const hechos = pasosHechos(plano);
+  // Leyendo el plano o numerando, la pastilla marcada es Marcar: son parte de ese paso.
+  const actual = pastillaDe(paso);
   for (const boton of $$('#kmz-pasos [data-paso]')) {
     const nombre = boton.dataset.paso;
+    if (!PASTILLAS.includes(nombre)) continue;
     boton.disabled = !habilitados[nombre];
     boton.classList.toggle('paso--hecho', Boolean(hechos[nombre]));
-    if (nombre === paso) boton.setAttribute('aria-current', 'step'); else boton.removeAttribute('aria-current');
+    if (nombre === actual) boton.setAttribute('aria-current', 'step'); else boton.removeAttribute('aria-current');
   }
 }
 
@@ -1070,24 +1353,25 @@ function pintarPanel() {
   if (paso === 'digitalizar') pintarDigitalizar();
   if (paso === 'numerar') pintarNumerar();
   if (paso === 'ubicar') pintarUbicar();
+  else $('#kmz-giro-mapa').hidden = true;
   if (paso === 'revisar') pintarRevisar();
-  if (paso === 'crear') pintarCrear();
   pintarPorQue();
 }
 
 /** El "Seguir" del paso abierto: se apaga con su motivo debajo, en una línea. */
 function pintarPorQue() {
   const panel = $(`#kmz-panel-${paso}`);
+  // En Revisar y descargar no hay "Seguir": el motivo es el de Crear (que apaga `pintarCrear`).
   const boton = panel?.querySelector('[data-accion="kmz-siguiente"]');
-  if (!plano || !boton) return;
+  const linea = panel?.querySelector('.kmz-por-que');
+  if (!plano || (!boton && !linea)) return;
   // Mientras se pide la lectura, el servidor todavía no la cuenta como trabajo: ya lo es.
   const e = lanzando === slug ? { ...plano, trabajo: { terminado: false } } : plano;
   const motivo = porQueNoSigue(paso, e, {
-    entradas, actualizando: actualizando(), releerFallo, ubicando: ubicandoYa,
+    entradas, actualizando: actualizando(), releerFallo, ubicando: ubicandoYa || Boolean(ubicarLuego),
     duplicados: paso === 'revisar' ? resumenRevision(rasgosGeo?.features ?? []).duplicados : 0,
   });
-  boton.disabled = Boolean(motivo);
-  const linea = panel.querySelector('.kmz-por-que');
+  if (boton) boton.disabled = Boolean(motivo);
   if (!linea) return;
   linea.textContent = motivo;
   linea.hidden = !motivo;
@@ -1181,6 +1465,10 @@ function pintarDigitalizar() {
   $('#kmz-leer-fallo').hidden = leyendo || !falloAlPedir;
   $('#kmz-leer-fallo').textContent = falloAlPedir ? `No se pudo empezar a leer el plano: ${falloAlPedir}` : '';
   pintarRegistro();
+  // "Seguir" dice adónde lleva cuando ya se sabe: Numerar es intermedio y se salta si no hace
+  // falta. Mientras se lee (o con una lectura vieja) todavía no se sabe.
+  $('#kmz-panel-digitalizar [data-accion="kmz-siguiente"]').textContent = leyendo || !d?.vigente ? 'Seguir'
+    : pasoSiguiente('digitalizar', plano, rasgos) === 'numerar' ? 'Seguir: revisar los números' : 'Seguir: ubicar en el mapa';
   const cifras = $('#kmz-cifras');
   cifras.hidden = !d;
   if (!d) return;
@@ -1188,7 +1476,8 @@ function pintarDigitalizar() {
   const lineas = [
     ['Lotes', d.lotes],
     ['Lotes sin número', d.sin_numero_lote ?? 0],
-    ['Otras partes sin número', d.sin_numero - (d.sin_numero_lote ?? 0)],
+    ['Otras partes sin número', d.sin_numero - (d.sin_numero_lote ?? 0) - (d.resto_pendiente ? 1 : 0)],
+    ...(d.resto_pendiente ? [['Resto de la propiedad', 'sin decidir']] : []),
     ['Faltan en la numeración', huecos.length ? huecos.join(', ') : '—'],
     ['Números sin lote', d.faltantes.length ? d.faltantes.join(', ') : '—'],
     ['Lector', !lector ? 'apagado' : lector.disponible === false ? 'no disponible'
@@ -1298,19 +1587,18 @@ function pintarResto() {
 function pintarUbicar() {
   const g = plano.georreferencia;
   const vigente = Boolean(g?.vigente);
-  const estadoAncla = $('#kmz-ancla-estado');
-  if (pendiente) {
-    estadoAncla.textContent = `Punto ${pendiente.nombre} marcado en el plano. Ahora haz clic en el mismo punto del mapa, `
-      + `o pega sus coordenadas y aprieta Usar como punto ${pendiente.nombre} (Esc cancela).`;
-  } else if (rehacer) {
-    estadoAncla.textContent = `Marca de nuevo el punto ${rehacer}: primero en el plano.`;
-  } else if (avisoCuadricula) {
-    estadoAncla.textContent = avisoCuadricula;
-  } else {
-    const n = entradas.anclas.length;
-    estadoAncla.textContent = n >= 4 ? `${n} puntos marcados.`
-      : `${n} de 4 puntos. Haz clic en un punto del plano (acerca bien) y después en el mismo punto del mapa.`;
-  }
+  pintarGuia();
+  // Un punto a medias o por rehacer solo existe con "Afinar" abierta.
+  if (pendiente || rehacer) afinando = true;
+  const seccion = $('#kmz-afinar');
+  if (seccion.open !== afinando) seccion.open = afinando;
+  const pista = $('#kmz-pista');
+  pista.textContent = afinando ? '' : pistaSuelta;
+  pista.hidden = !pista.textContent;
+  $('#kmz-ancla-estado').textContent = avisoCuadricula && !pendiente && !rehacer ? avisoCuadricula : textoPuntos({
+    n: entradas.anclas.length, pendiente: pendiente?.nombre, rehacer, cuadricula: Boolean(entradas.cuadricula),
+    coordenada: ubicacionCompleta(entradas.ubicacion),
+  });
   $('[data-accion="kmz-cancelar-ancla"]').hidden = !pendiente && !rehacer;
   const usar = $('[data-accion="kmz-usar-coordenadas"]');
   usar.hidden = !pendiente;
@@ -1319,6 +1607,8 @@ function pintarUbicar() {
   // Una propuesta que ya no ubicó no se vuelve a ofrecer (hasta salir del KMZ).
   const propuesta = cuadriculaNoSirve ? null : plano.digitalizado?.lector?.cuadricula;
   $('#kmz-cuadricula').hidden = !propuesta && !entradas.cuadricula;
+  // Plegada, que se sepa que la cuadrícula está ahí adentro.
+  $('#kmz-afinar-cuadricula').hidden = !propuesta || Boolean(entradas.cuadricula);
   $('[data-accion="kmz-usar-cuadricula"]').hidden = Boolean(entradas.cuadricula) || !propuesta;
   $('[data-accion="kmz-quitar-cuadricula"]').hidden = !entradas.cuadricula;
   $('#kmz-cuadricula-texto').textContent = entradas.cuadricula
@@ -1362,6 +1652,7 @@ function pintarUbicar() {
 
   const resumen = $('#kmz-ubicacion');
   resumen.hidden = !g;
+  pintarAjusteDelCuadro(resumen);
   if (g) {
     const texto = $('#kmz-ubicacion-texto');
     texto.textContent = (vigente ? '' : 'Antes de tus últimos cambios: ') + resumenUbicacion(g, entradas.anclas.length);
@@ -1378,10 +1669,77 @@ function pintarUbicar() {
   $('#kmz-ajuste').textContent = `Este ${signo(ajuste.de)} m · Norte ${signo(ajuste.dn)} m`;
   const arrastre = $('[data-accion="kmz-arrastrar"]');
   arrastre.setAttribute('aria-pressed', String(arrastrar));
-  arrastre.textContent = arrastrar ? 'Arrastrando los lotes (clic para soltar)' : 'Arrastrar los lotes en el mapa';
-  for (const b of $$('#kmz-ajuste-fino button')) b.disabled = !g;
+  arrastre.textContent = arrastrar ? 'Arrastrando los lotes (clic para dejar de arrastrar)' : 'Arrastrar los lotes';
+  // Con la vista previa ya hay lotes que mover, aunque el servidor todavía no ubique.
+  const hayLotes = Boolean(g) || Boolean(vistaPrevia());
+  arrastre.disabled = !hayLotes;
+  for (const b of $$('#kmz-ajuste-fino button')) b.disabled = !hayLotes;
   $('[data-accion="kmz-georreferenciar"]').disabled = !plano.digitalizado?.vigente
-    || (entradas.anclas.length < 2 && !entradas.cuadricula);
+    || !puedeUbicar(entradas);
+}
+
+const grados = (g) => `${new Intl.NumberFormat('es-CL', { maximumFractionDigits: 1 }).format(g)}°`;
+
+/** Los tres pasos de ubicar con un punto: qué ya está, qué toca y el giro. */
+function pintarGuia() {
+  const u = entradas.ubicacion ?? {};
+  const coordenada = Number.isFinite(u.lon) && Number.isFinite(u.lat);
+  const punto = Number.isFinite(u.x) && Number.isFinite(u.y);
+  const mandanPuntos = entradas.anclas.length >= 2 || Boolean(entradas.cuadricula);
+  const d = plano.digitalizado;
+  const sinCuadro = Boolean(d) && !(d.escala_m_px > 0);
+  const escala = escalaDeUbicacion(d, u);
+  const estado = (li, hecho, ahora) => {
+    if (hecho) li.dataset.estado = 'hecho'; else if (ahora) li.dataset.estado = 'ahora'; else delete li.dataset.estado;
+  };
+  // Con los puntos (o la cuadrícula) mandando, la guía no marca un paso que toque ahora.
+  estado($('#kmz-guia-coordenada'), coordenada, !coordenada && !marcandoPunto && !mandanPuntos);
+  estado($('#kmz-guia-punto'), punto && !marcandoPunto, marcandoPunto);
+  estado($('#kmz-guia-giro'), false, coordenada && punto && !marcandoPunto && Boolean(escala) && !mandanPuntos);
+
+  const textoCoordenada = $('#kmz-coordenada-estado');
+  textoCoordenada.hidden = !coordenada;
+  if (coordenada) {
+    textoCoordenada.textContent = `Tu coordenada: ${u.lat.toFixed(6)}, ${u.lon.toFixed(6)} (el alfiler naranjo del mapa).`;
+  }
+
+  const textoPunto = $('#kmz-punto-estado');
+  const boton = $('[data-accion="kmz-marcar-punto"]');
+  boton.setAttribute('aria-pressed', String(marcandoPunto));
+  if (marcandoPunto) {
+    textoPunto.textContent = 'Haz clic en el plano donde está tu coordenada (acerca bien). Esc cancela.';
+    boton.textContent = 'Cancelar';
+  } else if (punto) {
+    textoPunto.textContent = 'Listo: es la marca naranja del plano.';
+    boton.textContent = 'Mover el punto';
+  } else {
+    textoPunto.textContent = '';
+    boton.textContent = 'Marcar el punto en el plano';
+  }
+
+  const giro = u.giro ?? 0;
+  const deslizador = $('#kmz-giro');
+  if (Number(deslizador.value) !== giro) deslizador.value = String(giro);
+  // Con el sentido en palabras: "−20° como el reloj" se lee al revés.
+  const textoGiro = giro ? `${grados(Math.abs(giro))} ${giro > 0 ? 'como el reloj' : 'contra el reloj'}` : '0° (sin girar)';
+  deslizador.setAttribute('aria-valuetext', textoGiro);
+  $('#kmz-giro-valor').textContent = textoGiro;
+  // El del mapa, mientras hay lotes de la vista previa que girar.
+  $('#kmz-giro-mapa').hidden = paso !== 'ubicar' || mandanPuntos || !vistaPrevia();
+  $('#kmz-giro-mapa-valor').textContent = grados(giro);
+
+  // Sin cuadro de superficies, el tamaño sale de la escala impresa.
+  $('#kmz-escala').hidden = !sinCuadro || mandanPuntos;
+  const campo = $('#kmz-escala-impresa');
+  if (document.activeElement !== campo) {
+    campo.value = u.escala_impresa ? new Intl.NumberFormat('es-CL').format(u.escala_impresa) : '';
+  }
+
+  const nota = $('#kmz-guia-nota');
+  nota.hidden = !mandanPuntos;
+  nota.textContent = entradas.cuadricula
+    ? 'Se está ubicando con la cuadrícula impresa, no con la coordenada.'
+    : 'Con 2 o más puntos en "Afinar con puntos", ellos mandan sobre tu coordenada y el giro. Quítalos para ubicar con ella.';
 }
 
 function pintarRevisar() {
@@ -1396,6 +1754,7 @@ function pintarRevisar() {
     ['Otras partes sin número', cuenta.sin_numero - cuenta.sin_numero_lote, null],
     ['Repetidos', cuenta.duplicados, cuenta.duplicados ? 'rojo' : null],
     ...(cuenta.fuera ? [['Fuera del KMZ', cuenta.fuera, 'gris']] : []),
+    ...(cuenta.resto_pendiente ? [['Resto de la propiedad', 'sin decidir', 'ambar']] : []),
   ];
   $('#kmz-revision').replaceChildren(...datos.map(([rotulo, valor, color]) => {
     const div = document.createElement('div');
@@ -1413,27 +1772,41 @@ function pintarRevisar() {
     return div;
   }));
   const problemas = cuenta.duplicados;
-  const sesgo = sesgoDeEscala(rasgosGeo?.features ?? []);
+  // El semáforo y el botón de crear van en este mismo panel: el sesgo y si se ofrece ajustar
+  // salen de ahí, para que la nota y el semáforo no se contradigan.
+  const { luz, ajustable } = pintarCrear();
+  const sesgo = luz.sesgo ?? sesgoDeEscala(rasgosGeo?.features ?? []);
+  // El semáforo ya dice cuántos calzan y, si salen parejo distintos, qué hacer: la nota no lo repite.
+  const conSemaforo = Boolean(luz.tono);
   $('#kmz-revision-nota').textContent = problemas
-    ? 'Hay números repetidos: el KMZ no se puede crear así. Vuelve a Numerar.'
+    ? 'Hay números repetidos: el KMZ no se puede crear así. Corrígelos en "Revisar los números".'
+    : cuenta.resto_pendiente
+      ? (cuenta.sin_numero_lote
+        ? `${cuenta.sin_numero_lote === 1 ? 'Un lote quedó' : `${cuenta.sin_numero_lote} lotes quedaron`} sin número`
+          + ' y falta decidir si el resto de la propiedad va en el KMZ: Revisar los números.'
+        : 'Falta decidir si el resto de la propiedad va en el KMZ: Revisar los números.')
     : cuenta.sin_numero_lote
-      ? (cuenta.sin_numero_lote === 1 ? 'Un lote quedó sin número y no iría al KMZ.'
-        : `${cuenta.sin_numero_lote} lotes quedaron sin número y no irían al KMZ.`) + ' Vuelve a Numerar.'
+      ? (cuenta.sin_numero_lote === 1 ? 'Un lote quedó sin número y no iría al KMZ. Ponle su número'
+        : `${cuenta.sin_numero_lote} lotes quedaron sin número y no irían al KMZ. Ponles su número`)
+        + ' en "Revisar los números".'
     : cuenta.sin_numero
       ? (cuenta.sin_numero === 1 ? 'Una parte queda sin número (rayada en rojo) y no va al KMZ.'
         : `${cuenta.sin_numero} partes quedan sin número (rayadas en rojo) y no van al KMZ.`)
-        + ' Si es un lote, vuelve a Numerar.'
+        + ' Si es un lote, ponle su número en "Revisar los números".'
       : cuenta.lotes === cuenta.gris
       ? (entradas.cuadro ? 'No se leyó el cuadro de superficies: revisa a ojo que los lotes calcen con los caminos.'
         : 'Sin cuadro de superficies no hay áreas oficiales: si el plano lo trae, enciérralo en Marcar'
           + ' con "Cuadro de superficies". Si no, revisa a ojo que los lotes calcen con los caminos.')
-      : sesgo != null
+      : sesgo != null && !conSemaforo
       ? `Casi todos los lotes salen cerca de un ${Math.abs(sesgo * 100).toFixed(1).replace('.', ',')} %`
         + ` ${sesgo > 0 ? 'más grandes' : 'más chicos'} que el oficial: suele ser la escala de los puntos de Ubicar,`
-        + ' no el dibujo. Vuelve a Ubicar y marca 3 o 4 esquinas con coordenadas exactas.'
+        + (ajustable ? ' no el dibujo. Ajusta el tamaño con el cuadro de superficies, o vuelve a Ubicar y marca'
+          + ' 3 o 4 esquinas con coordenadas exactas.'
+          : ' no el dibujo. Vuelve a Ubicar y marca 3 o 4 esquinas con coordenadas exactas.')
       : cuenta.rojo
       ? 'Los rojos tienen un área muy distinta a la oficial: suelen ser lotes mal separados.'
-      : 'Ningún lote se aparta más de un 5 % del área oficial.';
+      : conSemaforo ? '' : 'Ningún lote se aparta más de un 5 % del área oficial.';
+  $('#kmz-revision-nota').hidden = !$('#kmz-revision-nota').textContent;
   const boton = $('[data-accion="kmz-corregir"]');
   boton.setAttribute('aria-pressed', String(corrigiendo));
   boton.textContent = corrigiendo ? 'Listo, dejar de corregir' : 'Corregir vértices a mano';
@@ -1472,43 +1845,63 @@ async function corregir(cuerpo) {
   }
 }
 
+/**
+ * La parte de crear del panel Revisar y descargar: el semáforo (con "Ajustar el tamaño con
+ * el cuadro" y "Volver a Ubicar"), el botón de crear y, si ya hay un KMZ, descargarlo o
+ * usarlo en un master. Devuelve el semáforo (`luz`) y si se ofrece ajustar.
+ */
 function pintarCrear() {
-  if (!plano) return;
+  if (!plano) return { luz: { tono: null }, ajustable: false };
   const hay = terminado();
+  const ubicado = pasosHabilitados(plano).revisar;
   $('#kmz-crear-texto').textContent = plano.paso === 'listo'
     ? 'El KMZ ya está creado con lo último que ubicaste.'
     : hay ? 'Ya hay un KMZ creado de antes: crearlo de nuevo lo reemplaza con lo último que ubicaste.'
       : 'Un polígono por lote, con su número. Después lo descargas o lo usas en un master.';
   const crear = $('[data-accion="kmz-crear"]');
   const creando = creandoKmz === slug;
-  crear.disabled = creando || !pasosHabilitados(plano).crear;
+  // Con números repetidos el servidor no lo crea: el motivo queda bajo el botón (`porQueNoSigue`).
+  const repetidos = resumenRevision(rasgosGeo?.features ?? []).duplicados;
+  crear.disabled = creando || !ubicado || Boolean(repetidos);
   // Con los lotes en lon/lat (se cargan con el plano ubicado): sin ellos no hay con qué
   // comparar y el semáforo queda oculto, como sin cuadro.
   // Sin la ubicación vigente no se puede crear: los desvíos serían de los puntos viejos.
-  const luz = semaforo(pasosHabilitados(plano).crear ? rasgosGeo?.features ?? [] : []);
+  const luz = semaforo(ubicado ? rasgosGeo?.features ?? [] : []);
+  const panel = $('#kmz-panel-revisar');
+  const ajustable = pintarAjusteDelCuadro(panel, luz.sesgo);
   const caja = $('#kmz-semaforo');
-  const texto = textoSemaforo(luz);
+  const texto = textoSemaforo(luz, { ajustable });
   caja.hidden = !texto;
   caja.dataset.tono = luz.tono ?? '';
   // Solo si cambia: reescribir el mismo texto en una región `status` lo vuelve a anunciar
   // cada vez que algo repinta el panel.
   if ($('#kmz-semaforo-texto').textContent !== texto) $('#kmz-semaforo-texto').textContent = texto;
   $('[data-accion="kmz-volver-ubicar"]').hidden = luz.tono !== 'ambar';
+  $('#kmz-semaforo-acciones').hidden = luz.tono !== 'ambar' && !ajustable;
   // Ámbar avisa pero no bloquea: el botón dice que se crea igual. Con el KMZ ya creado
   // con esto mismo no hay "igual" que valga: ya se creó, y rehacerlo da lo mismo.
   const igual = luz.tono === 'ambar' && plano.paso !== 'listo';
   crear.textContent = creando ? 'Creando el KMZ…' : igual ? 'Crear el KMZ igual'
     : hay ? 'Crear el KMZ de nuevo' : 'Crear el KMZ';
   if (creando) crear.setAttribute('aria-busy', 'true'); else crear.removeAttribute('aria-busy');
-  crear.className = hay ? 'boton boton--contorno' : 'boton boton--grande';
+  crear.className = hay ? 'boton boton--contorno' : 'boton';
   // Descargar y usar sirven mientras haya un KMZ hecho, aunque esté por rehacerse.
   $('#kmz-listo').hidden = !hay;
+  $('#kmz-descargar').hidden = !hay;
   $('#kmz-descargar').href = descargaDe(slug);
-  if (hay && !$('#kmz-listo-texto').textContent) {
-    $('#kmz-listo-texto').textContent = plano.paso === 'listo'
+  // Se escribe de nuevo cuando el KMZ pasa de al día a atrasado o al revés: si no, tras
+  // "Ajustar el tamaño con el cuadro" seguía diciendo "Listo: está creado" con un KMZ que
+  // no tiene el ajuste. Mientras siga al día, queda el de recién creado (con la hora).
+  const listoTexto = $('#kmz-listo-texto');
+  const alDia = String(plano.paso === 'listo');
+  if (hay && (!listoTexto.textContent || listoTexto.dataset.alDia !== alDia)) {
+    listoTexto.textContent = alDia === 'true'
       ? `Listo: el KMZ "${plano.nombre}" está creado.`
-      : `El KMZ "${plano.nombre}" que creaste antes sigue disponible.`;
+      : `El KMZ "${plano.nombre}" que creaste antes sigue disponible, pero sin tus últimos cambios:`
+        + ' créalo de nuevo para que los tenga.';
+    listoTexto.dataset.alDia = alDia;
   }
+  return { luz, ajustable };
 }
 
 // --- mapa -------------------------------------------------------------------------------
@@ -1530,8 +1923,13 @@ function pintarMapa(encuadrar = false) {
   if (!mapa) return;
   const g = plano?.georreferencia;
   mapa.ponerAnclas(paso === 'ubicar' ? entradas.anclas : [], g?.vigente ? g.atipicas ?? [] : []);
+  const u = paso === 'ubicar' ? entradas.ubicacion : null;
+  mapa.ponerAlfiler(u?.lat, u?.lon);
   const revisando = paso === 'revisar';
-  mapa.ponerLotes(rasgosGeo, revisando ? 'nivel' : 'contorno', revisando && !corrigiendo ? ficha : null);
+  // En Ubicar, con la coordenada, los lotes son los de la vista previa: siguen al giro y al
+  // arrastre sin esperar al servidor (que da lo mismo al terminar).
+  const previa = paso === 'ubicar' ? vistaPrevia() : null;
+  mapa.ponerLotes(previa ?? rasgosGeo, revisando ? 'nivel' : 'contorno', revisando && !corrigiendo ? ficha : null);
   mapa.ponerVertices(revisando && corrigiendo ? verticesDe(rasgosGeo?.features) : [], {
     mover: (punto, a) => corregir({ accion: 'mover', punto: [punto.lon, punto.lat], a: [a.lon, a.lat] })
       .catch((error) => avisar(error.message)),
@@ -1680,6 +2078,12 @@ function dibujar(ctx, P) {
       const q = P(a.x, a.y);
       mira(ctx, q, mala ? '#dc2626' : '#2563eb');
       etiqueta(ctx, a.nombre, q[0] + 10, q[1] - 10, mala ? '#dc2626' : '#1d4ed8', 'left');
+    }
+    const u = entradas.ubicacion;
+    if (Number.isFinite(u?.x) && Number.isFinite(u?.y)) {
+      const q = P(u.x, u.y);
+      mira(ctx, q, '#ea580c');
+      etiqueta(ctx, 'Tu coordenada', q[0] + 10, q[1] + 6, '#c2410c', 'left');
     }
     if (pendiente) {
       const q = P(pendiente.x, pendiente.y);

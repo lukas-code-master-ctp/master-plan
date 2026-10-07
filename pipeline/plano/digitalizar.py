@@ -4,7 +4,7 @@
 
 Imprime una línea por etapa: la consola muestra la salida en vivo.
 
-`<carpeta>/entradas.json` (lo que aporta la loteadora; `anclas` y `ajuste` son de
+`<carpeta>/entradas.json` (lo que aporta la loteadora; `anclas`, `ubicacion` y `ajuste` son de
 `georreferenciar` y aquí solo se revisan):
 
     {
@@ -39,6 +39,16 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
                                        máscara
       "anclas": [{"nombre": "roja", "x": 2533, "y": 8037,       punto del plano ↔ su lon/lat
                   "lon": -70.8240, "lat": -34.7240}],           WGS84 en grados decimales
+      "ubicacion": {"x": 331.5, "y": 845.1,   ubicar con un punto: el punto del plano (px de
+                    "lon": -71.5483, "lat": -34.1771,   página), su coordenada WGS84, el giro
+                    "giro": 89.3,                   en grados (horario, como gira ella el plano
+                    "escala_impresa": null},        en pantalla: 0 = el arriba es el norte) y la
+                                       escala 1:N del plano, que se usa si no hay cuadro de
+                                       superficies. Puede venir a medias (solo la coordenada)
+                                       mientras la arma: entonces no ubica
+      "escala_cuadro": true,           con 2 o más anclas: el tamaño sale del cuadro de
+                                       superficies y de los puntos solo la posición y el
+                                       giro ("Ajustar el tamaño con el cuadro")
       "ajuste": {"de": 0.0, "dn": 0.0}, traslación fina en metros (este, norte)
       "fuera": [[x, y]]                partes sin número que ella dejó fuera del KMZ (el
                                        resto de la propiedad): un punto dentro de cada una.
@@ -63,7 +73,8 @@ entero. Si cambia la rotación, cambian las coordenadas.
                                                    todo en px de página
       "sin_numero": [{"poligono", "area_px",       caras dentro del contorno sin lote
                       "de_lote",                   del tamaño de un lote: un lote cuyo número
-                                                   no se leyó (no se unió a su vecino); hay que
+                                                   no se leyó (no se unió a su vecino y no
+                                                   es una franja como un camino); hay que
                                                    numerarlo o crear el KMZ sin él
                       "sugerencia"}],              {"numero", "confianza", "apoyo"} o null: lo
                                                    que leyó el lector dentro, con menos apoyo
@@ -101,6 +112,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import time
 from dataclasses import dataclass, field, replace
@@ -524,6 +536,14 @@ def leer_entradas(carpeta: Path) -> dict:
             raise ValueError(f"{nombre}: lon/lat fuera de rango ({lon}, {lat})")
         anclas.append(dict(a, nombre=nombre, x=x, y=y, lon=lon, lat=lat))
     salida["anclas"] = anclas
+    if "ubicacion" in e:
+        # Sin la clave no se agrega: unas entradas de antes quedan iguales (y su huella).
+        salida["ubicacion"] = _ubicacion(e["ubicacion"])
+    if e.get("escala_cuadro") is not None:
+        # Sin la clave (o null) no se agrega: las entradas de antes quedan iguales, y su huella.
+        if not isinstance(e["escala_cuadro"], bool):
+            raise ValueError(f"«escala_cuadro» es true o false, no {e['escala_cuadro']!r}")
+        salida["escala_cuadro"] = e["escala_cuadro"]
     fuera = e.get("fuera") or []
     if not isinstance(fuera, list):
         raise ValueError(f"«fuera» es una lista de puntos [[x, y]], no {fuera!r}")
@@ -533,6 +553,44 @@ def leer_entradas(carpeta: Path) -> dict:
         raise ValueError(f"«ajuste» es {{\"de\": metros, \"dn\": metros}}, no {ajuste!r}")
     de, dn = numeros([ajuste.get("de", 0.0), ajuste.get("dn", 0.0)], 2, "ajuste: de, dn")
     salida["ajuste"] = dict(de=de, dn=dn)
+    return salida
+
+
+# La escala impresa de un plano de loteo va de 1:500 a 1:50.000; con holgura, lo que
+# está fuera de esto es un error de tipeo (p. ej. 5 por 5.000).
+ESCALA_IMPRESA_MIN, ESCALA_IMPRESA_MAX = 100, 1_000_000
+
+
+def _ubicacion(u) -> dict | None:
+    """`ubicacion` revisada. Cada parte es opcional (se arma de a poco en la pantalla),
+    pero lo que viene tiene que ser un número que sirva."""
+    if u is None:
+        return None
+    if not isinstance(u, dict):
+        raise ValueError(f"«ubicacion» es {{\"x\", \"y\", \"lon\", \"lat\", \"giro\"}}, no {u!r}")
+    salida = {}
+    for clave in ("x", "y", "lon", "lat", "giro"):
+        valor = u.get(clave)
+        if valor is None:
+            continue
+        if not isinstance(valor, (int, float)) or isinstance(valor, bool) or not math.isfinite(valor):
+            raise ValueError(f"«ubicacion.{clave}» debe ser un número, no {valor!r}")
+        salida[clave] = float(valor)
+    if "lon" in salida and not -180 <= salida["lon"] <= 180 or "lat" in salida and not -90 <= salida["lat"] <= 90:
+        raise ValueError(f"la coordenada está fuera de rango ({salida.get('lon')}, {salida.get('lat')})")
+    if not -180 <= salida.get("giro", 0.0) <= 180:
+        raise ValueError(f"el giro va de −180 a 180 grados, no {salida['giro']}")
+    escala = u.get("escala_impresa")
+    if escala is not None:
+        if (not isinstance(escala, (int, float)) or isinstance(escala, bool) or not math.isfinite(escala)
+                or escala != int(escala)):
+            raise ValueError(f"la escala del plano es un número entero (1:5.000 → 5000), no {escala!r}")
+        if not ESCALA_IMPRESA_MIN <= escala <= ESCALA_IMPRESA_MAX:
+            raise ValueError(f"la escala del plano 1:{int(escala)} no parece real: revísala (por ejemplo 1:5.000)")
+        salida["escala_impresa"] = int(escala)
+    else:
+        salida["escala_impresa"] = None
+    salida.setdefault("giro", 0.0)
     return salida
 
 

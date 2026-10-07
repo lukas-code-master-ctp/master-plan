@@ -545,6 +545,156 @@ def test_sin_anclas_no_se_puede_ubicar(ana):
     assert "2 puntos" in respuesta.json()["detail"]
 
 
+def _lotes_con_cuadro():
+    """Los de `digitalizado_a_mano`, con el área oficial que dan 0,5 m/px (3 lotes: alcanza
+    para sacar la escala del cuadro)."""
+    return [
+        dict(numero="1", poligono=_cuadro(0, 0, 400, 300), huecos=[], area_px=120000, area_oficial=30000),
+        dict(numero="2", poligono=_cuadro(400, 0, 800, 300), huecos=[], area_px=120000, area_oficial=30000),
+        dict(numero="A3", poligono=_cuadro(0, 300, 800, 700), huecos=[_cuadro(300, 400, 500, 600)],
+             area_px=240000, area_oficial=60000),
+    ]
+
+
+def test_ubicar_con_la_coordenada_y_un_punto_del_plano(ana):
+    web, slug, raiz, _ = ana
+    a = ancla("a", 0, 0)
+    ubicacion = dict(x=0, y=0, lon=a["lon"], lat=a["lat"], giro=0)
+    listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, anclas=[], ubicacion=ubicacion))
+    carpeta = carpeta_del_plano(raiz, slug)
+    digitalizado_a_mano(carpeta, _lotes_con_cuadro())
+
+    estado = web.get(f"/api/kmz/{slug}").json()
+    # Lo que necesita la vista previa del navegador.
+    assert estado["digitalizado"]["escala_m_px"] == pytest.approx(M_PX)
+    assert estado["digitalizado"]["homografia"] == np.eye(3).tolist()
+    assert estado["digitalizado"]["perspectiva"] is False
+
+    respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
+
+    assert respuesta.status_code == 200, respuesta.text
+    g = respuesta.json()
+    assert g["metodo"] == "punto" and g["vigente"] is True
+    assert g["parametros"]["escala_m_px"] == pytest.approx(M_PX)
+    assert g["parametros"]["origen_escala"] == "cuadro"
+    t = json.loads((carpeta / "georreferencia.json").read_text(encoding="utf-8"))
+    from pipeline.plano.georreferencia import Transformacion
+    e, n = Transformacion.desde_dict(t).a_utm(1000.0, 800.0)
+    assert abs(e - (E0 + M_PX * 1000)) < 0.5 and abs(n - (N0 - M_PX * 800)) < 0.5
+    assert web.get(f"/api/kmz/{slug}").json()["paso"] == "crear"
+
+    # Girar el plano deja la ubicación atrasada.
+    web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, anclas=[], ubicacion=dict(ubicacion, giro=5)))
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["paso"] == "ubicar" and estado["georreferencia"]["vigente"] is False
+
+
+def test_sin_cuadro_el_estado_no_trae_escala_y_ubicar_la_pide(ana):
+    web, slug, raiz, _ = ana
+    a = ancla("a", 0, 0)
+    listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, anclas=[], ubicacion=dict(x=0, y=0, lon=a["lon"], lat=a["lat"])))
+
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["escala_m_px"] is None
+    respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
+    assert respuesta.status_code == 400
+    assert "escala del plano (por ejemplo 1:5.000)" in respuesta.json()["detail"]
+
+
+def test_la_huella_de_ubicar_cambia_con_la_coordenada_solo_cuando_ubica_con_ella(ana):
+    from consola.plano import _huella, huella_ubicar
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    web.post(f"/api/kmz/{slug}/georreferenciar")
+    entradas = web.get(f"/api/kmz/{slug}").json()["entradas"]
+    # Sin coordenada, la huella es la de siempre: lo ya ubicado no queda atrasado.
+    assert huella_ubicar(entradas, "d") == _huella(dict(anclas=entradas["anclas"], ajuste=entradas["ajuste"],
+                                                        cuadricula=None, digitalizado="d"))
+    a = ancla("a", 0, 0)
+    a_medias = dict(lon=a["lon"], lat=a["lat"], giro=0.0, escala_impresa=None)
+    completa = dict(a_medias, x=0.0, y=0.0)
+    # Con 4 puntos mandan ellos: la coordenada (a medias o completa) no cambia la ubicación.
+    for u in (a_medias, completa, dict(completa, giro=30.0)):
+        assert huella_ubicar(dict(entradas, ubicacion=u), "d") == huella_ubicar(entradas, "d")
+    web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, ubicacion=a_medias))
+    assert web.get(f"/api/kmz/{slug}").json()["georreferencia"]["vigente"] is True
+
+    # Sin puntos: a medias no ubica (y no cuenta); completa sí, y girarla la cambia.
+    sin = dict(entradas, anclas=[])
+    assert huella_ubicar(dict(sin, ubicacion=a_medias), "d") == huella_ubicar(sin, "d")
+    con = dict(sin, ubicacion=completa)
+    assert huella_ubicar(con, "d") != huella_ubicar(sin, "d")
+    assert huella_ubicar(dict(con, ubicacion=dict(completa, giro=1.0)), "d") != huella_ubicar(con, "d")
+    # Con 1 punto todavía manda la coordenada.
+    uno = dict(con, anclas=entradas["anclas"][:1])
+    assert huella_ubicar(dict(uno, ubicacion=dict(completa, giro=1.0)), "d") != huella_ubicar(uno, "d")
+
+
+def test_la_huella_de_ubicar_cambia_con_el_ajuste_al_cuadro_solo_con_puntos(ana):
+    from consola.plano import huella_ubicar
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    web.post(f"/api/kmz/{slug}/georreferenciar")
+    entradas = web.get(f"/api/kmz/{slug}").json()["entradas"]
+    assert "escala_cuadro" not in entradas
+    # Con 4 puntos, ajustar el tamaño con el cuadro cambia la ubicación; apagado es lo de antes.
+    assert huella_ubicar(dict(entradas, escala_cuadro=True), "d") != huella_ubicar(entradas, "d")
+    assert huella_ubicar(dict(entradas, escala_cuadro=False), "d") == huella_ubicar(entradas, "d")
+    # Con menos de 2 puntos no se usa: no deja atrasado lo ubicado con la coordenada.
+    a = ancla("a", 0, 0)
+    con = dict(entradas, anclas=entradas["anclas"][:1],
+               ubicacion=dict(x=0.0, y=0.0, lon=a["lon"], lat=a["lat"], giro=0.0, escala_impresa=None))
+    assert huella_ubicar(dict(con, escala_cuadro=True), "d") == huella_ubicar(con, "d")
+
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, escala_cuadro=True))
+    assert respuesta.status_code == 200 and respuesta.json()["escala_cuadro"] is True
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["georreferencia"]["vigente"] is False
+    web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, escala_cuadro=False))
+    assert web.get(f"/api/kmz/{slug}").json()["georreferencia"]["vigente"] is True
+
+
+@pytest.mark.parametrize("valor", ["si", 1])
+def test_el_ajuste_al_cuadro_es_true_o_false(ana, valor):
+    web, slug, _, _ = ana
+    subir(web, slug)
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, escala_cuadro=valor))
+    assert respuesta.status_code == 400
+    assert "«escala_cuadro» es true o false" in respuesta.json()["detail"]
+
+
+def test_ubicar_con_puntos_ajustados_al_cuadro(ana):
+    web, slug, raiz, _ = ana
+    # Los puntos dejan el plano un 5 % más chico en torno a su centro (500, 400).
+    corridas = [ancla(a["nombre"], 500 + 0.95 * (a["x"] - 500), 400 + 0.95 * (a["y"] - 400)) for a in ANCLAS]
+    corridas = [dict(c, x=a["x"], y=a["y"]) for c, a in zip(corridas, ANCLAS)]
+    listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, anclas=corridas, escala_cuadro=True))
+    digitalizado_a_mano(carpeta_del_plano(raiz, slug), _lotes_con_cuadro())
+
+    respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
+
+    assert respuesta.status_code == 200, respuesta.text
+    p = respuesta.json()["parametros"]
+    assert p["ajustada_al_cuadro"] is True and p["escala_ajustada_m_px"] == pytest.approx(M_PX)
+    assert p["escala_puntos_m_px"] == pytest.approx(0.95 * M_PX)
+    assert p["escala_cuadro"]["area_pct"] == pytest.approx(0, abs=0.05)
+
+
+@pytest.mark.parametrize("ubicacion, mensaje", [
+    (dict(x=0, y=0, lon=-71.5, lat=-34.1, giro=270), "−180 a 180"),
+    (dict(x=0, y=0, lon=-71.5, lat=-134.1), "fuera de rango"),
+    (dict(x=0, y=0, lon=-71.5, lat=-34.1, escala_impresa=5), "no parece real"),
+    (dict(x=0, y=0, lon=-71.5, lat=-34.1, escala_impresa="1:5000"), "entero"),
+])
+def test_la_coordenada_mala_dice_que_esta_mal(ana, ubicacion, mensaje):
+    web, slug, _, _ = ana
+    subir(web, slug)
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, ubicacion=ubicacion))
+    assert respuesta.status_code == 400
+    assert mensaje in respuesta.json()["detail"]
+
+
 def test_ubicar_sin_digitalizar(ana):
     web, slug, _, _ = ana
     subir(web, slug)
@@ -770,8 +920,15 @@ def test_dejar_fuera_el_resto_no_lo_cuenta_ni_pide_confirmar_al_crear(ana):
     (carpeta / "huellas.json").write_text(
         json.dumps(dict(digitalizado=huella_digitalizar(leer_entradas(carpeta)))), encoding="utf-8")
     assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
-    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["sin_numero_lote"] == 1
-    assert web.post(f"/api/kmz/{slug}/crear").status_code == 409
+    # Sin decidir, el resto es una pregunta, no "1 lote sin número": el 409 la nombra así.
+    d = web.get(f"/api/kmz/{slug}").json()["digitalizado"]
+    assert (d["sin_numero_lote"], d["resto_pendiente"]) == (0, True)
+    respuesta = web.post(f"/api/kmz/{slug}/crear")
+    assert respuesta.status_code == 409
+    cuerpo = respuesta.json()
+    assert (cuerpo["sin_numero"], cuerpo["resto"]) == (0, True)
+    assert cuerpo["detail"].startswith("Falta decidir si el resto de la propiedad va en el KMZ")
+    assert "sin número" not in cuerpo["detail"]
 
     respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, fuera=[EN_EL_RESTO]))
 
@@ -780,13 +937,41 @@ def test_dejar_fuera_el_resto_no_lo_cuenta_ni_pide_confirmar_al_crear(ana):
     # Es qué va al KMZ, no cómo se parte el dibujo: no hay que volver a leer ni a ubicar.
     assert estado["digitalizado"]["vigente"] is True and estado["georreferencia"]["vigente"] is True
     d = estado["digitalizado"]
-    assert (d["sin_numero_lote"], d["sin_numero"], d["fuera"]) == (0, 1, 1)
+    assert (d["sin_numero_lote"], d["sin_numero"], d["fuera"], d["resto_pendiente"]) == (0, 1, 1, False)
     resto = web.get(f"/api/kmz/{slug}/lotes", params={"en": "lonlat"}).json()["features"][3]["properties"]
     assert resto["banderas"] == ["sin_numero", "fuera"] and resto["fuera"] is True and resto["de_lote"] is False
     assert resto["resto"] is True                       # la tarjeta lo muestra para poder cambiarlo
     respuesta = web.post(f"/api/kmz/{slug}/crear")
     assert respuesta.status_code == 201, respuesta.text
     assert respuesta.json()["lotes"] == 3
+
+
+def test_el_resto_sin_decidir_y_un_lote_sin_numero_se_nombran_por_separado(ana):
+    """Con un lote sin número y la pregunta del resto sin contestar, el 409 dice 1 lote (no
+    2) y la pregunta; crear sin ellos deja fuera los dos."""
+    from consola.plano import huella_digitalizar
+    from pipeline.plano.digitalizar import leer_entradas
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    _con_resto(carpeta, RAPEL)
+    ruta = carpeta / "digitalizado.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    datos["sin_numero"][1]["de_lote"] = True
+    ruta.write_text(json.dumps(datos), encoding="utf-8")
+    (carpeta / "huellas.json").write_text(
+        json.dumps(dict(digitalizado=huella_digitalizar(leer_entradas(carpeta)))), encoding="utf-8")
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
+    d = web.get(f"/api/kmz/{slug}").json()["digitalizado"]
+    assert (d["sin_numero_lote"], d["resto_pendiente"]) == (1, True)
+
+    cuerpo = web.post(f"/api/kmz/{slug}/crear").json()
+
+    assert (cuerpo["sin_numero"], cuerpo["resto"]) == (1, True)
+    assert cuerpo["detail"].startswith("Queda 1 lote sin número (en rojo) y falta decidir si el resto")
+    respuesta = web.post(f"/api/kmz/{slug}/crear", json={"omitir_sin_numero": True})
+    assert respuesta.status_code == 201 and respuesta.json()["lotes"] == 3
 
 
 def test_el_resto_incluido_va_al_kmz_con_su_numero(ana):

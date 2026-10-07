@@ -88,6 +88,14 @@ export function girarEntradas(entradas, de, a, ancho, alto) {
     fuera: (entradas.fuera ?? []).map(punto),
   };
   if (entradas.cuadro) salida.cuadro = caja(entradas.cuadro);
+  if (entradas.ubicacion) {
+    // El punto sigue sobre el mismo lugar del dibujo, y el giro que falta para dejar el
+    // norte arriba es el de antes menos lo que ya se giró la página (ambos horarios).
+    const u = { ...entradas.ubicacion };
+    if (Number.isFinite(u.x) && Number.isFinite(u.y)) [u.x, u.y] = punto([u.x, u.y]);
+    if (Number.isFinite(u.giro)) u.giro = normalizarGiro(u.giro - (a - de));
+    salida.ubicacion = u;
+  }
   if (entradas.esquinas) {
     // Siguen siendo las esquinas del marco, pero el orden es sup-izq, sup-der,
     // inf-der, inf-izq en la página girada: se reordenan por ángulo.
@@ -100,6 +108,12 @@ export function girarEntradas(entradas, de, a, ancho, alto) {
   // Las líneas de la cuadrícula se detectan de nuevo al digitalizar.
   if (entradas.cuadricula) delete salida.cuadricula;
   return salida;
+}
+
+/** Un giro en grados llevado a −180..180 (lo que acepta el servidor). */
+export function normalizarGiro(grados) {
+  const g = ((((grados + 180) % 360) + 360) % 360) - 180;
+  return g === -180 && grados > 0 ? 180 : g;
 }
 
 /**
@@ -425,12 +439,19 @@ export function nivelDe(propiedades) {
 export function resumenRevision(rasgos) {
   const cuenta = {
     lotes: 0, verde: 0, ambar: 0, rojo: 0, gris: 0, sin_numero: 0, sin_numero_lote: 0, duplicados: 0, fuera: 0,
+    resto_pendiente: false,
   };
   for (const { properties: p } of rasgos) {
     const banderas = p.banderas ?? [];
     // Lo que ella dejó fuera del KMZ (el resto de la propiedad) ya está decidido: no es un aviso.
     if (p.fuera) {
       cuenta.fuera += 1;
+      continue;
+    }
+    // El resto sin decidir es la pregunta de Numerar, no un lote sin número (como lo cuenta
+    // el servidor al crear): se avisa aparte.
+    if (p.resto && p.numero == null) {
+      cuenta.resto_pendiente = true;
       continue;
     }
     if (banderas.includes('sin_numero')) {
@@ -490,15 +511,21 @@ export function semaforo(rasgos, tolerancia = 0.05) {
   return { tono: ambar ? 'ambar' : 'verde', dentro, total, sesgo };
 }
 
-/** El texto del semáforo ("" si no se muestra). */
-export function textoSemaforo({ tono, dentro, total, sesgo = null }) {
+/**
+ * El texto del semáforo ("" si no se muestra). Con `ajustable` (ubicó con puntos y se ofrece
+ * "Ajustar el tamaño con el cuadro"), el ámbar nombra ese botón antes que volver a Ubicar.
+ */
+export function textoSemaforo({ tono, dentro, total, sesgo = null }, { ajustable = false } = {}) {
   if (tono === 'verde') return `Los lotes calzan con el cuadro de superficies (${dentro} de ${total} dentro del 5 %).`;
   if (tono === 'ambar') {
     const cuantos = (total - dentro) * 2 >= total || sesgo == null
       ? `${total - dentro} de ${total} lotes miden distinto al cuadro de superficies.`
       : `Casi todos los lotes salen cerca de un ${Math.abs(sesgo * 100).toFixed(1).replace('.', ',')} %`
         + ` ${sesgo > 0 ? 'más grandes' : 'más chicos'} que en el cuadro de superficies.`;
-    return `${cuantos} Suele ser la ubicación: vuelve a Ubicar y marca los puntos de nuevo.`;
+    return ajustable
+      ? `${cuantos} Suele ser la escala de los puntos de Ubicar: ajusta el tamaño con el cuadro de superficies`
+        + ' o vuelve a Ubicar y marca los puntos de nuevo.'
+      : `${cuantos} Suele ser la ubicación: vuelve a Ubicar y marca los puntos de nuevo.`;
   }
   return '';
 }
@@ -730,7 +757,38 @@ export function esFalloPasajero(error) {
 
 // --- pasos ---------------------------------------------------------------------------
 
-export const PASOS = ['subir', 'marcar', 'digitalizar', 'numerar', 'ubicar', 'revisar', 'crear'];
+/**
+ * Los paneles de la pantalla, en orden. Leer el plano (`digitalizar`, el escáner) y Numerar
+ * no tienen pastilla: son parte de Marcar (ver `PASTILLAS` y `pastillaDe`).
+ */
+export const PASOS = ['subir', 'marcar', 'digitalizar', 'numerar', 'ubicar', 'revisar'];
+
+/** Las pastillas de la barra de pasos: Subir el plano · Marcar · Ubicar · Revisar y descargar. */
+export const PASTILLAS = ['subir', 'marcar', 'ubicar', 'revisar'];
+
+/** La pastilla que queda marcada con el panel `paso` abierto. */
+export function pastillaDe(paso) {
+  return ['digitalizar', 'numerar'].includes(paso) ? 'marcar' : PASTILLAS.includes(paso) ? paso : 'subir';
+}
+
+/**
+ * El panel que abre `#/kmz/<slug>/<nombre>`, o null si el nombre no es de un paso. Las
+ * rutas de cuando había siete pastillas llevan al paso que hoy las contiene: Leer el plano
+ * a Marcar (o al escáner si se está leyendo) y Crear el KMZ a Revisar y descargar.
+ */
+export function pasoDeRuta(nombre, e) {
+  const trabajando = Boolean(e?.trabajo && !e.trabajo.terminado);
+  switch (nombre) {
+    case 'subir': case 'marcar': case 'numerar': case 'ubicar': case 'revisar':
+      return nombre;
+    case 'digitalizar': case 'leer':
+      return trabajando ? 'digitalizar' : 'marcar';
+    case 'crear': case 'descargar':
+      return 'revisar';
+    default:
+      return null;
+  }
+}
 
 /** Qué pasos se pueden abrir con lo que ya hay en el servidor. */
 export function pasosHabilitados(e) {
@@ -743,8 +801,62 @@ export function pasosHabilitados(e) {
     numerar: digitalizado,
     ubicar: digitalizado,
     revisar: ubicado,
-    crear: ubicado,
   };
+}
+
+/**
+ * ¿Hace falta pasar por Numerar antes de ubicar? Sí si queda un lote sin número (rojo),
+ * falta en los lotes un hueco de la numeración (con los del cuadro, si calza), un número
+ * marcado no cayó en ningún lote, hay lecturas por confirmar, números repetidos o la
+ * pregunta del resto de la propiedad sin contestar. Las partes chicas sin número (caminos,
+ * áreas comunes) no: se dejan así. `e`: el estado del servidor; `rasgos`: los lotes en px.
+ */
+export function hayQueNumerar(e, rasgos) {
+  const d = e?.digitalizado;
+  if (!d) return false;
+  const lotes = rasgos ?? [];
+  if (sinNumero(lotes).some((r) => r.properties.de_lote)) return true;
+  if (sugerencias(lotes).length || duplicados(lotes).length) return true;
+  const resto = restoDe(lotes);
+  if (resto?.estado === 'pendiente') return true;
+  if ((d.faltantes ?? []).length || (d.lector?.sin_poligono ?? []).length) return true;
+  // Los que faltan son los huecos, lo mismo que dice Numerar (`mensajeNumerar`): ya traen
+  // los del cuadro cuando el cuadro calza con lo leído. Con `numeros_cuadro` crudo, un cuadro
+  // que no calza (mal leído, o de otra lámina) mandaba a Numerar a leer "Todos los lotes
+  // tienen número". El número del resto, si lo dejó fuera, no es un lote que falte.
+  const delResto = resto ? claveLote(resto.numero) : null;
+  return numerosQueFaltan(d.huecos, lotes).some((n) => claveLote(n) !== delResto);
+}
+
+/**
+ * A qué panel lleva "Seguir" desde `paso` (null si no hay otro: en Revisar y descargar se
+ * crea el KMZ). Después de leer el plano, a Numerar solo si hace falta (`hayQueNumerar`).
+ */
+export function pasoSiguiente(paso, e, rasgos) {
+  switch (paso) {
+    case 'subir': return 'marcar';
+    case 'marcar': case 'digitalizar': return hayQueNumerar(e, rasgos) ? 'numerar' : 'ubicar';
+    case 'numerar': return 'ubicar';
+    case 'ubicar': return 'revisar';
+    default: return null;
+  }
+}
+
+/**
+ * ¿La ubicación con un punto trae el punto del plano y su coordenada? Mientras se arma
+ * puede venir solo la coordenada; el servidor la ignora hasta que esté completa.
+ */
+export function ubicacionCompleta(u) {
+  return Boolean(u) && ['x', 'y', 'lon', 'lat'].every((k) => Number.isFinite(u[k]));
+}
+
+/**
+ * ¿Hay con qué ubicar? La cuadrícula elegida, 2 o más puntos, o la coordenada con su
+ * punto en el plano (lo mismo que prueba `georreferenciar` en el servidor).
+ */
+export function puedeUbicar(entradas) {
+  return Boolean(entradas?.cuadricula) || (entradas?.anclas?.length ?? 0) >= 2
+    || ubicacionCompleta(entradas?.ubicacion);
 }
 
 /**
@@ -781,17 +893,24 @@ export function porQueNoSigue(paso, e, local = {}) {
       if (trabajando || local.actualizando) return 'Actualizando los lotes…';
       // Al día gana sobre un fallo anterior: si después se leyó bien (en el paso 3), se sigue.
       if (d.vigente) return '';
-      return local.releerFallo ? 'No se pudieron actualizar los lotes: lee el plano de nuevo en el paso 3.'
+      return local.releerFallo ? 'No se pudieron actualizar los lotes: vuelve a Marcar y lee el plano de nuevo.'
         : 'Actualizando los lotes…';
     case 'ubicar': {
-      if (e?.georreferencia?.vigente) return '';
-      if (d && !d.vigente) return 'Cambiaste el plano: vuelve a Numerar para que se lea de nuevo.';
-      const anclas = local.entradas?.anclas?.length ?? 0;
-      if (anclas < 2 && !local.entradas?.cuadricula) return 'Marca al menos 2 puntos en el plano y en el mapa.';
+      // Mientras se ubica (o está por ubicarse tras girar o mover) lo ubicado ya no es lo que se ve.
+      if (e?.georreferencia?.vigente && !local.ubicando) return '';
+      if (d && !d.vigente) return 'Cambiaste el plano: abre "Revisar los números" para que se lea de nuevo.';
+      if (!puedeUbicar(local.entradas)) {
+        return 'Pega tu coordenada y haz clic en ese punto del plano, o marca 2 puntos en "Afinar con puntos".';
+      }
+      // Con solo la coordenada, el tamaño sale del cuadro de superficies o de la escala impresa.
+      const soloCoordenada = !local.entradas?.cuadricula && (local.entradas?.anclas?.length ?? 0) < 2;
+      if (soloCoordenada && d?.escala_m_px == null && !local.entradas?.ubicacion?.escala_impresa) {
+        return 'Para ubicar con tu coordenada falta la escala del plano (por ejemplo 1:5.000), o marca puntos.';
+      }
       return local.ubicando ? 'Ubicando el plano…' : 'Aprieta "Ubicar de nuevo" para ubicar los lotes.';
     }
     case 'revisar':
-      return local.duplicados ? 'Hay números repetidos: corrígelos en Numerar.' : '';
+      return local.duplicados ? 'Hay números repetidos: corrígelos en "Revisar los números".' : '';
     default:
       return '';
   }
@@ -802,16 +921,18 @@ export function pasoSugerido(e) {
   switch (e?.paso) {
     case 'subir': return 'subir';
     case 'marcar': return 'marcar';
-    case 'digitalizar': return e.digitalizado ? 'numerar' : 'digitalizar';
+    // Sin leer, el plano se lee con "Seguir" de Marcar; leído con algo que cambió, en
+    // Numerar se vuelve a leer solo.
+    case 'digitalizar': return e.digitalizado ? 'numerar' : 'marcar';
     // Las caras sin número pueden ser caminos: solo los números perdidos piden volver.
     case 'ubicar': return e.digitalizado?.faltantes?.length ? 'numerar' : 'ubicar';
     case 'crear': return 'revisar';
-    case 'listo': return 'crear';
+    case 'listo': return 'revisar';
     default: return 'subir';
   }
 }
 
-/** Qué pasos ya están hechos (para la marca ✓). */
+/** Qué pastillas ya están hechas (para la marca ✓). Marcar incluye leer el plano. */
 export function pasosHechos(e) {
   const hecho = (paso) => {
     const orden = ['subir', 'marcar', 'digitalizar', 'ubicar', 'crear', 'listo'];
@@ -819,12 +940,9 @@ export function pasosHechos(e) {
   };
   return {
     subir: hecho('subir'),
-    marcar: hecho('marcar'),
-    digitalizar: hecho('digitalizar'),
-    numerar: hecho('digitalizar') && !e?.digitalizado?.faltantes?.length,
+    marcar: hecho('digitalizar'),
     ubicar: hecho('ubicar'),
-    revisar: hecho('ubicar'),
-    crear: e?.paso === 'listo',
+    revisar: e?.paso === 'listo',
   };
 }
 
@@ -883,6 +1001,7 @@ export function filaDelPunto(r, g, vigente) {
  */
 export function resumenUbicacion(g, n = 0) {
   const p = g?.parametros ?? {};
+  if (g?.metodo === 'punto') return 'Ubicado con tu coordenada';
   const cuadricula = g?.metodo === 'cuadricula';
   const cuantos = p.n_anclas ?? n;
   const partes = [cuadricula ? 'Ubicado con la cuadrícula impresa'
@@ -899,4 +1018,288 @@ export function detalleUbicacion(g) {
   if (Number.isFinite(g.parametros?.rms_m)) partes.push(`error medio ${g.parametros.rms_m.toFixed(1)} m`);
   if (g.datum?.datum) partes.push(`datum ${g.datum.datum}`);
   return partes.join(' · ');
+}
+
+// --- ubicar con un punto: la vista previa -------------------------------------------
+//
+// Mientras ella gira el plano o lo arrastra, los lotes se mueven sobre el satélite sin
+// esperar al servidor: aquí se repite `por_punto` de `pipeline/plano/georreferencia.py`
+// (la misma similitud en UTM) y el paso UTM ↔ lon/lat. Una proyección equirectangular
+// alrededor del punto no alcanza: en Rapel el norte de la cuadrícula UTM está ~1,4°
+// girado respecto del norte verdadero (convergencia de meridianos, huso 19), y el giro
+// que ella eligiera mirando la vista previa saldría corrido eso mismo en el KMZ.
+
+// WGS84 y UTM (k0, falso este y falso norte del hemisferio sur).
+const SEMIEJE = 6378137;
+const APLANAMIENTO = 1 / 298.257223563;
+const K0 = 0.9996;
+const N_ = APLANAMIENTO / (2 - APLANAMIENTO);
+// Series de Krüger hasta n³ (error de milímetros dentro del huso): radio rectificador A
+// y los coeficientes α (directa), β (inversa) y δ (latitud conforme → geodésica).
+const RADIO_A = (SEMIEJE / (1 + N_)) * (1 + N_ ** 2 / 4 + N_ ** 4 / 64);
+const ALFA = [N_ / 2 - (2 * N_ ** 2) / 3 + (5 * N_ ** 3) / 16, (13 * N_ ** 2) / 48 - (3 * N_ ** 3) / 5, (61 * N_ ** 3) / 240];
+const BETA = [N_ / 2 - (2 * N_ ** 2) / 3 + (37 * N_ ** 3) / 96, N_ ** 2 / 48 + N_ ** 3 / 15, (17 * N_ ** 3) / 480];
+const DELTA = [2 * N_ - (2 * N_ ** 2) / 3 - 2 * N_ ** 3, (7 * N_ ** 2) / 3 - (8 * N_ ** 3) / 5, (56 * N_ ** 3) / 15];
+const RAD = Math.PI / 180;
+
+/** El EPSG del huso UTM WGS84 que contiene el punto (como `huso` del servidor). */
+export function husoDe(lon, lat) {
+  const zona = Math.min(60, Math.max(1, Math.floor((lon + 180) / 6) + 1));
+  return (lat < 0 ? 32700 : 32600) + zona;
+}
+
+function zonaUtm(epsg) {
+  if (epsg >= 32701 && epsg <= 32760) return { zona: epsg - 32700, sur: true };
+  if (epsg >= 32601 && epsg <= 32660) return { zona: epsg - 32600, sur: false };
+  throw new Error(`EPSG ${epsg} no es un UTM WGS84`);
+}
+
+/** lon/lat WGS84 → [E, N] en el UTM `epsg`. */
+export function lonLatAUtm(lon, lat, epsg) {
+  const { zona, sur } = zonaUtm(epsg);
+  const dl = (lon - (zona * 6 - 183)) * RAD;
+  const s = Math.sin(lat * RAD);
+  const c = (2 * Math.sqrt(N_)) / (1 + N_);
+  const t = Math.sinh(Math.atanh(s) - c * Math.atanh(c * s));
+  const xi = Math.atan2(t, Math.cos(dl));
+  const eta = Math.atanh(Math.sin(dl) / Math.sqrt(1 + t * t));
+  let e = eta;
+  let n = xi;
+  ALFA.forEach((a, i) => {
+    const j = 2 * (i + 1);
+    e += a * Math.cos(j * xi) * Math.sinh(j * eta);
+    n += a * Math.sin(j * xi) * Math.cosh(j * eta);
+  });
+  return [500000 + K0 * RADIO_A * e, (sur ? 10000000 : 0) + K0 * RADIO_A * n];
+}
+
+/** [E, N] en el UTM `epsg` → [lon, lat] WGS84. */
+export function utmALonLat(este, norte, epsg) {
+  const { zona, sur } = zonaUtm(epsg);
+  const xi = (norte - (sur ? 10000000 : 0)) / (K0 * RADIO_A);
+  const eta = (este - 500000) / (K0 * RADIO_A);
+  let xi1 = xi;
+  let eta1 = eta;
+  BETA.forEach((b, i) => {
+    const j = 2 * (i + 1);
+    xi1 -= b * Math.sin(j * xi) * Math.cosh(j * eta);
+    eta1 -= b * Math.cos(j * xi) * Math.sinh(j * eta);
+  });
+  const chi = Math.asin(Math.sin(xi1) / Math.cosh(eta1));
+  let lat = chi;
+  DELTA.forEach((d, i) => { lat += d * Math.sin(2 * (i + 1) * chi); });
+  const lon = (zona * 6 - 183) * RAD + Math.atan2(Math.sinh(eta1), Math.cos(xi1));
+  return [lon / RAD, lat / RAD];
+}
+
+/** (x, y) por la homografía 3×3 `h` (null: la identidad). */
+export function aplicarHomografia(h, x, y) {
+  if (!h) return [x, y];
+  const w = h[2][0] * x + h[2][1] * y + h[2][2];
+  return [(h[0][0] * x + h[0][1] * y + h[0][2]) / w, (h[1][0] * x + h[1][1] * y + h[1][2]) / w];
+}
+
+const multiplicar = (a, b) => a.map((fila) => b[0].map((_, j) => fila.reduce((s, v, k) => s + v * b[k][j], 0)));
+
+/**
+ * La similitud de `por_punto`: {epsg, matriz} con matriz 3×3 de px de página a (E, N, 1)
+ * en el UTM del punto. `escalaMPx` es m por px de trabajo y `homografia`, página →
+ * trabajo. El giro es horario (lo que ella gira el plano en pantalla para dejar el norte
+ * arriba), por eso la rotación de la similitud es −giro. null si falta algo.
+ */
+export function similitudPorPunto(u, escalaMPx, homografia = null) {
+  if (!ubicacionCompleta(u) || !(Number.isFinite(escalaMPx) && escalaMPx > 0)) return null;
+  const epsg = husoDe(u.lon, u.lat);
+  const [xt, yt] = aplicarHomografia(homografia, u.x, u.y);
+  const [e, n] = lonLatAUtm(u.lon, u.lat, epsg);
+  const rotacion = -(u.giro ?? 0) * RAD;
+  // w = a·z + b con z = x − i·y (y del plano hacia abajo, N hacia arriba).
+  const ar = escalaMPx * Math.cos(rotacion);
+  const ai = escalaMPx * Math.sin(rotacion);
+  const br = e - (ar * xt + ai * yt);
+  const bi = n - (ai * xt - ar * yt);
+  const s = [[ar, ai, br], [ai, -ar, bi], [0, 0, 1]];
+  return { epsg, matriz: homografia ? multiplicar(s, homografia) : s };
+}
+
+/**
+ * La similitud de `por_anclas` (mínimos cuadrados con 2 o más puntos): {epsg, matriz} como
+ * `similitudPorPunto`, para ver los lotes desde el segundo punto sin esperar al servidor.
+ * `homografia` (página → trabajo) solo si el plano es una foto rectificada (modo
+ * perspectiva), igual que `georreferenciar`: en un recorte es una escala y una traslación
+ * que la similitud absorbe. null con menos de 2 puntos o con todos en el mismo lugar.
+ *
+ * Con `escalaMPx` (m por px de trabajo: la del cuadro de superficies) es "Ajustar el tamaño
+ * con el cuadro", como `por_anclas(..., escala_m_px=...)`: el mismo giro, ese tamaño y el
+ * centroide de los puntos en el mismo lugar del mapa. `homografiaTrabajo` (página →
+ * trabajo, la del estado) pasa esa escala a px de página cuando los puntos se ajustan ahí.
+ */
+export function similitudPorAnclas(anclas, homografia = null, { escalaMPx = null, homografiaTrabajo = null } = {}) {
+  const validas = (anclas ?? []).filter((a) => ['x', 'y', 'lon', 'lat'].every((k) => Number.isFinite(a?.[k])));
+  if (validas.length < 2) return null;
+  const media = (v) => v.reduce((s, x) => s + x, 0) / v.length;
+  const epsg = husoDe(media(validas.map((a) => a.lon)), media(validas.map((a) => a.lat)));
+  // y del plano hacia abajo y N hacia arriba: con y negada la similitud no refleja.
+  const z = validas.map((a) => { const [x, y] = aplicarHomografia(homografia, a.x, a.y); return [x, -y]; });
+  const w = validas.map((a) => lonLatAUtm(a.lon, a.lat, epsg));
+  const [zr, zi] = [media(z.map((p) => p[0])), media(z.map((p) => p[1]))];
+  const [wr, wi] = [media(w.map((p) => p[0])), media(w.map((p) => p[1]))];
+  // a = Σ conj(z − z̄)·(w − w̄) / Σ |z − z̄|², b = w̄ − a·z̄ (como `_similitud`).
+  let ar = 0;
+  let ai = 0;
+  let norma = 0;
+  z.forEach(([x, y], i) => {
+    const [dx, dy] = [x - zr, y - zi];
+    const [ex, ey] = [w[i][0] - wr, w[i][1] - wi];
+    ar += dx * ex + dy * ey;
+    ai += dx * ey - dy * ex;
+    norma += dx * dx + dy * dy;
+  });
+  if (norma < 1e-18) return null;
+  ar /= norma;
+  ai /= norma;
+  if (Number.isFinite(escalaMPx) && escalaMPx > 0) {
+    // b = w̄ − a·z̄ (abajo) deja el centroide donde estaba con cualquier |a|.
+    const k = escalaEnElAjuste(escalaMPx, homografiaTrabajo, Boolean(homografia)) / Math.hypot(ar, ai);
+    ar *= k;
+    ai *= k;
+  }
+  const br = wr - (ar * zr - ai * zi);
+  const bi = wi - (ar * zi + ai * zr);
+  // z = x − i·y: E = ar·x + ai·y + br, N = ai·x − ar·y + bi.
+  const s = [[ar, ai, br], [ai, -ar, bi], [0, 0, 1]];
+  return { epsg, matriz: homografia ? multiplicar(s, homografia) : s };
+}
+
+/**
+ * m por px de trabajo → m por px del plano donde se ajustan los puntos (`escala_en_el_ajuste`
+ * del servidor): el mismo con la foto rectificada; en un recorte, un px de página son
+ * sqrt(|det|) px de trabajo.
+ */
+export function escalaEnElAjuste(escalaTrabajo, homografiaTrabajo, enTrabajo) {
+  const h = homografiaTrabajo;
+  if (enTrabajo || !h) return escalaTrabajo;
+  return escalaTrabajo * Math.sqrt(Math.abs(h[0][0] * h[1][1] - h[0][1] * h[1][0])) / Math.abs(h[2][2]);
+}
+
+/**
+ * ¿Se ubica con el tamaño del cuadro? Lo pidió ("Ajustar el tamaño con el cuadro") y
+ * ubica con 2 o más puntos: con la cuadrícula o la coordenada el servidor no lo usa.
+ */
+export function ajustaConElCuadro(entradas) {
+  return Boolean(entradas?.escala_cuadro) && !entradas?.cuadricula && (entradas?.anclas?.length ?? 0) >= 2;
+}
+
+/**
+ * ¿Se ofrece "Ajustar el tamaño con el cuadro"? Si ubicó con puntos, los lotes salen parejo
+ * más chicos o más grandes (`sesgo`, de `sesgoDeEscala` o del semáforo) y aún no lo ajustó.
+ */
+export function ofrecerAjusteDelCuadro(entradas, sesgo) {
+  return sesgo != null && !entradas?.escala_cuadro && !entradas?.cuadricula && (entradas?.anclas?.length ?? 0) >= 2;
+}
+
+/** px de página → [lon, lat] con la similitud `t` y el ajuste fino (metros E, N). */
+export function paginaALonLat(t, x, y, ajuste = null) {
+  const [e, n] = aplicarHomografia(t.matriz, x, y);
+  return utmALonLat(e + (ajuste?.de ?? 0), n + (ajuste?.dn ?? 0), t.epsg);
+}
+
+/**
+ * La escala (m por px de trabajo) con que se ubica con un punto: la del cuadro de
+ * superficies o, sin cuadro, la impresa (1:N son N/1000/ppmm m por px). null si no hay.
+ */
+export function escalaDeUbicacion(digitalizado, ubicacion) {
+  if (Number.isFinite(digitalizado?.escala_m_px) && digitalizado.escala_m_px > 0) return digitalizado.escala_m_px;
+  const n = ubicacion?.escala_impresa;
+  const ppmm = digitalizado?.ppmm;
+  return n && ppmm ? n / 1000 / ppmm : null;
+}
+
+/**
+ * ¿"Afinar con puntos" se abre sola? Cuando ya hay puntos (o un punto a medias o por
+ * rehacer) o la cuadrícula elegida, que también vive ahí: si no, lo que manda quedaría
+ * escondido.
+ */
+export function afinarAbierta(entradas, { pendiente = null, rehacer = null } = {}) {
+  return (entradas?.anclas?.length ?? 0) > 0 || Boolean(entradas?.cuadricula) || Boolean(pendiente || rehacer);
+}
+
+/**
+ * La línea de estado de "Afinar con puntos": qué toca ahora y quién manda. `coordenada`
+ * dice si ella ya ubicó con su coordenada (con 2 puntos dejan de mandar su coordenada y
+ * el giro: hay que decírselo).
+ */
+export function textoPuntos({ n = 0, pendiente = null, rehacer = null, coordenada = false, cuadricula = false } = {}) {
+  if (pendiente) {
+    return `Punto ${pendiente} marcado en el plano. Ahora haz clic en el mismo punto del mapa, `
+      + `o pega sus coordenadas arriba y aprieta "Usar como punto ${pendiente}" (Esc cancela).`;
+  }
+  if (rehacer) return `Marca de nuevo el punto ${rehacer}: primero en el plano, después en el mapa.`;
+  const como = 'Haz clic en un punto del plano (acerca bien) y después en el mismo punto del mapa.';
+  if (cuadricula) {
+    return n ? `${n} ${n === 1 ? 'punto' : 'puntos'} para comprobar la cuadrícula. ${como}`
+      : `Puedes marcar puntos para comprobar que la cuadrícula calza. ${como}`;
+  }
+  const mandan = coordenada ? 'Con 2 o más puntos, ellos mandan sobre tu coordenada.' : 'Con 2 puntos ya se ubica el plano.';
+  if (n === 0) return `${como} ${mandan}`;
+  if (n === 1) return `1 punto. Marca otro: ${mandan.charAt(0).toLowerCase()}${mandan.slice(1)}`;
+  const control = n < 4 ? ' Con 4 se nota si alguno quedó mal marcado.' : '';
+  return `${n} puntos.${coordenada ? ' Con 2 o más puntos, ellos mandan sobre tu coordenada.' : ''}${control}`;
+}
+
+/** ¿El servidor ubica con la coordenada? Sin cuadrícula elegida y sin 2 puntos que manden. */
+export function usaUbicacion(entradas) {
+  return !entradas?.cuadricula && (entradas?.anclas?.length ?? 0) < 2 && ubicacionCompleta(entradas?.ubicacion);
+}
+
+/**
+ * Los lotes en px de página (`lotes?en=px`) llevados a lon/lat con la similitud: el mismo
+ * GeoJSON que daría el servidor, para dibujarlo al tiro sobre el satélite.
+ */
+export function lotesEnElMapa(rasgos, t, ajuste = null) {
+  return {
+    type: 'FeatureCollection',
+    features: rasgos.map((r) => ({
+      type: 'Feature',
+      properties: r.properties,
+      geometry: {
+        type: 'Polygon',
+        coordinates: r.geometry.coordinates.map((anillo) => anillo.map(([x, y]) => paginaALonLat(t, x, y, ajuste))),
+      },
+    })),
+  };
+}
+
+// La escala impresa razonable, la misma de `digitalizar._ubicacion` en el servidor.
+export const ESCALA_IMPRESA_MIN = 100;
+export const ESCALA_IMPRESA_MAX = 1000000;
+
+/**
+ * "5.000", "5000", "1:5.000" o "1 : 5 000" → 5000; vacío → null; lo que no es una escala
+ * → NaN (para decir que está mal). El punto es separador de miles, como se escribe aquí.
+ */
+export function leerEscala(texto) {
+  const limpio = String(texto ?? '').replace(/\s/g, '').replace(/^1:/, '');
+  if (!limpio) return null;
+  if (!/^\d{1,3}(\.\d{3})*$|^\d+$/.test(limpio)) return Number.NaN;
+  const n = Number(limpio.replace(/\./g, ''));
+  return n >= ESCALA_IMPRESA_MIN && n <= ESCALA_IMPRESA_MAX ? n : Number.NaN;
+}
+
+/**
+ * El lienzo del plano girado `grados` (horario) en torno a (cx, cy): pantalla sin girar →
+ * pantalla girada. Con −grados se deshace (para llevar un clic a la página).
+ */
+export function girarEnPantalla(sx, sy, grados, cx, cy) {
+  if (!grados) return [sx, sy];
+  const r = grados * RAD;
+  const [dx, dy] = [sx - cx, sy - cy];
+  return [cx + dx * Math.cos(r) - dy * Math.sin(r), cy + dx * Math.sin(r) + dy * Math.cos(r)];
+}
+
+/** La caja [ancho, alto] que ocupa una página ancho×alto girada `grados`. */
+export function cajaGirada(ancho, alto, grados) {
+  const r = grados * RAD;
+  const [c, s] = [Math.abs(Math.cos(r)), Math.abs(Math.sin(r))];
+  return [ancho * c + alto * s, ancho * s + alto * c];
 }

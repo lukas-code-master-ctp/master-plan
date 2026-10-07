@@ -345,14 +345,13 @@
     </header>
 
     <nav aria-label="Pasos de Crea tu KMZ">
+      <!-- Cuatro pastillas: Leer el plano y Numerar son parte de Marcar (`pastillaDe` en
+           kmz_geometria.js). En el teléfono se ve solo la primera palabra, en una fila. -->
       <ol id="kmz-pasos" class="pasos">
-        <li><button type="button" data-paso="subir"><b>1</b>Subir el plano</button></li>
+        <li><button type="button" data-paso="subir"><b>1</b><span>Subir<span class="pasos__resto"> el plano</span></span></button></li>
         <li><button type="button" data-paso="marcar"><b>2</b>Marcar</button></li>
-        <li><button type="button" data-paso="digitalizar"><b>3</b>Leer el plano</button></li>
-        <li><button type="button" data-paso="numerar"><b>4</b>Numerar</button></li>
-        <li><button type="button" data-paso="ubicar"><b>5</b>Ubicar</button></li>
-        <li><button type="button" data-paso="revisar"><b>6</b>Revisar</button></li>
-        <li><button type="button" data-paso="crear"><b>7</b>Crear el KMZ</button></li>
+        <li><button type="button" data-paso="ubicar"><b>3</b>Ubicar</button></li>
+        <li><button type="button" data-paso="revisar"><b>4</b><span>Revisar<span class="pasos__resto"> y descargar</span></span></button></li>
       </ol>
     </nav>
 
@@ -430,7 +429,7 @@
         </div>
       </div>
 
-      <!-- 3. Leer el plano -->
+      <!-- 2b. Leer el plano: lo abre "Seguir" de Marcar, con el escáner corriendo -->
       <div class="kmz-panel" id="kmz-panel-digitalizar" data-panel="digitalizar" hidden>
         <h2 tabindex="-1">Lee el plano</h2>
         <p class="ayuda">Se busca la tinta de los deslindes, se arma la red de lotes y se leen los
@@ -529,14 +528,15 @@
         </section>
         <dl id="kmz-cifras" class="kmz-cifras" hidden></dl>
         <div class="kmz-panel__pie">
-          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-digitalizar">Seguir: numerar</button>
+          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-digitalizar">Seguir</button>
           <p id="kmz-por-que-digitalizar" class="kmz-por-que nota" role="status" hidden></p>
         </div>
       </div>
 
-      <!-- 4. Numerar -->
+      <!-- 2c. Numerar: después de leer, solo si hace falta (`hayQueNumerar`); siempre se
+           abre con "Revisar los números" desde Ubicar y Revisar -->
       <div class="kmz-panel" id="kmz-panel-numerar" data-panel="numerar" hidden>
-        <h2 tabindex="-1">Revisa los números</h2>
+        <h2 tabindex="-1">Antes de ubicar: revisa los números</h2>
         <p class="ayuda">Haz clic en un lote para escribir o corregir su número. En
           <span class="kmz-muestra kmz-muestra--usuario">verde</span> los que marcaste tú, en
           <span class="kmz-muestra kmz-muestra--lector">azul</span> los leídos del plano (más claros
@@ -573,38 +573,90 @@
         </div>
       </div>
 
-      <!-- 5. Ubicar -->
+      <!-- 3. Ubicar -->
       <div class="kmz-panel" id="kmz-panel-ubicar" data-panel="ubicar" hidden>
         <h2 tabindex="-1">Ubica el plano en el mapa</h2>
-        <p class="kmz-nota-fuerte">Marca 4 puntos: esquinas del predio o cruces de caminos, lo más
-          separados posible.</p>
-        <p class="ayuda">Haz clic en un punto del plano (acerca bien) y después en el mismo punto
-          del mapa. Con 3 o más, un punto mal marcado se nota.</p>
-        <p id="kmz-ancla-estado" class="kmz-estado" role="status" aria-live="polite"></p>
-        <button class="boton boton--texto boton--chico" data-accion="kmz-cancelar-ancla" type="button" hidden>Cancelar este punto (Esc)</button>
-        <div class="fila fila--envuelve">
-          <input id="kmz-ir-a" type="text" placeholder="-34.98, -71.24 o 34°10'37.5&quot;S 71°32'53.9&quot;W"
-                 autocomplete="off" spellcheck="false" aria-label="Ir a una latitud y longitud en el mapa"
-                 aria-describedby="kmz-ir-a-ayuda">
-          <button class="boton boton--contorno" data-accion="kmz-ir" type="button">Ir</button>
-          <button class="boton" data-accion="kmz-usar-coordenadas" type="button" hidden>Usar como punto A</button>
+        <p class="ayuda">Con la coordenada de un punto del plano (una esquina del predio, por
+          ejemplo) basta: el tamaño sale del cuadro de superficies.</p>
+        <button class="boton boton--texto boton--chico kmz-a-numerar" data-paso="numerar" type="button">Revisar los números</button>
+        <ol class="kmz-guia">
+          <li id="kmz-guia-coordenada">
+            <strong>1. Pega la coordenada que tienes</strong>
+            <div class="fila fila--envuelve">
+              <input id="kmz-ir-a" type="text" placeholder="-34.98, -71.24 o 34°10'37.5&quot;S 71°32'53.9&quot;W"
+                     autocomplete="off" spellcheck="false" aria-label="Tu coordenada (latitud y longitud)"
+                     aria-describedby="kmz-ir-a-ayuda">
+              <button class="boton boton--contorno" data-accion="kmz-ir" type="button">Ir</button>
+              <button class="boton" data-accion="kmz-usar-coordenadas" type="button" hidden>Usar como punto A</button>
+            </div>
+            <p id="kmz-ir-a-ayuda" class="nota">Decimales (-34.98, -71.24) o grados, minutos y segundos
+              como los copia Google Earth (34°10'37.5"S 71°32'53.9"W). Al apretar Ir queda un
+              alfiler en el mapa.</p>
+            <p id="kmz-coordenada-estado" class="nota kmz-guia__hecho" hidden></p>
+          </li>
+          <li id="kmz-guia-punto">
+            <strong>2. Haz clic en el plano en el punto de esa coordenada</strong>
+            <p id="kmz-punto-estado" class="nota" role="status" aria-live="polite"></p>
+            <button class="boton boton--contorno boton--chico" data-accion="kmz-marcar-punto" type="button" aria-pressed="false">Marcar el punto en el plano</button>
+          </li>
+          <li id="kmz-guia-giro">
+            <strong>3. Gira hasta que los lotes calcen con los caminos</strong>
+            <div class="kmz-giro" role="group" aria-labelledby="kmz-giro-etiqueta">
+              <label id="kmz-giro-etiqueta" for="kmz-giro">Girar el plano</label>
+              <div class="kmz-giro__fila">
+                <button class="boton boton--contorno boton--chico" data-giro="-15" type="button" aria-label="Girar 15° contra el reloj">↺ 15°</button>
+                <button class="boton boton--contorno boton--chico" data-giro="-1" type="button" aria-label="Girar 1° contra el reloj">↺ 1°</button>
+                <input id="kmz-giro" type="range" min="-180" max="180" step="0.1" value="0" aria-describedby="kmz-giro-valor">
+                <button class="boton boton--contorno boton--chico" data-giro="1" type="button" aria-label="Girar 1° como el reloj">↻ 1°</button>
+                <button class="boton boton--contorno boton--chico" data-giro="15" type="button" aria-label="Girar 15° como el reloj">↻ 15°</button>
+              </div>
+              <output id="kmz-giro-valor" for="kmz-giro" class="nota">0°</output>
+            </div>
+            <p class="nota">Para correrlos, aprieta "Arrastrar los lotes" y muévelos en el mapa.</p>
+            <button class="boton boton--contorno boton--chico" data-accion="kmz-arrastrar" type="button" aria-pressed="false">Arrastrar los lotes</button>
+          </li>
+        </ol>
+        <div id="kmz-escala" class="kmz-escala" hidden>
+          <label class="kmz-escala__campo" for="kmz-escala-impresa">¿Qué escala dice el plano? <span aria-hidden="true">1:</span>
+            <input id="kmz-escala-impresa" type="text" inputmode="numeric" autocomplete="off" placeholder="5.000"
+                   aria-describedby="kmz-escala-ayuda">
+          </label>
+          <p id="kmz-escala-ayuda" class="nota">El plano no trae cuadro de superficies, así que el tamaño sale
+            de su escala. Si no la sabes, abre "Afinar con puntos" abajo.</p>
         </div>
-        <p id="kmz-ir-a-ayuda" class="nota">Ir a: decimales (-34.98, -71.24) o grados, minutos y
-          segundos como los copia Google Earth (34°10'37.5"S 71°32'53.9"W).</p>
-        <div id="kmz-cuadricula" class="kmz-cuadricula" hidden>
-          <p id="kmz-cuadricula-texto" class="nota"></p>
-          <button class="boton boton--contorno boton--chico" data-accion="kmz-usar-cuadricula" type="button">Usar la cuadrícula impresa</button>
-          <button class="boton boton--texto boton--chico" data-accion="kmz-quitar-cuadricula" type="button">Dejar de usarla</button>
-        </div>
-        <table id="kmz-anclas" class="kmz-tabla" hidden>
-          <caption class="nota">Distancia: cuánto se aleja cada punto de donde lo dejan los demás.</caption>
-          <thead><tr><th scope="col">Punto</th><th scope="col">Distancia</th><th scope="col">Estado</th><th scope="col"><span class="oculto">Acciones</span></th></tr></thead>
-          <tbody></tbody>
-        </table>
+        <p id="kmz-guia-nota" class="kmz-nota-fuerte" hidden></p>
         <div id="kmz-ubicacion" class="kmz-ubicacion" hidden>
           <p id="kmz-ubicacion-texto"></p>
+          <p class="kmz-ajustado nota" hidden>Tamaño ajustado con el cuadro ·
+            <button class="boton boton--texto boton--chico" data-accion="kmz-deshacer-cuadro" type="button">Deshacer el ajuste</button></p>
           <ul id="kmz-avisos" class="kmz-avisos"></ul>
         </div>
+        <p id="kmz-pista" class="nota" role="status" hidden></p>
+        <!-- Abrirla es pedir que un clic en el plano marque un punto (`afinando` en kmz.js);
+             plegarla lo apaga. La línea del summary dice para qué sirve aunque esté plegada. -->
+        <details id="kmz-afinar" class="kmz-afinar">
+          <summary>
+            <span class="kmz-afinar__titulo">Afinar con puntos</span>
+            <span class="kmz-afinar__para">Si los lotes no calzan girando, marca puntos que veas igual en el plano
+              y en el mapa: esquinas de deslinde, cruces de caminos.</span>
+            <span id="kmz-afinar-cuadricula" class="kmz-afinar__para" hidden>Tu plano trae una cuadrícula con
+              coordenadas impresas: también está aquí.</span>
+          </summary>
+          <div class="kmz-afinar__cuerpo">
+            <p id="kmz-ancla-estado" class="kmz-estado" role="status" aria-live="polite"></p>
+            <button class="boton boton--texto boton--chico" data-accion="kmz-cancelar-ancla" type="button" hidden>Cancelar este punto (Esc)</button>
+            <div id="kmz-cuadricula" class="kmz-cuadricula" hidden>
+              <p id="kmz-cuadricula-texto" class="nota"></p>
+              <button class="boton boton--contorno boton--chico" data-accion="kmz-usar-cuadricula" type="button">Usar la cuadrícula impresa</button>
+              <button class="boton boton--texto boton--chico" data-accion="kmz-quitar-cuadricula" type="button">Dejar de usarla</button>
+            </div>
+            <table id="kmz-anclas" class="kmz-tabla" hidden>
+              <caption class="nota">Distancia: cuánto se aleja cada punto de donde lo dejan los demás.</caption>
+              <thead><tr><th scope="col">Punto</th><th scope="col">Distancia</th><th scope="col">Estado</th><th scope="col"><span class="oculto">Acciones</span></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
         <fieldset id="kmz-ajuste-fino" class="kmz-ajuste">
           <legend>Ajuste fino</legend>
           <p class="nota">Mueve los lotes para que los caminos calcen con la imagen.</p>
@@ -619,22 +671,44 @@
           </label>
           <p id="kmz-ajuste" class="nota"></p>
           <div class="fila fila--envuelve">
-            <button class="boton boton--contorno boton--chico" data-accion="kmz-arrastrar" type="button" aria-pressed="false">Arrastrar los lotes en el mapa</button>
             <button class="boton boton--texto boton--chico" data-accion="kmz-ajuste-cero" type="button">Volver a cero</button>
           </div>
         </fieldset>
         <div class="kmz-panel__pie">
           <button class="boton boton--contorno" data-accion="kmz-georreferenciar" type="button">Ubicar de nuevo</button>
-          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-ubicar">Seguir: revisar</button>
+          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-ubicar">Seguir: revisar y descargar</button>
           <p id="kmz-por-que-ubicar" class="kmz-por-que nota" role="status" hidden></p>
         </div>
       </div>
 
-      <!-- 6. Revisar -->
+      <!-- 4. Revisar y descargar: el semáforo, el resumen, corregir vértices y crear el KMZ -->
       <div class="kmz-panel" id="kmz-panel-revisar" data-panel="revisar" hidden>
-        <h2 tabindex="-1">Revisa los lotes</h2>
+        <h2 tabindex="-1">Revisa y descarga el KMZ</h2>
         <p class="ayuda">Cada lote se colorea por su área contra el cuadro de superficies del
           plano. Toca un lote para ver sus números.</p>
+        <button class="boton boton--texto boton--chico kmz-a-numerar" data-paso="numerar" type="button">Revisar los números</button>
+        <!-- El semáforo: cuántos lotes calzan con el cuadro de superficies. Solo el texto es
+             región viva: los botones aparecen y desaparecen sin que se anuncien aparte. Con
+             puntos y los lotes parejo más chicos o más grandes, "Ajustar el tamaño con el
+             cuadro" (`entradas.escala_cuadro`): el tamaño del cuadro con la posición y el giro
+             de los puntos. -->
+        <div id="kmz-semaforo" class="kmz-semaforo" hidden>
+          <p id="kmz-semaforo-texto" role="status" aria-atomic="true"></p>
+          <div id="kmz-semaforo-acciones" class="fila fila--envuelve" hidden>
+            <button class="boton boton--contorno boton--chico" data-accion="kmz-ajustar-cuadro" type="button" hidden>Ajustar el tamaño con el cuadro</button>
+            <button class="boton boton--contorno boton--chico" data-accion="kmz-volver-ubicar" type="button" hidden>Volver a Ubicar</button>
+          </div>
+        </div>
+        <p class="kmz-ajustado nota" hidden>Tamaño ajustado con el cuadro ·
+          <button class="boton boton--texto boton--chico" data-accion="kmz-deshacer-cuadro" type="button">Deshacer el ajuste</button></p>
+        <div id="kmz-listo" class="kmz-listo" role="status" hidden>
+          <p id="kmz-listo-texto"></p>
+          <p class="nota">Descárgalo para Google Earth o tu topógrafo, o úsalo en un master para
+            construir el visor.</p>
+          <div class="fila fila--envuelve">
+            <button class="boton boton--contorno" data-accion="kmz-usar" type="button">Usar en un master</button>
+          </div>
+        </div>
         <dl id="kmz-revision" class="kmz-cifras"></dl>
         <p id="kmz-revision-nota" class="nota"></p>
         <div class="kmz-corregir">
@@ -647,31 +721,13 @@
             leer el plano, estas correcciones se pierden.</p>
           <p id="kmz-corregir-lejos" class="nota" hidden>Acércate al mapa para ver los vértices.</p>
         </div>
+        <p id="kmz-crear-texto" class="nota"></p>
+        <!-- Crear (y Descargar, si ya hay un KMZ) van en el pie, donde los otros pasos tienen
+             "Seguir": es lo que sigue aquí, y queda a la vista aunque el panel sea largo. -->
         <div class="kmz-panel__pie">
-          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-revisar">Seguir: crear el KMZ</button>
+          <button class="boton" data-accion="kmz-crear" type="button" aria-describedby="kmz-semaforo-texto kmz-por-que-revisar">Crear el KMZ</button>
+          <a id="kmz-descargar" class="boton" href="#/kmz" download hidden>Descargar</a>
           <p id="kmz-por-que-revisar" class="kmz-por-que nota" role="status" hidden></p>
-        </div>
-      </div>
-
-      <!-- 7. Crear -->
-      <div class="kmz-panel" id="kmz-panel-crear" data-panel="crear" hidden>
-        <h2 tabindex="-1">Crea el KMZ</h2>
-        <p id="kmz-crear-texto" class="ayuda"></p>
-        <!-- El semáforo: cuántos lotes calzan con el cuadro de superficies. Solo el texto es
-             región viva: el botón aparece y desaparece sin que se anuncie aparte. -->
-        <div id="kmz-semaforo" class="kmz-semaforo" hidden>
-          <p id="kmz-semaforo-texto" role="status" aria-atomic="true"></p>
-          <button class="boton boton--contorno boton--chico" data-accion="kmz-volver-ubicar" type="button" hidden>Volver a Ubicar</button>
-        </div>
-        <button class="boton boton--grande" data-accion="kmz-crear" type="button" aria-describedby="kmz-semaforo-texto">Crear el KMZ</button>
-        <div id="kmz-listo" class="kmz-listo" role="status" hidden>
-          <p id="kmz-listo-texto"></p>
-          <p class="nota">Descárgalo para Google Earth o tu topógrafo, o úsalo en un master para
-            construir el visor.</p>
-          <div class="fila fila--envuelve">
-            <a id="kmz-descargar" class="boton" href="#/kmz" download>Descargar</a>
-            <button class="boton boton--contorno" data-accion="kmz-usar" type="button">Usar en un master</button>
-          </div>
         </div>
       </div>
 
@@ -711,6 +767,14 @@
         </div>
         <div id="kmz-mapa-caja" class="kmz-mapa" hidden>
           <div id="kmz-mapa" aria-label="Mapa satelital"></div>
+          <!-- En pantalla angosta el giro del panel queda lejos del mapa: este se ve sobre los lotes. -->
+          <div id="kmz-giro-mapa" class="kmz-giro-mapa" role="group" aria-label="Girar el plano" hidden>
+            <button class="boton boton--contorno boton--chico" data-giro="-15" type="button" aria-label="Girar 15° contra el reloj">↺ 15°</button>
+            <button class="boton boton--contorno boton--chico" data-giro="-1" type="button" aria-label="Girar 1° contra el reloj">↺ 1°</button>
+            <output id="kmz-giro-mapa-valor" aria-live="polite">0°</output>
+            <button class="boton boton--contorno boton--chico" data-giro="1" type="button" aria-label="Girar 1° como el reloj">↻ 1°</button>
+            <button class="boton boton--contorno boton--chico" data-giro="15" type="button" aria-label="Girar 15° como el reloj">↻ 15°</button>
+          </div>
         </div>
       </div>
     </div>
@@ -942,7 +1006,7 @@
 <!-- Mis KMZ: crear el KMZ aunque queden lotes sin número -->
 <dialog id="kmz-sin-numero-dialogo" class="modal">
   <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
-  <h2>Quedan lotes sin número</h2>
+  <h2 id="kmz-sin-numero-titulo">Quedan lotes sin número</h2>
   <p class="ayuda" id="kmz-sin-numero-texto"></p>
   <div class="modal__pie">
     <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>

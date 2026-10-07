@@ -2,7 +2,7 @@
  * La app de Tu Masterplan: la barra, el router y el arranque.
  *
  * Las pantallas viven en la misma página y se cambian con el hash de la URL
- * (`#/planos`, `#/planos/nuevo`, `#/planos/<slug>`, `#/kmz`, `#/kmz/<slug>`,
+ * (`#/planos`, `#/planos/nuevo`, `#/planos/<slug>`, `#/kmz`, `#/kmz/<slug>[/<paso>]`,
  * `#/disenos`, `#/reservas`). Así el botón
  * atrás funciona, un enlace a un loteo se puede mandar, y no hace falta que el
  * servidor conozca más rutas que la de la página.
@@ -49,7 +49,7 @@ function mostrar() {
     window.scrollTo(0, 0);
   }
   if (destino.pantalla === 'kmz') {
-    pintarKmz(destino.slug, { nuevo: llegando });
+    pintarKmz(destino.slug, { nuevo: llegando, paso: destino.paso });
     return;
   }
   if (destino.pantalla === 'plano') {

@@ -564,3 +564,91 @@ def test_el_borde_compartido_con_el_resto_de_la_propiedad_no_se_toca():
     assert n == 0
     for numero in caras:
         assert salida[numero].equals_exact(caras[numero], 1e-9), numero
+
+
+def test_una_esquina_junto_a_un_tramo_corto_no_se_corta_en_diagonal(monkeypatch):
+    """Caminos de Rapel, 8-09: la grieta de su lado poniente se dobla un poco a 4,8 mm de
+    la esquina norponiente (el codo redondeado de la línea) y Douglas-Peucker lo parte
+    ahí. El tramo corto se une al lado norte para llevar la esquina al cruce de los dos
+    lados, pero el vértice quedaba en la otra punta del tramo: el lado norte bajaba en
+    diagonal hasta el doblez y el lote perdía un cuarto de su área. Que pasara dependía
+    de dónde se encerrara el dibujo (la fase de píxel de la grieta)."""
+    from skimage.draw import polygon as rellenar
+
+    L = particion.LOTE0
+    ws = np.ones((460, 680), np.int32)        # 1: el exterior
+    caras = {L: [(488, 308), (356, 316), (352, 318), (345, 344), (340, 369), (475, 362)],      # 8-09
+             L + 1: [(488, 308), (600, 300), (588, 356), (475, 362)],                          # 8-16
+             L + 2: [(340, 369), (475, 362), (462, 420), (327, 426)]}                          # 8-08
+    for etiqueta, puntos in caras.items():
+        x, y = np.array(puntos, float).T
+        ws[rellenar(y, x, ws.shape)] = etiqueta
+    p = particion.Particion(ws, {L: "8-09", L + 1: "8-16", L + 2: "8-08"})
+    verdad = Polygon([(488, 308), (351.5, 316.5), (340, 369), (475, 362)])
+
+    red = particion.red_de_deslindes(p, PPMM)
+    lote = red.lotes["8-09"]
+    assert abs(lote.area / verdad.area - 1) < 0.02
+    assert lote.hausdorff_distance(verdad) < 2.5
+    assert min(Point(v).distance(Point(351.5, 316.5)) for v in lote.exterior.coords) < 2.5
+
+    # Lo que pasaba antes: sin fijar el cruce, la esquina se cortaba.
+    original = particion._enderezar
+
+    def sin_fijar(*a, **kw):
+        segs, fijos = original(*a, **kw)
+        return segs, {}
+    monkeypatch.setattr(particion, "_enderezar", sin_fijar)
+    antes = particion.red_de_deslindes(p, PPMM).lotes["8-09"]
+    assert antes.area < 0.8 * verdad.area
+
+
+def test_un_lote_entre_lotes_sin_numero_es_un_lote_sin_numero(monkeypatch):
+    # Caminos de Rapel en la primera lectura: 8-09 y 8-16 solo lindan entre ellos, con
+    # 8-08 y 8-15 (que el lector tampoco leyó) y con el resto. Salían como "partes chicas"
+    # aunque son del tamaño de un lote: el criterio miraba solo las regiones que lindan
+    # con un lote numerado.
+    img, semillas, celdas = _grilla_tenue(sin_semilla=("2", "3", "4", "6", "7", "8"), franja=False)
+    alto, ancho = img.shape[:2]
+    r = digitalizar_imagen(img, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+
+    assert sorted(r.lotes) == ["1", "5"]
+    assert r.estadisticas["sin_numero_lote"] == 6
+    de_lote = [c for c, es in zip(r.sin_numero, r.sin_numero_lote) if es]
+    for n in ("2", "3", "4", "6", "7", "8"):
+        assert sum(iou(c, celdas[n]) > 0.9 for c in de_lote) == 1, n
+
+    # Lo que pasaba antes: solo los que lindan con 1 y 5.
+    monkeypatch.setattr(particion, "_lotes_sin_numero", lambda *a: set())
+    antes = digitalizar_imagen(img, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+    assert antes.estadisticas["sin_numero_lote"] == 2
+
+
+def test_una_parte_chica_entre_lotes_sin_numero_no_es_un_lote():
+    # Bajo LOTE_FRAC de la mediana sigue siendo una parte chica (un área verde, un
+    # camino), aunque no linde con ningún lote numerado.
+    L = particion.LOTE0
+    ws = np.ones((300, 400), np.int32)
+    ws[20:120, 20:120] = L                  # el lote con número
+    ws[20:120, 140:240] = 2                 # un lote sin número, separado por el exterior
+    ws[20:120, 240:340] = 3                 # su vecino sin número
+    ws[120:130, 140:340] = 4                # una franja bajo ellos: 0,2 de un lote
+    _, retenidas = particion._fusionar_sin_tinta(ws, np.ones_like(ws, bool), PPMM)
+    assert retenidas == [2, 3]
+
+
+def test_con_lineas_firmes_todo_lote_sin_numero_es_de_lote_y_el_camino_no():
+    # Con las divisorias en línea firme nada se une, y el criterio de los bolsillos no
+    # veía los lotes sin número que lindan con uno numerado: salían como "partes chicas"
+    # y el KMZ los dejaba fuera sin preguntar. El camino (0,69 del área de un lote) es
+    # una franja: no es un lote, lea el lector lo que lea a su alrededor.
+    plano = dibujar()
+    alto, ancho = plano.imagen.shape[:2]
+    for leidos in (("9",), ("5", "9"), ("1", "12")):
+        semillas = [s for s in plano.semillas if s[0] in leidos]
+        r = digitalizar_imagen(plano.imagen, PPMM, semillas, [0, 0, ancho, alto], avance=lambda _: None)
+        de_lote = [c for c, es in zip(r.sin_numero, r.sin_numero_lote) if es]
+        for n in set(plano.celdas) - set(leidos):
+            assert sum(iou(c, plano.celdas[n]) > 0.9 for c in de_lote) == 1, (leidos, n)
+        assert len(de_lote) == len(plano.celdas) - len(leidos), leidos
+        assert [es for c, es in zip(r.sin_numero, r.sin_numero_lote) if iou(c, plano.camino) > 0.9] == [False], leidos

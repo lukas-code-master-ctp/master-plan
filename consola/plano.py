@@ -52,7 +52,8 @@ from pipeline.plano import pagina as pag
 from pipeline.plano import rotulos
 from pipeline.plano.digitalizar import ENTRADAS, SALIDA as DIGITALIZADO, escribir_json, leer_entradas
 from pipeline.plano.georreferencia import (GEOJSON, SALIDA as GEORREFERENCIA, Transformacion, a_utm,
-                                           cuadricula_suficiente, georreferenciar)
+                                           cuadricula_suficiente, escala_del_cuadro, georreferenciar,
+                                           ubicacion_completa)
 from pipeline.plano.salida import escribir_kmz, geojson, lotes_utm
 
 PDF = "plano.pdf"
@@ -73,7 +74,7 @@ CALIDAD = 90
 # líneas: su valor impreso se puede corregir sin volver a digitalizar.
 CLAVES_DIGITALIZAR = ("pdf", "pagina", "rotacion", "rectangulo", "mascaras", "esquinas", "marco_mm",
                       "semillas", "lector", "lector_apoyo_min", "cuadro")
-CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula")
+CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula", "ubicacion", "escala_cuadro")
 
 # Topes de lo que se marca a mano: muy por sobre un loteo real, y lejos de lo que
 # atora la revisión (las semillas repetidas se buscan de a pares).
@@ -123,14 +124,28 @@ class PlanoNoListo(Exception):
 
 
 class LotesSinNumero(PlanoNoListo):
-    """Hay caras del tamaño de un lote sin número (409): no irían al KMZ. Se crea igual
-    solo si la loteadora lo pide (`omitir_sin_numero`)."""
+    """Hay caras del tamaño de un lote sin número, o falta decidir si el resto de la
+    propiedad va (409): no irían al KMZ. Se crea igual solo si la loteadora lo pide
+    (`omitir_sin_numero`), y entonces el resto queda fuera.
+    El resto sin decidir no es un lote sin número: Numerar lo muestra como una pregunta,
+    y el aviso la nombra igual (no "1 lote sin número")."""
 
-    def __init__(self, cuantos: int):
+    def __init__(self, cuantos: int, resto: bool = False):
         self.cuantos = cuantos
-        super().__init__(
-            ("Queda 1 lote sin número" if cuantos == 1 else f"Quedan {cuantos} lotes sin número")
-            + " (en rojo): no irían al KMZ. Numéralos en el paso Numerar, o crea el KMZ sin ellos.")
+        self.resto = resto
+        lotes = ("Queda 1 lote sin número" if cuantos == 1
+                 else f"Quedan {cuantos} lotes sin número") + " (en rojo)" if cuantos else ""
+        if lotes and resto:
+            texto = (f"{lotes} y falta decidir si el resto de la propiedad va en el KMZ. Ponles su"
+                     " número y responde la pregunta del resto en \"Revisar los números\", o crea el KMZ"
+                     " sin ellos (el resto queda fuera).")
+        elif resto:
+            texto = ("Falta decidir si el resto de la propiedad va en el KMZ: respóndelo en \"Revisar"
+                     " los números\", o crea el KMZ sin él.")
+        else:
+            texto = (f"{lotes}: no irían al KMZ. Ponles su número en \"Revisar los números\", o crea el"
+                     " KMZ sin ellos.")
+        super().__init__(texto)
 
 
 @dataclass(frozen=True)
@@ -386,7 +401,7 @@ class Plano:
 
     @_a_solas
     def georreferenciar(self) -> dict:
-        """Ubica los lotes (anclas o cuadrícula) y escribe georreferencia.json y
+        """Ubica los lotes (cuadrícula, anclas o un punto) y escribe georreferencia.json y
         lotes.geojson. Es rápido: corre en la petición."""
         entradas = self._entradas_o_409()
         if not (self.carpeta / DIGITALIZADO).is_file():
@@ -418,10 +433,12 @@ class Plano:
         # Lo que ella dejó fuera (el resto de la propiedad) no se pregunta de nuevo, y si
         # tenía número (lo leyó el lector) no va.
         fuera = _fuera_del_kmz(digitalizado.get("sin_numero"), entradas)
-        sin_numero = sum(bool(c.get("de_lote")) and not f
-                         for c, f in zip(digitalizado.get("sin_numero") or [], fuera))
-        if sin_numero and not omitir_sin_numero:
-            raise LotesSinNumero(sin_numero)
+        resto = _resto(digitalizado)["cara"]
+        resto_pendiente = resto is not None and not fuera[resto]
+        sin_numero = sum(bool(c.get("de_lote")) and not f and i != resto
+                         for i, (c, f) in enumerate(zip(digitalizado.get("sin_numero") or [], fuera)))
+        if (sin_numero or resto_pendiente) and not omitir_sin_numero:
+            raise LotesSinNumero(sin_numero, resto=resto_pendiente)
         lotes = digitalizado.get("lotes") or []
         digitalizado = dict(digitalizado, lotes=[l for l, f in zip(lotes, _fuera_del_kmz(lotes, entradas)) if not f])
         t = Transformacion.desde_dict(self._leer(GEORREFERENCIA))
@@ -448,13 +465,18 @@ class Plano:
             # Las partes que ella dejó fuera del KMZ no se cuentan como sin número ni como lotes.
             fuera = _fuera_del_kmz(d.get("sin_numero"), entradas)
             caras = [c for c, f in zip(d.get("sin_numero") or [], fuera) if not f]
+            # El resto sin decidir es una pregunta, no un lote sin número.
+            resto = _resto(d)["cara"]
+            resto_pendiente = resto is not None and not fuera[resto]
             fuera_lotes = _fuera_del_kmz(d.get("lotes"), entradas)
             digitalizado = dict(
                 lotes=len(fuera_lotes) - sum(fuera_lotes), faltantes=d.get("faltantes") or [],
                 sin_numero=len(caras), fuera=sum(fuera) + sum(fuera_lotes), pagina=d.get("pagina"),
                 # Caras del tamaño de un lote sin número (y cuántas traen una lectura que
                 # confirmar), y los números que faltan en la numeración.
-                sin_numero_lote=sum(bool(c.get("de_lote")) for c in caras),
+                sin_numero_lote=sum(bool(c.get("de_lote")) for c in caras) - (
+                    resto_pendiente and bool(d["sin_numero"][resto].get("de_lote"))),
+                resto_pendiente=resto_pendiente,
                 sugerencias=sum(bool(c.get("sugerencia")) for c in caras),
                 huecos=d.get("huecos") or [],
                 cuadricula=d.get("cuadricula") is not None,
@@ -462,6 +484,14 @@ class Plano:
                 lector=_resumen_lector(d.get("lector")),
                 # Cuántas correcciones a mano se pueden deshacer.
                 correcciones=self._correcciones(),
+                # Para la vista previa de Ubicar con un punto: la misma similitud que
+                # `por_punto`, con la escala del cuadro (m por px de trabajo, o null), el
+                # ppmm de trabajo (para la escala impresa) y la homografía página → trabajo.
+                escala_m_px=escala_del_cuadro(d), ppmm=(d.get("trabajo") or {}).get("ppmm"),
+                homografia=(d.get("trabajo") or {}).get("homografia"),
+                # La vista previa con puntos usa la homografía solo en una foto rectificada,
+                # como `georreferenciar` (en un recorte la similitud la absorbe).
+                perspectiva=(d.get("trabajo") or {}).get("modo") == "perspectiva",
                 vigente=entradas is not None and self._digitalizado_vigente(entradas))
         if (self.carpeta / GEORREFERENCIA).is_file():
             georreferencia = dict(resumen_georreferencia(self._leer(GEORREFERENCIA)),
@@ -824,7 +854,16 @@ def huella_kmz(huella_georreferencia: str | None, digitalizado: dict, entradas: 
 
 
 def huella_ubicar(entradas: dict, huella_digitalizado: str) -> str:
-    return _huella(dict({k: entradas.get(k) for k in CLAVES_UBICAR}, digitalizado=huella_digitalizado))
+    # `ubicacion` cuenta solo cuando `georreferenciar` la usa: completa y sin 2 puntos que
+    # manden. Mientras ella la arma (solo la coordenada), o si ya ubicó con puntos, cambiarla
+    # no cambia la ubicación y no debe dejarla atrasada. Sin ella, la huella es la de antes
+    # de que existiera la clave: lo ya ubicado sigue al día.
+    usa = ubicacion_completa(entradas.get("ubicacion")) and len(entradas.get("anclas") or []) < 2
+    # `escala_cuadro` igual: solo con 2 o más puntos (y puesto) cambia la ubicación.
+    ajusta = bool(entradas.get("escala_cuadro")) and len(entradas.get("anclas") or []) >= 2
+    usadas = {"ubicacion": usa, "escala_cuadro": ajusta}
+    datos = {k: entradas.get(k) for k in CLAVES_UBICAR if usadas.get(k, True)}
+    return _huella(dict(datos, digitalizado=huella_digitalizado))
 
 
 def _huella(datos) -> str:

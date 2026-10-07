@@ -29,7 +29,8 @@ def main(argv=None) -> int:
     sub = parser.add_subparsers(dest="comando", required=True)
     d = sub.add_parser("digitalizar", help="lee entradas.json y escribe digitalizado.json")
     d.add_argument("carpeta", type=Path)
-    g = sub.add_parser("georreferenciar", help="anclas o cuadrícula → georreferencia.json y lotes.geojson")
+    g = sub.add_parser("georreferenciar",
+                       help="cuadrícula, anclas o un punto con su coordenada → georreferencia.json y lotes.geojson")
     g.add_argument("carpeta", type=Path)
     k = sub.add_parser("kmz", help="digitalizado.json + georreferencia.json → KMZ de la subdivisión")
     k.add_argument("carpeta", type=Path)
