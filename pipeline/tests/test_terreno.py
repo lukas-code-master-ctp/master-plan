@@ -86,3 +86,24 @@ def test_el_modelo_ancla_la_cota_del_despegue_al_datum_del_dron():
 
     assert modelo(despegue) == pytest.approx(vista.terreno_plano())
     assert modelo(lejos) == pytest.approx(vista.terreno_plano() + 20.0)
+
+
+def test_otro_vuelo_se_ancla_al_despegue_del_primero_con_la_diferencia_que_mide_el_dron():
+    """Hacienda Vichuquén: dos vuelos, uno despegó 8,4 m más arriba que el otro según el
+    dron. Suponer que los dos salieron del mismo punto corría el trazo del segundo."""
+    cotas = np.full((2, 2), 250.0)
+    cotas[:, 1] = 270.0
+    terreno = Terreno(zoom=14, x0=0, y0=0, cotas=cotas)
+    primero = Vista(id="p01-500", posicion=1, lon=-72.0, lat=-35.0,
+                    altura_relativa=500.0, altura_absoluta=576.5, rumbo0=0.0)
+    segundo = Vista(id="p03-500", posicion=3, lon=-72.0, lat=-35.0,
+                    altura_relativa=500.0, altura_absoluta=584.9, rumbo0=0.0)
+    n = 2 ** 14 * LADO
+    despegue = (0.5 / n * 360 - 180, 89.99)     # donde despegó el primero (cota 250)
+    lejos = (1.5 / n * 360 - 180, 89.99)        # cota 270
+
+    modelo = modelo_para_vista(terreno, segundo, despegue, referencia=primero)
+
+    # El suelo queda donde lo puso el primer vuelo: el segundo no lo sube 8,4 m.
+    assert modelo(despegue) == pytest.approx(primero.terreno_plano())
+    assert modelo(lejos) == pytest.approx(primero.terreno_plano() + 20.0)
