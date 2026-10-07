@@ -119,3 +119,14 @@ def test_si_el_loteo_no_esta_en_el_crm_avisa_y_sigue(tmp_path, capsys):
 
     assert fichas == {}
     assert any("LAS ARAUCARIAS" in linea for linea in avisos.lineas)
+
+
+def test_cuenta_los_vuelos_por_la_altura_del_despegue_que_guarda_el_dron():
+    from types import SimpleNamespace as P
+
+    from pipeline.construir import _vuelos
+
+    panoramas = [P(altura_absoluta=576.2, altura_relativa=499.7), P(altura_absoluta=384.4, altura_relativa=299.6),
+                 P(altura_absoluta=576.2, altura_relativa=499.7), P(altura_absoluta=584.5, altura_relativa=499.6)]
+
+    assert _vuelos(panoramas) == [pytest.approx(76.5), pytest.approx(84.85)]
