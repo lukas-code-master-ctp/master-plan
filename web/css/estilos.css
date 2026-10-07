@@ -1606,6 +1606,26 @@ button { cursor: pointer; }
   }
   .puntos__palabra { display: inline; }
   .puntos__altura { display: block; font: 500 0.625rem/1 var(--sans); font-variant-numeric: tabular-nums; opacity: 0.8; }
+  /* Plegados en una pastilla con el punto actual, para que la foto respire; el
+     primer toque los despliega (app.js, desplegarPuntos). */
+  .puntos:not(.puntos--abierto) { right: auto; }
+  .puntos:not(.puntos--abierto) .puntos__fila button:not([aria-pressed="true"]) { display: none; }
+  .puntos:not(.puntos--abierto) .puntos__fila button[aria-pressed="true"] {
+    position: relative;
+    min-width: 6.5rem;
+    padding-right: 1.6rem;
+  }
+  .puntos:not(.puntos--abierto) .puntos__fila button[aria-pressed="true"]::after {
+    content: '';
+    position: absolute;
+    right: 0.7rem;
+    top: 50%;
+    width: 6px; height: 6px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-70%) rotate(45deg);
+  }
+  .puntos--abierto { animation: aparecer 140ms ease-out; }
 
   /* Abajo: la leyenda delgada y, encima, Ver plano a la izquierda y el zoom a la
      derecha (también se acerca con dos dedos, pero no todos lo saben). */
@@ -1708,6 +1728,10 @@ button { cursor: pointer; }
     background: var(--zinc-300);
   }
   .ficha--entera { max-height: calc(100dvh - var(--tope-hud) - 0.75rem); }
+  /* Asomada: la ficha baja hasta dejar ver solo su cabecera, y la parcela sigue
+     elegida (ficha.js, ponerNivel). Se mueve con transform, no cambia de alto. */
+  .ficha--minima { transform: translateY(calc(100% - var(--asomo, 132px))); overflow: hidden; }
+  .ficha--minima .ficha__cabecera { cursor: pointer; }
   .ficha__titulo { font-size: 22px; }
   body:has(.ficha:not([hidden])) .perspectivas,
   body:has(.ficha:not([hidden])) .entrar-360,

@@ -228,6 +228,12 @@ function refrescarEstilos() {
 
 // --- Controles de vuelo -------------------------------------------------------
 
+/** Despliega o pliega los puntos de vuelo (solo cambia algo en el teléfono). */
+function desplegarPuntos(abierto) {
+  $('.puntos').classList.toggle('puntos--abierto', abierto);
+  $('#controles-posicion').setAttribute('aria-expanded', String(abierto));
+}
+
 function construirControles() {
   const posiciones = estado.catalogo.posiciones();
   $('#controles-posicion').replaceChildren(...posiciones.map(({ posicion }) => {
@@ -244,10 +250,22 @@ function construirControles() {
     altura.textContent = estado.catalogo.alturasDePunto(posicion);
     boton.append(nombre, altura);
     boton.title = `${estado.catalogo.nombrePunto(posicion)} · ${estado.catalogo.alturasDePunto(posicion)}`;
-    boton.addEventListener('click', () => irAPosicion(posicion));
+    boton.addEventListener('click', () => {
+      // En el teléfono los puntos van plegados en una pastilla con el actual: el
+      // primer toque los despliega y el segundo elige.
+      if (!ESCRITORIO.matches && !$('.puntos').classList.contains('puntos--abierto')) {
+        desplegarPuntos(true);
+        return;
+      }
+      desplegarPuntos(false);
+      irAPosicion(posicion);
+    });
     boton.dataset.posicion = posicion;
     return boton;
   }));
+  document.addEventListener('pointerdown', (evento) => {
+    if (!evento.target.closest('.puntos')) desplegarPuntos(false);
+  });
 
   // El altímetro se lee de arriba hacia abajo, como un instrumento de vuelo.
   // Las alturas salen del vuelo, no de una lista fija: cada loteo se vuela a las

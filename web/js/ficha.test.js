@@ -266,30 +266,39 @@ test('una parcela sin polígono no tiene KML', () => {
 });
 
 // --- Arrastre del panel ----------------------------------------------------------
-// El panel abre a media altura. El asa lo sube para ver todo, lo baja a media
-// altura o lo cierra. Desplazamiento positivo es hacia abajo.
+// El panel abre a media altura. El asa lo sube para ver todo o lo baja hasta dejar
+// asomada la cabecera; cerrarlo es solo con la ×. Desplazamiento positivo es hacia abajo.
 
 test('a media altura, subir el asa lo abre entero', () => {
-  assert.equal(destinoDelArrastre(-60, 400, 0.1, false), 'expandir');
+  assert.equal(destinoDelArrastre(-60, 400, 0.1, 'media'), 'entera');
 });
 
-test('a media altura, bajar el asa más de un tercio lo cierra', () => {
-  assert.equal(destinoDelArrastre(140, 400, 0.1, false), 'cerrar');
+test('a media altura, bajar el asa más de un tercio lo deja asomado, sin soltar la parcela', () => {
+  // En el celular se baja la ficha para mirar el campo: la parcela sigue elegida.
+  assert.equal(destinoDelArrastre(140, 400, 0.1, 'media'), 'minima');
 });
 
-test('a media altura, un tirón rápido hacia abajo lo cierra aunque sea corto', () => {
-  assert.equal(destinoDelArrastre(40, 400, 0.9, false), 'cerrar');
+test('a media altura, un tirón rápido hacia abajo también lo deja asomado', () => {
+  assert.equal(destinoDelArrastre(40, 400, 0.9, 'media'), 'minima');
 });
 
-test('entero, bajar el asa lo devuelve a media altura en vez de cerrarlo', () => {
-  assert.equal(destinoDelArrastre(140, 700, 0.1, true), 'contraer');
+test('asomado, bajar no lo cierra: para eso está la ×', () => {
+  assert.equal(destinoDelArrastre(200, 120, 2, 'minima'), 'minima');
+});
+
+test('asomado, subir el asa lo vuelve a media altura', () => {
+  assert.equal(destinoDelArrastre(-60, 120, 0.1, 'minima'), 'media');
+});
+
+test('entero, bajar el asa lo devuelve a media altura', () => {
+  assert.equal(destinoDelArrastre(140, 700, 0.1, 'entera'), 'media');
 });
 
 test('un arrastre corto y lento deja el panel donde estaba', () => {
-  assert.equal(destinoDelArrastre(20, 400, 0.1, false), 'quedar');
-  assert.equal(destinoDelArrastre(-10, 400, 0.1, false), 'quedar');
+  assert.equal(destinoDelArrastre(20, 400, 0.1, 'media'), 'media');
+  assert.equal(destinoDelArrastre(-10, 400, 0.1, 'entera'), 'entera');
 });
 
 test('un temblor del dedo no mueve el panel por rápido que sea', () => {
-  assert.equal(destinoDelArrastre(8, 400, 2, false), 'quedar');
+  assert.equal(destinoDelArrastre(8, 400, 2, 'media'), 'media');
 });
