@@ -3,7 +3,7 @@
  * master. La lista, el diálogo del nombre (nuevo y renombrar) y el de "usar un KMZ
  * en un master", que se abre desde tres lados:
  *
- *  - el paso 7 de un KMZ: elegir un master existente o "Nuevo master con este KMZ";
+ *  - Revisar y descargar, el paso 4 de un KMZ: elegir un master existente o "Nuevo master con este KMZ";
  *  - el detalle de un master: elegir uno de los KMZ terminados;
  *  - (Nuevo master tiene su propia lista de terminados, en el formulario.)
  *

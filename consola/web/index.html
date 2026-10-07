@@ -345,14 +345,13 @@
     </header>
 
     <nav aria-label="Pasos de Crea tu KMZ">
+      <!-- Cuatro pastillas: Leer el plano y Numerar son parte de Marcar (`pastillaDe` en
+           kmz_geometria.js). En el teléfono se ve solo la primera palabra, en una fila. -->
       <ol id="kmz-pasos" class="pasos">
-        <li><button type="button" data-paso="subir"><b>1</b>Subir el plano</button></li>
+        <li><button type="button" data-paso="subir"><b>1</b><span>Subir<span class="pasos__resto"> el plano</span></span></button></li>
         <li><button type="button" data-paso="marcar"><b>2</b>Marcar</button></li>
-        <li><button type="button" data-paso="digitalizar"><b>3</b>Leer el plano</button></li>
-        <li><button type="button" data-paso="numerar"><b>4</b>Numerar</button></li>
-        <li><button type="button" data-paso="ubicar"><b>5</b>Ubicar</button></li>
-        <li><button type="button" data-paso="revisar"><b>6</b>Revisar</button></li>
-        <li><button type="button" data-paso="crear"><b>7</b>Crear el KMZ</button></li>
+        <li><button type="button" data-paso="ubicar"><b>3</b>Ubicar</button></li>
+        <li><button type="button" data-paso="revisar"><b>4</b><span>Revisar<span class="pasos__resto"> y descargar</span></span></button></li>
       </ol>
     </nav>
 
@@ -430,7 +429,7 @@
         </div>
       </div>
 
-      <!-- 3. Leer el plano -->
+      <!-- 2b. Leer el plano: lo abre "Seguir" de Marcar, con el escáner corriendo -->
       <div class="kmz-panel" id="kmz-panel-digitalizar" data-panel="digitalizar" hidden>
         <h2 tabindex="-1">Lee el plano</h2>
         <p class="ayuda">Se busca la tinta de los deslindes, se arma la red de lotes y se leen los
@@ -529,14 +528,15 @@
         </section>
         <dl id="kmz-cifras" class="kmz-cifras" hidden></dl>
         <div class="kmz-panel__pie">
-          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-digitalizar">Seguir: numerar</button>
+          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-digitalizar">Seguir</button>
           <p id="kmz-por-que-digitalizar" class="kmz-por-que nota" role="status" hidden></p>
         </div>
       </div>
 
-      <!-- 4. Numerar -->
+      <!-- 2c. Numerar: después de leer, solo si hace falta (`hayQueNumerar`); siempre se
+           abre con "Revisar los números" desde Ubicar y Revisar -->
       <div class="kmz-panel" id="kmz-panel-numerar" data-panel="numerar" hidden>
-        <h2 tabindex="-1">Revisa los números</h2>
+        <h2 tabindex="-1">Antes de ubicar: revisa los números</h2>
         <p class="ayuda">Haz clic en un lote para escribir o corregir su número. En
           <span class="kmz-muestra kmz-muestra--usuario">verde</span> los que marcaste tú, en
           <span class="kmz-muestra kmz-muestra--lector">azul</span> los leídos del plano (más claros
@@ -573,11 +573,12 @@
         </div>
       </div>
 
-      <!-- 5. Ubicar -->
+      <!-- 3. Ubicar -->
       <div class="kmz-panel" id="kmz-panel-ubicar" data-panel="ubicar" hidden>
         <h2 tabindex="-1">Ubica el plano en el mapa</h2>
         <p class="ayuda">Con la coordenada de un punto del plano (una esquina del predio, por
           ejemplo) basta: el tamaño sale del cuadro de superficies.</p>
+        <button class="boton boton--texto boton--chico kmz-a-numerar" data-paso="numerar" type="button">Revisar los números</button>
         <ol class="kmz-guia">
           <li id="kmz-guia-coordenada">
             <strong>1. Pega la coordenada que tienes</strong>
@@ -675,23 +676,41 @@
         </fieldset>
         <div class="kmz-panel__pie">
           <button class="boton boton--contorno" data-accion="kmz-georreferenciar" type="button">Ubicar de nuevo</button>
-          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-ubicar">Seguir: revisar</button>
+          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-ubicar">Seguir: revisar y descargar</button>
           <p id="kmz-por-que-ubicar" class="kmz-por-que nota" role="status" hidden></p>
         </div>
       </div>
 
-      <!-- 6. Revisar -->
+      <!-- 4. Revisar y descargar: el semáforo, el resumen, corregir vértices y crear el KMZ -->
       <div class="kmz-panel" id="kmz-panel-revisar" data-panel="revisar" hidden>
-        <h2 tabindex="-1">Revisa los lotes</h2>
+        <h2 tabindex="-1">Revisa y descarga el KMZ</h2>
         <p class="ayuda">Cada lote se colorea por su área contra el cuadro de superficies del
           plano. Toca un lote para ver sus números.</p>
-        <dl id="kmz-revision" class="kmz-cifras"></dl>
-        <p id="kmz-revision-nota" class="nota"></p>
-        <!-- Con puntos y los lotes parejo más chicos o más grandes: el tamaño del cuadro de
-             superficies, con la posición y el giro de los puntos (`entradas.escala_cuadro`). -->
-        <button class="boton boton--contorno boton--chico" data-accion="kmz-ajustar-cuadro" type="button" hidden>Ajustar el tamaño con el cuadro</button>
+        <button class="boton boton--texto boton--chico kmz-a-numerar" data-paso="numerar" type="button">Revisar los números</button>
+        <!-- El semáforo: cuántos lotes calzan con el cuadro de superficies. Solo el texto es
+             región viva: los botones aparecen y desaparecen sin que se anuncien aparte. Con
+             puntos y los lotes parejo más chicos o más grandes, "Ajustar el tamaño con el
+             cuadro" (`entradas.escala_cuadro`): el tamaño del cuadro con la posición y el giro
+             de los puntos. -->
+        <div id="kmz-semaforo" class="kmz-semaforo" hidden>
+          <p id="kmz-semaforo-texto" role="status" aria-atomic="true"></p>
+          <div id="kmz-semaforo-acciones" class="fila fila--envuelve" hidden>
+            <button class="boton boton--contorno boton--chico" data-accion="kmz-ajustar-cuadro" type="button" hidden>Ajustar el tamaño con el cuadro</button>
+            <button class="boton boton--contorno boton--chico" data-accion="kmz-volver-ubicar" type="button" hidden>Volver a Ubicar</button>
+          </div>
+        </div>
         <p class="kmz-ajustado nota" hidden>Tamaño ajustado con el cuadro ·
           <button class="boton boton--texto boton--chico" data-accion="kmz-deshacer-cuadro" type="button">Deshacer el ajuste</button></p>
+        <div id="kmz-listo" class="kmz-listo" role="status" hidden>
+          <p id="kmz-listo-texto"></p>
+          <p class="nota">Descárgalo para Google Earth o tu topógrafo, o úsalo en un master para
+            construir el visor.</p>
+          <div class="fila fila--envuelve">
+            <button class="boton boton--contorno" data-accion="kmz-usar" type="button">Usar en un master</button>
+          </div>
+        </div>
+        <dl id="kmz-revision" class="kmz-cifras"></dl>
+        <p id="kmz-revision-nota" class="nota"></p>
         <div class="kmz-corregir">
           <div class="fila fila--envuelve">
             <button class="boton boton--contorno" data-accion="kmz-corregir" aria-pressed="false" type="button">Corregir vértices a mano</button>
@@ -702,34 +721,13 @@
             leer el plano, estas correcciones se pierden.</p>
           <p id="kmz-corregir-lejos" class="nota" hidden>Acércate al mapa para ver los vértices.</p>
         </div>
+        <p id="kmz-crear-texto" class="nota"></p>
+        <!-- Crear (y Descargar, si ya hay un KMZ) van en el pie, donde los otros pasos tienen
+             "Seguir": es lo que sigue aquí, y queda a la vista aunque el panel sea largo. -->
         <div class="kmz-panel__pie">
-          <button class="boton" data-accion="kmz-siguiente" type="button" aria-describedby="kmz-por-que-revisar">Seguir: crear el KMZ</button>
+          <button class="boton" data-accion="kmz-crear" type="button" aria-describedby="kmz-semaforo-texto kmz-por-que-revisar">Crear el KMZ</button>
+          <a id="kmz-descargar" class="boton" href="#/kmz" download hidden>Descargar</a>
           <p id="kmz-por-que-revisar" class="kmz-por-que nota" role="status" hidden></p>
-        </div>
-      </div>
-
-      <!-- 7. Crear -->
-      <div class="kmz-panel" id="kmz-panel-crear" data-panel="crear" hidden>
-        <h2 tabindex="-1">Crea el KMZ</h2>
-        <p id="kmz-crear-texto" class="ayuda"></p>
-        <!-- El semáforo: cuántos lotes calzan con el cuadro de superficies. Solo el texto es
-             región viva: el botón aparece y desaparece sin que se anuncie aparte. -->
-        <div id="kmz-semaforo" class="kmz-semaforo" hidden>
-          <p id="kmz-semaforo-texto" role="status" aria-atomic="true"></p>
-          <div id="kmz-semaforo-acciones" class="fila fila--envuelve" hidden>
-            <button class="boton boton--contorno boton--chico" data-accion="kmz-ajustar-cuadro" type="button" hidden>Ajustar el tamaño con el cuadro</button>
-            <button class="boton boton--contorno boton--chico" data-accion="kmz-volver-ubicar" type="button" hidden>Volver a Ubicar</button>
-          </div>
-        </div>
-        <button class="boton boton--grande" data-accion="kmz-crear" type="button" aria-describedby="kmz-semaforo-texto">Crear el KMZ</button>
-        <div id="kmz-listo" class="kmz-listo" role="status" hidden>
-          <p id="kmz-listo-texto"></p>
-          <p class="nota">Descárgalo para Google Earth o tu topógrafo, o úsalo en un master para
-            construir el visor.</p>
-          <div class="fila fila--envuelve">
-            <a id="kmz-descargar" class="boton" href="#/kmz" download>Descargar</a>
-            <button class="boton boton--contorno" data-accion="kmz-usar" type="button">Usar en un master</button>
-          </div>
         </div>
       </div>
 

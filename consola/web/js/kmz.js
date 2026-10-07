@@ -3,8 +3,9 @@
  * Todo va contra `/api/kmz/<slug>/...`; el KMZ no es de ningún master. Al crearlo
  * se descarga o se usa en un master (ver `kmzs.js`).
  *
- * Siete pasos, como el spec: subir el PDF, marcar el dibujo, digitalizar, numerar,
- * ubicar en el mapa, revisar y crear el KMZ. Lo que marca la loteadora vive en
+ * Cuatro pasos a la vista: subir el PDF, marcar el dibujo, ubicar en el mapa, y revisar y
+ * descargar el KMZ. Leer el plano (`digitalizar`) y Numerar son paneles de Marcar: "Seguir"
+ * lee el plano y pasa por Numerar solo si hace falta. Lo que marca la loteadora vive en
  * `entradas` (el mismo `entradas.json` del servidor, en píxeles de página) y se
  * guarda solo, un momento después de cada cambio. El servidor dice qué quedó
  * atrasado (`vigente`) y qué paso sigue (`paso`).
@@ -13,7 +14,7 @@ import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
   anclaDesde, aplicarFuera, aplicarNumero, claveLote, conSemillas, decidirResto, devolverAlKmz, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, detalleUbicacion, filaDelPunto, numerosQueFaltan,
-  ordenarEsquinas, PASOS, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puedeUbicar, puntoDeRotulo,
+  ordenarEsquinas, PASTILLAS, pastillaDe, pasoDeRuta, pasoSiguiente, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puedeUbicar, puntoDeRotulo,
   puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, siguienteNombre, sinNumero, sugerencias, textoSemaforo, verticesDe,
   escalaDeUbicacion, leerEscala, lotesEnElMapa, normalizarGiro, similitudPorPunto, usaUbicacion,
   afinarAbierta, similitudPorAnclas, textoPuntos, ubicacionCompleta, ajustaConElCuadro, ofrecerAjusteDelCuadro,
@@ -58,6 +59,7 @@ let esquinasMarcando = [];    // las esquinas del marco mientras faltan: el serv
 let ubicandoYa = false;       // se está calculando la ubicación: "Seguir" espera eso, no más puntos
 let ajustandoCuadro = false;  // se está ajustando (o deshaciendo) el tamaño con el cuadro
 let restoCentrado = null;     // dónde ya se centró el plano para preguntar por el resto (una vez)
+let rutaAplicada = null;      // el paso de la ruta (`#/kmz/<slug>/<paso>`) que ya se abrió
 let pasoPintado = null;       // el paso de la última pintada: la herramienta de Marcar se elige al entrar
 let lanzando = null;          // el KMZ (slug) cuya lectura se está pidiendo: un segundo clic no lanza otra
 let falloAlPedir = '';        // por qué no se pudo lanzar la lectura: queda escrito en el paso 3, sobre el botón
@@ -291,10 +293,21 @@ export function prepararKmz(opciones) {
   lienzo.alRectangulo = rectangulo;
 }
 
-/** Llega a la pantalla (`nuevo`) o se repinta tras un refresco de la lista. */
-export function pintarKmz(nuevoSlug, { nuevo = false } = {}) {
+/**
+ * Llega a la pantalla (`nuevo`) o se repinta tras un refresco de la lista. `pasoPedido`: el
+ * de `#/kmz/<slug>/<paso>` (también los nombres de antes, ver `pasoDeRuta`).
+ */
+export function pintarKmz(nuevoSlug, { nuevo = false, paso: pasoPedido = null } = {}) {
   pintarCabecera(nuevoSlug);
-  if (!nuevo && nuevoSlug === slug) return;
+  if (!nuevo && nuevoSlug === slug) {
+    // El mismo KMZ con otro paso en la ruta: se va a ese paso, si ya se puede abrir.
+    if (pasoPedido && plano && pasoPedido !== rutaAplicada) {
+      rutaAplicada = pasoPedido;
+      irAlPaso(pasoDeRuta(pasoPedido, plano)).catch((error) => avisar(error.message));
+    }
+    return;
+  }
+  rutaAplicada = pasoPedido;
   if (sucio && slug) {
     // Lo marcado hace un instante (aún en la espera del guardado) no se pierde al volver
     // a entrar ni al pasar a otro KMZ: se guarda en el suyo antes de limpiar.
@@ -366,6 +379,9 @@ async function cargarTodo(alLlegar = false) {
       escuchar();
       if (!estado.sondeos.has(clave())) seguir(clave(), plano.trabajo.id);
     }
+    // El paso de la ruta gana si ya se puede abrir; si no, el sugerido.
+    const pedido = pasoDeRuta(rutaAplicada, plano);
+    if (pedido && pasosHabilitados(plano)[pedido]) paso = pedido;
   }
   mostrarPagina().catch((error) => avisar(error.message));
   await pintarPaso();
@@ -426,9 +442,9 @@ async function manejar(nodo) {
   if (dataset.giro) return girarA((entradas.ubicacion?.giro ?? 0) + Number(dataset.giro));
 
   const accion = dataset.accion;
-  // "Seguir" de Marcar no solo abre el paso 3: lee el plano, que es lo único que se hace ahí.
+  // "Seguir" de Marcar no solo cambia de panel: lee el plano, y al terminar va a Numerar o a Ubicar.
   if (accion === 'kmz-siguiente' && paso === 'marcar') return digitalizar({ desdeMarcar: true });
-  if (accion === 'kmz-siguiente') return irAlPaso(PASOS[PASOS.indexOf(paso) + 1]);
+  if (accion === 'kmz-siguiente') return irAlPaso(pasoSiguiente(paso, plano, rasgos));
   if (accion === 'kmz-girar-izq') return girar(-90);
   if (accion === 'kmz-girar-der') return girar(90);
   if (accion === 'kmz-acercar') return lienzo.acercar(1.5);
@@ -654,8 +670,13 @@ async function digitalizar({ solo = false, desdeMarcar = false } = {}) {
       // La relectura sola de Numerar o una lectura que ya corre: lanzar otra la choca en el
       // servidor. Leído con lo mismo que está marcado (volvió a Marcar a mirar), no hay qué leer.
       const enCamino = trabajando() || releyendo === mio;
-      if (enCamino || (desdeMarcar && plano?.digitalizado?.vigente)) {
+      if (enCamino) {
         await irAlPaso('digitalizar');
+        return;
+      }
+      // Ya leído con esto mismo: no se lee de nuevo, se sigue a Numerar (si hace falta) o a Ubicar.
+      if (desdeMarcar && plano?.digitalizado?.vigente) {
+        await irAlPaso(pasoSiguiente('marcar', plano, rasgos));
         return;
       }
     }
@@ -712,7 +733,8 @@ async function terminoDigitalizar(trabajo) {
     pintar();
     releerSiHaceFalta();
   } else if (trabajo.estado === 'listo') {
-    await irAlPaso(plano.digitalizado?.sin_numero || plano.digitalizado?.faltantes?.length || plano.digitalizado?.huecos?.length ? 'numerar' : 'ubicar');
+    // Numerar es una pantalla intermedia: solo si falta algo de los números (`hayQueNumerar`).
+    await irAlPaso(pasoSiguiente('digitalizar', plano, rasgos));
   } else {
     pintarPaso();
   }
@@ -1214,6 +1236,8 @@ function destellarListo() {
   // Se saca al terminar: si quedara puesta, volvería a destellar cada vez que el aviso
   // se muestra de nuevo (al volver a este KMZ desde otro).
   listo.addEventListener('animationend', () => listo.classList.remove('kmz-listo--nuevo'), { once: true });
+  // Crear está en el pie y el aviso arriba en el panel: se trae a la vista.
+  listo.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 const terminado = () => Boolean(plano?.kmz?.length);
@@ -1253,7 +1277,7 @@ async function pintarPaso() {
   $('#kmz-mapa-caja').hidden = !conMapa;
   $('#kmz-escena').classList.toggle('kmz-escena--doble', conPlano && conMapa);
   $('#kmz-plano').dataset.modo = paso;
-  $('#kmz-cuerpo').classList.toggle('kmz-cuerpo--solo', paso === 'subir' && !plano?.pdf || paso === 'crear');
+  $('#kmz-cuerpo').classList.toggle('kmz-cuerpo--solo', paso === 'subir' && !plano?.pdf);
   if (paso !== 'marcar') elegirHerramienta('mover');
   else if (pasoPintado !== 'marcar') elegirHerramienta(herramientaAlEntrar(entradas, Boolean(plano?.digitalizado)));
   if (paso === 'ubicar' && pasoPintado !== 'ubicar') {
@@ -1295,11 +1319,14 @@ function medirPanel() {
 function pintarPasos() {
   const habilitados = pasosHabilitados(plano);
   const hechos = pasosHechos(plano);
+  // Leyendo el plano o numerando, la pastilla marcada es Marcar: son parte de ese paso.
+  const actual = pastillaDe(paso);
   for (const boton of $$('#kmz-pasos [data-paso]')) {
     const nombre = boton.dataset.paso;
+    if (!PASTILLAS.includes(nombre)) continue;
     boton.disabled = !habilitados[nombre];
     boton.classList.toggle('paso--hecho', Boolean(hechos[nombre]));
-    if (nombre === paso) boton.setAttribute('aria-current', 'step'); else boton.removeAttribute('aria-current');
+    if (nombre === actual) boton.setAttribute('aria-current', 'step'); else boton.removeAttribute('aria-current');
   }
 }
 
@@ -1317,23 +1344,23 @@ function pintarPanel() {
   if (paso === 'ubicar') pintarUbicar();
   else $('#kmz-giro-mapa').hidden = true;
   if (paso === 'revisar') pintarRevisar();
-  if (paso === 'crear') pintarCrear();
   pintarPorQue();
 }
 
 /** El "Seguir" del paso abierto: se apaga con su motivo debajo, en una línea. */
 function pintarPorQue() {
   const panel = $(`#kmz-panel-${paso}`);
+  // En Revisar y descargar no hay "Seguir": el motivo es el de Crear (que apaga `pintarCrear`).
   const boton = panel?.querySelector('[data-accion="kmz-siguiente"]');
-  if (!plano || !boton) return;
+  const linea = panel?.querySelector('.kmz-por-que');
+  if (!plano || (!boton && !linea)) return;
   // Mientras se pide la lectura, el servidor todavía no la cuenta como trabajo: ya lo es.
   const e = lanzando === slug ? { ...plano, trabajo: { terminado: false } } : plano;
   const motivo = porQueNoSigue(paso, e, {
     entradas, actualizando: actualizando(), releerFallo, ubicando: ubicandoYa || Boolean(ubicarLuego),
     duplicados: paso === 'revisar' ? resumenRevision(rasgosGeo?.features ?? []).duplicados : 0,
   });
-  boton.disabled = Boolean(motivo);
-  const linea = panel.querySelector('.kmz-por-que');
+  if (boton) boton.disabled = Boolean(motivo);
   if (!linea) return;
   linea.textContent = motivo;
   linea.hidden = !motivo;
@@ -1427,6 +1454,10 @@ function pintarDigitalizar() {
   $('#kmz-leer-fallo').hidden = leyendo || !falloAlPedir;
   $('#kmz-leer-fallo').textContent = falloAlPedir ? `No se pudo empezar a leer el plano: ${falloAlPedir}` : '';
   pintarRegistro();
+  // "Seguir" dice adónde lleva cuando ya se sabe: Numerar es intermedio y se salta si no hace
+  // falta. Mientras se lee (o con una lectura vieja) todavía no se sabe.
+  $('#kmz-panel-digitalizar [data-accion="kmz-siguiente"]').textContent = leyendo || !d?.vigente ? 'Seguir'
+    : pasoSiguiente('digitalizar', plano, rasgos) === 'numerar' ? 'Seguir: revisar los números' : 'Seguir: ubicar en el mapa';
   const cifras = $('#kmz-cifras');
   cifras.hidden = !d;
   if (!d) return;
@@ -1728,22 +1759,27 @@ function pintarRevisar() {
     return div;
   }));
   const problemas = cuenta.duplicados;
-  const sesgo = sesgoDeEscala(rasgosGeo?.features ?? []);
-  const ajustable = pintarAjusteDelCuadro($('#kmz-panel-revisar'), sesgo);
+  // El semáforo y el botón de crear van en este mismo panel: el sesgo y si se ofrece ajustar
+  // salen de ahí, para que la nota y el semáforo no se contradigan.
+  const { luz, ajustable } = pintarCrear();
+  const sesgo = luz.sesgo ?? sesgoDeEscala(rasgosGeo?.features ?? []);
+  // El semáforo ya dice cuántos calzan y, si salen parejo distintos, qué hacer: la nota no lo repite.
+  const conSemaforo = Boolean(luz.tono);
   $('#kmz-revision-nota').textContent = problemas
-    ? 'Hay números repetidos: el KMZ no se puede crear así. Vuelve a Numerar.'
+    ? 'Hay números repetidos: el KMZ no se puede crear así. Corrígelos en "Revisar los números".'
     : cuenta.sin_numero_lote
-      ? (cuenta.sin_numero_lote === 1 ? 'Un lote quedó sin número y no iría al KMZ.'
-        : `${cuenta.sin_numero_lote} lotes quedaron sin número y no irían al KMZ.`) + ' Vuelve a Numerar.'
+      ? (cuenta.sin_numero_lote === 1 ? 'Un lote quedó sin número y no iría al KMZ. Ponle su número'
+        : `${cuenta.sin_numero_lote} lotes quedaron sin número y no irían al KMZ. Ponles su número`)
+        + ' en "Revisar los números".'
     : cuenta.sin_numero
       ? (cuenta.sin_numero === 1 ? 'Una parte queda sin número (rayada en rojo) y no va al KMZ.'
         : `${cuenta.sin_numero} partes quedan sin número (rayadas en rojo) y no van al KMZ.`)
-        + ' Si es un lote, vuelve a Numerar.'
+        + ' Si es un lote, ponle su número en "Revisar los números".'
       : cuenta.lotes === cuenta.gris
       ? (entradas.cuadro ? 'No se leyó el cuadro de superficies: revisa a ojo que los lotes calcen con los caminos.'
         : 'Sin cuadro de superficies no hay áreas oficiales: si el plano lo trae, enciérralo en Marcar'
           + ' con "Cuadro de superficies". Si no, revisa a ojo que los lotes calcen con los caminos.')
-      : sesgo != null
+      : sesgo != null && !conSemaforo
       ? `Casi todos los lotes salen cerca de un ${Math.abs(sesgo * 100).toFixed(1).replace('.', ',')} %`
         + ` ${sesgo > 0 ? 'más grandes' : 'más chicos'} que el oficial: suele ser la escala de los puntos de Ubicar,`
         + (ajustable ? ' no el dibujo. Ajusta el tamaño con el cuadro de superficies, o vuelve a Ubicar y marca'
@@ -1751,7 +1787,8 @@ function pintarRevisar() {
           : ' no el dibujo. Vuelve a Ubicar y marca 3 o 4 esquinas con coordenadas exactas.')
       : cuenta.rojo
       ? 'Los rojos tienen un área muy distinta a la oficial: suelen ser lotes mal separados.'
-      : 'Ningún lote se aparta más de un 5 % del área oficial.';
+      : conSemaforo ? '' : 'Ningún lote se aparta más de un 5 % del área oficial.';
+  $('#kmz-revision-nota').hidden = !$('#kmz-revision-nota').textContent;
   const boton = $('[data-accion="kmz-corregir"]');
   boton.setAttribute('aria-pressed', String(corrigiendo));
   boton.textContent = corrigiendo ? 'Listo, dejar de corregir' : 'Corregir vértices a mano';
@@ -1790,29 +1827,38 @@ async function corregir(cuerpo) {
   }
 }
 
+/**
+ * La parte de crear del panel Revisar y descargar: el semáforo (con "Ajustar el tamaño con
+ * el cuadro" y "Volver a Ubicar"), el botón de crear y, si ya hay un KMZ, descargarlo o
+ * usarlo en un master. Devuelve el semáforo (`luz`) y si se ofrece ajustar.
+ */
 function pintarCrear() {
-  if (!plano) return;
+  if (!plano) return { luz: { tono: null }, ajustable: false };
   const hay = terminado();
+  const ubicado = pasosHabilitados(plano).revisar;
   $('#kmz-crear-texto').textContent = plano.paso === 'listo'
     ? 'El KMZ ya está creado con lo último que ubicaste.'
     : hay ? 'Ya hay un KMZ creado de antes: crearlo de nuevo lo reemplaza con lo último que ubicaste.'
       : 'Un polígono por lote, con su número. Después lo descargas o lo usas en un master.';
   const crear = $('[data-accion="kmz-crear"]');
   const creando = creandoKmz === slug;
-  crear.disabled = creando || !pasosHabilitados(plano).crear;
+  // Con números repetidos el servidor no lo crea: el motivo queda bajo el botón (`porQueNoSigue`).
+  const repetidos = resumenRevision(rasgosGeo?.features ?? []).duplicados;
+  crear.disabled = creando || !ubicado || Boolean(repetidos);
   // Con los lotes en lon/lat (se cargan con el plano ubicado): sin ellos no hay con qué
   // comparar y el semáforo queda oculto, como sin cuadro.
   // Sin la ubicación vigente no se puede crear: los desvíos serían de los puntos viejos.
-  const luz = semaforo(pasosHabilitados(plano).crear ? rasgosGeo?.features ?? [] : []);
+  const luz = semaforo(ubicado ? rasgosGeo?.features ?? [] : []);
+  const panel = $('#kmz-panel-revisar');
+  const ajustable = pintarAjusteDelCuadro(panel, luz.sesgo);
   const caja = $('#kmz-semaforo');
-  const texto = textoSemaforo(luz);
+  const texto = textoSemaforo(luz, { ajustable });
   caja.hidden = !texto;
   caja.dataset.tono = luz.tono ?? '';
   // Solo si cambia: reescribir el mismo texto en una región `status` lo vuelve a anunciar
   // cada vez que algo repinta el panel.
   if ($('#kmz-semaforo-texto').textContent !== texto) $('#kmz-semaforo-texto').textContent = texto;
   $('[data-accion="kmz-volver-ubicar"]').hidden = luz.tono !== 'ambar';
-  const ajustable = pintarAjusteDelCuadro($('#kmz-panel-crear'), luz.sesgo);
   $('#kmz-semaforo-acciones').hidden = luz.tono !== 'ambar' && !ajustable;
   // Ámbar avisa pero no bloquea: el botón dice que se crea igual. Con el KMZ ya creado
   // con esto mismo no hay "igual" que valga: ya se creó, y rehacerlo da lo mismo.
@@ -1820,15 +1866,17 @@ function pintarCrear() {
   crear.textContent = creando ? 'Creando el KMZ…' : igual ? 'Crear el KMZ igual'
     : hay ? 'Crear el KMZ de nuevo' : 'Crear el KMZ';
   if (creando) crear.setAttribute('aria-busy', 'true'); else crear.removeAttribute('aria-busy');
-  crear.className = hay ? 'boton boton--contorno' : 'boton boton--grande';
+  crear.className = hay ? 'boton boton--contorno' : 'boton';
   // Descargar y usar sirven mientras haya un KMZ hecho, aunque esté por rehacerse.
   $('#kmz-listo').hidden = !hay;
+  $('#kmz-descargar').hidden = !hay;
   $('#kmz-descargar').href = descargaDe(slug);
   if (hay && !$('#kmz-listo-texto').textContent) {
     $('#kmz-listo-texto').textContent = plano.paso === 'listo'
       ? `Listo: el KMZ "${plano.nombre}" está creado.`
       : `El KMZ "${plano.nombre}" que creaste antes sigue disponible.`;
   }
+  return { luz, ajustable };
 }
 
 // --- mapa -------------------------------------------------------------------------------

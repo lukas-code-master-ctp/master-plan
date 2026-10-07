@@ -504,15 +504,21 @@ export function semaforo(rasgos, tolerancia = 0.05) {
   return { tono: ambar ? 'ambar' : 'verde', dentro, total, sesgo };
 }
 
-/** El texto del semáforo ("" si no se muestra). */
-export function textoSemaforo({ tono, dentro, total, sesgo = null }) {
+/**
+ * El texto del semáforo ("" si no se muestra). Con `ajustable` (ubicó con puntos y se ofrece
+ * "Ajustar el tamaño con el cuadro"), el ámbar nombra ese botón antes que volver a Ubicar.
+ */
+export function textoSemaforo({ tono, dentro, total, sesgo = null }, { ajustable = false } = {}) {
   if (tono === 'verde') return `Los lotes calzan con el cuadro de superficies (${dentro} de ${total} dentro del 5 %).`;
   if (tono === 'ambar') {
     const cuantos = (total - dentro) * 2 >= total || sesgo == null
       ? `${total - dentro} de ${total} lotes miden distinto al cuadro de superficies.`
       : `Casi todos los lotes salen cerca de un ${Math.abs(sesgo * 100).toFixed(1).replace('.', ',')} %`
         + ` ${sesgo > 0 ? 'más grandes' : 'más chicos'} que en el cuadro de superficies.`;
-    return `${cuantos} Suele ser la ubicación: vuelve a Ubicar y marca los puntos de nuevo.`;
+    return ajustable
+      ? `${cuantos} Suele ser la escala de los puntos de Ubicar: ajusta el tamaño con el cuadro de superficies`
+        + ' o vuelve a Ubicar y marca los puntos de nuevo.'
+      : `${cuantos} Suele ser la ubicación: vuelve a Ubicar y marca los puntos de nuevo.`;
   }
   return '';
 }
@@ -744,7 +750,38 @@ export function esFalloPasajero(error) {
 
 // --- pasos ---------------------------------------------------------------------------
 
-export const PASOS = ['subir', 'marcar', 'digitalizar', 'numerar', 'ubicar', 'revisar', 'crear'];
+/**
+ * Los paneles de la pantalla, en orden. Leer el plano (`digitalizar`, el escáner) y Numerar
+ * no tienen pastilla: son parte de Marcar (ver `PASTILLAS` y `pastillaDe`).
+ */
+export const PASOS = ['subir', 'marcar', 'digitalizar', 'numerar', 'ubicar', 'revisar'];
+
+/** Las pastillas de la barra de pasos: Subir el plano · Marcar · Ubicar · Revisar y descargar. */
+export const PASTILLAS = ['subir', 'marcar', 'ubicar', 'revisar'];
+
+/** La pastilla que queda marcada con el panel `paso` abierto. */
+export function pastillaDe(paso) {
+  return ['digitalizar', 'numerar'].includes(paso) ? 'marcar' : PASTILLAS.includes(paso) ? paso : 'subir';
+}
+
+/**
+ * El panel que abre `#/kmz/<slug>/<nombre>`, o null si el nombre no es de un paso. Las
+ * rutas de cuando había siete pastillas llevan al paso que hoy las contiene: Leer el plano
+ * a Marcar (o al escáner si se está leyendo) y Crear el KMZ a Revisar y descargar.
+ */
+export function pasoDeRuta(nombre, e) {
+  const trabajando = Boolean(e?.trabajo && !e.trabajo.terminado);
+  switch (nombre) {
+    case 'subir': case 'marcar': case 'numerar': case 'ubicar': case 'revisar':
+      return nombre;
+    case 'digitalizar': case 'leer':
+      return trabajando ? 'digitalizar' : 'marcar';
+    case 'crear': case 'descargar':
+      return 'revisar';
+    default:
+      return null;
+  }
+}
 
 /** Qué pasos se pueden abrir con lo que ya hay en el servidor. */
 export function pasosHabilitados(e) {
@@ -757,8 +794,45 @@ export function pasosHabilitados(e) {
     numerar: digitalizado,
     ubicar: digitalizado,
     revisar: ubicado,
-    crear: ubicado,
   };
+}
+
+/**
+ * ¿Hace falta pasar por Numerar antes de ubicar? Sí si queda un lote sin número (rojo),
+ * falta en los lotes un hueco de la numeración (con los del cuadro, si calza), un número
+ * marcado no cayó en ningún lote, hay lecturas por confirmar, números repetidos o la
+ * pregunta del resto de la propiedad sin contestar. Las partes chicas sin número (caminos,
+ * áreas comunes) no: se dejan así. `e`: el estado del servidor; `rasgos`: los lotes en px.
+ */
+export function hayQueNumerar(e, rasgos) {
+  const d = e?.digitalizado;
+  if (!d) return false;
+  const lotes = rasgos ?? [];
+  if (sinNumero(lotes).some((r) => r.properties.de_lote)) return true;
+  if (sugerencias(lotes).length || duplicados(lotes).length) return true;
+  const resto = restoDe(lotes);
+  if (resto?.estado === 'pendiente') return true;
+  if ((d.faltantes ?? []).length || (d.lector?.sin_poligono ?? []).length) return true;
+  // Los que faltan son los huecos, lo mismo que dice Numerar (`mensajeNumerar`): ya traen
+  // los del cuadro cuando el cuadro calza con lo leído. Con `numeros_cuadro` crudo, un cuadro
+  // que no calza (mal leído, o de otra lámina) mandaba a Numerar a leer "Todos los lotes
+  // tienen número". El número del resto, si lo dejó fuera, no es un lote que falte.
+  const delResto = resto ? claveLote(resto.numero) : null;
+  return numerosQueFaltan(d.huecos, lotes).some((n) => claveLote(n) !== delResto);
+}
+
+/**
+ * A qué panel lleva "Seguir" desde `paso` (null si no hay otro: en Revisar y descargar se
+ * crea el KMZ). Después de leer el plano, a Numerar solo si hace falta (`hayQueNumerar`).
+ */
+export function pasoSiguiente(paso, e, rasgos) {
+  switch (paso) {
+    case 'subir': return 'marcar';
+    case 'marcar': case 'digitalizar': return hayQueNumerar(e, rasgos) ? 'numerar' : 'ubicar';
+    case 'numerar': return 'ubicar';
+    case 'ubicar': return 'revisar';
+    default: return null;
+  }
 }
 
 /**
@@ -812,12 +886,12 @@ export function porQueNoSigue(paso, e, local = {}) {
       if (trabajando || local.actualizando) return 'Actualizando los lotes…';
       // Al día gana sobre un fallo anterior: si después se leyó bien (en el paso 3), se sigue.
       if (d.vigente) return '';
-      return local.releerFallo ? 'No se pudieron actualizar los lotes: lee el plano de nuevo en el paso 3.'
+      return local.releerFallo ? 'No se pudieron actualizar los lotes: vuelve a Marcar y lee el plano de nuevo.'
         : 'Actualizando los lotes…';
     case 'ubicar': {
       // Mientras se ubica (o está por ubicarse tras girar o mover) lo ubicado ya no es lo que se ve.
       if (e?.georreferencia?.vigente && !local.ubicando) return '';
-      if (d && !d.vigente) return 'Cambiaste el plano: vuelve a Numerar para que se lea de nuevo.';
+      if (d && !d.vigente) return 'Cambiaste el plano: abre "Revisar los números" para que se lea de nuevo.';
       if (!puedeUbicar(local.entradas)) {
         return 'Pega tu coordenada y haz clic en ese punto del plano, o marca 2 puntos en "Afinar con puntos".';
       }
@@ -829,7 +903,7 @@ export function porQueNoSigue(paso, e, local = {}) {
       return local.ubicando ? 'Ubicando el plano…' : 'Aprieta "Ubicar de nuevo" para ubicar los lotes.';
     }
     case 'revisar':
-      return local.duplicados ? 'Hay números repetidos: corrígelos en Numerar.' : '';
+      return local.duplicados ? 'Hay números repetidos: corrígelos en "Revisar los números".' : '';
     default:
       return '';
   }
@@ -840,16 +914,18 @@ export function pasoSugerido(e) {
   switch (e?.paso) {
     case 'subir': return 'subir';
     case 'marcar': return 'marcar';
-    case 'digitalizar': return e.digitalizado ? 'numerar' : 'digitalizar';
+    // Sin leer, el plano se lee con "Seguir" de Marcar; leído con algo que cambió, en
+    // Numerar se vuelve a leer solo.
+    case 'digitalizar': return e.digitalizado ? 'numerar' : 'marcar';
     // Las caras sin número pueden ser caminos: solo los números perdidos piden volver.
     case 'ubicar': return e.digitalizado?.faltantes?.length ? 'numerar' : 'ubicar';
     case 'crear': return 'revisar';
-    case 'listo': return 'crear';
+    case 'listo': return 'revisar';
     default: return 'subir';
   }
 }
 
-/** Qué pasos ya están hechos (para la marca ✓). */
+/** Qué pastillas ya están hechas (para la marca ✓). Marcar incluye leer el plano. */
 export function pasosHechos(e) {
   const hecho = (paso) => {
     const orden = ['subir', 'marcar', 'digitalizar', 'ubicar', 'crear', 'listo'];
@@ -857,12 +933,9 @@ export function pasosHechos(e) {
   };
   return {
     subir: hecho('subir'),
-    marcar: hecho('marcar'),
-    digitalizar: hecho('digitalizar'),
-    numerar: hecho('digitalizar') && !e?.digitalizado?.faltantes?.length,
+    marcar: hecho('digitalizar'),
     ubicar: hecho('ubicar'),
-    revisar: hecho('ubicar'),
-    crear: e?.paso === 'listo',
+    revisar: e?.paso === 'listo',
   };
 }
 

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import {
   anclaDesde, aPagina, aplicarFuera, aplicarNumero, claveLote, decidirResto, devolverAlKmz, restoDe, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
-  herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, detalleUbicacion, distanciaEnPalabras, filaDelPunto, resumenUbicacion, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
+  herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, detalleUbicacion, distanciaEnPalabras, filaDelPunto, resumenUbicacion, ordenarEsquinas, PASOS, PASTILLAS, pastillaDe, pasoDeRuta, pasoSiguiente, hayQueNumerar, pasosHechos, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, semaforo, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
   tamanoRotado, normalizarGiro, puedeUbicar, ubicacionCompleta, textoHuecos, textoSemaforo, vistaAjustada, zoomEn,
   aplicarHomografia, cajaGirada, escalaDeUbicacion, girarEnPantalla, husoDe, leerEscala, lonLatAUtm, lotesEnElMapa, paginaALonLat,
@@ -788,11 +788,11 @@ test('un error de red o del servidor es pasajero; uno que responde, no', () => {
 
 test('los pasos se abren según lo que ya hay', () => {
   assert.deepEqual(pasosHabilitados({ pdf: false }),
-    { subir: true, marcar: false, digitalizar: false, numerar: false, ubicar: false, revisar: false, crear: false });
+    { subir: true, marcar: false, digitalizar: false, numerar: false, ubicar: false, revisar: false });
   const digitalizado = { pdf: true, entradas: {}, digitalizado: { vigente: true }, georreferencia: null };
   assert.equal(pasosHabilitados(digitalizado).ubicar, true);
-  assert.equal(pasosHabilitados(digitalizado).crear, false);
-  assert.equal(pasosHabilitados({ ...digitalizado, georreferencia: { vigente: true } }).crear, true);
+  assert.equal(pasosHabilitados(digitalizado).revisar, false);
+  assert.equal(pasosHabilitados({ ...digitalizado, georreferencia: { vigente: true } }).revisar, true);
   assert.equal(pasosHabilitados({ ...digitalizado, georreferencia: { vigente: false } }).revisar, false);
 });
 
@@ -807,13 +807,88 @@ test('"Seguir: numerar" pide una digitalización vigente y que no corra otra', (
 
 test('al llegar se abre el paso que sigue', () => {
   assert.equal(pasoSugerido({ paso: 'subir' }), 'subir');
-  assert.equal(pasoSugerido({ paso: 'digitalizar', digitalizado: null }), 'digitalizar');
+  // Sin leer, se abre Marcar: su "Seguir" lee el plano.
+  assert.equal(pasoSugerido({ paso: 'digitalizar', digitalizado: null }), 'marcar');
   assert.equal(pasoSugerido({ paso: 'digitalizar', digitalizado: { vigente: false } }), 'numerar');
   assert.equal(pasoSugerido({ paso: 'ubicar', digitalizado: { sin_numero: 0, faltantes: ['13'] } }), 'numerar');
   // Una cara sin número puede ser un camino: no obliga a volver a numerar.
   assert.equal(pasoSugerido({ paso: 'ubicar', digitalizado: { sin_numero: 3, faltantes: [] } }), 'ubicar');
   assert.equal(pasoSugerido({ paso: 'crear' }), 'revisar');
-  assert.equal(pasoSugerido({ paso: 'listo' }), 'crear');
+  // Crear el KMZ es parte de Revisar y descargar.
+  assert.equal(pasoSugerido({ paso: 'listo' }), 'revisar');
+});
+
+test('cuatro pastillas: leer el plano y Numerar marcan la de Marcar', () => {
+  assert.deepEqual(PASTILLAS, ['subir', 'marcar', 'ubicar', 'revisar']);
+  assert.deepEqual(PASOS, ['subir', 'marcar', 'digitalizar', 'numerar', 'ubicar', 'revisar']);
+  assert.equal(pastillaDe('digitalizar'), 'marcar');
+  assert.equal(pastillaDe('numerar'), 'marcar');
+  for (const p of PASTILLAS) assert.equal(pastillaDe(p), p);
+  assert.deepEqual(Object.keys(pasosHechos({ paso: 'ubicar' })), PASTILLAS);
+  // Marcar queda hecho cuando el plano ya se leyó; Revisar y descargar, con el KMZ creado.
+  assert.deepEqual(pasosHechos({ paso: 'ubicar' }), { subir: true, marcar: true, ubicar: false, revisar: false });
+  assert.deepEqual(pasosHechos({ paso: 'digitalizar' }), { subir: true, marcar: false, ubicar: false, revisar: false });
+  assert.equal(pasosHechos({ paso: 'listo' }).revisar, true);
+});
+
+test('las rutas de los siete pasos de antes llevan al paso que hoy las contiene', () => {
+  const leyendo = { trabajo: { id: 'x', terminado: false } };
+  assert.equal(pasoDeRuta('digitalizar', {}), 'marcar');
+  assert.equal(pasoDeRuta('digitalizar', leyendo), 'digitalizar');
+  assert.equal(pasoDeRuta('digitalizar', { trabajo: { id: 'x', terminado: true } }), 'marcar');
+  assert.equal(pasoDeRuta('numerar', {}), 'numerar');
+  assert.equal(pasoDeRuta('revisar', {}), 'revisar');
+  assert.equal(pasoDeRuta('crear', {}), 'revisar');
+  for (const p of ['subir', 'marcar', 'ubicar']) assert.equal(pasoDeRuta(p, {}), p);
+  assert.equal(pasoDeRuta('otro', {}), null);
+  assert.equal(pasoDeRuta(null, {}), null);
+  assert.deepEqual(ruta('#/kmz/los-robles/crear'), { pantalla: 'kmz', slug: 'los-robles', paso: 'crear' });
+});
+
+/** Un lote numerado y una parte sin número (`de_lote`: del tamaño de un lote). */
+const numerado = (numero, extra = {}) => ({ properties: { numero, banderas: [], ...extra } });
+const sinNum = (extra = {}) => ({ properties: { numero: null, banderas: ['sin_numero'], ...extra }, rotulo: [0, 0] });
+
+test('hayQueNumerar: solo si falta algo de los números', () => {
+  const leido = { digitalizado: { vigente: true, faltantes: [], huecos: [], lector: { numeros_cuadro: ['1', '2'] } } };
+  const bien = [numerado('1'), numerado('2')];
+  assert.equal(hayQueNumerar(leido, bien), false);
+  // Sin leer no hay qué numerar.
+  assert.equal(hayQueNumerar({ digitalizado: null }, bien), false);
+  // Una parte chica sin número (un camino) no obliga.
+  assert.equal(hayQueNumerar(leido, [...bien, sinNum()]), false);
+  // Un lote sin número, sí.
+  assert.equal(hayQueNumerar(leido, [...bien, sinNum({ de_lote: true, banderas: ['sin_numero', 'de_lote'] })]), true);
+  // Una lectura por confirmar, aunque sea en una parte chica.
+  assert.equal(hayQueNumerar(leido, [...bien, sinNum({ sugerencia: { numero: '3' } })]), true);
+  // Números repetidos.
+  assert.equal(hayQueNumerar(leido, [numerado('1'), numerado('1', { banderas: ['duplicado'] }), numerado('2')]), true);
+  // Un hueco de la numeración (el servidor pone ahí los del cuadro cuando el cuadro calza).
+  assert.equal(hayQueNumerar({ digitalizado: { ...leido.digitalizado, huecos: ['2'] } }, [numerado('1')]), true);
+  assert.equal(hayQueNumerar({ digitalizado: { ...leido.digitalizado, huecos: ['3'] } }, bien), true);
+  // Ya numerado después de leer: el hueco deja de faltar.
+  assert.equal(hayQueNumerar({ digitalizado: { ...leido.digitalizado, huecos: ['2'] } }, bien), false);
+  // Un número del cuadro que no está en los huecos (el cuadro no calza con lo leído): Numerar
+  // no lo dice como pendiente ("Todos los lotes tienen número"), así que no se pasa por ahí.
+  assert.equal(hayQueNumerar(leido, [numerado('1')]), false);
+  // Un número marcado que no cayó en ningún lote.
+  assert.equal(hayQueNumerar({ digitalizado: { ...leido.digitalizado, faltantes: ['9'] } }, bien), true);
+  // La pregunta del resto sin contestar; contestada (fuera), ya no, aunque su número esté en el cuadro.
+  assert.equal(hayQueNumerar(leido, [...bien, sinNum({ resto: true })]), true);
+  const conResto = { digitalizado: { ...leido.digitalizado, huecos: ['3'], lector: { numeros_cuadro: ['1', '2', '3'] } } };
+  assert.equal(hayQueNumerar(conResto, [...bien, sinNum({ resto: true, fuera: true, numero_resto: '3' })]), false);
+});
+
+test('"Seguir" va a Numerar solo si hace falta; si no, de Marcar a Ubicar', () => {
+  const leido = { digitalizado: { vigente: true, faltantes: [], huecos: [] } };
+  assert.equal(pasoSiguiente('subir', leido, []), 'marcar');
+  assert.equal(pasoSiguiente('marcar', leido, [numerado('1')]), 'ubicar');
+  assert.equal(pasoSiguiente('digitalizar', leido, [numerado('1')]), 'ubicar');
+  assert.equal(pasoSiguiente('digitalizar', leido, [numerado('1'), sinNum({ de_lote: true })]), 'numerar');
+  assert.equal(pasoSiguiente('numerar', leido, []), 'ubicar');
+  assert.equal(pasoSiguiente('ubicar', leido, []), 'revisar');
+  // En Revisar y descargar no hay "Seguir": se crea el KMZ.
+  assert.equal(pasoSiguiente('revisar', leido, []), null);
 });
 
 test('el hash lleva a Mis KMZ y a un KMZ, que ya no cuelga de un master', () => {
@@ -966,9 +1041,9 @@ test('bajo un "Seguir" apagado va por qué, en cada paso', () => {
   assert.equal(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: null } },
     { entradas: { anclas: [], ubicacion: { ...punto, escala_impresa: 5000 } }, ubicando: true }), 'Ubicando el plano…');
   assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [{}, {}] }, ubicando: true }), 'Ubicando el plano…');
-  assert.match(porQueNoSigue('ubicar', { digitalizado: { vigente: false } }, { entradas: { anclas: [] } }), /Numerar/);
+  assert.match(porQueNoSigue('ubicar', { digitalizado: { vigente: false } }, { entradas: { anclas: [] } }), /Revisar los números/);
 
-  assert.equal(porQueNoSigue('revisar', vigente, { duplicados: 2 }), 'Hay números repetidos: corrígelos en Numerar.');
+  assert.equal(porQueNoSigue('revisar', vigente, { duplicados: 2 }), 'Hay números repetidos: corrígelos en "Revisar los números".');
   assert.equal(porQueNoSigue('revisar', vigente, { duplicados: 0 }), '');
 });
 
@@ -1124,4 +1199,8 @@ test('semáforo en ámbar si casi todos se desvían parejo, aunque menos de la m
   assert.equal(luz.dentro, 3);
   assert.equal(textoSemaforo(luz), 'Casi todos los lotes salen cerca de un 4,9 % más chicos que en el cuadro'
     + ' de superficies. Suele ser la ubicación: vuelve a Ubicar y marca los puntos de nuevo.');
+  // Ubicado con puntos (se ofrece "Ajustar el tamaño con el cuadro"): el texto lo nombra.
+  assert.equal(textoSemaforo(luz, { ajustable: true }), 'Casi todos los lotes salen cerca de un 4,9 % más chicos'
+    + ' que en el cuadro de superficies. Suele ser la escala de los puntos de Ubicar: ajusta el tamaño con el'
+    + ' cuadro de superficies o vuelve a Ubicar y marca los puntos de nuevo.');
 });

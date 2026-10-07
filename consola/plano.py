@@ -131,7 +131,8 @@ class LotesSinNumero(PlanoNoListo):
         self.cuantos = cuantos
         super().__init__(
             ("Queda 1 lote sin número" if cuantos == 1 else f"Quedan {cuantos} lotes sin número")
-            + " (en rojo): no irían al KMZ. Numéralos en el paso Numerar, o crea el KMZ sin ellos.")
+            + " (en rojo): no irían al KMZ. Ponles su número en \"Revisar los números\", o crea el"
+            " KMZ sin ellos.")
 
 
 @dataclass(frozen=True)
