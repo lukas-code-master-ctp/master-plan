@@ -28,6 +28,7 @@ from .construir import (
     _resumen,
     comerciales,
 )
+from .excel import alinear_con
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,8 @@ def actualizar(fuentes: config.Fuentes, proyecto: config.Proyecto,
 
     parcelas = datos["parcelas"]
     en_el_sitio = {p["id"] for p in parcelas}
+    # El mismo cruce que hizo la construcción: si el sitio quedó con los ids del KMZ, sin etapa.
+    fichas = alinear_con(fichas, en_el_sitio)
     faltan = sorted(set(fichas) - en_el_sitio, key=_orden_lote)
     # Una parcela que solo existía por la planilla (sin polígono) y ya no está en
     # ella tampoco se puede resolver acá: la construcción la sacaría del sitio.
