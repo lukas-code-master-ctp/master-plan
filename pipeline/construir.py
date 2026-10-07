@@ -327,13 +327,18 @@ def _armar_parcelas(fichas: dict[str, FichaComercial],
                     geometrias: dict[str, ParcelaGeometrica],
                     apariciones: dict[str, list[tuple[str, float]]]) -> list[dict]:
     parcelas = []
-    # Con más de una etapa los números se repiten —Cauquenes tiene cuatro, así que
-    # del 1 al 12 cada número aparece cuatro veces— y hay que decir cuál es cuál.
-    varias_etapas = len({e for e in (
-        (g.etapa if g and g.etapa is not None else f.etapa if f else None)
-        for identificador in set(fichas) | set(geometrias)
-        for g, f in [(geometrias.get(identificador), fichas.get(identificador))]
-    ) if e is not None}) > 1
+    # Con etapas que repiten la numeración —Cauquenes tiene cuatro, así que del 1 al
+    # 12 cada número aparece cuatro veces— hay que decir cuál es cuál. Si las etapas
+    # no repiten números (Vichuquén: A1 a A579), la etapa delante sobra.
+    etapas_por_numero: dict[int, set[int]] = {}
+    for identificador in set(fichas) | set(geometrias):
+        geometria, ficha = geometrias.get(identificador), fichas.get(identificador)
+        etapa = (geometria.etapa if geometria and geometria.etapa is not None
+                 else ficha.etapa if ficha else None)
+        if etapa is not None:
+            numero = _descomponer(identificador, etapa)[1]
+            etapas_por_numero.setdefault(numero, set()).add(etapa)
+    varias_etapas = any(len(etapas) > 1 for etapas in etapas_por_numero.values())
 
     for identificador in sorted(set(fichas) | set(geometrias), key=_orden_lote):
         ficha = fichas.get(identificador)
