@@ -507,13 +507,31 @@ button { cursor: pointer; }
   stroke-width: 3;
 }
 
+/* El globo de la elegida: la pastilla flota sobre la parcela y una patita con
+   punta la señala (visor.js, _ponerGlobo). En las demás no existen. */
+.parcela__patita, .parcela__punta { display: none; }
+.parcela--seleccionada .parcela__patita {
+  display: inline;
+  stroke: #fff;
+  stroke-width: 2;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.5));
+}
+.parcela--seleccionada .parcela__punta {
+  display: inline;
+  fill: currentColor;
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
 .parcela--atenuada { opacity: 0.18; pointer-events: none; }
 .parcela--atenuada .parcela__pastilla { display: none; }
 
 /* Con una parcela elegida, el resto da un paso atrás: se apaga y pierde el rótulo,
    pero se puede tocar para cambiar de parcela. */
+/* 0.2 y no más: en un loteo grande son cientos de contornos blancos, y al 30 % todavía
+   competían con la elegida. */
 .overlay--con-seleccion .parcela:not(.parcela--seleccionada) {
-  opacity: 0.3;
+  opacity: 0.2;
   transition: opacity 200ms ease;
 }
 .overlay--con-seleccion .parcela:not(.parcela--seleccionada):hover { opacity: 0.75; }

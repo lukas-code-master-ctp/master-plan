@@ -51,12 +51,6 @@ export function formatearPrecio(precio, moneda) {
   return `$${NUMERO.format(Math.round(precio))}`;
 }
 
-/** La pastilla de la parcela elegida sobre la foto: el número y, si lo hay, el precio. */
-export function rotuloConPrecio(parcela, rotulo) {
-  const precio = formatearPrecio(parcela.precio, parcela.moneda);
-  return precio ? `${rotulo} · ${precio}` : rotulo;
-}
-
 /** Texto de la planilla o del KMZ dentro del HTML o del KML: nunca como marcado. */
 export function escapar(texto) {
   return String(texto)
