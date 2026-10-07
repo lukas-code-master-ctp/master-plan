@@ -5,6 +5,9 @@ const TESELAS = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imag
 const ATRIBUCION = 'Imágenes © Esri, Maxar, Earthstar Geographics';
 const RADIO_CONO_M = 700;
 const METROS_POR_GRADO_LAT = 111320;
+// El nombre al pasar el cursor, solo con mouse: en pantallas táctiles el toque lo
+// dejaba abierto y se acumulaban decenas de rótulos encima del plano.
+const CON_CURSOR = window.matchMedia('(hover: hover)');
 
 export class Mapa {
   constructor(elemento, catalogo, { alElegirParcela, alPasarSobreParcela, alElegirVista } = {}) {
@@ -47,7 +50,7 @@ export class Mapa {
         className: 'parcela-mapa', weight: 1, fillOpacity: 0.28,
       }).addTo(this.mapa);
 
-      forma.bindTooltip(this.catalogo.nombre(parcela), { direction: 'top', sticky: true });
+      if (CON_CURSOR.matches) forma.bindTooltip(this.catalogo.nombre(parcela), ETIQUETA_AL_PASAR);
       forma.on('click', () => this.alElegirParcela(parcela.id));
       forma.on('mouseover', () => this.alPasarSobreParcela(parcela.id));
       forma.on('mouseout', () => this.alPasarSobreParcela(null));
@@ -108,23 +111,44 @@ export class Mapa {
 
   aplicarEstilos(estiloParcela) {
     this.estiloParcela = estiloParcela;
+    // Con una elegida, las demás se apagan para que se vea sola.
+    const hayElegida = this.seleccionada !== null;
     for (const [id, forma] of this.formas) {
       const estilo = estiloParcela(id);
       const seleccionada = id === this.seleccionada;
+      const apagada = estilo.atenuada || (hayElegida && !seleccionada);
       forma.setStyle({
         // El seleccionado va en ocre: el blanco ya es el color por defecto.
         color: seleccionada ? '#c07a2c' : estilo.color,
         weight: seleccionada ? 3 : 1,
         fillColor: estilo.color,
-        fillOpacity: estilo.atenuada ? 0.05 : (seleccionada ? 0.6 : 0.28),
-        opacity: estilo.atenuada ? 0.2 : 0.9,
+        fillOpacity: apagada ? 0.06 : (seleccionada ? 0.6 : 0.28),
+        opacity: apagada ? 0.3 : 0.9,
       });
     }
   }
 
   marcarSeleccionada(id) {
+    const anterior = this.formas.get(this.seleccionada);
+    if (anterior) this._etiquetar(anterior, this.seleccionada, false);
     this.seleccionada = id;
+    const forma = this.formas.get(id);
+    if (forma) this._etiquetar(forma, id, true);
+    this.mapa.getContainer().classList.toggle('mapa--con-seleccion', Boolean(forma));
     this.aplicarEstilos(this.estiloParcela);
+  }
+
+  /** La elegida lleva su nombre fijo y late (.parcela-mapa--elegida); las demás, al pasar. */
+  _etiquetar(forma, id, elegida) {
+    forma.unbindTooltip();
+    const nombre = this.catalogo.nombre(this.catalogo.porId.get(id));
+    if (elegida) {
+      forma.bindTooltip(nombre, { permanent: true, direction: 'top', className: 'etiqueta-elegida' })
+        .openTooltip();
+    } else if (CON_CURSOR.matches) {
+      forma.bindTooltip(nombre, ETIQUETA_AL_PASAR);
+    }
+    forma.getElement()?.classList.toggle('parcela-mapa--elegida', elegida);
   }
 
   marcarVista(vista) {
@@ -169,6 +193,8 @@ export class Mapa {
     if (!this.encuadrado) this.encuadrado = this._encuadrar();
   }
 }
+
+const ETIQUETA_AL_PASAR = { direction: 'top', sticky: true };
 
 function aLatLng(anillo) {
   return anillo.map(([lon, lat]) => [lat, lon]);

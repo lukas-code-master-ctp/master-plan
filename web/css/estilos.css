@@ -510,6 +510,36 @@ button { cursor: pointer; }
 .parcela--atenuada { opacity: 0.18; pointer-events: none; }
 .parcela--atenuada .parcela__pastilla { display: none; }
 
+/* Con una parcela elegida, el resto da un paso atrás: se apaga y pierde el rótulo,
+   pero se puede tocar para cambiar de parcela. */
+.overlay--con-seleccion .parcela:not(.parcela--seleccionada) {
+  opacity: 0.3;
+  transition: opacity 200ms ease;
+}
+.overlay--con-seleccion .parcela:not(.parcela--seleccionada):hover { opacity: 0.75; }
+.overlay--con-seleccion .parcela:not(.parcela--seleccionada) .parcela__pastilla { display: none; }
+
+/* El brillo que late alrededor de la elegida, del color de su estado. Solo se
+   anima la opacidad. */
+.parcela-halo {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 7;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  animation: latido 1.6s ease-in-out infinite;
+}
+@keyframes latido {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+/* La regla general de movimiento reducido acorta las animaciones a 1 ms: en una
+   infinita eso sería un parpadeo. Acá el brillo se queda quieto. */
+@media (prefers-reduced-motion: reduce) {
+  .parcela-halo, .parcela-mapa--elegida { animation: none !important; opacity: 0.85; }
+}
+
 .referencia { pointer-events: none; }
 .referencia__tick { stroke: rgb(255 255 255 / 0.85); stroke-width: 1.5; }
 .referencia__texto {
@@ -832,9 +862,76 @@ button { cursor: pointer; }
 .carta__accion[aria-pressed="true"] { background: var(--marca-50); color: var(--marca-700); }
 .accion[aria-pressed="true"] { background: var(--zinc-900); color: #fff; }
 
-.mapa { height: 11rem; background: var(--zinc-100); transition: height 420ms var(--curva); }
-.carta--amplia { width: min(32rem, 44vw); }
-.carta--amplia .mapa { height: min(22rem, 48vh); }
+.mapa { height: 11rem; background: var(--zinc-100); }
+.carta__accion + .carta__accion { margin-left: 0; }
+
+/* El plano en escritorio tiene tres estados (body[data-plano]): guardado en el
+   botón flotante, abierto como minimapa en la esquina, o a pantalla completa bajo
+   la cabecera. En el teléfono es otra pestaña y nada de esto aplica. */
+.plano-flotante {
+  position: fixed;
+  z-index: 21;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--alto-control);
+  padding: 0 1.1rem 0 0.9rem;
+  background: var(--papel);
+  border: 0;
+  border-radius: var(--radio-full);
+  box-shadow: var(--sombra-panel);
+  color: var(--tinta);
+  font: 600 0.875rem/1 var(--sans);
+  cursor: pointer;
+  transition: transform 160ms var(--curva), box-shadow 160ms;
+}
+.plano-flotante svg { width: 1.15rem; height: 1.15rem; }
+.plano-flotante:hover { transform: translateY(-1px); }
+.plano-flotante:active { transform: translateY(0) scale(0.98); }
+.plano-flotante:focus-visible { outline: 2px solid var(--marca-700); outline-offset: 2px; }
+
+@media (min-width: 62.0625rem) {
+  body[data-plano="cerrado"] .carta { display: none; }
+  body[data-plano="cerrado"] .plano-flotante { display: inline-flex; animation: subir 200ms ease-out; }
+
+  body[data-plano="completo"] .carta {
+    inset: var(--alto-cabecera) 0 0;
+    width: auto;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    animation: aparecer 180ms ease-out;
+  }
+  body[data-plano="completo"] .mapa { flex: 1; height: auto; }
+  /* Lo de la vista aérea queda debajo del plano; la leyenda sigue sirviendo. */
+  body[data-plano="completo"] .barra-inferior,
+  body[data-plano="completo"] .instrumentos { display: none; }
+  body[data-plano="completo"] .leyenda { z-index: 22; }
+}
+
+/* En el plano, la elegida late y lleva su nombre fijo; las demás no muestran el
+   suyo mientras haya una elegida. */
+.parcela-mapa--elegida {
+  animation: latido-plano 1.6s ease-in-out infinite;
+  filter: drop-shadow(0 0 5px rgb(255 214 150 / 0.95));
+}
+@keyframes latido-plano {
+  0%, 100% { stroke-opacity: 0.55; stroke-width: 3px; }
+  50% { stroke-opacity: 1; stroke-width: 6px; }
+}
+.mapa--con-seleccion .leaflet-tooltip:not(.etiqueta-elegida) { display: none; }
+.leaflet-tooltip.etiqueta-elegida {
+  padding: 0.3rem 0.6rem;
+  background: var(--zinc-900);
+  border: 0;
+  border-radius: var(--radio-full);
+  box-shadow: var(--sombra-hud);
+  color: #fff;
+  font: 700 0.75rem/1 var(--sans);
+}
+.leaflet-tooltip-top.etiqueta-elegida::before { border-top-color: var(--zinc-900); }
 
 .leaflet-container { background: var(--zinc-100); font: inherit; outline: none; }
 .leaflet-control-attribution {
@@ -907,9 +1004,9 @@ button { cursor: pointer; }
 /* En el plano chico de escritorio las pastillas tapaban el loteo: ahí basta el
    disco, y la altura vuelve al agrandarlo. */
 @media (min-width: 62.0625rem) {
-  .carta:not(.carta--amplia) .punto-vuelo { --disco: 24px; padding-right: 0; }
-  .carta:not(.carta--amplia) .punto-vuelo__rotulo { display: none; }
-  .carta:not(.carta--amplia) .punto-vuelo__disco { font-size: 0.625rem; }
+  body:not([data-plano="completo"]) .carta .punto-vuelo { --disco: 24px; padding-right: 0; }
+  body:not([data-plano="completo"]) .carta .punto-vuelo__rotulo { display: none; }
+  body:not([data-plano="completo"]) .carta .punto-vuelo__disco { font-size: 0.625rem; }
 }
 
 .leaflet-tooltip {

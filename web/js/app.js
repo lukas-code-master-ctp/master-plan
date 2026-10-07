@@ -255,8 +255,17 @@ function construirControles() {
     return boton;
   }));
 
+  $('#abrir-plano').addEventListener('click', () => ponerPlano('mini', { alTerminar: enfocarEnElPlano }));
   $('#ampliar-mapa').addEventListener('click', () => {
-    ampliarPlano(!$('#carta').classList.contains('carta--amplia'));
+    ponerPlano(document.body.dataset.plano === 'completo' ? 'mini' : 'completo',
+               { alTerminar: enfocarEnElPlano });
+  });
+  $('#cerrar-plano').addEventListener('click', () => {
+    ponerPlano('cerrado');
+    $('#abrir-plano').focus();
+  });
+  document.addEventListener('keydown', (evento) => {
+    if (evento.key === 'Escape' && document.body.dataset.plano === 'completo') ponerPlano('mini');
   });
 
   $('#acercar').addEventListener('click', () => estado.visor.acercar(0.78));
@@ -264,19 +273,6 @@ function construirControles() {
 }
 
 function conectarAccionesRapidas() {
-  $('#accion-plano').addEventListener('click', () => {
-    // En el teléfono el plano es otra pestaña. En escritorio ya está a la vista,
-    // chico en una esquina: apretar "Plano" y que solo cambie la pestaña oculta
-    // era no hacer nada. Ahí se agranda, o se achica si ya estaba grande.
-    if (ESCRITORIO.matches) {
-      const amplia = !$('#carta').classList.contains('carta--amplia');
-      ampliarPlano(amplia, { alTerminar: () => amplia && enfocarEnElPlano() });
-      return;
-    }
-    mostrarPanel('mapa');
-    enfocarEnElPlano();
-  });
-
   const compartir = $('#accion-compartir');
   compartir.addEventListener('click', async () => {
     const etiqueta = compartir.querySelector('.accion__texto');
@@ -520,16 +516,24 @@ function conectarPaneles() {
 // El mismo corte que estilos.css: debajo, plano y vista aérea son pestañas.
 const ESCRITORIO = window.matchMedia('(min-width: 62.0625rem)');
 
-/** Agranda o achica el plano de la esquina, con los dos botones de acuerdo. */
-function ampliarPlano(amplia, { alTerminar } = {}) {
-  $('#carta').classList.toggle('carta--amplia', amplia);
-  $('#ampliar-mapa').setAttribute('aria-pressed', String(amplia));
-  $('#accion-plano').setAttribute('aria-pressed', String(amplia));
-  // Leaflet necesita saber que cambió de tamaño, y la transición dura 420 ms.
-  setTimeout(() => {
+/**
+ * El plano en escritorio: 'cerrado' (solo el botón flotante), 'mini' (en la
+ * esquina) o 'completo' (bajo la cabecera). Lo decide body[data-plano] en
+ * estilos.css; en el teléfono el plano es otra pestaña y esto no se ve.
+ */
+function ponerPlano(modo, { alTerminar } = {}) {
+  document.body.dataset.plano = modo;
+  const completo = modo === 'completo';
+  const ampliar = $('#ampliar-mapa');
+  ampliar.setAttribute('aria-pressed', String(completo));
+  ampliar.querySelector('.visually-hidden').textContent =
+    completo ? 'Volver al minimapa' : 'Plano a pantalla completa';
+  if (modo === 'cerrado') return;
+  // Leaflet mide su contenedor: hay que esperar a que el cambio de tamaño se pinte.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
     estado.mapa?.refrescar();
     alTerminar?.();
-  }, 460);
+  }));
 }
 
 /** En el plano, lo que se está mirando: la parcela elegida o el punto de vuelo. */
