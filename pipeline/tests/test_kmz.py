@@ -260,6 +260,49 @@ def test_si_el_lote_viene_dibujado_cerrado_manda_ese_poligono_y_no_la_franja_de_
     assert all(p.area_m2 == pytest.approx(4900, rel=0.01) for p in parcelas)
 
 
+def achurado(ancho=140, alto=70, separacion=3.2, estilo_id="rojo"):
+    """Rayas a 45° cada `separacion` metros que rellenan el rectángulo [0, ancho] × [0, alto],
+    de borde a borde, como el relleno que exporta el CAD."""
+    paso = separacion * 2 ** 0.5        # entre rayas y = x - c, medido sobre el eje x
+    rayas, c = [], -alto + paso
+    while c < ancho:
+        x0, x1 = max(0.0, c), min(ancho, alto + c)
+        rayas.append(linea([desplazar(x0, x0 - c), desplazar(x1, x1 - c)], estilo_id))
+        c += paso
+    return "".join(rayas)
+
+
+def test_el_achurado_no_parte_los_lotes_en_tiras():
+    """Hacienda Vichuquén: el CAD rellena un sector con rayas rojas a 45° cada 3,2 m.
+    En la red cada raya cortaba el lote, y el 112 quedaba como una tira de 161 m²."""
+    contenido = kml(estilo("rojo", "FF0000FF") + rejilla_de_dos() + achurado()
+                    + punto("LOTE 1", desplazar(35, 35))
+                    + punto("LOTE 2", desplazar(105, 35)))
+
+    parcelas = _parsear(contenido)
+
+    assert {p.id for p in parcelas} == {"1", "2"}
+    assert all(p.area_m2 == pytest.approx(4900, rel=0.01) for p in parcelas)
+
+
+def test_las_divisorias_paralelas_de_una_hilera_de_lotes_no_son_achurado():
+    """Una hilera de lotes angostos también trae muchas líneas paralelas de un mismo
+    color, pero separadas por el frente de un lote, no por unos pocos metros."""
+    lotes, frente = 24, 25
+    a, c = desplazar(0, 0), desplazar(lotes * frente, 0)
+    d, f = desplazar(0, 70), desplazar(lotes * frente, 70)
+    contorno = linea([a, c]) + linea([c, f]) + linea([f, d]) + linea([d, a])
+    divisorias = "".join(linea([desplazar(i * frente, 0), desplazar(i * frente, 70)], "rojo")
+                         for i in range(1, lotes))
+    rotulos = "".join(punto(f"LOTE {i + 1}", desplazar(i * frente + frente / 2, 35))
+                      for i in range(lotes))
+
+    parcelas = _parsear(kml(estilo("rojo", "FF0000FF") + contorno + divisorias + rotulos))
+
+    assert len(parcelas) == lotes
+    assert all(p.area_m2 == pytest.approx(frente * 70, rel=0.01) for p in parcelas)
+
+
 def test_un_poligono_que_encierra_varios_rotulos_no_es_un_lote():
     """El deslinde de todo el loteo también es un polígono cerrado: no puede quedarse
     con un rótulo. Ahí manda la red."""
@@ -349,3 +392,13 @@ def test_leer_lineas_trae_deslindes_y_caminos_pero_no_la_leyenda(tmp_path):
     lineas = leer_lineas(ruta)
 
     assert len(lineas) == 6            # 5 de la rejilla + el camino; nada de la leyenda
+
+
+def test_leer_lineas_deja_afuera_el_achurado(tmp_path):
+    """Las rayas del relleno no están en la foto: no sirven para calibrar."""
+    from pipeline.kmz import leer_lineas
+    ruta = tmp_path / "loteo.kmz"
+    with zipfile.ZipFile(ruta, "w") as archivo:
+        archivo.writestr("doc.kml", kml(estilo("rojo", "FF0000FF") + rejilla_de_dos() + achurado()))
+
+    assert len(leer_lineas(ruta)) == 5

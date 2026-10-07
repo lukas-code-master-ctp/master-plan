@@ -14,11 +14,13 @@ distingue por color. La leyenda —un cuadrito de cada color junto a un rótulo
 """
 from __future__ import annotations
 
+import math
 import re
 import zipfile
-from collections import Counter
-from dataclasses import dataclass, field
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from statistics import median
 from xml.etree import ElementTree as ET
 
 from shapely import STRtree, prepare
@@ -41,6 +43,17 @@ FRANJA_BORDE_M = 0.3
 
 # El cuadrito de la leyenda está a pocos metros de su rótulo "ETAPA n".
 DISTANCIA_MAXIMA_LEYENDA_M = 100.0
+
+# El CAD rellena algunos sectores con achurado: rayas rectas y paralelas, a pocos
+# metros unas de otras, todas de un color. No son deslindes, y en la red parten cada
+# lote en tiras (Hacienda Vichuquén: el 112 quedaba de 161 m² en vez de 6.000). Un
+# color es achurado si casi todo su largo va en una sola dirección y sus rayas
+# vecinas están más cerca que el frente de cualquier lote. Las divisorias de una
+# hilera de lotes también son paralelas, pero a 20 m o más.
+ACHURADO_MIN_RAYAS = 20
+ACHURADO_FRACCION_PARALELA = 0.9
+ACHURADO_TOLERANCIA_GRADOS = 2.0
+ACHURADO_SEPARACION_MAX_M = 8.0
 
 
 @dataclass
@@ -183,7 +196,63 @@ def _leer_dibujo(raiz: ET.Element, colores: dict[str, str]) -> _Dibujo:
             coordenadas = linea.find(NS + "coordinates")
             if coordenadas is not None and coordenadas.text:
                 dibujo.lineas.append((_coordenadas(coordenadas.text), color))
-    return dibujo
+    if not dibujo.lineas:
+        return dibujo
+    return replace(dibujo, lineas=_sin_achurado(dibujo.lineas, _origen(dibujo)))
+
+
+def _sin_achurado(lineas: list[tuple[list[geo.Punto], str | None]],
+                  origen: geo.Punto) -> list[tuple[list[geo.Punto], str | None]]:
+    """Las líneas del dibujo menos las rayas de achurado (ver ACHURADO_*)."""
+    por_color: dict[str, list[int]] = defaultdict(list)
+    for indice, (puntos, color) in enumerate(lineas):
+        if color and len(puntos) >= 2:
+            por_color[color].append(indice)
+    achurado: set[int] = set()
+    for indices in por_color.values():
+        formas = [LineString([geo.a_metros(p, origen) for p in lineas[i][0]]) for i in indices]
+        achurado.update(indices[j] for j in _rayas_de_achurado(formas))
+    return [linea for indice, linea in enumerate(lineas) if indice not in achurado]
+
+
+def _rayas_de_achurado(formas: list[LineString]) -> list[int]:
+    """Las posiciones de `formas` (todas de un color, en metros) que son achurado;
+    ninguna si el color no lo es."""
+    if len(formas) < ACHURADO_MIN_RAYAS:
+        return []
+    rumbos = [_rumbo(forma) for forma in formas]
+    largo_por_rumbo: Counter = Counter()
+    for forma, rumbo in zip(formas, rumbos):
+        if rumbo is not None:
+            largo_por_rumbo[round(rumbo) % 180] += forma.length
+    if not largo_por_rumbo:
+        return []
+    dominante = largo_por_rumbo.most_common(1)[0][0]
+    rayas = [i for i, rumbo in enumerate(rumbos)
+             if rumbo is not None and _entre_rumbos(rumbo, dominante) <= ACHURADO_TOLERANCIA_GRADOS]
+    largo_total = sum(forma.length for forma in formas)
+    if len(rayas) < ACHURADO_MIN_RAYAS \
+            or sum(formas[i].length for i in rayas) < ACHURADO_FRACCION_PARALELA * largo_total:
+        return []
+    paralelas = [formas[i] for i in rayas]
+    _, distancias = STRtree(paralelas).query_nearest(paralelas, exclusive=True, return_distance=True)
+    if median(distancias) > ACHURADO_SEPARACION_MAX_M:
+        return []
+    return rayas
+
+
+def _rumbo(forma: LineString) -> float | None:
+    """Rumbo de una línea recta, en grados entre 0 y 180; None si no es recta."""
+    (x0, y0), (x1, y1) = forma.coords[0], forma.coords[-1]
+    cuerda = math.hypot(x1 - x0, y1 - y0)
+    if cuerda < TOLERANCIA_RED_M or forma.length > cuerda * 1.01:
+        return None
+    return math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180
+
+
+def _entre_rumbos(a: float, b: float) -> float:
+    diferencia = abs(a - b) % 180
+    return min(diferencia, 180 - diferencia)
 
 
 def _colores_de_estilo(raiz: ET.Element) -> dict[str, str]:
