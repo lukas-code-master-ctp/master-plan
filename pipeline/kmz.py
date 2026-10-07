@@ -257,18 +257,54 @@ def _cerrar_red(dibujo: _Dibujo) -> list[ParcelaGeometrica]:
     red = unary_union(_pegar_extremos([linea for linea, _ in bordes]))
     etiquetas = [(identificador, Point(metros(p))) for identificador, p in dibujo.etiquetas]
 
+    dibujados = _lotes_dibujados(dibujo, etiquetas, metros)
+
     parcelas = []
     for cara in polygonize(red):
         dentro = [identificador for identificador, punto in etiquetas if cara.contains(punto)]
         if not dentro:
             continue
         anillo = [geo.desde_metros(xy, origen) for xy in list(cara.exterior.coords)[:-1]]
+        if len(dentro) == 1 and dentro[0] in dibujados:
+            anillo = dibujados[dentro[0]]
         parcelas.append(ParcelaGeometrica(
             id=dentro[0] if len(dentro) == 1 else None,
             anillo=anillo,
             color=_color_dominante(cara, bordes),
         ))
     return parcelas
+
+
+def _lotes_dibujados(dibujo: _Dibujo, etiquetas: list[tuple[str, Point]],
+                     metros) -> dict[str, geo.Anillo]:
+    """id → el polígono cerrado que el dibujo trae para ese lote, si lo trae.
+
+    La red de líneas también carga franjas (servidumbres, cercos) que parten el lote,
+    y el rótulo puede caer en la franja. Si el lote viene además cerrado, ese polígono
+    es el lote. Uno que encierra varios rótulos (el deslinde, una manzana) no lo es.
+    """
+    poligonos = []
+    for pg in dibujo.poligonos:
+        if len(pg.anillo) < 3:
+            continue
+        forma = Polygon([metros(p) for p in pg.anillo])
+        poligonos.append((forma if forma.is_valid else forma.buffer(0), pg.anillo))
+    if not poligonos:
+        return {}
+    arbol = STRtree([forma for forma, _ in poligonos])
+    rotulos_por_poligono: Counter = Counter()
+    candidatos: dict[str, list[int]] = {}
+    for identificador, punto in etiquetas:
+        dentro = [i for i in arbol.query(punto) if poligonos[i][0].contains(punto)]
+        rotulos_por_poligono.update(dentro)
+        candidatos[identificador] = dentro
+    dibujados = {}
+    for identificador, dentro in candidatos.items():
+        propios = [i for i in dentro if rotulos_por_poligono[i] == 1]
+        if propios:
+            elegido = min(propios, key=lambda i: poligonos[i][0].area)
+            dibujados[identificador] = poligonos[elegido][1]
+    return dibujados
 
 
 def _pegar_extremos(lineas: list[LineString]) -> list[LineString]:

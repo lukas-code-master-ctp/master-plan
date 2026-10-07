@@ -236,6 +236,43 @@ def test_descarta_las_caras_sin_etiqueta():
     assert [p.id for p in parcelas] == ["1"]
 
 
+def lote_dibujado(este, norte, lado=70):
+    """El lote cerrado, como polígono sin nombre (las "Area Features" de Global Mapper)."""
+    esquinas = [desplazar(este, norte), desplazar(este + lado, norte),
+                desplazar(este + lado, norte + lado), desplazar(este, norte + lado)]
+    return (f"<Placemark><name></name><Polygon><outerBoundaryIs><LinearRing><coordinates>"
+            f"{coords(esquinas + esquinas[:1])}</coordinates></LinearRing></outerBoundaryIs>"
+            f"</Polygon></Placemark>")
+
+
+def test_si_el_lote_viene_dibujado_cerrado_manda_ese_poligono_y_no_la_franja_de_la_red():
+    """Hacienda Vichuquén: además de los lotes cerrados, el dibujo trae una línea a
+    3,2 m del frente de cada lote. La red de líneas partía el lote en dos y el rótulo,
+    puesto en el frente, caía en la franja: el sitio mostraba tiras de 3 m de ancho."""
+    franja = linea([desplazar(0, 3.2), desplazar(140, 3.2)])
+    contenido = kml(rejilla_de_dos() + franja + lote_dibujado(0, 0) + lote_dibujado(70, 0)
+                    + punto("LOTE 1", desplazar(35, 1.5))
+                    + punto("LOTE 2", desplazar(105, 1.5)))
+
+    parcelas = _parsear(contenido)
+
+    assert {p.id for p in parcelas} == {"1", "2"}
+    assert all(p.area_m2 == pytest.approx(4900, rel=0.01) for p in parcelas)
+
+
+def test_un_poligono_que_encierra_varios_rotulos_no_es_un_lote():
+    """El deslinde de todo el loteo también es un polígono cerrado: no puede quedarse
+    con un rótulo. Ahí manda la red."""
+    contenido = kml(rejilla_de_dos() + lote_dibujado(0, 0, lado=140)
+                    + punto("LOTE 1", desplazar(35, 35))
+                    + punto("LOTE 2", desplazar(105, 35)))
+
+    parcelas = _parsear(contenido)
+
+    assert {p.id for p in parcelas} == {"1", "2"}
+    assert all(p.area_m2 == pytest.approx(4900, rel=0.01) for p in parcelas)
+
+
 def test_separa_por_etapa_segun_el_color_de_la_leyenda():
     """Cada etapa repite la numeración desde 1. El KMZ las distingue por color, y
     la leyenda (un cuadrito de cada color junto a su rótulo ETAPA) dice cuál es cuál."""
