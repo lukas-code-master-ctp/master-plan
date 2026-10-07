@@ -527,3 +527,229 @@ def test_otra_cuadricula_que_la_detectada_no_usa_sus_rectas(tmp_path, monkeypatc
 
     g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
     assert any("cambiaron desde la última lectura" in a for a in g["avisos"])
+
+
+# --- ubicar con un punto ------------------------------------------------------------
+
+def _loteo_girado(tmp_path, con_cuadro=True, **entradas):
+    """El plano sintético a 1:2.000 con el norte a la izquierda de la hoja (como Rapel):
+    su arriba apunta al este. La imagen de trabajo es un recorte agrandado 1,016 veces,
+    como en Rapel, para que se note si se confunden px de página y de trabajo.
+    Devuelve la verdad: px de página → (E, N) en UTM 19S."""
+    from pipeline.tests.plano_sintetico import PPMM, dibujar
+
+    s = 1.016
+    escala_pagina = 2000 / 1000 / PPMM                     # m por px de página
+    a = escala_pagina * complex(0.0, -1.0)                  # rotacion_grados = −90
+    b = complex(260000.0, 6215000.0)
+    lotes = []
+    for numero, celda in dibujar().celdas.items():
+        anillo = [[float(x), float(y)] for x, y in celda.exterior.coords]
+        lotes.append(dict(numero=numero, semilla=list(celda.representative_point().coords[0]), poligono=anillo,
+                          huecos=[], area_px=celda.area, vertices=len(anillo) - 1,
+                          area_oficial=round(celda.area * escala_pagina ** 2, 1) if con_cuadro else None))
+    _carpeta(tmp_path, lotes=lotes, **entradas)
+    d = json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))
+    d["trabajo"] = dict(ancho=6000, alto=6000, ppmm=PPMM * s, modo="recorte",
+                        homografia=[[s, 0, -120.0], [0, s, -70.0], [0, 0, 1]])
+    (tmp_path / "digitalizado.json").write_text(json.dumps(d), encoding="utf-8")
+    return lambda x, y: _verdad(x, y, a, b), lotes
+
+
+def _ubicacion(verdad, x=420.0, y=330.0, **extra):
+    e, n = verdad(x, y)
+    lon, lat = Transformer.from_crs(32719, 4326, always_xy=True).transform(e, n)
+    return dict(x=x, y=y, lon=float(lon), lat=float(lat), **extra)
+
+
+def _error_maximo(tmp_path, verdad, lotes):
+    t = Transformacion.desde_dict(json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8")))
+    puntos = np.array([p for l in lotes for p in l["poligono"]])
+    e, n = t.a_utm(puntos[:, 0], puntos[:, 1])
+    ev, nv = verdad(puntos[:, 0], puntos[:, 1])
+    return float(np.hypot(e - ev, n - nv).max()), t
+
+
+def test_un_punto_con_el_giro_y_la_escala_del_cuadro_calza_con_la_posicion_real(tmp_path, capsys):
+    verdad, lotes = _loteo_girado(tmp_path)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], ubicacion=_ubicacion(verdad, giro=90))), encoding="utf-8")
+
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+
+    error, t = _error_maximo(tmp_path, verdad, lotes)
+    assert error < 0.5
+    assert t.metodo == "punto" and t.tipo == "similitud"
+    p = t.parametros
+    assert p["origen_escala"] == "cuadro" and p["control"] == "sin control"
+    # El giro horario de la pantalla es el contrario de la rotación de `por_anclas`.
+    assert p["rotacion_grados"] == pytest.approx(-90) and p["giro_grados"] == 90
+    assert p["escala_m_px"] == pytest.approx(2 / 6 / 1.016)     # m por px de trabajo
+    # La escala salió del cuadro: compararla con él sería circular, no se avisa.
+    assert p["escala_cuadro"]["area_pct"] == pytest.approx(0, abs=0.05)
+    assert t.avisos == ["Ubicado con tu coordenada: el tamaño sale del cuadro de superficies. Si los lotes no"
+                        " calzan con los caminos, gira el plano o afina con puntos."]
+    assert "Punto:" in capsys.readouterr().out
+
+
+def test_el_giro_de_un_punto_es_el_contrario_de_la_rotacion_de_las_anclas(tmp_path):
+    verdad, lotes = _loteo_girado(tmp_path)
+    px = np.array([[100.0, 100.0], [1300.0, 150.0], [1250.0, 900.0], [150.0, 850.0]])
+    e, n = verdad(px[:, 0], px[:, 1])
+    lon, lat = Transformer.from_crs(32719, 4326, always_xy=True).transform(e, n)
+    anclas = [dict(x=float(x), y=float(y), lon=float(lo), lat=float(la)) for (x, y), lo, la in zip(px, lon, lat)]
+    rotacion = por_anclas(anclas).parametros["rotacion_grados"]
+    from pipeline.plano.georreferencia import por_punto
+    t = por_punto(_ubicacion(verdad, giro=-rotacion), 2 / 6)
+    e2, n2 = t.a_utm(px[:, 0], px[:, 1])
+    assert np.hypot(e2 - e, n2 - n).max() < 0.05
+
+
+def test_un_punto_con_la_escala_impresa(tmp_path, capsys):
+    verdad, lotes = _loteo_girado(tmp_path, con_cuadro=False)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], ubicacion=_ubicacion(verdad, giro=90, escala_impresa=2000))), encoding="utf-8")
+
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+
+    error, t = _error_maximo(tmp_path, verdad, lotes)
+    assert error < 0.5
+    assert t.parametros["origen_escala"] == "escala_impresa"
+    assert "de la escala del plano (1:2.000)" in t.avisos[0]
+
+
+def test_con_cuadro_la_escala_impresa_no_manda(tmp_path):
+    # El cuadro se lee del mismo plano; una escala mal tipeada no lo pisa.
+    verdad, lotes = _loteo_girado(tmp_path)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], ubicacion=_ubicacion(verdad, giro=90, escala_impresa=5000))), encoding="utf-8")
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    error, t = _error_maximo(tmp_path, verdad, lotes)
+    assert error < 0.5 and t.parametros["origen_escala"] == "cuadro"
+
+
+def test_un_punto_sin_cuadro_ni_escala_dice_que_falta(tmp_path, capsys):
+    verdad, _ = _loteo_girado(tmp_path, con_cuadro=False)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], ubicacion=_ubicacion(verdad, giro=90))), encoding="utf-8")
+    assert main(["georreferenciar", str(tmp_path)]) == 1
+    assert ("Para ubicar con tu coordenada hace falta el cuadro de superficies o la escala del plano"
+            " (por ejemplo 1:5.000). Si no la tienes, marca puntos.") in capsys.readouterr().err
+
+
+def test_los_puntos_mandan_sobre_la_coordenada(tmp_path):
+    verdad, _ = _loteo_girado(tmp_path)
+    px = np.array([[100.0, 100.0], [1300.0, 150.0], [1250.0, 900.0]])
+    e, n = verdad(px[:, 0], px[:, 1])
+    lon, lat = Transformer.from_crs(32719, 4326, always_xy=True).transform(e, n)
+    anclas = [dict(x=float(x), y=float(y), lon=float(lo), lat=float(la)) for (x, y), lo, la in zip(px, lon, lat)]
+    # Una coordenada con el giro mal puesto: si mandara, los lotes quedarían girados.
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], anclas=anclas, ubicacion=_ubicacion(verdad, giro=0))), encoding="utf-8")
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    assert g["metodo"] == "anclas"
+    # Con un solo punto marcado, manda la coordenada.
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], anclas=anclas[:1], ubicacion=_ubicacion(verdad, giro=90))), encoding="utf-8")
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    assert json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))["metodo"] == "punto"
+
+
+def test_la_coordenada_a_medias_no_ubica(tmp_path, capsys):
+    verdad, _ = _loteo_girado(tmp_path)
+    u = _ubicacion(verdad)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], ubicacion=dict(lon=u["lon"], lat=u["lat"]))), encoding="utf-8")
+    assert main(["georreferenciar", str(tmp_path)]) == 1
+    assert "2 puntos" in capsys.readouterr().err
+
+
+def test_el_ajuste_fino_se_suma_a_la_coordenada(tmp_path):
+    verdad, lotes = _loteo_girado(tmp_path)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], ubicacion=_ubicacion(verdad, giro=90), ajuste=dict(de=3.0, dn=-2.0))),
+        encoding="utf-8")
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    t = Transformacion.desde_dict(json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8")))
+    e, n = t.a_utm(500.0, 500.0)
+    ev, nv = verdad(500.0, 500.0)
+    assert (e - ev, n - nv) == (pytest.approx(3.0, abs=1e-6), pytest.approx(-2.0, abs=1e-6))
+
+
+@pytest.mark.parametrize("ubicacion, error", [
+    (dict(x=1, y=2, lon=-200, lat=-34), "fuera de rango"),
+    (dict(x=1, y=2, lon=-71, lat=-34, giro=200), "−180 a 180"),
+    (dict(x="1", y=2, lon=-71, lat=-34), "ubicacion.x"),
+    (dict(x=1, y=2, lon=-71, lat=-34, escala_impresa=0), "no parece real"),
+    (dict(x=1, y=2, lon=-71, lat=-34, escala_impresa=2500.5), "entero"),
+    ([1, 2], "ubicacion"),
+])
+def test_la_ubicacion_mal_escrita_se_dice(tmp_path, ubicacion, error):
+    from pipeline.plano.digitalizar import leer_entradas
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(ubicacion=ubicacion)), encoding="utf-8")
+    with pytest.raises(ValueError, match=error):
+        leer_entradas(tmp_path)
+
+
+def test_la_ubicacion_se_normaliza_y_puede_venir_a_medias(tmp_path):
+    from pipeline.plano.digitalizar import leer_entradas
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(ubicacion=dict(lon=-71.5, lat=-34.1))), encoding="utf-8")
+    assert leer_entradas(tmp_path)["ubicacion"] == dict(lon=-71.5, lat=-34.1, giro=0.0, escala_impresa=None)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        ubicacion=dict(x=1, y=2, lon=-71.5, lat=-34.1, giro=-45, escala_impresa=5000.0))), encoding="utf-8")
+    assert leer_entradas(tmp_path)["ubicacion"] == dict(x=1.0, y=2.0, lon=-71.5, lat=-34.1, giro=-45.0,
+                                                        escala_impresa=5000)
+    # Sin la clave, las entradas quedan como antes.
+    (tmp_path / "entradas.json").write_text(json.dumps({}), encoding="utf-8")
+    assert "ubicacion" not in leer_entradas(tmp_path)
+
+
+def test_la_escala_del_cuadro_va_en_px_de_trabajo(tmp_path):
+    from pipeline.plano.georreferencia import escala_del_cuadro
+    _loteo_girado(tmp_path)
+    d = json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))
+    assert escala_del_cuadro(d) == pytest.approx(2 / 6 / 1.016, rel=1e-4)
+    # Con menos de 3 lotes con área oficial, no hay escala.
+    for l in d["lotes"][2:]:
+        l["area_oficial"] = None
+    assert escala_del_cuadro(d) is None
+
+
+def test_un_punto_en_una_foto_rectificada_usa_la_homografia_para_la_escala_y_el_punto(tmp_path):
+    # Una foto con perspectiva: un px de página no mide lo mismo en todas partes. El cuadro
+    # se mide en px de trabajo (enderezado) y el punto se lleva a trabajo con la misma
+    # homografía; si uno de los dos usara la página, los lotes lejos del punto no calzarían.
+    h = np.array([[0.9, 0.08, -40.0], [-0.05, 1.1, 25.0], [6e-5, 4e-5, 1.0]])
+    inversa = np.linalg.inv(h)
+    escala = 0.4                                            # m por px de trabajo
+    a, b = escala * complex(0.0, -1.0), complex(260000.0, 6215000.0)   # el norte a la izquierda
+    lotes = []
+    for i in range(4):
+        for j in range(3):
+            celda = np.array([[300 + 500 * i, 300 + 450 * j], [800 + 500 * i, 300 + 450 * j],
+                              [800 + 500 * i, 750 + 450 * j], [300 + 500 * i, 750 + 450 * j]], float)
+            q = np.c_[celda, np.ones(4)] @ inversa.T
+            pagina = (q[:, :2] / q[:, 2:3]).tolist()
+            lotes.append(dict(numero=str(3 * i + j + 1), semilla=pagina[0], poligono=pagina + [pagina[0]], huecos=[],
+                              area_px=1.0, vertices=4, area_oficial=500 * 450 * escala ** 2))
+    _carpeta(tmp_path, lotes=lotes)
+    d = json.loads((tmp_path / "digitalizado.json").read_text(encoding="utf-8"))
+    d["trabajo"] = dict(ancho=3000, alto=2000, ppmm=8.0, modo="perspectiva", homografia=h.tolist())
+    (tmp_path / "digitalizado.json").write_text(json.dumps(d), encoding="utf-8")
+
+    def verdad(x, y):
+        q = np.c_[np.atleast_1d(x), np.atleast_1d(y), np.ones(np.size(x))] @ h.T
+        return _verdad(q[:, 0] / q[:, 2], q[:, 1] / q[:, 2], a, b)
+
+    e, n = verdad(lotes[0]["poligono"][0][0], lotes[0]["poligono"][0][1])
+    lon, lat = Transformer.from_crs(32719, 4326, always_xy=True).transform(e[0], n[0])
+    ubicacion = dict(x=lotes[0]["poligono"][0][0], y=lotes[0]["poligono"][0][1], lon=float(lon), lat=float(lat), giro=90)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(pdf="plano.pdf", semillas=[], ubicacion=ubicacion)),
+                                            encoding="utf-8")
+
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+
+    error, t = _error_maximo(tmp_path, verdad, lotes)
+    assert error < 0.05
+    assert t.parametros["escala_m_px"] == pytest.approx(escala)

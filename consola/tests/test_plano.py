@@ -545,6 +545,104 @@ def test_sin_anclas_no_se_puede_ubicar(ana):
     assert "2 puntos" in respuesta.json()["detail"]
 
 
+def _lotes_con_cuadro():
+    """Los de `digitalizado_a_mano`, con el área oficial que dan 0,5 m/px (3 lotes: alcanza
+    para sacar la escala del cuadro)."""
+    return [
+        dict(numero="1", poligono=_cuadro(0, 0, 400, 300), huecos=[], area_px=120000, area_oficial=30000),
+        dict(numero="2", poligono=_cuadro(400, 0, 800, 300), huecos=[], area_px=120000, area_oficial=30000),
+        dict(numero="A3", poligono=_cuadro(0, 300, 800, 700), huecos=[_cuadro(300, 400, 500, 600)],
+             area_px=240000, area_oficial=60000),
+    ]
+
+
+def test_ubicar_con_la_coordenada_y_un_punto_del_plano(ana):
+    web, slug, raiz, _ = ana
+    a = ancla("a", 0, 0)
+    ubicacion = dict(x=0, y=0, lon=a["lon"], lat=a["lat"], giro=0)
+    listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, anclas=[], ubicacion=ubicacion))
+    carpeta = carpeta_del_plano(raiz, slug)
+    digitalizado_a_mano(carpeta, _lotes_con_cuadro())
+
+    estado = web.get(f"/api/kmz/{slug}").json()
+    # Lo que necesita la vista previa del navegador.
+    assert estado["digitalizado"]["escala_m_px"] == pytest.approx(M_PX)
+    assert estado["digitalizado"]["homografia"] == np.eye(3).tolist()
+
+    respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
+
+    assert respuesta.status_code == 200, respuesta.text
+    g = respuesta.json()
+    assert g["metodo"] == "punto" and g["vigente"] is True
+    assert g["parametros"]["escala_m_px"] == pytest.approx(M_PX)
+    assert g["parametros"]["origen_escala"] == "cuadro"
+    t = json.loads((carpeta / "georreferencia.json").read_text(encoding="utf-8"))
+    from pipeline.plano.georreferencia import Transformacion
+    e, n = Transformacion.desde_dict(t).a_utm(1000.0, 800.0)
+    assert abs(e - (E0 + M_PX * 1000)) < 0.5 and abs(n - (N0 - M_PX * 800)) < 0.5
+    assert web.get(f"/api/kmz/{slug}").json()["paso"] == "crear"
+
+    # Girar el plano deja la ubicación atrasada.
+    web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, anclas=[], ubicacion=dict(ubicacion, giro=5)))
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["paso"] == "ubicar" and estado["georreferencia"]["vigente"] is False
+
+
+def test_sin_cuadro_el_estado_no_trae_escala_y_ubicar_la_pide(ana):
+    web, slug, raiz, _ = ana
+    a = ancla("a", 0, 0)
+    listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, anclas=[], ubicacion=dict(x=0, y=0, lon=a["lon"], lat=a["lat"])))
+
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["escala_m_px"] is None
+    respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
+    assert respuesta.status_code == 400
+    assert "escala del plano (por ejemplo 1:5.000)" in respuesta.json()["detail"]
+
+
+def test_la_huella_de_ubicar_cambia_con_la_coordenada_solo_cuando_ubica_con_ella(ana):
+    from consola.plano import _huella, huella_ubicar
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    web.post(f"/api/kmz/{slug}/georreferenciar")
+    entradas = web.get(f"/api/kmz/{slug}").json()["entradas"]
+    # Sin coordenada, la huella es la de siempre: lo ya ubicado no queda atrasado.
+    assert huella_ubicar(entradas, "d") == _huella(dict(anclas=entradas["anclas"], ajuste=entradas["ajuste"],
+                                                        cuadricula=None, digitalizado="d"))
+    a = ancla("a", 0, 0)
+    a_medias = dict(lon=a["lon"], lat=a["lat"], giro=0.0, escala_impresa=None)
+    completa = dict(a_medias, x=0.0, y=0.0)
+    # Con 4 puntos mandan ellos: la coordenada (a medias o completa) no cambia la ubicación.
+    for u in (a_medias, completa, dict(completa, giro=30.0)):
+        assert huella_ubicar(dict(entradas, ubicacion=u), "d") == huella_ubicar(entradas, "d")
+    web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, ubicacion=a_medias))
+    assert web.get(f"/api/kmz/{slug}").json()["georreferencia"]["vigente"] is True
+
+    # Sin puntos: a medias no ubica (y no cuenta); completa sí, y girarla la cambia.
+    sin = dict(entradas, anclas=[])
+    assert huella_ubicar(dict(sin, ubicacion=a_medias), "d") == huella_ubicar(sin, "d")
+    con = dict(sin, ubicacion=completa)
+    assert huella_ubicar(con, "d") != huella_ubicar(sin, "d")
+    assert huella_ubicar(dict(con, ubicacion=dict(completa, giro=1.0)), "d") != huella_ubicar(con, "d")
+    # Con 1 punto todavía manda la coordenada.
+    uno = dict(con, anclas=entradas["anclas"][:1])
+    assert huella_ubicar(dict(uno, ubicacion=dict(completa, giro=1.0)), "d") != huella_ubicar(uno, "d")
+
+
+@pytest.mark.parametrize("ubicacion, mensaje", [
+    (dict(x=0, y=0, lon=-71.5, lat=-34.1, giro=270), "−180 a 180"),
+    (dict(x=0, y=0, lon=-71.5, lat=-134.1), "fuera de rango"),
+    (dict(x=0, y=0, lon=-71.5, lat=-34.1, escala_impresa=5), "no parece real"),
+    (dict(x=0, y=0, lon=-71.5, lat=-34.1, escala_impresa="1:5000"), "entero"),
+])
+def test_la_coordenada_mala_dice_que_esta_mal(ana, ubicacion, mensaje):
+    web, slug, _, _ = ana
+    subir(web, slug)
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, ubicacion=ubicacion))
+    assert respuesta.status_code == 400
+    assert mensaje in respuesta.json()["detail"]
+
+
 def test_ubicar_sin_digitalizar(ana):
     web, slug, _, _ = ana
     subir(web, slug)

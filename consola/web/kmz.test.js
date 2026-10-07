@@ -8,7 +8,7 @@ import {
   anclaDesde, aPagina, aplicarFuera, aplicarNumero, claveLote, decidirResto, devolverAlKmz, restoDe, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, detalleUbicacion, distanciaEnPalabras, filaDelPunto, resumenUbicacion, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, semaforo, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
-  tamanoRotado, textoHuecos, textoSemaforo, vistaAjustada, zoomEn,
+  tamanoRotado, normalizarGiro, puedeUbicar, ubicacionCompleta, textoHuecos, textoSemaforo, vistaAjustada, zoomEn,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
 
@@ -66,6 +66,30 @@ test('girar la página lleva lo marcado a la nueva rotación', () => {
   assert.deepEqual(vuelta.rectangulo, entradas.rectangulo);
   assert.deepEqual(vuelta.semillas, entradas.semillas);
   assert.deepEqual(girarPunto(20, 10, 0, 270, 100, 60), rotarPunto(20, 10, 270, 100, 60));
+});
+
+test('girar la página lleva el punto de la coordenada y descuenta el giro', () => {
+  // El norte a la izquierda (giro 90): girar la página 90° horario lo deja arriba.
+  const entradas = { rotacion: 0, ubicacion: { x: 30, y: 20, lon: -71.5, lat: -34.1, giro: 90, escala_impresa: 5000 } };
+  const girada = girarEntradas(entradas, 0, 90, 100, 60);
+  assert.deepEqual(girada.ubicacion, { x: 39, y: 30, lon: -71.5, lat: -34.1, giro: 0, escala_impresa: 5000 });
+  assert.deepEqual(girarEntradas(girada, 90, 0, 100, 60).ubicacion, entradas.ubicacion);
+  // A medio armar (solo la coordenada) se lleva tal cual.
+  assert.deepEqual(girarEntradas({ ubicacion: { lon: -71.5, lat: -34.1 } }, 0, 180, 100, 60).ubicacion,
+    { lon: -71.5, lat: -34.1 });
+  assert.equal(normalizarGiro(-200), 160);
+  assert.equal(normalizarGiro(270), -90);
+  assert.equal(normalizarGiro(180), 180);
+});
+
+test('se puede ubicar con la cuadrícula, 2 puntos o la coordenada con su punto', () => {
+  assert.equal(puedeUbicar({ anclas: [{}] }), false);
+  assert.equal(puedeUbicar({ anclas: [{}, {}] }), true);
+  assert.equal(puedeUbicar({ anclas: [], cuadricula: {} }), true);
+  assert.equal(puedeUbicar({ anclas: [], ubicacion: { lon: -71.5, lat: -34.1 } }), false);
+  assert.equal(puedeUbicar({ anclas: [], ubicacion: { x: 0, y: 0, lon: -71.5, lat: -34.1 } }), true);
+  assert.equal(ubicacionCompleta({ x: 1, y: null, lon: -71.5, lat: -34.1 }), false);
+  assert.equal(ubicacionCompleta(null), false);
 });
 
 test('el cuadro de superficies es un rectángulo solo, que se reemplaza y se quita', () => {
@@ -233,6 +257,8 @@ test('la fila de un punto dice si calza, y con 2 puntos no dice nada', () => {
 test('un error medio que no es número no se muestra', () => {
   assert.equal(resumenUbicacion({ metodo: 'anclas', parametros: { n_anclas: 3, rms_m: Number.NaN } }), 'Ubicado con 3 puntos');
   assert.equal(resumenUbicacion({ metodo: 'cuadricula', parametros: {} }), 'Ubicado con la cuadrícula impresa');
+  assert.equal(resumenUbicacion({ metodo: 'punto', parametros: { control: 'sin control', rms_m: null } }),
+    'Ubicado con tu coordenada');
   assert.equal(detalleUbicacion({ epsg: 32719, parametros: { rms_m: null } }), 'UTM 19S · WGS84');
 });
 
@@ -612,7 +638,19 @@ test('bajo un "Seguir" apagado va por qué, en cada paso', () => {
 
   assert.equal(porQueNoSigue('ubicar', { ...vigente, georreferencia: { vigente: true } }), '');
   assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [{}] } }),
-    'Marca al menos 2 puntos en el plano y en el mapa.');
+    'Pega tu coordenada y haz clic en ese punto del plano, o marca al menos 2 puntos en el plano y en el mapa.');
+  // La coordenada sola, sin el punto del plano, todavía no ubica.
+  assert.match(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [], ubicacion: { lon: -71.5, lat: -34.1 } } }),
+    /coordenada/);
+  const punto = { x: 10, y: 20, lon: -71.5, lat: -34.1, giro: 90 };
+  // Con la coordenada y su punto, la escala sale del cuadro…
+  assert.equal(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: 0.8 } },
+    { entradas: { anclas: [], ubicacion: punto }, ubicando: true }), 'Ubicando el plano…');
+  // …o de la escala impresa; sin ninguna de las dos, se pide.
+  assert.match(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: null } },
+    { entradas: { anclas: [], ubicacion: punto } }), /1:5\.000/);
+  assert.equal(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: null } },
+    { entradas: { anclas: [], ubicacion: { ...punto, escala_impresa: 5000 } }, ubicando: true }), 'Ubicando el plano…');
   assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [{}, {}] }, ubicando: true }), 'Ubicando el plano…');
   assert.match(porQueNoSigue('ubicar', { digitalizado: { vigente: false } }, { entradas: { anclas: [] } }), /Numerar/);
 

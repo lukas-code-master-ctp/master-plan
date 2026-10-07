@@ -52,7 +52,8 @@ from pipeline.plano import pagina as pag
 from pipeline.plano import rotulos
 from pipeline.plano.digitalizar import ENTRADAS, SALIDA as DIGITALIZADO, escribir_json, leer_entradas
 from pipeline.plano.georreferencia import (GEOJSON, SALIDA as GEORREFERENCIA, Transformacion, a_utm,
-                                           cuadricula_suficiente, georreferenciar)
+                                           cuadricula_suficiente, escala_del_cuadro, georreferenciar,
+                                           ubicacion_completa)
 from pipeline.plano.salida import escribir_kmz, geojson, lotes_utm
 
 PDF = "plano.pdf"
@@ -73,7 +74,7 @@ CALIDAD = 90
 # líneas: su valor impreso se puede corregir sin volver a digitalizar.
 CLAVES_DIGITALIZAR = ("pdf", "pagina", "rotacion", "rectangulo", "mascaras", "esquinas", "marco_mm",
                       "semillas", "lector", "lector_apoyo_min", "cuadro")
-CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula")
+CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula", "ubicacion")
 
 # Topes de lo que se marca a mano: muy por sobre un loteo real, y lejos de lo que
 # atora la revisión (las semillas repetidas se buscan de a pares).
@@ -386,7 +387,7 @@ class Plano:
 
     @_a_solas
     def georreferenciar(self) -> dict:
-        """Ubica los lotes (anclas o cuadrícula) y escribe georreferencia.json y
+        """Ubica los lotes (cuadrícula, anclas o un punto) y escribe georreferencia.json y
         lotes.geojson. Es rápido: corre en la petición."""
         entradas = self._entradas_o_409()
         if not (self.carpeta / DIGITALIZADO).is_file():
@@ -462,6 +463,11 @@ class Plano:
                 lector=_resumen_lector(d.get("lector")),
                 # Cuántas correcciones a mano se pueden deshacer.
                 correcciones=self._correcciones(),
+                # Para la vista previa de Ubicar con un punto: la misma similitud que
+                # `por_punto`, con la escala del cuadro (m por px de trabajo, o null), el
+                # ppmm de trabajo (para la escala impresa) y la homografía página → trabajo.
+                escala_m_px=escala_del_cuadro(d), ppmm=(d.get("trabajo") or {}).get("ppmm"),
+                homografia=(d.get("trabajo") or {}).get("homografia"),
                 vigente=entradas is not None and self._digitalizado_vigente(entradas))
         if (self.carpeta / GEORREFERENCIA).is_file():
             georreferencia = dict(resumen_georreferencia(self._leer(GEORREFERENCIA)),
@@ -824,7 +830,13 @@ def huella_kmz(huella_georreferencia: str | None, digitalizado: dict, entradas: 
 
 
 def huella_ubicar(entradas: dict, huella_digitalizado: str) -> str:
-    return _huella(dict({k: entradas.get(k) for k in CLAVES_UBICAR}, digitalizado=huella_digitalizado))
+    # `ubicacion` cuenta solo cuando `georreferenciar` la usa: completa y sin 2 puntos que
+    # manden. Mientras ella la arma (solo la coordenada), o si ya ubicó con puntos, cambiarla
+    # no cambia la ubicación y no debe dejarla atrasada. Sin ella, la huella es la de antes
+    # de que existiera la clave: lo ya ubicado sigue al día.
+    usa = ubicacion_completa(entradas.get("ubicacion")) and len(entradas.get("anclas") or []) < 2
+    datos = {k: entradas.get(k) for k in CLAVES_UBICAR if k != "ubicacion" or usa}
+    return _huella(dict(datos, digitalizado=huella_digitalizado))
 
 
 def _huella(datos) -> str:

@@ -88,6 +88,14 @@ export function girarEntradas(entradas, de, a, ancho, alto) {
     fuera: (entradas.fuera ?? []).map(punto),
   };
   if (entradas.cuadro) salida.cuadro = caja(entradas.cuadro);
+  if (entradas.ubicacion) {
+    // El punto sigue sobre el mismo lugar del dibujo, y el giro que falta para dejar el
+    // norte arriba es el de antes menos lo que ya se giró la página (ambos horarios).
+    const u = { ...entradas.ubicacion };
+    if (Number.isFinite(u.x) && Number.isFinite(u.y)) [u.x, u.y] = punto([u.x, u.y]);
+    if (Number.isFinite(u.giro)) u.giro = normalizarGiro(u.giro - (a - de));
+    salida.ubicacion = u;
+  }
   if (entradas.esquinas) {
     // Siguen siendo las esquinas del marco, pero el orden es sup-izq, sup-der,
     // inf-der, inf-izq en la página girada: se reordenan por ángulo.
@@ -100,6 +108,12 @@ export function girarEntradas(entradas, de, a, ancho, alto) {
   // Las líneas de la cuadrícula se detectan de nuevo al digitalizar.
   if (entradas.cuadricula) delete salida.cuadricula;
   return salida;
+}
+
+/** Un giro en grados llevado a −180..180 (lo que acepta el servidor). */
+export function normalizarGiro(grados) {
+  const g = ((((grados + 180) % 360) + 360) % 360) - 180;
+  return g === -180 && grados > 0 ? 180 : g;
 }
 
 /**
@@ -748,6 +762,23 @@ export function pasosHabilitados(e) {
 }
 
 /**
+ * ¿La ubicación con un punto trae el punto del plano y su coordenada? Mientras se arma
+ * puede venir solo la coordenada; el servidor la ignora hasta que esté completa.
+ */
+export function ubicacionCompleta(u) {
+  return Boolean(u) && ['x', 'y', 'lon', 'lat'].every((k) => Number.isFinite(u[k]));
+}
+
+/**
+ * ¿Hay con qué ubicar? La cuadrícula elegida, 2 o más puntos, o la coordenada con su
+ * punto en el plano (lo mismo que prueba `georreferenciar` en el servidor).
+ */
+export function puedeUbicar(entradas) {
+  return Boolean(entradas?.cuadricula) || (entradas?.anclas?.length ?? 0) >= 2
+    || ubicacionCompleta(entradas?.ubicacion);
+}
+
+/**
  * "Seguir: numerar" desde el paso 3: solo con una digitalización vigente (hecha con
  * lo último que se marcó) y sin otra corriendo. Sin digitalizar, no hay qué numerar.
  */
@@ -786,8 +817,14 @@ export function porQueNoSigue(paso, e, local = {}) {
     case 'ubicar': {
       if (e?.georreferencia?.vigente) return '';
       if (d && !d.vigente) return 'Cambiaste el plano: vuelve a Numerar para que se lea de nuevo.';
-      const anclas = local.entradas?.anclas?.length ?? 0;
-      if (anclas < 2 && !local.entradas?.cuadricula) return 'Marca al menos 2 puntos en el plano y en el mapa.';
+      if (!puedeUbicar(local.entradas)) {
+        return 'Pega tu coordenada y haz clic en ese punto del plano, o marca al menos 2 puntos en el plano y en el mapa.';
+      }
+      // Con solo la coordenada, el tamaño sale del cuadro de superficies o de la escala impresa.
+      const soloCoordenada = !local.entradas?.cuadricula && (local.entradas?.anclas?.length ?? 0) < 2;
+      if (soloCoordenada && d?.escala_m_px == null && !local.entradas?.ubicacion?.escala_impresa) {
+        return 'Para ubicar con tu coordenada falta la escala del plano (por ejemplo 1:5.000), o marca puntos.';
+      }
       return local.ubicando ? 'Ubicando el plano…' : 'Aprieta "Ubicar de nuevo" para ubicar los lotes.';
     }
     case 'revisar':
@@ -883,6 +920,7 @@ export function filaDelPunto(r, g, vigente) {
  */
 export function resumenUbicacion(g, n = 0) {
   const p = g?.parametros ?? {};
+  if (g?.metodo === 'punto') return 'Ubicado con tu coordenada';
   const cuadricula = g?.metodo === 'cuadricula';
   const cuantos = p.n_anclas ?? n;
   const partes = [cuadricula ? 'Ubicado con la cuadrícula impresa'

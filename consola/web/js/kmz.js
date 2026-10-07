@@ -13,7 +13,7 @@ import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
   anclaDesde, aplicarFuera, aplicarNumero, claveLote, conSemillas, decidirResto, devolverAlKmz, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, detalleUbicacion, filaDelPunto, numerosQueFaltan,
-  ordenarEsquinas, PASOS, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puntoDeRotulo,
+  ordenarEsquinas, PASOS, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puedeUbicar, puntoDeRotulo,
   puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, siguienteNombre, sinNumero, sugerencias, textoSemaforo, verticesDe,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
@@ -795,7 +795,7 @@ function marcarEnMapa(lat, lon) {
   avisoCuadricula = '';
   cambiar({ ...entradas, anclas: [...entradas.anclas.filter((a) => a.nombre !== ancla.nombre), ancla] });
   pintarMapa();
-  if (entradas.anclas.length >= 2 || entradas.cuadricula) ubicar().catch((e) => avisar(e.message));
+  if (puedeUbicar(entradas)) ubicar().catch((e) => avisar(e.message));
 }
 
 function cancelarAncla() {
@@ -810,7 +810,7 @@ function quitarAncla(nombre, otraVez) {
   rehacer = otraVez ? nombre : null;
   cambiar({ ...entradas, anclas: entradas.anclas.filter((a) => a.nombre !== nombre) });
   pintarMapa();
-  if (!otraVez && (entradas.anclas.length >= 2 || entradas.cuadricula)) ubicar().catch((e) => avisar(e.message));
+  if (!otraVez && puedeUbicar(entradas)) ubicar().catch((e) => avisar(e.message));
 }
 
 const NO_UBICO_CUADRICULA = 'No se pudo ubicar con la cuadrícula del plano. Marca los puntos a mano.';
@@ -826,7 +826,7 @@ async function usarCuadricula(si) {
   if (si) nuevas.cuadricula = propuesta; else delete nuevas.cuadricula;
   cambiar(nuevas);
   if (!si) {
-    if (entradas.anclas.length >= 2) await ubicar();
+    if (puedeUbicar(entradas)) await ubicar();
     return;
   }
   let sirvio = false;
@@ -850,7 +850,7 @@ async function usarCuadricula(si) {
   cambiar(sinCuadricula);
   avisoCuadricula = NO_UBICO_CUADRICULA;
   cuadriculaNoSirve = true;
-  if (entradas.anclas.length >= 2) await ubicar().catch((e) => avisar(e.message));
+  if (puedeUbicar(entradas)) await ubicar().catch((e) => avisar(e.message));
   else await guardar();
   pintarPanel();
 }
@@ -878,7 +878,7 @@ async function ubicar() {
   // Se pasó a otro KMZ mientras se guardaba: ubicar ese no lo pidió nadie.
   if (mio !== slug) return false;
   if (!plano?.digitalizado?.vigente) return false;
-  if (entradas.anclas.length < 2 && !entradas.cuadricula) return false;
+  if (!puedeUbicar(entradas)) return false;
   $('#kmz-ancla-estado').textContent = 'Ubicando…';
   ubicandoYa = true;
   pintarPorQue();
@@ -1381,7 +1381,7 @@ function pintarUbicar() {
   arrastre.textContent = arrastrar ? 'Arrastrando los lotes (clic para soltar)' : 'Arrastrar los lotes en el mapa';
   for (const b of $$('#kmz-ajuste-fino button')) b.disabled = !g;
   $('[data-accion="kmz-georreferenciar"]').disabled = !plano.digitalizado?.vigente
-    || (entradas.anclas.length < 2 && !entradas.cuadricula);
+    || !puedeUbicar(entradas);
 }
 
 function pintarRevisar() {
