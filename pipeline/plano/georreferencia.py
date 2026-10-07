@@ -693,8 +693,8 @@ def georreferenciar(carpeta: Path, avance=print) -> Transformacion:
         try:
             t = por_cuadricula(marcas, epsg, homografia)
         except ValueError as e:
+            # El aviso dice con qué se ubicó en su lugar: se escribe cuando se sabe.
             error_cuadricula = str(e)
-            avisos.append(f"No se pudo usar la cuadrícula ({e}); se usan los puntos.")
             avance(f"Cuadrícula: no sirve ({e})")
         else:
             p = t.parametros
@@ -717,13 +717,23 @@ def georreferenciar(carpeta: Path, avance=print) -> Transformacion:
     ubicacion = entradas.get("ubicacion")
     if t is None and len(anclas) < 2 and ubicacion_completa(ubicacion):
         # Los puntos (2 o más) mandan sobre la coordenada: son "Afinar con puntos".
-        t = _por_ubicacion(ubicacion, digitalizado, avance)
+        try:
+            t = _por_ubicacion(ubicacion, digitalizado, avance)
+        except ValueError as e:
+            # Sin escala tampoco sirve la coordenada: que no se pierda por qué no sirvió la cuadrícula.
+            if error_cuadricula:
+                raise ValueError(f"{e} (la cuadrícula no sirve: {error_cuadricula})") from e
+            raise
+        if error_cuadricula:
+            avisos.append(f"No se pudo usar la cuadrícula ({error_cuadricula}); se usa tu coordenada.")
     elif t is None:
         if len(anclas) < 2:
             raise ValueError("para ubicar el plano hacen falta al menos 2 puntos, la cuadrícula con sus valores"
                              " o tu coordenada con su punto en el plano"
                              + (f" (la cuadrícula no sirve: {error_cuadricula})" if error_cuadricula else ""))
         t = por_anclas(anclas, homografia)
+        if error_cuadricula:
+            avisos.append(f"No se pudo usar la cuadrícula ({error_cuadricula}); se usan los puntos.")
         p = t.parametros
         avance(f"Anclas: {p['n_anclas']}, similitud {p['escala_m_px']:.4f} m/px, giro {p['rotacion_grados']:.2f}°,"
                f" EPSG:{t.epsg}" + (f", residuo {p['rms_m']:.1f} m" if p["rms_m"] is not None else ", sin control"))

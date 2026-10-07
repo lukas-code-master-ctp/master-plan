@@ -815,7 +815,8 @@ export function porQueNoSigue(paso, e, local = {}) {
       return local.releerFallo ? 'No se pudieron actualizar los lotes: lee el plano de nuevo en el paso 3.'
         : 'Actualizando los lotes…';
     case 'ubicar': {
-      if (e?.georreferencia?.vigente) return '';
+      // Mientras se ubica (o está por ubicarse tras girar o mover) lo ubicado ya no es lo que se ve.
+      if (e?.georreferencia?.vigente && !local.ubicando) return '';
       if (d && !d.vigente) return 'Cambiaste el plano: vuelve a Numerar para que se lea de nuevo.';
       if (!puedeUbicar(local.entradas)) {
         return 'Pega tu coordenada y haz clic en ese punto del plano, o marca al menos 2 puntos en el plano y en el mapa.';
@@ -937,4 +938,180 @@ export function detalleUbicacion(g) {
   if (Number.isFinite(g.parametros?.rms_m)) partes.push(`error medio ${g.parametros.rms_m.toFixed(1)} m`);
   if (g.datum?.datum) partes.push(`datum ${g.datum.datum}`);
   return partes.join(' · ');
+}
+
+// --- ubicar con un punto: la vista previa -------------------------------------------
+//
+// Mientras ella gira el plano o lo arrastra, los lotes se mueven sobre el satélite sin
+// esperar al servidor: aquí se repite `por_punto` de `pipeline/plano/georreferencia.py`
+// (la misma similitud en UTM) y el paso UTM ↔ lon/lat. Una proyección equirectangular
+// alrededor del punto no alcanza: en Rapel el norte de la cuadrícula UTM está ~1,4°
+// girado respecto del norte verdadero (convergencia de meridianos, huso 19), y el giro
+// que ella eligiera mirando la vista previa saldría corrido eso mismo en el KMZ.
+
+// WGS84 y UTM (k0, falso este y falso norte del hemisferio sur).
+const SEMIEJE = 6378137;
+const APLANAMIENTO = 1 / 298.257223563;
+const K0 = 0.9996;
+const N_ = APLANAMIENTO / (2 - APLANAMIENTO);
+// Series de Krüger hasta n³ (error de milímetros dentro del huso): radio rectificador A
+// y los coeficientes α (directa), β (inversa) y δ (latitud conforme → geodésica).
+const RADIO_A = (SEMIEJE / (1 + N_)) * (1 + N_ ** 2 / 4 + N_ ** 4 / 64);
+const ALFA = [N_ / 2 - (2 * N_ ** 2) / 3 + (5 * N_ ** 3) / 16, (13 * N_ ** 2) / 48 - (3 * N_ ** 3) / 5, (61 * N_ ** 3) / 240];
+const BETA = [N_ / 2 - (2 * N_ ** 2) / 3 + (37 * N_ ** 3) / 96, N_ ** 2 / 48 + N_ ** 3 / 15, (17 * N_ ** 3) / 480];
+const DELTA = [2 * N_ - (2 * N_ ** 2) / 3 - 2 * N_ ** 3, (7 * N_ ** 2) / 3 - (8 * N_ ** 3) / 5, (56 * N_ ** 3) / 15];
+const RAD = Math.PI / 180;
+
+/** El EPSG del huso UTM WGS84 que contiene el punto (como `huso` del servidor). */
+export function husoDe(lon, lat) {
+  const zona = Math.min(60, Math.max(1, Math.floor((lon + 180) / 6) + 1));
+  return (lat < 0 ? 32700 : 32600) + zona;
+}
+
+function zonaUtm(epsg) {
+  if (epsg >= 32701 && epsg <= 32760) return { zona: epsg - 32700, sur: true };
+  if (epsg >= 32601 && epsg <= 32660) return { zona: epsg - 32600, sur: false };
+  throw new Error(`EPSG ${epsg} no es un UTM WGS84`);
+}
+
+/** lon/lat WGS84 → [E, N] en el UTM `epsg`. */
+export function lonLatAUtm(lon, lat, epsg) {
+  const { zona, sur } = zonaUtm(epsg);
+  const dl = (lon - (zona * 6 - 183)) * RAD;
+  const s = Math.sin(lat * RAD);
+  const c = (2 * Math.sqrt(N_)) / (1 + N_);
+  const t = Math.sinh(Math.atanh(s) - c * Math.atanh(c * s));
+  const xi = Math.atan2(t, Math.cos(dl));
+  const eta = Math.atanh(Math.sin(dl) / Math.sqrt(1 + t * t));
+  let e = eta;
+  let n = xi;
+  ALFA.forEach((a, i) => {
+    const j = 2 * (i + 1);
+    e += a * Math.cos(j * xi) * Math.sinh(j * eta);
+    n += a * Math.sin(j * xi) * Math.cosh(j * eta);
+  });
+  return [500000 + K0 * RADIO_A * e, (sur ? 10000000 : 0) + K0 * RADIO_A * n];
+}
+
+/** [E, N] en el UTM `epsg` → [lon, lat] WGS84. */
+export function utmALonLat(este, norte, epsg) {
+  const { zona, sur } = zonaUtm(epsg);
+  const xi = (norte - (sur ? 10000000 : 0)) / (K0 * RADIO_A);
+  const eta = (este - 500000) / (K0 * RADIO_A);
+  let xi1 = xi;
+  let eta1 = eta;
+  BETA.forEach((b, i) => {
+    const j = 2 * (i + 1);
+    xi1 -= b * Math.sin(j * xi) * Math.cosh(j * eta);
+    eta1 -= b * Math.cos(j * xi) * Math.sinh(j * eta);
+  });
+  const chi = Math.asin(Math.sin(xi1) / Math.cosh(eta1));
+  let lat = chi;
+  DELTA.forEach((d, i) => { lat += d * Math.sin(2 * (i + 1) * chi); });
+  const lon = (zona * 6 - 183) * RAD + Math.atan2(Math.sinh(eta1), Math.cos(xi1));
+  return [lon / RAD, lat / RAD];
+}
+
+/** (x, y) por la homografía 3×3 `h` (null: la identidad). */
+export function aplicarHomografia(h, x, y) {
+  if (!h) return [x, y];
+  const w = h[2][0] * x + h[2][1] * y + h[2][2];
+  return [(h[0][0] * x + h[0][1] * y + h[0][2]) / w, (h[1][0] * x + h[1][1] * y + h[1][2]) / w];
+}
+
+const multiplicar = (a, b) => a.map((fila) => b[0].map((_, j) => fila.reduce((s, v, k) => s + v * b[k][j], 0)));
+
+/**
+ * La similitud de `por_punto`: {epsg, matriz} con matriz 3×3 de px de página a (E, N, 1)
+ * en el UTM del punto. `escalaMPx` es m por px de trabajo y `homografia`, página →
+ * trabajo. El giro es horario (lo que ella gira el plano en pantalla para dejar el norte
+ * arriba), por eso la rotación de la similitud es −giro. null si falta algo.
+ */
+export function similitudPorPunto(u, escalaMPx, homografia = null) {
+  if (!ubicacionCompleta(u) || !(Number.isFinite(escalaMPx) && escalaMPx > 0)) return null;
+  const epsg = husoDe(u.lon, u.lat);
+  const [xt, yt] = aplicarHomografia(homografia, u.x, u.y);
+  const [e, n] = lonLatAUtm(u.lon, u.lat, epsg);
+  const rotacion = -(u.giro ?? 0) * RAD;
+  // w = a·z + b con z = x − i·y (y del plano hacia abajo, N hacia arriba).
+  const ar = escalaMPx * Math.cos(rotacion);
+  const ai = escalaMPx * Math.sin(rotacion);
+  const br = e - (ar * xt + ai * yt);
+  const bi = n - (ai * xt - ar * yt);
+  const s = [[ar, ai, br], [ai, -ar, bi], [0, 0, 1]];
+  return { epsg, matriz: homografia ? multiplicar(s, homografia) : s };
+}
+
+/** px de página → [lon, lat] con la similitud `t` y el ajuste fino (metros E, N). */
+export function paginaALonLat(t, x, y, ajuste = null) {
+  const [e, n] = aplicarHomografia(t.matriz, x, y);
+  return utmALonLat(e + (ajuste?.de ?? 0), n + (ajuste?.dn ?? 0), t.epsg);
+}
+
+/**
+ * La escala (m por px de trabajo) con que se ubica con un punto: la del cuadro de
+ * superficies o, sin cuadro, la impresa (1:N son N/1000/ppmm m por px). null si no hay.
+ */
+export function escalaDeUbicacion(digitalizado, ubicacion) {
+  if (Number.isFinite(digitalizado?.escala_m_px) && digitalizado.escala_m_px > 0) return digitalizado.escala_m_px;
+  const n = ubicacion?.escala_impresa;
+  const ppmm = digitalizado?.ppmm;
+  return n && ppmm ? n / 1000 / ppmm : null;
+}
+
+/** ¿El servidor ubica con la coordenada? Sin cuadrícula elegida y sin 2 puntos que manden. */
+export function usaUbicacion(entradas) {
+  return !entradas?.cuadricula && (entradas?.anclas?.length ?? 0) < 2 && ubicacionCompleta(entradas?.ubicacion);
+}
+
+/**
+ * Los lotes en px de página (`lotes?en=px`) llevados a lon/lat con la similitud: el mismo
+ * GeoJSON que daría el servidor, para dibujarlo al tiro sobre el satélite.
+ */
+export function lotesEnElMapa(rasgos, t, ajuste = null) {
+  return {
+    type: 'FeatureCollection',
+    features: rasgos.map((r) => ({
+      type: 'Feature',
+      properties: r.properties,
+      geometry: {
+        type: 'Polygon',
+        coordinates: r.geometry.coordinates.map((anillo) => anillo.map(([x, y]) => paginaALonLat(t, x, y, ajuste))),
+      },
+    })),
+  };
+}
+
+// La escala impresa razonable, la misma de `digitalizar._ubicacion` en el servidor.
+export const ESCALA_IMPRESA_MIN = 100;
+export const ESCALA_IMPRESA_MAX = 1000000;
+
+/**
+ * "5.000", "5000", "1:5.000" o "1 : 5 000" → 5000; vacío → null; lo que no es una escala
+ * → NaN (para decir que está mal). El punto es separador de miles, como se escribe aquí.
+ */
+export function leerEscala(texto) {
+  const limpio = String(texto ?? '').replace(/\s/g, '').replace(/^1:/, '');
+  if (!limpio) return null;
+  if (!/^\d{1,3}(\.\d{3})*$|^\d+$/.test(limpio)) return Number.NaN;
+  const n = Number(limpio.replace(/\./g, ''));
+  return n >= ESCALA_IMPRESA_MIN && n <= ESCALA_IMPRESA_MAX ? n : Number.NaN;
+}
+
+/**
+ * El lienzo del plano girado `grados` (horario) en torno a (cx, cy): pantalla sin girar →
+ * pantalla girada. Con −grados se deshace (para llevar un clic a la página).
+ */
+export function girarEnPantalla(sx, sy, grados, cx, cy) {
+  if (!grados) return [sx, sy];
+  const r = grados * RAD;
+  const [dx, dy] = [sx - cx, sy - cy];
+  return [cx + dx * Math.cos(r) - dy * Math.sin(r), cy + dx * Math.sin(r) + dy * Math.cos(r)];
+}
+
+/** La caja [ancho, alto] que ocupa una página ancho×alto girada `grados`. */
+export function cajaGirada(ancho, alto, grados) {
+  const r = grados * RAD;
+  const [c, s] = [Math.abs(Math.cos(r)), Math.abs(Math.sin(r))];
+  return [ancho * c + alto * s, ancho * s + alto * c];
 }

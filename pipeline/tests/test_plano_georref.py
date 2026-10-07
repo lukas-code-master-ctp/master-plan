@@ -637,6 +637,49 @@ def test_un_punto_sin_cuadro_ni_escala_dice_que_falta(tmp_path, capsys):
             " (por ejemplo 1:5.000). Si no la tienes, marca puntos.") in capsys.readouterr().err
 
 
+def _cuadricula_que_no_sirve():
+    marcas = _marcas(con_rectas=False)
+    marcas["horizontales"] = []
+    return marcas
+
+
+def test_si_la_cuadricula_no_sirve_se_ubica_con_la_coordenada_y_se_dice(tmp_path):
+    verdad, lotes = _loteo_girado(tmp_path)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], cuadricula=_cuadricula_que_no_sirve(),
+        ubicacion=_ubicacion(verdad, giro=90))), encoding="utf-8")
+
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+
+    error, t = _error_maximo(tmp_path, verdad, lotes)
+    assert error < 0.5 and t.metodo == "punto"
+    cuadricula = [a for a in t.avisos if "cuadrícula" in a]
+    assert len(cuadricula) == 1 and cuadricula[0].endswith("; se usa tu coordenada.")
+    assert "en cada dirección" in cuadricula[0]
+    assert not any("se usan los puntos" in a for a in t.avisos)
+
+
+def test_si_la_cuadricula_no_sirve_y_falta_la_escala_se_dicen_las_dos_cosas(tmp_path, capsys):
+    verdad, _ = _loteo_girado(tmp_path, con_cuadro=False)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], cuadricula=_cuadricula_que_no_sirve(),
+        ubicacion=_ubicacion(verdad, giro=90))), encoding="utf-8")
+
+    assert main(["georreferenciar", str(tmp_path)]) == 1
+
+    error = capsys.readouterr().err
+    assert "escala del plano (por ejemplo 1:5.000)" in error
+    assert "la cuadrícula no sirve:" in error and "en cada dirección" in error
+
+
+def test_si_la_cuadricula_no_sirve_con_puntos_se_usan_los_puntos(tmp_path):
+    _carpeta(tmp_path, cuadricula=_cuadricula_que_no_sirve(), anclas=_anclas(PX[:4]))
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    assert g["metodo"] == "anclas"
+    assert any(a.endswith("; se usan los puntos.") for a in g["avisos"])
+
+
 def test_los_puntos_mandan_sobre_la_coordenada(tmp_path):
     verdad, _ = _loteo_girado(tmp_path)
     px = np.array([[100.0, 100.0], [1300.0, 150.0], [1250.0, 900.0]])

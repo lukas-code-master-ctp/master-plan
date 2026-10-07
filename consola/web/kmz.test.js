@@ -9,6 +9,8 @@ import {
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, detalleUbicacion, distanciaEnPalabras, filaDelPunto, resumenUbicacion, ordenarEsquinas, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, semaforo, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
   tamanoRotado, normalizarGiro, puedeUbicar, ubicacionCompleta, textoHuecos, textoSemaforo, vistaAjustada, zoomEn,
+  aplicarHomografia, cajaGirada, escalaDeUbicacion, girarEnPantalla, husoDe, leerEscala, lonLatAUtm, lotesEnElMapa, paginaALonLat,
+  similitudPorPunto, usaUbicacion, utmALonLat,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
 
@@ -90,6 +92,124 @@ test('se puede ubicar con la cuadrícula, 2 puntos o la coordenada con su punto'
   assert.equal(puedeUbicar({ anclas: [], ubicacion: { x: 0, y: 0, lon: -71.5, lat: -34.1 } }), true);
   assert.equal(ubicacionCompleta({ x: 1, y: null, lon: -71.5, lat: -34.1 }), false);
   assert.equal(ubicacionCompleta(null), false);
+});
+
+// --- ubicar con un punto: la vista previa ----------------------------------------------
+//
+// Los números de referencia salen del servidor (pyproj), con `por_punto` de
+// pipeline/plano/georreferencia.py: Transformacion.a_utm y a_lonlat de unos puntos.
+//   t = por_punto(u, escala, h); t.a_utm(x, y); t.a_lonlat(x, y)
+
+// Caminos de Rapel (parcelas-coipue-lote-8 del QA): el recorte de la página a trabajo, la
+// escala del cuadro de superficies y el norte a la izquierda.
+const RAPEL = {
+  u: { x: 331.5, y: 845.1, lon: -71.54830277777778, lat: -34.17708888888889, giro: 89.3 },
+  escala: 0.8298253862191156,
+  h: [[1.0159999960572406, 0, -123.94399952095473], [0, 1.0159999960572406, -72.12799972203545], [0, 0, 1]],
+  epsg: 32719,
+  matriz: [[0.010300185035561377, -0.8430396680943193, 265839.47864415846],
+    [-0.8430396680943193, -0.010300185035561377, 6215561.421215], [0, 0, 1]],
+  puntos: [
+    [[331.5, 845.1], 265130.44033199124, 6215273.248878653, -71.54830277777778, -34.17708888888889],
+    [[705.4, 359.1], 265544.0088498699, 6214963.042236679, -71.54390343909354, -34.17997684716372],
+    [[2900, 1000], 265026.30951266724, 6213106.305992491, -71.55001943772724, -34.19658890891291],
+    [[0, 0], 265839.47864415846, 6215561.421215, -71.54053860573981, -34.17465199646956],
+  ],
+};
+// Chiloé (huso 18), sin homografía y girado al otro lado.
+const CHILOE = {
+  u: { x: 1000, y: 200, lon: -73.2, lat: -41.5, giro: -30 },
+  escala: 0.5,
+  epsg: 32718,
+  puntos: [
+    [[1000, 200], 650236.0471353127, 5404171.784249876, -73.2, -41.499999999999986],
+    [[705.4, 359.1], 650148.2565933353, 5404029.241929005, -73.20101580630809, -41.50129976293848],
+    [[2900, 1000], 651258.7712689079, 5404300.374088362, -73.18778474585712, -41.49864992541915],
+    [[0, 0], 649753.0344334205, 5404008.386790254, -73.20574369732502, -41.50156147969342],
+  ],
+};
+
+test('la vista previa de Ubicar repite por_punto del servidor', () => {
+  for (const caso of [RAPEL, CHILOE]) {
+    const t = similitudPorPunto(caso.u, caso.escala, caso.h ?? null);
+    assert.equal(t.epsg, caso.epsg);
+    for (const [[x, y], e, n, lon, lat] of caso.puntos) {
+      const [e1, n1] = aplicarHomografia(t.matriz, x, y);
+      // UTM a unos centímetros y lon/lat a ~1 cm (1e-7°): lejos de lo que se ve en el mapa.
+      cerca(e1, e, 0.05);
+      cerca(n1, n, 0.05);
+      const [lon1, lat1] = paginaALonLat(t, x, y);
+      cerca(lon1, lon, 1e-7);
+      cerca(lat1, lat, 1e-7);
+    }
+  }
+  const t = similitudPorPunto(RAPEL.u, RAPEL.escala, RAPEL.h);
+  RAPEL.matriz.forEach((fila, i) => fila.forEach((v, j) => cerca(t.matriz[i][j], v, 0.05)));
+  // Sin el punto del plano, o sin escala, no hay vista previa.
+  assert.equal(similitudPorPunto({ lon: -71.5, lat: -34.1, giro: 0 }, 0.8), null);
+  assert.equal(similitudPorPunto(RAPEL.u, null), null);
+});
+
+test('UTM ida y vuelta, y el huso como el servidor', () => {
+  assert.equal(husoDe(-71.55, -34.18), 32719);
+  assert.equal(husoDe(-73.2, -41.5), 32718);
+  assert.equal(husoDe(2.35, 48.85), 32631);
+  const [e, n] = lonLatAUtm(-71.5440202, -34.1799429, 32719);
+  const [lon, lat] = utmALonLat(e, n, 32719);
+  // Las series de Krüger hasta n³: ida y vuelta queda a menos de un milímetro (1e-8°).
+  cerca(lon, -71.5440202, 1e-8);
+  cerca(lat, -34.1799429, 1e-8);
+});
+
+test('la vista previa lleva el ajuste fino y las propiedades de los lotes', () => {
+  const t = similitudPorPunto(RAPEL.u, RAPEL.escala, RAPEL.h);
+  const rasgos = [{ type: 'Feature', properties: { numero: '8-01', banderas: [] },
+    geometry: { type: 'Polygon', coordinates: [[[331.5, 845.1], [340, 845.1], [340, 850], [331.5, 845.1]]] } }];
+  const sin = lotesEnElMapa(rasgos, t);
+  const con = lotesEnElMapa(rasgos, t, { de: 10, dn: -5 });
+  assert.deepEqual(sin.features[0].properties, rasgos[0].properties);
+  const [lon0, lat0] = sin.features[0].geometry.coordinates[0][0];
+  cerca(lon0, RAPEL.u.lon, 1e-7);
+  const [e0, n0] = lonLatAUtm(lon0, lat0, 32719);
+  const [e1, n1] = lonLatAUtm(...con.features[0].geometry.coordinates[0][0], 32719);
+  cerca(e1 - e0, 10, 1e-3);
+  cerca(n1 - n0, -5, 1e-3);
+});
+
+test('la escala de la ubicación: la del cuadro, si no la impresa', () => {
+  assert.equal(escalaDeUbicacion({ escala_m_px: 0.83, ppmm: 6 }, { escala_impresa: 5000 }), 0.83);
+  cerca(escalaDeUbicacion({ escala_m_px: null, ppmm: 6 }, { escala_impresa: 5000 }), 5000 / 1000 / 6);
+  assert.equal(escalaDeUbicacion({ escala_m_px: null, ppmm: 6 }, {}), null);
+  assert.equal(escalaDeUbicacion({ escala_m_px: null, ppmm: null }, { escala_impresa: 5000 }), null);
+  assert.equal(leerEscala('5.000'), 5000);
+  assert.equal(leerEscala('1:2500'), 2500);
+  assert.equal(leerEscala(' 1 : 10 000 '), 10000);
+  assert.equal(leerEscala(''), null);
+  assert.ok(Number.isNaN(leerEscala('5')));
+  assert.ok(Number.isNaN(leerEscala('5,5')));
+  assert.ok(Number.isNaN(leerEscala('1:5.00')));
+});
+
+test('el servidor ubica con la coordenada solo sin cuadrícula y sin 2 puntos', () => {
+  const u = { x: 1, y: 2, lon: -71.5, lat: -34.1 };
+  assert.equal(usaUbicacion({ anclas: [], ubicacion: u }), true);
+  assert.equal(usaUbicacion({ anclas: [{}], ubicacion: u }), true);
+  assert.equal(usaUbicacion({ anclas: [{}, {}], ubicacion: u }), false);
+  assert.equal(usaUbicacion({ anclas: [], cuadricula: {}, ubicacion: u }), false);
+  assert.equal(usaUbicacion({ anclas: [], ubicacion: { lon: -71.5, lat: -34.1 } }), false);
+});
+
+test('el plano girado en pantalla vuelve a la página', () => {
+  const [sx, sy] = girarEnPantalla(110, 50, 90, 100, 50);
+  cerca(sx, 100);
+  cerca(sy, 60);
+  const [x, y] = girarEnPantalla(sx, sy, -90, 100, 50);
+  cerca(x, 110);
+  cerca(y, 50);
+  assert.deepEqual(girarEnPantalla(3, 4, 0, 100, 50), [3, 4]);
+  const [w, h] = cajaGirada(100, 60, 90);
+  cerca(w, 60);
+  cerca(h, 100);
 });
 
 test('el cuadro de superficies es un rectángulo solo, que se reemplaza y se quita', () => {
@@ -637,6 +757,9 @@ test('bajo un "Seguir" apagado va por qué, en cada paso', () => {
   assert.equal(porQueNoSigue('numerar', vigente, { releerFallo: true }), '');
 
   assert.equal(porQueNoSigue('ubicar', { ...vigente, georreferencia: { vigente: true } }), '');
+  // Recién girado o movido, lo ubicado en el servidor aún no es lo que se ve.
+  assert.equal(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: 0.8 }, georreferencia: { vigente: true } },
+    { entradas: { anclas: [], ubicacion: { x: 1, y: 2, lon: -71.5, lat: -34.1 } }, ubicando: true }), 'Ubicando el plano…');
   assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [{}] } }),
     'Pega tu coordenada y haz clic en ese punto del plano, o marca al menos 2 puntos en el plano y en el mapa.');
   // La coordenada sola, sin el punto del plano, todavía no ubica.

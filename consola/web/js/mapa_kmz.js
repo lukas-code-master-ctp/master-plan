@@ -45,11 +45,14 @@ export class MapaKmz {
     this.L = L;
     this.mapa = L.map(elemento, { zoomControl: true, attributionControl: true, maxZoom: 21 })
       .setView(SANTIAGO, 12);
-    L.tileLayer(TESELAS, { maxZoom: 21, maxNativeZoom: 19, attribution: ATRIBUCION }).addTo(this.mapa);
+    // Esri no tiene imagen a zoom 19 en todo Chile (en Rapel dice "Map data not yet
+    // available"): desde el 18 se agranda la tesela del 18, hasta 21.
+    L.tileLayer(TESELAS, { maxZoom: 21, maxNativeZoom: 18, attribution: ATRIBUCION }).addTo(this.mapa);
     this.panel = this.mapa.createPane('kmz-lotes');
     this.panel.style.zIndex = 450;
     this.lotes = L.layerGroup().addTo(this.mapa);
     this.anclas = L.layerGroup().addTo(this.mapa);
+    this.alfiler = L.layerGroup().addTo(this.mapa);
     this.vertices = L.layerGroup().addTo(this.mapa);
     this.puntos = [];
     this.marcas = new Map();   // clave del punto → su marcador en el mapa
@@ -77,16 +80,17 @@ export class MapaKmz {
   encuadrar() {
     const caja = this.L.latLngBounds([]);
     const fuera = this.L.latLngBounds([]);
-    // Lo dejado fuera del KMZ (el resto de la propiedad) no entra al encuadre: es decenas
-    // de veces más grande que los lotes y los deja chicos en una esquina. Solo si no hay
-    // nada más se encuadra en él.
+    // Lo dejado fuera del KMZ y el resto de la propiedad sin número no entran al encuadre:
+    // son decenas de veces más grandes que los lotes y los dejan chicos en una esquina.
+    // Solo si no hay nada más se encuadra en ellos.
     const sumar = (capa) => {
       if (capa.eachLayer && !capa.feature) { capa.eachLayer(sumar); return; }
-      const destino = capa.feature?.properties?.fuera ? fuera : caja;
+      const p = capa.feature?.properties;
+      const destino = p?.fuera || (p?.resto && p?.numero == null) ? fuera : caja;
       if (capa.getBounds) destino.extend(capa.getBounds());
       else if (capa.getLatLng) destino.extend(capa.getLatLng());
     };
-    for (const grupo of [this.lotes, this.anclas]) grupo.eachLayer(sumar);
+    for (const grupo of [this.lotes, this.anclas, this.alfiler]) grupo.eachLayer(sumar);
     const final = caja.isValid() ? caja : fuera;
     if (final.isValid()) this.mapa.fitBounds(final, { padding: [24, 24], maxZoom: 18 });
     return final.isValid();
@@ -107,6 +111,18 @@ export class MapaKmz {
         permanent: true, direction: 'right', offset: [6, 0], className: `kmz-etiqueta${mala ? ' kmz-etiqueta--mala' : ''}`,
       }).addTo(this.anclas);
     }
+  }
+
+  /**
+   * El alfiler en la coordenada que pegó la loteadora (sin lat/lon, se quita). No toma
+   * clics: debajo puede haber un lote que arrastrar o un punto que marcar.
+   */
+  ponerAlfiler(lat, lon) {
+    this.alfiler.clearLayers();
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    const icono = this.L.divIcon({ className: 'kmz-alfiler', iconSize: [28, 40], iconAnchor: [14, 40], html: '<span></span>' });
+    this.L.marker([lat, lon], { icon: icono, interactive: false, keyboard: false, zIndexOffset: 1000 })
+      .addTo(this.alfiler);
   }
 
   /**

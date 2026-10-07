@@ -877,6 +877,48 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-cuadricula { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.75rem; border-radius: var(--radio-md); background: var(--verde-50); border: 1px solid var(--verde-100); }
 .kmz-cuadricula .nota { flex-basis: 100%; color: var(--verde-800); }
 .kmz-ubicacion p { margin: 0; font-weight: 600; }
+/* Ubicar con un punto: los tres pasos numerados en el texto (el <ol> no pone números,
+   así se leen igual en el lector de pantalla y en la vista). */
+.kmz-guia { display: grid; gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
+.kmz-guia > li { display: grid; gap: 0.4rem; justify-items: start; padding: 0.75rem; border: 1px solid var(--zinc-200); border-radius: var(--radio-md); }
+.kmz-guia > li > strong { font-size: 0.875rem; color: var(--zinc-900); }
+.kmz-guia > li[data-estado="hecho"] { border-color: var(--verde-100); background: var(--verde-50); }
+.kmz-guia > li[data-estado="hecho"] > strong::after { content: " ✓"; color: var(--verde-700); }
+.kmz-guia > li[data-estado="ahora"] { border-color: var(--zinc-400); box-shadow: 0 0 0 2px var(--marca-anillo); }
+.kmz-guia .fila { width: 100%; }
+.kmz-guia .boton[aria-pressed="true"] { background: var(--marca-800); border-color: var(--marca-800); color: #fff; }
+.kmz-guia__hecho { color: var(--verde-800); }
+.kmz-giro { display: grid; gap: 0.35rem; width: 100%; }
+.kmz-giro label { font-size: 0.8125rem; font-weight: 600; color: var(--zinc-700); }
+/* El deslizador va arriba, a todo el ancho (el panel es angosto): entre los botones
+   quedaba de unos 90 px y no se podía afinar el décimo de grado. */
+.kmz-giro__fila { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+.kmz-giro__fila .boton { flex: 1 1 0; padding: 0 0.5rem; font-variant-numeric: tabular-nums; }
+.kmz-giro__fila input[type="range"] { order: -1; flex: 1 1 100%; height: 2rem; accent-color: var(--marca-800); }
+.kmz-giro output { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--zinc-800); }
+/* El giro sobre el mapa: solo en pantalla angosta, donde el del panel queda lejos de los lotes. */
+.kmz-giro-mapa {
+  position: absolute; top: 0.5rem; right: 0.5rem; z-index: 1000; display: none; align-items: center; gap: 0.25rem;
+  padding: 0.25rem; background: rgb(255 255 255 / 0.94); border: 1px solid var(--zinc-200); border-radius: var(--radio-md); box-shadow: var(--sombra);
+}
+.kmz-giro-mapa .boton { padding: 0 0.45rem; font-variant-numeric: tabular-nums; }
+.kmz-giro-mapa output { min-width: 3.25rem; text-align: center; font: 600 0.8125rem var(--sans); font-variant-numeric: tabular-nums; color: var(--zinc-800); }
+@media (max-width: 70rem) { .kmz-giro-mapa:not([hidden]) { display: flex; } }
+.kmz-escala { display: grid; gap: 0.35rem; padding: 0.75rem; border-radius: var(--radio-md); background: var(--ambar-50); border: 1px solid var(--ambar-200); }
+.kmz-escala__campo { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; font-size: 0.875rem; font-weight: 600; color: var(--zinc-800); }
+.kmz-escala__campo input { width: 7rem; height: 2rem; padding: 0 0.5rem; border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); font: 600 0.9375rem var(--sans); }
+.kmz-escala__campo input:focus { border-color: var(--marca-700); box-shadow: 0 0 0 3px var(--marca-anillo); outline: none; }
+/* El alfiler de la coordenada: una gota naranja con la punta en el lugar exacto. */
+.kmz-alfiler { pointer-events: none; }
+.kmz-alfiler span {
+  position: absolute; left: 3px; top: 0; width: 22px; height: 22px; box-sizing: border-box;
+  background: #ea580c; border: 3px solid #fff; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+}
+.kmz-alfiler::after {
+  content: ''; position: absolute; left: 11px; bottom: -3px; width: 6px; height: 6px; border-radius: 50%;
+  background: #ea580c; box-shadow: 0 0 0 2px #fff;
+}
 .kmz-avisos { margin: 0.35rem 0 0; padding-left: 1.1rem; color: var(--ambar-800); font-size: 0.8125rem; }
 .kmz-ajuste { display: grid; gap: 0.5rem; margin: 0; padding: 0.75rem; border: 1px solid var(--zinc-200); border-radius: var(--radio-md); }
 .kmz-ajuste legend { padding: 0 0.25rem; font-weight: 600; }
