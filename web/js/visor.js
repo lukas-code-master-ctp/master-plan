@@ -157,30 +157,51 @@ export class Visor {
 
   // --- Vista -----------------------------------------------------------------
 
+  /**
+   * Cambia a otra vista. Resuelve apenas está la primera calidad de la foto
+   * (la previa, liviana): ahí ya se puede encuadrar. Las calidades mejores siguen
+   * bajando por detrás y reemplazan la textura cuando llegan.
+   *
+   * La foto nueva y sus parcelas entran juntas: antes las parcelas de la vista
+   * nueva se dibujaban un momento sobre la foto anterior. Devuelve false si
+   * mientras tanto se pidió otra vista.
+   */
   async mostrarVista(vista, overlay, { avisar, referencias = [] } = {}) {
+    const token = ++this.cargaEnCurso;
+    const niveles = this._nivelesUtiles(vista.imagenes);
+    avisar?.('Cargando vista…');
+    if (this.vista) this.lienzo.classList.add('cambiando');
+    let primera;
+    try {
+      primera = await cargarImagen(vista.imagenes[niveles[0]]);
+    } finally {
+      if (token === this.cargaEnCurso) this.lienzo.classList.remove('cambiando');
+    }
+    if (token !== this.cargaEnCurso) return false;
+
     this.vista = vista;
     this.overlay = overlay;
     this.referencias = referencias;
     this._limpiarNodos();
+    this._subirTextura(primera);
     this._pintar();
+    avisar?.(null);
+    this._mejorarCalidad(vista, niveles.slice(1), token);
+    return true;
+  }
 
-    const token = ++this.cargaEnCurso;
-    const niveles = this._nivelesUtiles(vista.imagenes);
-
+  async _mejorarCalidad(vista, niveles, token) {
     for (const nivel of niveles) {
-      avisar?.(nivel === niveles.at(-1) ? null : 'Cargando vista…');
       let imagen;
       try {
         imagen = await cargarImagen(vista.imagenes[nivel]);
-      } catch (error) {
-        if (nivel === niveles[0]) throw error;
-        break;   // un nivel de más calidad que falla no es motivo para romper nada
+      } catch {
+        return;   // un nivel de más calidad que falla no es motivo para romper nada
       }
       if (token !== this.cargaEnCurso) return;   // cambiaron de vista mientras cargaba
       this._subirTextura(imagen);
       this._pintar();
     }
-    avisar?.(null);
   }
 
   _subirTextura(imagen) {

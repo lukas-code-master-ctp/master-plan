@@ -17,6 +17,9 @@ const $ = (selector) => document.querySelector(selector);
 // Cuánto del alto del cuadro se corre la parcela elegida hacia arriba cuando la
 // ficha del teléfono tapa la parte de abajo.
 const SUBIDA_CON_FICHA = 0.2;
+// Cuánto esperar, con la primera vista ya en pantalla, antes de dejar bajando las
+// demás: la foto en alta de la vista que se mira va primero.
+const PRECARGA_MS = 2500;
 
 /** Centro del loteo en grados y minutos, para el rótulo de la marca. */
 function coordenadasDelLoteo(vistas) {
@@ -111,6 +114,7 @@ async function arrancar() {
   const inicial = leerUrl();
   await cambiarVista(inicial.vista ?? catalogo.vistaInicial);
   if (inicial.lote) seleccionar(inicial.lote, { enfocarEnVisor: true });
+  precargarVistas();
 
   window.addEventListener('popstate', async () => {
     const destino = leerUrl();
@@ -128,10 +132,12 @@ async function cambiarVista(vista) {
   const reencuadrar = estado.vista?.posicion !== vista.posicion;
   estado.vista = vista;
   const overlay = await estado.catalogo.overlayDe(vista.id);
-  await estado.visor.mostrarVista(vista, overlay, {
+  const mostrada = await estado.visor.mostrarVista(vista, overlay, {
     avisar: mostrarCarga,
     referencias: estado.catalogo.referenciasDe(vista.id),
   });
+  // Mientras cargaba eligieron otra vista: esa se encarga del resto.
+  if (!mostrada) return;
   if (reencuadrar) estado.visor.encuadrarParcelas();
   estado.visor.aplicarEstilos(estiloDe);
   estado.visor.marcarSeleccionada(estado.seleccionada);
@@ -140,6 +146,36 @@ async function cambiarVista(vista) {
   $('#entrar-360-punto').textContent = `${estado.catalogo.nombrePunto(vista.posicion)} · ${vista.altura_m} m`;
   actualizarControles();
   sincronizarUrl();
+}
+
+/**
+ * Con la primera vista ya en pantalla, se dejan bajando las parcelas y la foto
+ * liviana de las demás: así cambiar de punto es casi inmediato. Se espera un rato
+ * para no competir con la foto en alta de la vista que se está mirando, y no se
+ * hace si el teléfono pide ahorrar datos.
+ */
+function precargarVistas() {
+  if (navigator.connection?.saveData) return;
+  setTimeout(async () => {
+    for (const vista of estado.catalogo.vistas) {
+      if (vista.id === estado.vista?.id) continue;
+      try {
+        await estado.catalogo.overlayDe(vista.id);
+        await precargarImagen(vista.imagenes?.previa);
+      } catch {
+        // Si una no baja, se carga al elegirla, como antes.
+      }
+    }
+  }, PRECARGA_MS);
+}
+
+function precargarImagen(ruta) {
+  if (!ruta) return Promise.resolve();
+  return new Promise((listo) => {
+    const imagen = new Image();
+    imagen.onload = imagen.onerror = () => listo();
+    imagen.src = ruta;
+  });
 }
 
 function irAPosicion(posicion) {
