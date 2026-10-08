@@ -84,7 +84,7 @@ WEB = Path(__file__).resolve().parent / "web"
 # Los módulos de la página. Se sirven por nombre de una lista cerrada, no
 # cualquier archivo de la carpeta: una ruta que arma rutas de disco con lo que
 # llega en la URL es una ruta para leer el disco.
-MODULOS = ("app.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
+MODULOS = ("app.js", "barra.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
            "vuelo.js", "configuracion.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
            "mapa_kmz.js", "sondeo.js", "reservas.js")

@@ -149,7 +149,7 @@ En escritorio y después en celular, en `.qa/capturas/`:
 | Archivo | Cuenta | Qué |
 | --- | --- | --- |
 | `01-entrar[-movil].png` | anonimo | `/entrar` |
-| `02-planos` | duenio | Mis planos |
+| `02-planos` | duenio | Mis 360° |
 | `03-praderas` | duenio | detalle de Praderas Demo |
 | `04-kmz` | duenio | Mis KMZ |
 | `05-disenos` | duenio | Diseños |

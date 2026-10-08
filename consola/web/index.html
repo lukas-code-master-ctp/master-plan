@@ -10,25 +10,36 @@
 <body>
 
 <header class="barra">
-  <a class="marca" href="#/planos" aria-label="Tu Masterplan, ir a Mis planos">
-    <svg class="marca__hito" viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.6"/>
-      <path d="M16 4v6M16 22v6M4 16h6M22 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-      <path d="M16 10.5 21.5 16 16 21.5 10.5 16Z" fill="currentColor"/>
-    </svg>
-    <span class="marca__texto"><strong>Tu Masterplan</strong></span>
+  <a class="logotipo" href="#/planos" aria-label="Tu Masterplan, ir a Mis 360°">
+    <span class="logotipo__tu">tu</span><span class="logotipo__nombre">masterplan</span><span class="logotipo__punto"></span>
   </a>
 
   <nav class="pestanas" aria-label="Secciones">
-    <a href="#/planos" data-seccion="planos">Mis planos</a>
-    <a href="#/kmz" data-seccion="kmz">Mis KMZ</a>
-    <a href="#/disenos" data-seccion="disenos">Mis diseños</a>
-    <a href="#/reservas" data-seccion="reservas">Reservas <span id="contador-reservas" class="contador" hidden></span></a>
+    <span class="pestanas__pildora" aria-hidden="true" hidden></span>
+    <a href="#/planos" data-seccion="planos">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/></svg>
+      <span class="pestanas__texto">Mis 360°</span>
+    </a>
+    <a href="#/kmz" data-seccion="kmz">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5zM3 13l9 5 9-5M3 18l9 5 9-5"/></svg>
+      <span class="pestanas__texto">Mis KMZ</span>
+    </a>
+    <a href="#/disenos" data-seccion="disenos">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.5-.8 1.2-1.6-.6-1.4.4-2.4 1.8-2.4H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3zM7.5 11h.01M10 7.5h.01M14.5 7.5h.01"/></svg>
+      <span class="pestanas__texto">Mis diseños</span>
+    </a>
+    <a href="#/reservas" data-seccion="reservas">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v3M16 3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM9 14l2 2 4-4"/></svg>
+      <span class="pestanas__texto">Reservas</span>
+      <span id="contador-reservas" class="contador" hidden></span>
+    </a>
   </nav>
 
   <div class="cuenta">
-    <button id="avatar" class="avatar" type="button" aria-haspopup="menu" aria-expanded="false"
-            aria-controls="menu-cuenta" aria-label="Tu cuenta"></button>
+    <span class="avatar-anillo">
+      <button id="avatar" class="avatar" type="button" aria-haspopup="menu" aria-expanded="false"
+              aria-controls="menu-cuenta" aria-label="Tu cuenta"></button>
+    </span>
     <div id="menu-cuenta" class="menu" role="menu" hidden>
       <div class="menu__quien">
         <strong id="quien"></strong>
@@ -49,12 +60,12 @@
 
 <main class="lienzo">
 
-  <!-- Mis planos -->
+  <!-- Mis 360° -->
   <section id="pantalla-planos" class="pantalla" aria-labelledby="titulo-planos" hidden>
     <header class="pantalla__cabecera">
       <div>
         <span class="antetitulo">Tus loteos desde el aire</span>
-        <h1 id="titulo-planos">Mis planos</h1>
+        <h1 id="titulo-planos">Mis 360°</h1>
         <p id="guia" class="guia"></p>
       </div>
       <div class="pantalla__acciones">
@@ -92,7 +103,7 @@
 
   <!-- Nuevo master -->
   <section id="pantalla-nuevo" class="pantalla pantalla--angosta" aria-labelledby="titulo-nuevo" hidden>
-    <a class="volver" href="#/planos">← Mis planos</a>
+    <a class="volver" href="#/planos">← Mis 360°</a>
     <h1 id="titulo-nuevo">Nuevo master</h1>
     <p class="ayuda">Sube el plano del topógrafo y las panorámicas del dron. Con eso se
       construye el visor; revisas cómo quedó y recién ahí lo publicas.</p>
@@ -199,7 +210,7 @@
 
   <!-- Un master -->
   <section id="pantalla-plano" class="pantalla" aria-labelledby="plano-nombre" hidden>
-    <a class="volver" href="#/planos">← Mis planos</a>
+    <a class="volver" href="#/planos">← Mis 360°</a>
 
     <article class="plano-detalle" id="plano">
       <header class="plano-detalle__cabecera">

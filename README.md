@@ -18,7 +18,7 @@ La forma cómoda es la consola:
 ./consola.sh
 ```
 
-Abre http://localhost:8780 en el navegador. En **Mis planos → Nuevo master** le pones
+Abre http://localhost:8780 en el navegador. En **Mis 360° → Nuevo master** le pones
 nombre, subes el KMZ, las panorámicas y, si la hay, la planilla de precios, y
 aprietas **Construir**. En el detalle del loteo ves la portada, las cifras y el
 control de calce, completas los datos (WhatsApp, referencias…) y recién entonces

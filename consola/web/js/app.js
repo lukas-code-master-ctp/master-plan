@@ -16,6 +16,7 @@ import { abrirDiseno, pintarDisenos, prepararDisenos } from './disenos.js';
 import { pintarKmz, prepararKmz } from './kmz.js';
 import { pintarKmzs, prepararKmzs } from './kmzs.js';
 import { cerrarDialogos, pintarPlano, prepararPlano, seguir } from './plano.js';
+import { marcarSeccion } from './barra.js';
 import { pintarPlanos } from './planos.js';
 import { cargarReservas, pintarContador, pintarReservas, prepararReservas } from './reservas.js';
 
@@ -35,13 +36,7 @@ function mostrar() {
   for (const nombre of PANTALLAS) $(`#pantalla-${nombre}`).hidden = nombre !== destino.pantalla;
   // Un KMZ pone el plano y el mapa lado a lado: usa todo el ancho.
   document.body.classList.toggle('pantalla-ancha', destino.pantalla === 'kmz');
-  const seccion = destino.pantalla.startsWith('diseno') ? 'disenos'
-    : destino.pantalla.startsWith('kmz') ? 'kmz'
-      : destino.pantalla === 'reservas' ? 'reservas' : 'planos';
-  for (const enlace of $$('.pestanas a')) {
-    if (enlace.dataset.seccion === seccion) enlace.setAttribute('aria-current', 'page');
-    else enlace.removeAttribute('aria-current');
-  }
+  marcarSeccion(destino.pantalla);
 
   if (llegando) {
     avisar(null);
@@ -67,7 +62,7 @@ function mostrar() {
     return;
   }
   document.title = {
-    planos: 'Mis planos', nuevo: 'Nuevo master', kmzs: 'Mis KMZ', disenos: 'Mis diseños', diseno: 'Diseño',
+    planos: 'Mis 360°', nuevo: 'Nuevo master', kmzs: 'Mis KMZ', disenos: 'Mis diseños', diseno: 'Diseño',
     reservas: 'Reservas', configuracion: 'Configuración',
   }[destino.pantalla] + ' — Tu Masterplan';
   if (destino.pantalla === 'planos') pintarPlanos({ animar: llegando });
