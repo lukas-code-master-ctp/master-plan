@@ -519,6 +519,10 @@ Todo se puede retomar y rehacer: cambiar una entrada vuelve a calcular solo lo q
 depende de ella (`huellas.json` dice qué quedó atrasado). Si un lote sale mal se
 corrige con las entradas (una máscara, un número), no moviendo vértices.
 
+Si la instancia muere leyendo el plano, la consola que arranca la relanza sola desde la
+última pasada guardada (`lectura.json` en la carpeta del KMZ, `lector-avance/` para las
+pasadas), hasta 3 intentos en total. En Cloud Logging queda como `[lecturas]`.
+
 ### Unir las hojas de un plano
 
 Hay planos que el CBR entrega partidos en varias láminas que se traslapan (Constitución:

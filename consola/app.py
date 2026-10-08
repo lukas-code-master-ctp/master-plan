@@ -21,6 +21,7 @@ import threading
 import traceback
 import unicodedata
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
@@ -40,6 +41,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 from pipeline import config, visor
 from pipeline.kmz import leer_kmz
+from pipeline.plano.digitalizar import SALIDA as DIGITALIZADO, escribir_json
 
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
 from .cierra import Cierra, Cifrador, Conexiones, cierra_del_entorno
@@ -59,7 +61,7 @@ from .disenos import como_json as diseno_json
 from .inventario import poner_al_dia, poner_datos_del_loteo, revisar_cierra
 from .kmzs import NombreInvalido, RegistroKmz, VistaKmz, slug_de_clave
 from .kmzs import clave as clave_kmz
-from .plano import LotesSinNumero, PlanoInvalido, PlanoNoListo
+from .plano import LotesSinNumero, Plano, PlanoInvalido, PlanoNoListo
 from .plantilla import MIME_XLSX, plantilla
 from .proyectos import KMZ as KMZ_DEL_MASTER
 from .proyectos import KmzExistente, LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
@@ -149,6 +151,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
               disenos: Disenos | None = None, cuentas: Cuentas | None = None,
               google: Google | None | bool = True,
               republicar_al_arrancar: bool | None = None,
+              retomar_lecturas_al_arrancar: bool = True,
               cierra: Cierra | None | bool = True, conexiones: Conexiones | None = None,
               kmzs: RegistroKmz | None = None, reservas: Reservas | None = None) -> FastAPI:
     mostrar_registro()
@@ -176,15 +179,21 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
 
     @asynccontextmanager
     async def al_arrancar(_app):
-        """Los loteos publicados con un visor viejo se ponen al día en un hilo
-        aparte: la consola atiende desde el primer momento, no cuando termina."""
-        _republicar_en_segundo_plano(registro, trabajos, comandos, disenos)
+        """Las lecturas del plano que la instancia anterior dejó a medias se relanzan
+        antes de atender: el primer sondeo que llega acá ya las ve. Solo parte
+        subprocesos, así que no demora el arranque. Los loteos publicados con un visor
+        viejo, en cambio, se ponen al día en un hilo aparte: la consola atiende desde el
+        primer momento, no cuando termina."""
+        if retomar_lecturas_al_arrancar:
+            retomar_lecturas(kmzs, trabajos, comandos)
+        if republicar_al_arrancar:
+            _republicar_en_segundo_plano(registro, trabajos, comandos, disenos)
         yield
 
     # Sin documentación automática ni esquema: la consola tiene una sola página que
     # la usa, y el inventario de rutas lo vigila una prueba, no un JSON público.
     app = FastAPI(title="Tu Masterplan — consola", docs_url=None, redoc_url=None,
-                  openapi_url=None, lifespan=al_arrancar if republicar_al_arrancar else None)
+                  openapi_url=None, lifespan=al_arrancar)
 
     @app.middleware("http")
     async def puerta(peticion: Request, seguir):
@@ -615,17 +624,9 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         plano = mis.plano(slug)
         entradas = plano.para_digitalizar()
         una_a_la_vez(yo, clave_kmz(slug))
-
-        def anotar(trabajo) -> None:
-            # Con qué entradas quedó: si cambian, el paso se ve atrasado. La huella se
-            # saca al terminar porque depende de la cuadrícula que propuso el lector.
-            if trabajo.estado == "listo":
-                plano.anotar("digitalizado", plano.huella_al_terminar(entradas))
-
         try:
-            identificador = trabajos.lanzar(clave_kmz(slug), "digitalizar-plano",
-                                            comandos.digitalizar_carpeta(plano.carpeta),
-                                            al_terminar=anotar)
+            identificador = _lanzar_lectura(plano, entradas, clave_kmz(slug), 1,
+                                            trabajos, comandos)
         except RuntimeError as error:
             raise HTTPException(409, str(error)) from error
         return {"id": identificador}
@@ -964,6 +965,112 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return JSONResponse(status_code=404, content={"detail": str(error)})
 
     return app
+
+
+# Cuántas veces se lanza una lectura del plano, contando las que retoma el arranque:
+# si es la lectura misma la que bota la instancia, no queda en un ciclo.
+INTENTOS_LECTURA = 3
+# En la carpeta del KMZ mientras se lee su plano. Si la instancia muere, queda.
+LECTURA = "lectura.json"
+# Entre ver de quién es `lectura.json` y borrarlo, un lanzamiento nuevo podría escribir
+# el suyo (el trabajo ya figura terminado mientras corre su `al_terminar`).
+_CANDADO_LECTURA = threading.Lock()
+
+
+def _lanzar_lectura(plano: Plano, entradas: dict, clave: str, intento: int,
+                    trabajos: Trabajos, comandos) -> str:
+    """Lanza la lectura del plano dejando anotado en el disco que está corriendo, para
+    que la consola que arranque después de una caída la retome (`retomar_lecturas`).
+    El avance de la lectura misma lo guarda el lector en `lector-avance/`."""
+    archivo = plano.carpeta / LECTURA
+
+    def recordar(trabajo) -> None:
+        # Bajo el candado de `lanzar`: un 409 no llega acá, así que no pisa el
+        # archivo de la lectura en curso, y el proceso todavía no parte.
+        with _CANDADO_LECTURA:
+            escribir_json(archivo, {"intento": intento, "trabajo": trabajo.id,
+                                    "comenzo": datetime.now(timezone.utc).isoformat()})
+
+    def al_terminar(trabajo) -> None:
+        # Listo o falló, ya no hay nada que retomar. Si el archivo es de un
+        # lanzamiento posterior (este recién está cerrando), es de ese y se deja.
+        try:
+            with _CANDADO_LECTURA:
+                if _lectura(archivo).get("trabajo") in (None, trabajo.id):
+                    archivo.unlink(missing_ok=True)
+        except OSError as error:
+            trabajo.lineas.append(f"aviso: no pude borrar {LECTURA} ({error})")
+        # Con qué entradas quedó: si cambian, el paso se ve atrasado. La huella se
+        # saca al terminar porque depende de la cuadrícula que propuso el lector.
+        if trabajo.estado == "listo":
+            plano.anotar("digitalizado", plano.huella_al_terminar(entradas))
+
+    lineas = ([f"Se retoma la lectura del plano donde quedó (intento {intento} de "
+               f"{INTENTOS_LECTURA})."] if intento > 1 else None)
+    return trabajos.lanzar(clave, "digitalizar-plano", comandos.digitalizar_carpeta(plano.carpeta),
+                           al_terminar=al_terminar, lineas=lineas, al_lanzar=recordar)
+
+
+def _lectura(archivo: Path) -> dict:
+    """Lo anotado en `lectura.json`; {} si no está. Uno ilegible cuenta como el último
+    intento: no se sabe cuántos lleva y relanzarlo podría no acabar nunca."""
+    try:
+        datos = json.loads(archivo.read_text(encoding="utf-8"))
+        if not isinstance(datos, dict) or not isinstance(datos.get("intento"), int):
+            raise ValueError("sin intento")
+        return datos
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return {"intento": INTENTOS_LECTURA}
+
+
+def _ya_leido(carpeta: Path) -> bool:
+    """¿Hay un `digitalizado.json` posterior a `lectura.json`? Entonces la lectura
+    terminó y el archivo quedó por un borrado que falló o una caída justo al cerrar.
+    Relanzarla pisaría los lotes, con las correcciones que se les hicieron después."""
+    try:
+        return (carpeta / DIGITALIZADO).stat().st_mtime > (carpeta / LECTURA).stat().st_mtime
+    except OSError:
+        return False
+
+
+def retomar_lecturas(kmzs: RegistroKmz, trabajos: Trabajos, comandos) -> list[str]:
+    """Al arrancar: relanza las lecturas del plano que quedaron a medias (hay un
+    `lectura.json` y nada corriendo), hasta `INTENTOS_LECTURA` en total. Las que ya
+    no se pueden retomar pierden el archivo y la pantalla las da por interrumpidas.
+    Devuelve los slugs relanzados. Lo que falle queda en el log: nunca bota el arranque."""
+    retomadas = []
+    try:
+        guardados = kmzs.base.kmzs()
+    except Exception:                       # noqa: BLE001 - nunca botar la consola
+        print("[lecturas] no pude listar los KMZ:\n" + traceback.format_exc(), flush=True)
+        return retomadas
+    for guardado in guardados:
+        try:
+            plano = kmzs.plano_de(guardado)
+            archivo = plano.carpeta / LECTURA
+            if not archivo.is_file() or trabajos.corriendo(clave_kmz(guardado.slug)):
+                continue
+            intento = _lectura(archivo)["intento"] + 1
+            entradas = None
+            if intento <= INTENTOS_LECTURA and not _ya_leido(plano.carpeta):
+                try:
+                    entradas = plano.para_digitalizar()
+                except Exception:           # noqa: BLE001 - sin PDF o sin entradas válidas
+                    pass
+            if entradas is None:
+                archivo.unlink(missing_ok=True)
+                print(f"[lecturas] {guardado.slug}: no se retoma la lectura del plano", flush=True)
+                continue
+            _lanzar_lectura(plano, entradas, clave_kmz(guardado.slug), intento, trabajos, comandos)
+            retomadas.append(guardado.slug)
+            print(f"[lecturas] {guardado.slug}: se retoma la lectura del plano "
+                  f"(intento {intento} de {INTENTOS_LECTURA})", flush=True)
+        except Exception:                   # noqa: BLE001 - nunca botar la consola
+            print(f"[lecturas] {guardado.slug}: no se pudo retomar:\n" + traceback.format_exc(),
+                  flush=True)
+    return retomadas
 
 
 def _republicar_en_segundo_plano(registro: Registro, trabajos: Trabajos, comandos,

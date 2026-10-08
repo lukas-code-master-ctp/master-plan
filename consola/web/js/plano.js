@@ -12,7 +12,7 @@ import { abrirElegirKmz } from './kmzs.js';
 import { pintarVuelo } from './vuelo.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
-import { textoInterrumpido, trasFalloDeSondeo } from './sondeo.js';
+import { relevo, retomarRegistro, textoInterrumpido, trasFalloDeSondeo } from './sondeo.js';
 
 let refrescar = async () => {};
 let actual = null;          // el slug que se está mirando
@@ -311,6 +311,7 @@ async function olvidar(proyecto) {
     : `¿Quitar "${proyecto.nombre}" de la lista? No se borra ningún archivo.`)) return;
   await pedir(`/api/proyectos/${proyecto.slug}`, { method: 'DELETE' });
   estado.registros.delete(proyecto.slug);
+  estado.registroDe.delete(proyecto.slug);
   location.hash = '#/planos';
   await refrescar();
 }
@@ -364,11 +365,19 @@ export const oyentes = new Map();
 
 /**
  * Sondea un trabajo y va volcando sus líneas hasta que termina. `slug` es la clave
- * del trabajo: el slug de un master o `kmz:<slug>` para un KMZ.
+ * del trabajo: el slug de un master o `kmz:<slug>` para un KMZ. `desde` es la primera
+ * línea del trabajo que falta mostrar; por omisión, las que ya se mostraron de ese mismo
+ * trabajo, o 0 si el registro es de otro (`retomarRegistro`). `perdidos`: los ids que ya
+ * se perdieron en esta misma pantalla.
  */
-export function seguir(slug, identificador) {
+export function seguir(slug, identificador, desde = null, perdidos = []) {
   clearTimeout(estado.sondeos.get(slug));
-  let desde = (estado.registros.get(slug) ?? []).length;
+  if (desde === null) {
+    const plan = retomarRegistro(estado.registroDe.get(slug), identificador);
+    desde = plan.desde;
+    if (!plan.conservar) estado.registros.set(slug, []);
+  }
+  estado.registroDe.set(slug, { id: identificador, total: desde });
   let fallos = 0;
 
   const tic = async () => {
@@ -382,10 +391,24 @@ export function seguir(slug, identificador) {
         estado.sondeos.set(slug, setTimeout(tic, decision.espera));
         return;
       }
-      estado.sondeos.delete(slug);
       if (decision.que === 'interrumpido') {
+        // Un id que no se usa en otra cosa: si mientras se busca el relevo alguien lanza o
+        // sigue otro trabajo con esta clave, lo reemplaza y esta búsqueda se retira. Y
+        // mientras tanto `refrescar` no empieza a seguir el relevo por su cuenta, con un
+        // `desde` que es el largo del registro del trabajo perdido.
+        const marca = setTimeout(() => {}, 0);
+        estado.sondeos.set(slug, marca);
+        const vistos = [...perdidos, identificador];
+        const otro = await buscarRelevo(slug, vistos);
+        if (estado.sondeos.get(slug) !== marca) return;
+        if (otro) {
+          seguirRelevo(slug, otro, vistos);
+          return;
+        }
+        estado.sondeos.delete(slug);
         await interrumpido(slug);
       } else {
+        estado.sondeos.delete(slug);
         avisar(error.message);
       }
       return;
@@ -399,6 +422,7 @@ export function seguir(slug, identificador) {
         registro.push(...trabajo.lineas);
         estado.registros.set(slug, registro);
         desde = trabajo.total;
+        estado.registroDe.set(slug, { id: identificador, total: desde });
         if (slug === actual) pintarRegistro(slug);
         if (!trabajo.terminado) oyentes.get(slug)?.(trabajo);
       }
@@ -424,6 +448,34 @@ export function seguir(slug, identificador) {
 }
 
 /**
+ * Si se perdió la lectura del plano de un KMZ, la consola que arrancó en su lugar la
+ * retoma con otro trabajo (otro id). Se pregunta por el KMZ, como lo pide `kmz.js`; si
+ * no contesta o no hay relevo, null y el trabajo queda como interrumpido. Los masters
+ * no se retoman solos.
+ */
+async function buscarRelevo(slug, perdidos) {
+  if (!slug.startsWith('kmz:')) return null;
+  try {
+    const kmz = await pedir(`/api/kmz/${encodeURIComponent(slug.slice('kmz:'.length))}`);
+    return relevo(kmz, perdidos);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sigue la lectura retomada desde su primera línea ("Se retoma…"), debajo de las que ya
+ * se mostraron: quien lo mira ve una sola lectura que siguió. Lo que se sabía del
+ * trabajo perdido apunta ahora al nuevo; la tarjeta sigue escaneando y el botón apagado.
+ */
+function seguirRelevo(slug, identificador, perdidos) {
+  for (const item of estado.kmzs) {
+    if (`kmz:${item.slug}` === slug && item.trabajo) item.trabajo = { ...item.trabajo, id: identificador };
+  }
+  seguir(slug, identificador, 0, perdidos);
+}
+
+/**
  * El trabajo se perdió con el servidor (se reinició y no lo conoce): queda como
  * fallido, con la causa al final del registro (la tarjeta la muestra), y quien lo
  * escuchaba se entera de que terminó, para que vuelva a ofrecer el botón.
@@ -434,6 +486,10 @@ async function interrumpido(slug) {
   const registro = estado.registros.get(slug) ?? [];
   registro.push(`Error: ${texto}`);
   estado.registros.set(slug, registro);
+  // Si después aparece el trabajo que lo retomó (la consola tardó en volver), sus líneas
+  // siguen debajo de estas, como con el relevo.
+  const de = estado.registroDe.get(slug);
+  if (de) estado.registroDe.set(slug, { ...de, perdido: true });
   const trabajo = {
     accion: previo.accion, estado: 'falló', terminado: true, interrumpido: true,
     lineas: [], total: registro.length,

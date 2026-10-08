@@ -292,7 +292,7 @@ def test_digitalizar_con_las_semillas_del_lector(tmp_path, monkeypatch, capsys):
     leidos.append(Rotulo("99", 5, 5, 0.01, 1, 12.0))          # ruido de apoyo 1: no es semilla
     llamadas = []
     monkeypatch.setattr(rotulos, "motivo_no_disponible", lambda: None)
-    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance: llamadas.append(imagen.shape) or leidos)
+    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance, avance_en=None: llamadas.append(imagen.shape) or leidos)
     monkeypatch.setattr(rotulos, "leer_cuadricula", lambda imagen, ppmm, avance, rectangulo: None)
     monkeypatch.setattr(rotulos, "leer_cuadro", lambda imagen, rects, avance: {"1": 30600.0, "2": 28000.0, "12": 31000.0})
 
@@ -327,7 +327,7 @@ def _lector_falso(monkeypatch, cuadro, leidos=None):
     """El lector sin Tesseract: guarda lo que recibe y devuelve `leidos` y `cuadro`."""
     visto = {}
     monkeypatch.setattr(rotulos, "motivo_no_disponible", lambda: None)
-    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance: visto.update(dibujo=imagen) or (leidos or []))
+    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance, avance_en=None: visto.update(dibujo=imagen) or (leidos or []))
     monkeypatch.setattr(rotulos, "leer_cuadricula", lambda imagen, ppmm, avance, rectangulo: None)
     monkeypatch.setattr(rotulos, "leer_cuadro",
                         lambda imagen, rects, avance: visto.update(pagina=imagen.shape, rects=rects) or cuadro)
@@ -394,7 +394,7 @@ def test_una_lectura_vacia_no_se_reusa(tmp_path, monkeypatch):
     _carpeta_sin_semillas(tmp_path)
     llamadas = []
     monkeypatch.setattr(rotulos, "motivo_no_disponible", lambda: None)
-    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance: llamadas.append(1) or [])
+    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance, avance_en=None: llamadas.append(1) or [])
     monkeypatch.setattr(rotulos, "leer_cuadricula", lambda imagen, ppmm, avance, rectangulo: None)
     monkeypatch.setattr(rotulos, "leer_cuadro", lambda imagen, rects, avance: {})
 
@@ -408,7 +408,7 @@ def test_cambiar_las_mascaras_vuelve_a_leer(tmp_path, monkeypatch):
     plano, entradas = _carpeta_sin_semillas(tmp_path)
     llamadas = []
     monkeypatch.setattr(rotulos, "motivo_no_disponible", lambda: None)
-    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance: llamadas.append(1)
+    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance, avance_en=None: llamadas.append(1)
                         or [Rotulo("1", 10, 10, 0.4, 40, 12.0)])
     monkeypatch.setattr(rotulos, "leer_cuadricula", lambda imagen, ppmm, avance, rectangulo: None)
     monkeypatch.setattr(rotulos, "leer_cuadro", lambda imagen, rects, avance: {})

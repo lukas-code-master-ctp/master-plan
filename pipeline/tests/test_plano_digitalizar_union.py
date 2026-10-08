@@ -166,7 +166,7 @@ def test_la_huella_del_lector_cambia_con_la_union_y_su_cuadro(tmp_path, plano):
 def _lector_falso(monkeypatch):
     vistos = []
     monkeypatch.setattr(rotulos, "motivo_no_disponible", lambda: None)
-    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance: [])
+    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance, avance_en=None: [])
     monkeypatch.setattr(rotulos, "leer_cuadricula", lambda imagen, ppmm, avance, rectangulo: None)
     monkeypatch.setattr(rotulos, "leer_cuadro", lambda imagen, rects, avance: vistos.append(
         dict(imagen=imagen.copy(), rects=[list(r) for r in rects])) or {})

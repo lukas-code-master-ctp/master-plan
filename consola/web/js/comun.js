@@ -18,6 +18,12 @@ export const estado = {
   // La clave es el slug del master, o `kmz:<slug>` para un KMZ de Mis KMZ (la misma
   // clave que usa el servidor): un slug nunca lleva ":", así que no chocan.
   registros: new Map(),
+  // De qué trabajo son las líneas del registro de cada clave: {id, total, perdido}.
+  // `total` es cuántas de ese trabajo ya se mostraron (el registro puede traer además
+  // las de uno perdido, o el aviso de que se interrumpió), y `perdido`, que se dio por
+  // interrumpido. Sin esto, seguir otro trabajo con la misma clave se saltaba sus
+  // primeras líneas.
+  registroDe: new Map(),
   sondeos: new Map(),
   // De cada loteo, el último trabajo: {accion, estado, terminado}.
   trabajos: new Map(),

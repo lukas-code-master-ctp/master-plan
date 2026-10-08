@@ -164,6 +164,7 @@ async function borrar(kmz) {
     + 'Los masters donde ya lo usaste conservan su copia. No se puede deshacer.')) return;
   await pedir(rutaDelKmz(kmz.slug), { method: 'DELETE' });
   estado.registros.delete(`kmz:${kmz.slug}`);
+  estado.registroDe.delete(`kmz:${kmz.slug}`);
   await refrescar();
 }
 

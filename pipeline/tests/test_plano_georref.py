@@ -471,7 +471,7 @@ def _lector_que_propone(monkeypatch, propuesta):
     from pipeline.plano import rotulos
 
     monkeypatch.setattr(rotulos, "motivo_no_disponible", lambda: None)
-    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance: [])
+    monkeypatch.setattr(rotulos, "leer", lambda imagen, ppmm, avance, avance_en=None: [])
     monkeypatch.setattr(rotulos, "leer_cuadricula", lambda imagen, ppmm, avance, rectangulo: propuesta)
     monkeypatch.setattr(rotulos, "leer_cuadro", lambda imagen, rects, avance: {})
 
