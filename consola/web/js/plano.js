@@ -4,11 +4,12 @@
  * líneas de diagnóstico, que es lo que hay que leer para saber si algo salió raro.
  */
 import {
-  $, $$, abrirDialogo, avisar, estado, etapaDe, fecha, json, pastilla, pedir,
+  $, $$, abrirDialogo, avisar, estado, json, pedir,
 } from './comun.js';
 import { anotarResultado, manejarCierra, pintarCierra, prepararCierra } from './cierra.js';
 import { opcionesDeDiseno } from './disenos.js';
 import { abrirElegirKmz } from './kmzs.js';
+import { meta, pintarCalce, pintarCifras, pintarEstado } from './detalle.js';
 import { pintarVuelo } from './vuelo.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
@@ -24,6 +25,11 @@ export function prepararPlano(opciones) {
     const proyecto = proyectoActual();
     if (accion && proyecto) manejar(accion, proyecto);
   });
+  // Apenas se cambia un dato, el botón Guardar aparece flotando abajo.
+  const ajustes = $('#plano-ajustes');
+  const marcar = () => ajustes.classList.add('ajustes--sucio');
+  ajustes.addEventListener('input', marcar);
+  ajustes.addEventListener('change', marcar);
   prepararSubida();
   prepararPago();
   prepararInventario({ alSubir: inventarioSubido });
@@ -82,6 +88,7 @@ export function pintarPlano(slug, { nuevo = false, buscando = false } = {}) {
   if (!proyecto) {
     $('#plano-nombre').textContent = buscando ? 'Cargando…' : 'Este loteo no existe';
     $('#plano-meta').replaceChildren();
+    $('#plano-estado').replaceChildren();
     $('#plano').classList.add('plano-detalle--vacio');
     return;
   }
@@ -89,9 +96,11 @@ export function pintarPlano(slug, { nuevo = false, buscando = false } = {}) {
   document.title = `${proyecto.nombre} — Tu Masterplan`;
   $('#plano-nombre').textContent = proyecto.nombre;
   $('#plano-meta').replaceChildren(...meta(proyecto));
+  pintarEstado(proyecto);
   pintarAcciones(proyecto);
   pintarPortada(proyecto);
-  pintarCifras(proyecto);
+  // Las cifras cuentan al llegar; un refresco mientras construye no repite la cuenta.
+  pintarCifras(proyecto, { animar: nuevo });
   pintarRegistro(slug);
   pintarInventario(proyecto);
   pintarCierra(proyecto);
@@ -103,31 +112,6 @@ export function pintarPlano(slug, { nuevo = false, buscando = false } = {}) {
   if (proyecto.trabajo && !estado.sondeos.has(slug)) seguir(slug, proyecto.trabajo.id);
 }
 
-function meta(proyecto) {
-  const partes = [];
-  if (proyecto.etapa) partes.push(pastilla(proyecto.etapa));
-  // Sin teléfono el visor esconde el botón de contacto: el comprador mira, se
-  // decide y no tiene a quién escribirle. Se avisa antes de publicar, no después.
-  if (proyecto.sin_contacto) partes.push(pastilla('Sin contacto', 'aviso'));
-  partes.push(etapaDe(proyecto));
-  if (proyecto.publicado) {
-    const enlace = document.createElement('a');
-    enlace.className = 'pastilla pastilla--enlace';
-    enlace.href = proyecto.url;
-    enlace.target = '_blank';
-    enlace.rel = 'noopener';
-    enlace.textContent = 'Ver sitio ↗';
-    partes.push(enlace);
-  }
-  const hallado = proyecto.fuentes_encontradas;
-  const fuentes = document.createElement('span');
-  fuentes.className = 'ruta';
-  fuentes.textContent = `${hallado.panoramicas} panorámicas · ${hallado.megas} MB`
-    + (hallado.planilla ? ` · planilla ${hallado.planilla}` : proyecto.con_crm ? ' · precios del CRM' : ' · sin planilla');
-  partes.push(fuentes);
-  return partes;
-}
-
 function pintarAcciones(proyecto) {
   const enCurso = Boolean(proyecto.trabajo);
   const conFuentes = Boolean(proyecto.fuentes_encontradas.kmz);
@@ -135,10 +119,11 @@ function pintarAcciones(proyecto) {
   construir.textContent = proyecto.construido ? 'Reconstruir' : 'Construir';
   // Sin vuelo no hay nada que construir: ofrecer el botón sería prometer algo que falla.
   construir.disabled = enCurso || !conFuentes;
-  construir.className = conFuentes && !proyecto.construido ? 'boton' : 'boton boton--contorno';
+  // Sobre la portada, la acción que toca es la clara; el resto, vidrio.
+  construir.className = conFuentes ? 'boton boton--claro' : 'boton boton--vidrio';
   const archivos = $('[data-accion="archivos"]');
   archivos.textContent = conFuentes ? 'Subir archivos' : 'Subir el vuelo';
-  archivos.className = conFuentes ? 'boton boton--contorno' : 'boton';
+  archivos.className = conFuentes ? 'boton boton--vidrio' : 'boton boton--claro';
   archivos.disabled = enCurso;
   // Un KMZ de Mis KMZ en vez de subir el archivo. No mientras construye: el servidor
   // no le cambia el KMZ por debajo a una construcción.
@@ -169,54 +154,6 @@ function pintarPortada(proyecto) {
   figura.replaceChildren(imagen);
 }
 
-function pintarCifras(proyecto) {
-  const lista = $('#plano-cifras');
-  if (!proyecto.construido) { lista.hidden = true; return; }
-  const { resumen } = proyecto;
-  const peorCalce = Math.max(0, ...(resumen.calce ?? []).map((c) => c.error_sol));
-  const dato = (rotulo, valor, nota) => {
-    const div = document.createElement('div');
-    const dt = document.createElement('dt');
-    const dd = document.createElement('dd');
-    dt.textContent = rotulo;
-    dd.textContent = valor;
-    if (nota) {
-      const small = document.createElement('small');
-      small.textContent = nota;
-      dd.append(small);
-    }
-    div.append(dt, dd);
-    return div;
-  };
-  const porEstado = Object.entries(resumen.por_estado ?? {})
-    .map(([clave, cuantas]) => `${cuantas} ${clave.replace('_', ' ')}`).join(' · ');
-  lista.replaceChildren(
-    dato('Parcelas', resumen.parcelas ?? '—', porEstado),
-    dato('Vistas', resumen.vistas ?? '—'),
-    dato('Error del sol', `${peorCalce.toFixed(1)}°`, peorCalce > 3 ? 'revisar el rumbo' : 'dentro de lo normal'),
-    dato('Construido', fecha(resumen.generado)),
-  );
-  lista.hidden = false;
-}
-
-function pintarCalce(proyecto) {
-  const seccion = $('#plano-calce');
-  if (!proyecto.calce.length || proyecto.trabajo) { seccion.hidden = true; return; }
-  $('.calce__tiras', seccion).replaceChildren(...proyecto.calce.map((archivo) => {
-    const enlace = document.createElement('a');
-    enlace.href = `/calce/${proyecto.slug}/${archivo}`;
-    enlace.target = '_blank';
-    enlace.rel = 'noopener';
-    const imagen = document.createElement('img');
-    imagen.src = enlace.href;
-    imagen.alt = `Control de calce de la vista ${archivo.replace('.jpg', '')}`;
-    imagen.loading = 'lazy';
-    enlace.append(imagen);
-    return enlace;
-  }));
-  seccion.hidden = false;
-}
-
 function pintarPublicar(proyecto) {
   const boton = $('[data-accion="publicar"]');
   const nota = $('#plano-publicar-nota');
@@ -227,10 +164,22 @@ function pintarPublicar(proyecto) {
   // Ya en línea, lo que más se hace es ir a verlo: ese pasa a ser el botón
   // principal, y volver a publicar queda al lado, en segundo plano.
   const ver = $('#plano-ver-sitio');
+  const url = $('#plano-url');
   ver.hidden = !proyecto.publicado;
-  if (proyecto.publicado) ver.href = proyecto.url;
-  boton.classList.toggle('boton--contorno', proyecto.publicado);
+  url.hidden = !proyecto.publicado;
+  $('[data-accion="copiar-url"]').hidden = !proyecto.publicado;
+  if (proyecto.publicado) {
+    ver.href = proyecto.url;
+    url.href = proyecto.url;
+    url.textContent = proyecto.url.replace(/^https?:\/\//, '');
+  }
+  boton.className = proyecto.publicado ? 'boton boton--contorno-claro' : 'boton boton--claro';
   pago.hidden = !(equipo && !proyecto.pagado);
+  const enLinea = proyecto.publicado && !proyecto.trabajo;
+  const estadoPublicacion = $('#plano-publicar-estado');
+  estadoPublicacion.classList.toggle('publicar__estado--vivo', enLinea);
+  estadoPublicacion.textContent = proyecto.trabajo?.accion === 'publicar' ? 'Publicando…'
+    : proyecto.publicado ? 'En línea' : 'Sin publicar';
 
   if (!proyecto.pagado) {
     nota.textContent = 'Puedes construir y revisar cuantas veces quieras. Para publicarlo, '
@@ -238,7 +187,7 @@ function pintarPublicar(proyecto) {
   } else if (!proyecto.construido) {
     nota.textContent = 'Se publica una vez construido y revisado el control de calce.';
   } else if (proyecto.publicado) {
-    nota.textContent = `Publicado en ${proyecto.url}`;
+    nota.textContent = 'Lo que cambies aquí llega al sitio cuando lo publicas de nuevo.';
   } else {
     nota.textContent = `Va a quedar en ${proyecto.url}`;
   }
@@ -260,7 +209,7 @@ function rellenarAjustes(proyecto) {
   form.elements.referencias.value = (proyecto.referencias ?? [])
     .map((r) => (typeof r === 'string' ? r : r.nombre)).join(', ');
   opcionesDeDiseno(form.elements.diseno, proyecto.diseno_id);
-  $('#plano-guardado').textContent = '';
+  $('#plano-ajustes').classList.remove('ajustes--sucio');
 }
 
 async function guardar(proyecto) {
@@ -299,7 +248,26 @@ async function guardar(proyecto) {
     aviso = proyecto.publicado ? 'Guardado. Vuelve a publicar para que se vea en el sitio.'
       : 'Guardado. Se aplica al publicar.';
   }
-  $('#plano-guardado').textContent = aviso;
+  avisarGuardado(aviso);
+}
+
+// El aviso de guardado flota abajo un rato y se va solo.
+let relojGuardado = null;
+function avisarGuardado(texto) {
+  const aviso = $('#plano-guardado');
+  aviso.textContent = texto;
+  aviso.classList.add('ajustes__guardado--visible');
+  clearTimeout(relojGuardado);
+  relojGuardado = setTimeout(() => aviso.classList.remove('ajustes__guardado--visible'), 6000);
+}
+
+async function copiarEnlace(proyecto) {
+  try {
+    await navigator.clipboard.writeText(proyecto.url);
+    avisarGuardado('Enlace copiado.');
+  } catch {
+    avisarGuardado(proyecto.url);
+  }
 }
 
 async function olvidar(proyecto) {
@@ -325,6 +293,7 @@ async function manejar(accion, proyecto) {
     if (accion === 'archivos') return abrirSubida(proyecto);
     if (accion === 'usar-kmz') return abrirElegirKmz(proyecto);
     if (accion === 'guardar') return await guardar(proyecto);
+    if (accion === 'copiar-url') return await copiarEnlace(proyecto);
     if (accion === 'olvidar') return await olvidar(proyecto);
     if (accion === 'pago') return abrirPago(proyecto);
     if (accion === 'construir') return await lanzar(proyecto, 'construir', {});

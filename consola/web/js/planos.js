@@ -115,7 +115,7 @@ function pintarResumen(resumen, movimiento) {
 }
 
 /** Las cifras suben de cero a su valor, frenando al final. */
-function contar(nodos) {
+export function contar(nodos) {
   const inicio = performance.now();
   const paso = (ahora) => {
     const t = Math.min(1, (ahora - inicio) / CUENTA_MS);
@@ -126,7 +126,7 @@ function contar(nodos) {
   requestAnimationFrame(paso);
 }
 
-function barra(porEstado, total) {
+export function barra(porEstado, total) {
   return segmentos(porEstado, total).map(({ estado: nombre, cantidad, porcentaje }) => {
     const tramo = document.createElement('span');
     tramo.className = `tramo tramo--${nombre}`;

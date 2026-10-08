@@ -210,24 +210,47 @@
 
   <!-- Un master -->
   <section id="pantalla-plano" class="pantalla" aria-labelledby="plano-nombre" hidden>
-    <a class="volver" href="#/planos">← Mis 360°</a>
-
     <article class="plano-detalle" id="plano">
-      <header class="plano-detalle__cabecera">
-        <div class="plano-detalle__identidad">
-          <h1 id="plano-nombre"></h1>
-          <div id="plano-meta" class="meta"></div>
+      <!-- La portada del dron a todo el ancho: encima, el nombre, el estado y las acciones. -->
+      <header class="plano-detalle__cabecera heroe">
+        <figure class="portada" id="plano-portada"></figure>
+        <div class="heroe__velo" aria-hidden="true"></div>
+        <div class="heroe__arriba">
+          <a class="volver" href="#/planos">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6 6-6-6 6-6"/></svg>Mis 360°
+          </a>
+          <div id="plano-estado" class="heroe__estado"></div>
         </div>
-        <div class="plano-detalle__acciones">
-          <button class="boton boton--contorno" data-accion="usar-kmz" type="button">Usar un KMZ de Mis KMZ</button>
-          <button class="boton boton--contorno" data-accion="archivos" type="button">Subir archivos</button>
-          <button class="boton boton--contorno" data-accion="construir" type="button">Construir</button>
+        <div class="heroe__abajo">
+          <div class="plano-detalle__identidad">
+            <h1 id="plano-nombre"></h1>
+            <div id="plano-meta" class="meta"></div>
+          </div>
+          <div class="plano-detalle__acciones">
+            <button class="boton boton--vidrio" data-accion="usar-kmz" type="button">Usar un KMZ de Mis KMZ</button>
+            <button class="boton boton--vidrio" data-accion="archivos" type="button">Subir archivos</button>
+            <button class="boton boton--vidrio" data-accion="construir" type="button">Construir</button>
+          </div>
         </div>
       </header>
 
-      <figure class="portada" id="plano-portada"></figure>
-
-      <dl id="plano-cifras" class="cifras" hidden></dl>
+      <section id="plano-cifras" class="cifras" aria-label="Parcelas del loteo" hidden>
+        <div class="cifras__estados">
+          <dl class="cifras__lista"></dl>
+          <div class="cifras__barra barra-estados"></div>
+        </div>
+        <div class="cifras__sol">
+          <span class="cifras__rotulo">Calce con el sol</span>
+          <div class="cifras__medidor">
+            <svg viewBox="0 0 100 56" aria-hidden="true">
+              <path class="medidor__fondo" d="M10 50a40 40 0 0 1 80 0" pathLength="100"/>
+              <path class="medidor__arco" d="M10 50a40 40 0 0 1 80 0" pathLength="100"/>
+            </svg>
+            <div class="cifras__grados"><strong id="sol-grados"></strong><span id="sol-nota"></span></div>
+          </div>
+          <span id="sol-detalle" class="cifras__pie"></span>
+        </div>
+      </section>
 
       <section id="plano-vuelo" class="vuelo" aria-live="polite" hidden>
         <svg class="vuelo__escena" viewBox="0 0 360 172" aria-hidden="true">
@@ -290,59 +313,95 @@
         </div>
       </section>
 
-      <form id="plano-ajustes" class="ajustes">
-        <label class="campo"><span>Nombre</span><input name="nombre" type="text" autocomplete="off"></label>
-        <label class="campo"><span>Etapa</span><input name="etapa" type="text" placeholder="Etapas 1 a 4" autocomplete="off"></label>
-        <label class="campo"><span>WhatsApp</span><input name="whatsapp" type="text" inputmode="tel" placeholder="56912345678" autocomplete="off"></label>
-        <label class="campo campo--ancho"><span>Link de reserva <i>para todas las parcelas disponibles</i></span><input name="link_reserva" type="url" inputmode="url" placeholder="https://www.webpay.cl/..." autocomplete="off"></label>
-        <label class="campo"><span>Monto de reserva <i>en pesos</i></span><input name="monto_reserva" type="text" inputmode="numeric" placeholder="250000" autocomplete="off"></label>
-        <label class="campo"><span>Nombre en el CRM</span><input name="parcelacion" type="text" autocomplete="off"></label>
-        <label class="campo"><span>Despegue del dron <i>lon, lat</i></span><input name="despegue" type="text" placeholder="-72.27591, -35.86774" autocomplete="off"></label>
-        <label class="campo"><span>Diseño</span><select name="diseno"></select></label>
-        <label class="campo campo--ancho"><span>Referencias en el horizonte</span><input name="referencias" type="text" placeholder="Cauquenes, Pelluhue, Chanco" autocomplete="off"></label>
-        <div class="ajustes__pie">
-          <button class="boton" data-accion="guardar" type="button">Guardar</button>
-          <span id="plano-guardado" class="nota" role="status"></span>
-          <button class="boton boton--texto boton--peligro" data-accion="olvidar" type="button">Quitar de la lista</button>
-        </div>
-      </form>
-
-      <section id="plano-inventario" class="inventario" aria-labelledby="inventario-titulo" hidden>
-        <div>
-          <h2 id="inventario-titulo">Inventario</h2>
-          <p id="inventario-estado" class="nota"></p>
-          <p class="nota">Descarga la plantilla, cambia estados y precios, y súbela: el loteo
-            se actualiza solo, sin volver a procesar las fotos.</p>
-        </div>
-        <div class="inventario__acciones">
-          <a id="inventario-plantilla" class="boton boton--contorno" download>Descargar plantilla</a>
-          <button id="inventario-subir" class="boton" type="button">Subir inventario</button>
-          <input id="inventario-archivo" type="file" accept=".xlsx,.csv" hidden>
-        </div>
-        <div id="inventario-cierra" class="inventario__cierra" hidden>
-          <p id="cierra-estado" class="nota"></p>
-          <div class="inventario__acciones">
-            <button class="boton boton--contorno" data-accion="cierra-conectar" type="button">Conectar con Cierra</button>
-            <button class="boton" data-accion="cierra-actualizar" type="button" hidden>Actualizar desde Cierra</button>
-            <button class="boton boton--texto" data-accion="cierra-desconectar" type="button" hidden>Desconectar</button>
+      <div class="plano-detalle__cuerpo">
+        <form id="plano-ajustes" class="ajustes">
+          <fieldset class="grupo">
+            <legend class="grupo__titulo">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
+              <span><strong>Cómo se presenta</strong><small>El nombre y la etapa salen arriba en el sitio; el diseño pone tu marca.</small></span>
+            </legend>
+            <div class="grupo__campos">
+              <label class="campo"><span>Nombre</span><input name="nombre" type="text" autocomplete="off"></label>
+              <label class="campo"><span>Etapa</span><input name="etapa" type="text" placeholder="Etapas 1 a 4" autocomplete="off"></label>
+              <label class="campo campo--ancho"><span>Diseño</span><select name="diseno"></select></label>
+            </div>
+          </fieldset>
+          <fieldset class="grupo">
+            <legend class="grupo__titulo">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l1-3.4A7 7 0 1 1 6.6 16L3 17Z"/></svg>
+              <span><strong>Contacto y reserva</strong><small>Lo que ve el comprador en la ficha de cada parcela.</small></span>
+            </legend>
+            <div class="grupo__campos">
+              <label class="campo"><span>WhatsApp</span><input name="whatsapp" type="text" inputmode="tel" placeholder="56912345678" autocomplete="off"></label>
+              <label class="campo"><span>Monto de reserva <i>en pesos</i></span><input name="monto_reserva" type="text" inputmode="numeric" placeholder="250000" autocomplete="off"></label>
+              <label class="campo campo--ancho"><span>Link de reserva <i>para todas las parcelas disponibles</i></span><input name="link_reserva" type="url" inputmode="url" placeholder="https://www.webpay.cl/..." autocomplete="off"></label>
+            </div>
+          </fieldset>
+          <fieldset class="grupo">
+            <legend class="grupo__titulo">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M12 8.5 15.5 12 12 15.5 8.5 12Z"/></svg>
+              <span><strong>Datos técnicos</strong><small>Para construir y para traer el inventario del CRM.</small></span>
+            </legend>
+            <div class="grupo__campos">
+              <label class="campo"><span>Nombre en el CRM</span><input name="parcelacion" type="text" autocomplete="off"></label>
+              <label class="campo"><span>Despegue del dron <i>lon, lat</i></span><input name="despegue" type="text" placeholder="-72.27591, -35.86774" autocomplete="off"></label>
+              <label class="campo campo--ancho"><span>Referencias en el horizonte</span><input name="referencias" type="text" placeholder="Cauquenes, Pelluhue, Chanco" autocomplete="off"></label>
+            </div>
+          </fieldset>
+          <!-- Aparece flotando abajo apenas se cambia algo (plano.js marca el formulario). -->
+          <div class="ajustes__pie">
+            <span>Tienes cambios sin guardar</span>
+            <button class="boton" data-accion="guardar" type="button">Guardar</button>
           </div>
-        </div>
-      </section>
+          <span id="plano-guardado" class="ajustes__guardado" role="status"></span>
+          <button class="boton boton--texto boton--peligro ajustes__quitar" data-accion="olvidar" type="button">Quitar de la lista</button>
+        </form>
+
+        <aside class="plano-detalle__lado">
+          <footer class="publicar">
+            <span id="plano-publicar-estado" class="publicar__estado"></span>
+            <a id="plano-url" class="publicar__url" target="_blank" rel="noopener" hidden></a>
+            <div class="publicar__botones">
+              <a id="plano-ver-sitio" class="boton boton--claro" target="_blank" rel="noopener" hidden>
+                Ver sitio <span aria-hidden="true">↗</span></a>
+              <button class="boton boton--icono-claro" data-accion="copiar-url" type="button" aria-label="Copiar el enlace del sitio" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h10v10H9zM5 15V5h10"/></svg>
+              </button>
+            </div>
+            <button class="boton boton--claro" data-accion="publicar" type="button">Publicar</button>
+            <p id="plano-publicar-nota" class="nota"></p>
+            <button class="boton boton--texto" data-accion="pago" type="button" hidden>Anotar pago</button>
+          </footer>
+
+          <section id="plano-inventario" class="inventario" aria-labelledby="inventario-titulo" hidden>
+            <div class="inventario__cabeza">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg>
+              <h2 id="inventario-titulo">Inventario</h2>
+            </div>
+            <p id="inventario-estado" class="nota"></p>
+            <p class="nota">Descarga la plantilla, cambia estados y precios, y súbela: el loteo
+              se actualiza solo, sin volver a procesar las fotos.</p>
+            <div class="inventario__acciones">
+              <a id="inventario-plantilla" class="boton boton--contorno" download>Descargar plantilla</a>
+              <button id="inventario-subir" class="boton" type="button">Subir inventario</button>
+              <input id="inventario-archivo" type="file" accept=".xlsx,.csv" hidden>
+            </div>
+            <div id="inventario-cierra" class="inventario__cierra" hidden>
+              <p id="cierra-estado" class="nota"></p>
+              <div class="inventario__acciones">
+                <button class="boton boton--contorno" data-accion="cierra-conectar" type="button">Conectar con Cierra</button>
+                <button class="boton" data-accion="cierra-actualizar" type="button" hidden>Actualizar desde Cierra</button>
+                <button class="boton boton--texto" data-accion="cierra-desconectar" type="button" hidden>Desconectar</button>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
 
       <section id="plano-calce" class="calce" hidden>
-        <h2>Control de calce <small>los polígonos tienen que caer sobre los caminos</small></h2>
+        <h2>Control de calce <small>Los polígonos tienen que caer sobre los caminos.</small></h2>
         <div class="calce__tiras"></div>
       </section>
-
-      <footer class="publicar">
-        <div class="publicar__botones">
-          <a id="plano-ver-sitio" class="boton boton--grande" target="_blank" rel="noopener" hidden>
-            Ver masterplan <span aria-hidden="true">↗</span></a>
-          <button class="boton boton--grande" data-accion="publicar" type="button">Publicar</button>
-        </div>
-        <p id="plano-publicar-nota" class="nota"></p>
-        <button class="boton boton--texto" data-accion="pago" type="button" hidden>Anotar pago</button>
-      </footer>
     </article>
   </section>
 
