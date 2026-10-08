@@ -12,7 +12,8 @@
 <meta property="og:description" content="Tus parcelas sobre la fotografía real del loteo, en 360° desde el aire.">
 <meta property="og:image" content="/hero-chico.webp">
 <meta property="og:type" content="website">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2318181b'/><circle cx='16' cy='16' r='8' fill='none' stroke='%23fff' stroke-width='2.5'/></svg>">
+<!-- La «m» va trazada y no como texto: un SVG de favicon no carga la tipografía. -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2327272a'/><path d='M7.5 22.5v-9.5M7.5 16c0-2.3 1.3-3.4 3.1-3.4s3.1 1.1 3.1 3.4v6.5M13.7 16c0-2.3 1.3-3.4 3.1-3.4s3.1 1.1 3.1 3.4v6.5' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><circle cx='24.6' cy='21.6' r='2.3' fill='%2322c55e'/></svg>">
 <link rel="preload" href="/fuente.woff2" as="font" type="font/woff2" crossorigin>
 <style>
 @font-face {
@@ -24,26 +25,51 @@
 }
 
 :root {
+  --zinc-50: #fafafa;
   --zinc-100: #f4f4f5;
   --zinc-200: #e4e4e7;
+  --zinc-300: #d4d4d8;
   --zinc-400: #a1a1aa;
   --zinc-500: #71717a;
   --zinc-600: #52525b;
+  --zinc-700: #3f3f46;
+  --zinc-800: #27272a;
   --zinc-900: #18181b;
+  --zinc-950: #09090b;
   --tinta: var(--zinc-900);
+  --noche: var(--zinc-950);
   --papel: #ffffff;
-  /* El único color saturado, igual que en el visor: significa "se puede comprar". */
+  /* El único color saturado, igual que en el visor: significa "se puede comprar".
+     Sobre fondo oscuro el verde de siempre se apaga; ahí va el claro. */
   --verde: #15803d;
+  --verde-claro: #22c55e;
+  --insignia-fondo: #bbf7d0;
+  --insignia-texto: #166534;
+  /* El verde de WhatsApp no aguanta texto blanco (1,9:1); siempre lleva tinta. */
+  --whatsapp: #25d366;
 
   --sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  --titular: clamp(2.1rem, 1.1rem + 4.2vw, 4.4rem);
-  --bajada: clamp(1rem, 0.95rem + 0.4vw, 1.25rem);
-  --seccion: clamp(3.5rem, 2.5rem + 4vw, 7rem);
-  --borde: 0.75rem;
-  --gutter: 1rem;
+  --titular: clamp(2.5rem, 1.2rem + 5.2vw, 5.4rem);
+  --subtitular: clamp(1.9rem, 1.2rem + 2.4vw, 3.1rem);
+  --bajada: clamp(1.05rem, 0.95rem + 0.45vw, 1.3rem);
+  --seccion: clamp(72px, 3rem + 5vw, 140px);
+
+  --radio-chico: 8px;
+  --radio: 12px;
+  --radio-bloque: 16px;
+  --radio-marco: 20px;
+  --radio-telefono: 22px;
+  --sombra-flotante: 0 10px 25px -5px rgb(24 24 27 / 0.15), 0 2px 6px -1px rgb(24 24 27 / 0.06);
+  --curva: cubic-bezier(0.16, 1, 0.3, 1);
+  --rapido: 150ms;
+  --alto-barra: 68px;
+  --gutter: 16px;
 }
 
 * { box-sizing: border-box; }
+
+html { scroll-padding-top: var(--alto-barra); }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 
 body {
   margin: 0;
@@ -53,403 +79,564 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.ancho { width: min(68rem, 100% - var(--gutter) * 2); margin-inline: auto; }
+.ancho { width: min(1180px, 100% - var(--gutter) * 2); margin-inline: auto; }
 
 a { color: inherit; }
 
-/* --- Barra ---------------------------------------------------------------- */
-
-.barra {
-  position: absolute; inset: 0 0 auto; z-index: 2;
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: 1.25rem 0;
-  color: #fff;
-}
-.marca { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; letter-spacing: -0.01em; }
-.marca svg { width: 1.75rem; height: 1.75rem; flex: none; }
-/* Entrar es para quien ya tiene cuenta: un enlace, no compite con el botón. */
-.barra__acciones { display: flex; align-items: center; gap: 1.25rem; }
-.barra__enlace { color: #fff; font-weight: 600; font-size: 0.9375rem; text-decoration: none; opacity: 0.9; }
-.barra__enlace:hover { opacity: 1; text-decoration: underline; text-underline-offset: 3px; }
-.barra__enlace:focus-visible { outline: 2px solid #fff; outline-offset: 3px; border-radius: 2px; }
-.marca, .barra .boton, .barra__enlace { white-space: nowrap; }
-@media (max-width: 26rem) {
-  .barra__acciones { gap: 0.9rem; }
-  .barra .boton { padding: 0.6rem 0.9rem; font-size: 0.875rem; }
-}
-
-/* --- Hero ----------------------------------------------------------------- */
-
-.hero { position: relative; isolation: isolate; color: #fff; }
-.hero__foto {
-  position: absolute; inset: 0; z-index: -2;
-  width: 100%; height: 100%; object-fit: cover;
-}
-/* El degradado no es decoración: sin él el titular blanco cae sobre cielo claro
-   y deja de leerse. */
-.hero::after {
-  content: ''; position: absolute; inset: 0; z-index: -1;
-  background: linear-gradient(180deg, rgb(9 9 11 / 0.62) 0%, rgb(9 9 11 / 0.28) 42%, rgb(9 9 11 / 0.78) 100%);
-}
-.hero__cuerpo { padding: clamp(7rem, 16vh, 11rem) 0 clamp(3rem, 8vh, 5rem); }
-
 .rotulo {
-  font: 600 0.75rem/1 var(--sans);
-  letter-spacing: 0.14em; text-transform: uppercase;
-  opacity: 0.85;
+  font: 600 12px/1 var(--sans);
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--zinc-500);
 }
 
-h1 {
-  margin: 1rem 0 0;
-  max-width: 16ch;
-  font: 700 var(--titular)/1.03 var(--sans);
+h2 {
+  margin: 0;
+  font: 700 var(--subtitular)/1.06 var(--sans);
   letter-spacing: -0.035em;
   text-wrap: balance;
 }
 
-.bajada {
-  margin: 1.25rem 0 0;
-  max-width: 46ch;
-  font-size: var(--bajada);
-  color: rgb(255 255 255 / 0.88);
+/* --- Logotipo ----------------------------------------------------------------- */
+/* Solo tipografía: el punto final es una parcela disponible. */
+
+.logo { display: flex; align-items: baseline; gap: 5px; text-decoration: none; white-space: nowrap; }
+.logo__tu { font: 500 15px/1 var(--sans); opacity: 0.72; }
+.logo__nombre { font: 800 22px/1 var(--sans); letter-spacing: -0.045em; }
+.logo__punto {
+  width: 7px; height: 7px; margin-left: -3px; border-radius: 50%;
+  background: var(--verde);
 }
 
-.acciones { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 2rem; }
+/* --- Botones ------------------------------------------------------------------ */
 
 .boton {
-  display: inline-flex; align-items: center; gap: 0.5rem;
-  padding: 0.8rem 1.35rem;
-  border: 1px solid transparent; border-radius: var(--borde);
-  background: var(--papel); color: var(--tinta);
-  font: 600 0.9375rem/1 var(--sans); text-decoration: none;
-  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), background 150ms, border-color 150ms;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 52px; padding: 0 24px;
+  border: 1px solid transparent; border-radius: var(--radio);
+  font: 700 15px/1 var(--sans); text-decoration: none; white-space: nowrap;
+  transition: transform var(--rapido) var(--curva), background var(--rapido), border-color var(--rapido);
 }
-.boton:hover { transform: translateY(-2px); }
-.boton:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
-.boton--fantasma {
-  background: transparent; color: #fff; border-color: rgb(255 255 255 / 0.45);
-}
+.boton:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.boton--claro { background: var(--papel); color: var(--tinta); }
+.boton--claro:hover { transform: translateY(-2px); }
+.boton--claro:active { transform: translateY(0); }
+.boton--claro:focus-visible { outline-color: var(--papel); }
+.boton--fantasma { padding: 0 22px; color: #fff; border-color: rgb(255 255 255 / 0.45); font-weight: 600; }
 .boton--fantasma:hover { background: rgb(255 255 255 / 0.12); border-color: #fff; }
 
-.boton--tinta { background: var(--tinta); color: #fff; }
-.boton--tinta:hover { background: #000; }
-.boton--linea { background: transparent; border-color: var(--zinc-200); }
-.boton--linea:hover { background: var(--zinc-100); }
+/* --- Barra -------------------------------------------------------------------- */
+/* Sobre la foto va transparente y en blanco; pasado el hero se vuelve papel con
+   tinta. Sin JavaScript (la CSP lo prohíbe): animaciones ligadas al scroll, una
+   por elemento. No van por variables heredadas porque Chromium no repinta a los
+   hijos cuando la variable la anima el padre. Donde no hay `animation-timeline`,
+   la barra no se fija y se va con el hero: nunca queda texto blanco sobre papel. */
 
-/* La prueba viva, pegada al borde inferior del hero. */
-.prueba {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 1rem;
-  padding: 1rem 0 1.5rem;
-  border-top: 1px solid rgb(255 255 255 / 0.22);
-  font-size: 0.875rem; color: rgb(255 255 255 / 0.82);
+.barra {
+  position: absolute; inset: 0 0 auto; z-index: 20;
+  border-bottom: 1px solid transparent;
+  color: #fff;
 }
-.prueba b { font-weight: 600; color: #fff; }
-.prueba a { text-underline-offset: 3px; }
+.barra .logo__punto { box-shadow: 0 0 0 1.5px #fff; }
 
-/* --- Secciones ------------------------------------------------------------- */
+@keyframes barra-solida {
+  to {
+    background: rgb(255 255 255 / 0.88);
+    border-bottom-color: var(--zinc-200);
+    color: var(--tinta);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+}
+@keyframes barra-boton-solido { to { background: var(--tinta); color: #fff; outline-color: var(--tinta); } }
+@keyframes barra-punto-solido { to { box-shadow: 0 0 0 1.5px transparent; } }
 
-section { padding-block: var(--seccion); }
+@supports (animation-timeline: scroll()) {
+  .barra { position: fixed; animation-name: barra-solida; }
+  .barra__boton { animation-name: barra-boton-solido; }
+  .barra .logo__punto { animation-name: barra-punto-solido; }
+  .barra, .barra__boton, .barra .logo__punto {
+    animation-duration: auto;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+    animation-timeline: scroll(root block);
+    animation-range: 40px 72px;
+  }
+}
 
-h2 {
-  margin: 0;
-  font: 700 clamp(1.5rem, 1.1rem + 1.6vw, 2.25rem)/1.15 var(--sans);
-  letter-spacing: -0.025em;
-  max-width: 20ch;
+.barra__fila {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  height: var(--alto-barra);
+}
+.barra__acciones { display: flex; align-items: center; gap: 8px; }
+.barra__enlace {
+  display: inline-flex; align-items: center; height: 40px; padding: 0 12px;
+  border-radius: var(--radio-chico);
+  font: 500 14px/1 var(--sans); text-decoration: none; white-space: nowrap;
+}
+.barra__enlace:hover { text-decoration: underline; text-underline-offset: 4px; }
+.barra__boton {
+  display: inline-flex; align-items: center; height: 40px; padding: 0 16px;
+  border-radius: var(--radio-chico);
+  background: #fff; color: var(--tinta); outline-color: #fff;
+  font: 600 14px/1 var(--sans); text-decoration: none; white-space: nowrap;
+  transition: transform var(--rapido) var(--curva);
+}
+.barra__boton:hover { transform: translateY(-1px); }
+.barra__enlace:focus-visible, .barra .logo:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+/* El color del contorno lo lleva la animación: blanco sobre la foto, tinta sobre papel. */
+.barra__boton:focus-visible { outline-style: solid; outline-width: 2px; outline-offset: 2px; }
+/* En un teléfono no caben las tres: «Cómo funciona» está a un scroll. */
+@media (max-width: 36rem) { .barra__enlace--secundario { display: none; } }
+@media (max-width: 22rem) {
+  .barra__enlace { padding: 0 8px; }
+  .logo__nombre { font-size: 19px; }
+}
+
+/* --- Hero --------------------------------------------------------------------- */
+
+.hero { position: relative; isolation: isolate; color: #fff; background: var(--noche); }
+.hero__foto {
+  position: absolute; inset: 0; z-index: -2;
+  width: 100%; height: 100%; object-fit: cover;
+}
+/* El degradado no es decoración: arriba deja leer el titular sobre el cielo, y
+   abajo termina en negro sólido para que la captura se monte sin costura. */
+.hero::after {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(180deg, rgb(9 9 11 / 0.55) 0%, rgb(9 9 11 / 0.15) 38%, rgb(9 9 11 / 0.55) 70%, var(--noche) 100%);
+}
+.hero__cuerpo {
+  display: grid; justify-items: center; text-align: center;
+  padding: clamp(140px, 22vh, 220px) 0 clamp(200px, 26vw, 340px);
+}
+
+.pastilla {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 30px; padding: 0 12px; border-radius: 999px;
+  background: rgb(9 9 11 / 0.45); border: 1px solid rgb(255 255 255 / 0.22);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  font: 600 12px/1 var(--sans); letter-spacing: 0.04em;
+}
+.pastilla::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--verde-claro); }
+
+h1 {
+  margin: 24px 0 0;
+  max-width: 14ch;
+  font: 700 var(--titular)/1 var(--sans);
+  letter-spacing: -0.04em;
   text-wrap: balance;
-}
-.intro { margin: 1rem 0 0; max-width: 52ch; color: var(--zinc-600); font-size: var(--bajada); }
-
-/* Rejilla rota a propósito: la primera pieza pesa más que las demás. */
-.recibe { display: grid; gap: 1px; margin-top: 3rem; background: var(--zinc-200); border: 1px solid var(--zinc-200); border-radius: var(--borde); overflow: hidden; }
-@media (min-width: 40rem) { .recibe { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 62rem) { .recibe { grid-template-columns: repeat(3, 1fr); } }
-
-.pieza { background: var(--papel); padding: 1.6rem 1.4rem; }
-.pieza h3 { margin: 0 0 0.4rem; font: 600 1rem/1.3 var(--sans); letter-spacing: -0.01em; }
-.pieza p { margin: 0; color: var(--zinc-600); font-size: 0.9375rem; }
-.pieza--ancha { grid-column: 1 / -1; }
-@media (min-width: 62rem) { .pieza--ancha { grid-column: span 2; } }
-.pieza--ancha h3 { font-size: 1.25rem; }
-
-/* --- Así se ve -------------------------------------------------------------- */
-/* La captura va sobre fondo oscuro: la pantalla del producto es clara y así se
-   despega del papel en vez de diluirse en él. */
-
-.muestra { background: var(--tinta); color: #fff; }
-.muestra h2 { color: #fff; }
-.muestra .intro { color: rgb(255 255 255 / 0.72); }
-
-.pantallas {
-  position: relative;
-  margin-top: clamp(2rem, 1rem + 4vw, 3.5rem);
-}
-.pantallas img { display: block; width: 100%; height: auto; }
-
-.pantalla {
-  border-radius: var(--borde);
-  overflow: hidden;
-  box-shadow: 0 30px 60px -20px rgb(0 0 0 / 0.65);
-  outline: 1px solid rgb(255 255 255 / 0.12);
+  text-shadow: 0 2px 30px rgb(0 0 0 / 0.35);
 }
 
-/* El teléfono encima de la esquina: la misma parcela, en la mano. Se esconde en
-   pantallas chicas, donde taparía justo lo que hay que mirar. */
-/* Con el prefijo `.pantallas`, si no `.pantallas img { width:100% }` le gana por
-   especificidad y el teléfono sale del porte del computador, tapando todo. */
-.pantallas .pantalla--movil {
-  display: none;
-  position: absolute;
-  right: -0.5rem;
-  bottom: -1.5rem;
-  width: 14%;
-  min-width: 120px;
-  border-radius: 0.9rem;
-  outline-width: 2px;
-}
-@media (min-width: 52rem) { .pantallas .pantalla--movil { display: block; } }
-
-.pie-figura {
-  margin: 1.5rem 0 0;
-  color: rgb(255 255 255 / 0.62);
-  font-size: 0.875rem;
-  max-width: 54ch;
-}
-.pie-figura b { color: #fff; font-weight: 600; }
-
-/* --- Dos caminos ----------------------------------------------------------- */
-
-.caminos { display: grid; gap: 1.25rem; margin-top: 3rem; }
-@media (min-width: 48rem) { .caminos { grid-template-columns: 1fr 1fr; } }
-
-.camino {
-  display: flex; flex-direction: column; gap: 0.75rem;
-  padding: 1.75rem 1.6rem;
-  border: 1px solid var(--zinc-200); border-radius: var(--borde);
-}
-.camino h3 { margin: 0; font: 700 1.25rem/1.2 var(--sans); letter-spacing: -0.02em; }
-.camino p { margin: 0; color: var(--zinc-600); font-size: 0.9375rem; }
-.camino ul { margin: 0.25rem 0 0; padding-left: 1.1rem; font-size: 0.9375rem; color: var(--zinc-600); }
-.camino li { margin-bottom: 0.3rem; }
-
-/* La tarjeta oscura, después de la clara y no antes: así el color del texto es lo
-   último que se declara y no depende de contar especificidades. Un gris de cuerpo
-   sobre tinta da 1,9:1 y no se lee. */
-.camino--destacado { background: var(--tinta); color: #fff; border-color: var(--tinta); }
-.camino--destacado p, .camino--destacado ul { color: rgb(255 255 255 / 0.9); }
-/* Sin opacidad: 0.72 sobre el gris de cuerpo daba 3,3:1 contra el blanco, por
-   debajo del mínimo legible. Un gris más claro y sólido da 4,6:1. */
-.camino .cola { margin-top: auto; padding-top: 1rem; font-size: 0.8125rem; color: var(--zinc-500); }
-.camino .boton { align-self: flex-start; margin-top: 0.5rem; }
-.camino--destacado .cola { color: rgb(255 255 255 / 0.72); }
-
-/* --- Qué hace falta --------------------------------------------------------- */
-
-.franja { background: var(--zinc-100); }
-.lista-limpia { margin: 2.5rem 0 0; padding: 0; list-style: none; display: grid; gap: 1px; background: var(--zinc-200); border-block: 1px solid var(--zinc-200); }
-.lista-limpia li { background: var(--zinc-100); padding: 1.1rem 0.25rem; display: grid; gap: 0.2rem; }
-@media (min-width: 48rem) { .lista-limpia li { grid-template-columns: 14rem 1fr; gap: 1.5rem; align-items: baseline; } }
-.lista-limpia b { font-weight: 600; }
-.lista-limpia span { color: var(--zinc-600); font-size: 0.9375rem; }
-
-/* --- Cierre ----------------------------------------------------------------- */
-
-.cierre { text-align: left; }
-.cierre .acciones { margin-top: 2rem; }
-.pendiente {
-  margin-top: 2rem; padding: 0.9rem 1.1rem;
-  border: 1px dashed var(--zinc-400); border-radius: var(--borde);
-  color: var(--zinc-500); font-size: 0.8125rem;
+.bajada {
+  margin: 24px 0 0;
+  max-width: 44ch;
+  font-size: var(--bajada); line-height: 1.55;
+  color: rgb(255 255 255 / 0.9);
+  text-wrap: pretty;
 }
 
-footer {
-  padding: 2.5rem 0 3.5rem;
-  border-top: 1px solid var(--zinc-200);
-  color: var(--zinc-500); font-size: 0.8125rem;
-  display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; justify-content: space-between;
+.acciones { display: flex; flex-wrap: wrap; gap: 12px; }
+.hero .acciones { justify-content: center; margin-top: 36px; }
+
+/* --- Producto ----------------------------------------------------------------- */
+/* La captura se sube sobre el hero: la mitad de arriba de la sección es noche,
+   la de abajo papel, y el marco cruza el borde. */
+
+/* `flow-root` para que el margen negativo de la escena no colapse con la sección:
+   si colapsa, sube la sección entera y su fondo negro corta el degradado del hero. */
+.producto {
+  position: relative; z-index: 2; display: flow-root;
+  background: linear-gradient(180deg, var(--noche) 0 50%, var(--papel) 50%);
 }
+.producto__escena { position: relative; margin-top: clamp(-300px, -22vw, -160px); }
+
+.marco {
+  padding: 8px; border-radius: var(--radio-marco);
+  background: rgb(255 255 255 / 0.08);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  box-shadow: 0 40px 80px -30px rgb(0 0 0 / 0.7);
+}
+.marco img { display: block; width: 100%; height: auto; border-radius: 13px; }
+
+/* Lo que el comprador hace con la captura, contado en dos tarjetas. Solo donde
+   sobra ancho; en un teléfono taparían justo la parcela. */
+.flotante {
+  position: absolute; display: none;
+  padding: 14px 16px;
+  background: var(--papel); border: 1px solid var(--zinc-200); border-radius: var(--radio);
+  box-shadow: var(--sombra-flotante);
+}
+@media (min-width: 60rem) { .flotante { display: grid; } }
+/* Asoman 20 px fuera del marco, pero dejando aire contra el borde de la pantalla:
+   en 1024 px el margen es de 16 y quedarían cortadas. `100vw` incluye la barra de
+   desplazamiento, de ahí que el resguardo sea de 16 y no de 8. */
+.flotante--ficha { left: calc(-1 * min(20px, (100vw - 100%) / 2 - 16px)); top: 18%; gap: 8px; }
+.flotante--mensaje {
+  right: calc(-1 * min(20px, (100vw - 100%) / 2 - 16px)); bottom: 14%;
+  grid-template-columns: 40px auto; align-items: center; gap: 12px;
+  max-width: 300px; padding: 12px 16px 12px 12px;
+}
+
+.insignia {
+  display: inline-flex; align-items: center; gap: 6px; width: max-content;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--insignia-fondo); color: var(--insignia-texto);
+  font: 700 11px/1 var(--sans); letter-spacing: 0.06em; text-transform: uppercase;
+}
+.insignia::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.ficha__nombre { font: 700 17px/1.1 var(--sans); letter-spacing: -0.015em; }
+.ficha__datos { font: 500 13px/1 var(--sans); color: var(--zinc-600); font-variant-numeric: tabular-nums; }
+
+.mensaje__icono {
+  display: grid; place-items: center; width: 40px; height: 40px;
+  border-radius: 10px; background: var(--whatsapp); color: var(--noche);
+}
+.mensaje__icono svg { width: 20px; height: 20px; }
+.mensaje__texto { display: grid; gap: 3px; font: 400 13px/1.35 var(--sans); color: var(--zinc-600); }
+.mensaje__texto b { font-weight: 700; line-height: 1.2; color: var(--tinta); }
+
+.producto__pie { margin: 20px auto 0; text-align: center; font-size: 14px; color: var(--zinc-500); }
+.producto__pie b { color: var(--tinta); font-weight: 600; }
+
+/* --- Lo que recibe ------------------------------------------------------------ */
+
+.seccion { padding-block: var(--seccion); }
+
+.recibe {
+  display: grid; align-items: center;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: clamp(40px, 6vw, 96px);
+}
+.recibe__cabeza { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 20px; }
+.recibe__texto { display: grid; gap: 16px; align-self: start; }
+.recibe__texto p { margin: 0; max-width: 40ch; color: var(--zinc-600); font-size: 17px; text-wrap: pretty; }
+.telefono {
+  display: block; width: clamp(150px, 16vw, 210px); height: auto;
+  border-radius: var(--radio-telefono); border: 6px solid var(--tinta);
+  box-shadow: 0 30px 60px -24px rgb(24 24 27 / 0.45);
+}
+/* Al lado del texto, en 320 px el titular quedaría en columnas de tres palabras. */
+@media (max-width: 34rem) {
+  .recibe__cabeza { grid-template-columns: 1fr; }
+  .telefono { width: 150px; }
+}
+
+.lista-numerada {
+  margin: 0; padding: 0; list-style: none; counter-reset: punto;
+  display: grid; border-top: 1px solid var(--zinc-200);
+}
+.lista-numerada li {
+  counter-increment: punto;
+  display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 16px;
+  padding: 22px 0; border-bottom: 1px solid var(--zinc-200);
+}
+.lista-numerada li::before {
+  content: counter(punto, decimal-leading-zero);
+  grid-row: span 2;
+  font: 700 13px/1.6 var(--sans); color: var(--zinc-400); font-variant-numeric: tabular-nums;
+}
+.lista-numerada b { font: 700 18px/1.3 var(--sans); letter-spacing: -0.015em; }
+.lista-numerada span { color: var(--zinc-600); font-size: 15px; }
+
+/* --- Cómo funciona ------------------------------------------------------------ */
+
+.como { background: var(--zinc-100); }
+.como__cuerpo { display: grid; gap: 40px; }
+.como__cabeza { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 24px; }
+.como__cabeza > div { display: grid; gap: 16px; }
+.como h2 { max-width: 18ch; }
+
+/* El selector son radios: se cambian con las flechas sin una línea de script, y
+   `:has` muestra los pasos del camino marcado. */
+.selector {
+  display: inline-flex; gap: 4px; margin: 0; padding: 4px; min-inline-size: 0;
+  background: var(--papel); border: 1px solid var(--zinc-200); border-radius: var(--radio);
+}
+.selector legend {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.selector label {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 44px; padding: 0 18px; border-radius: var(--radio-chico);
+  color: var(--zinc-700); font: 600 14px/1 var(--sans);
+  cursor: pointer; transition: background var(--rapido), color var(--rapido);
+}
+.selector label:hover { background: var(--zinc-100); }
+.selector input { position: absolute; opacity: 0; pointer-events: none; }
+.selector label:has(:checked) { background: var(--tinta); color: #fff; }
+.selector label:has(:focus-visible) { outline: 2px solid var(--tinta); outline-offset: 2px; }
+@media (max-width: 30rem) {
+  .selector { display: flex; width: 100%; }
+  /* En 320 px «Vamos y lo volamos» pasa a dos líneas. */
+  .selector label { flex: 1; padding: 0 10px; text-align: center; line-height: 1.15; }
+}
+
+.camino { display: grid; gap: 40px; }
+.camino[data-camino='armas'] { display: none; }
+.como:has([value='armas']:checked) .camino[data-camino='armas'] { display: grid; }
+.como:has([value='armas']:checked) .camino[data-camino='volamos'] { display: none; }
+
+.pasos {
+  margin: 0; padding: 0; list-style: none; counter-reset: paso;
+  display: grid; gap: 1px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  background: var(--zinc-200); border: 1px solid var(--zinc-200);
+  border-radius: var(--radio-bloque); overflow: hidden;
+}
+.pasos li {
+  counter-increment: paso;
+  display: grid; align-content: start; gap: 12px;
+  padding: 28px 26px 32px; background: var(--papel);
+}
+.pasos li::before {
+  content: counter(paso);
+  display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 8px;
+  border-radius: 50%; background: var(--tinta); color: #fff;
+  font: 700 14px/1 var(--sans);
+}
+.pasos b { font: 700 19px/1.25 var(--sans); letter-spacing: -0.015em; }
+.pasos span { color: var(--zinc-600); font-size: 15px; text-wrap: pretty; }
+.camino__nota { margin: 0; color: var(--zinc-600); font-size: 15px; }
+
+.necesitamos { display: grid; gap: 16px; padding-top: 32px; border-top: 1px solid var(--zinc-300); }
+.necesitamos h3 { margin: 0; font: 700 20px/1.2 var(--sans); letter-spacing: -0.02em; }
+.necesitamos h3 span, .necesitamos b span { font-weight: 500; color: var(--zinc-500); }
+.necesitamos ul {
+  margin: 0; padding: 0; list-style: none;
+  display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+.necesitamos li { display: grid; gap: 4px; }
+.necesitamos b { font-weight: 600; }
+.necesitamos li > span { color: var(--zinc-600); font-size: 15px; }
+
+/* --- Precio y contacto -------------------------------------------------------- */
+
+.precio { position: relative; isolation: isolate; overflow: hidden; color: #fff; background: var(--noche); }
+.precio__foto {
+  position: absolute; inset: 0; z-index: -2;
+  width: 100%; height: 100%; object-fit: cover; opacity: 0.45;
+}
+/* Negro sólido a la izquierda, donde va el texto; la foto asoma a la derecha. */
+.precio::after {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(90deg, var(--noche) 0%, rgb(9 9 11 / 0.82) 50%, rgb(9 9 11 / 0.5) 100%);
+}
+.precio__cuerpo {
+  display: grid; align-items: end; gap: 48px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  padding-block: clamp(80px, 3rem + 6vw, 160px);
+}
+.precio__texto { display: grid; gap: 20px; }
+.precio .rotulo { color: rgb(255 255 255 / 0.75); }
+.precio h2 {
+  max-width: 14ch;
+  font-size: clamp(2.2rem, 1.2rem + 3.6vw, 4.2rem); line-height: 1.02; letter-spacing: -0.04em;
+}
+.precio__texto p { margin: 0; max-width: 46ch; font-size: 17px; color: rgb(255 255 255 / 0.85); text-wrap: pretty; }
+.precio .acciones { margin-top: 12px; }
+
+.condiciones { margin: 0; display: grid; border-top: 1px solid rgb(255 255 255 / 0.2); }
+.condiciones div {
+  display: flex; justify-content: space-between; gap: 16px;
+  padding: 18px 0; border-bottom: 1px solid rgb(255 255 255 / 0.2);
+}
+.condiciones dt { font-weight: 600; }
+.condiciones dd { margin: 0; color: rgb(255 255 255 / 0.85); }
+
+/* --- Pie ---------------------------------------------------------------------- */
+
+.pie { background: var(--noche); color: var(--zinc-400); border-top: 1px solid var(--zinc-800); }
+.pie__fila {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px;
+  padding: 32px 0 40px; font-size: 13px;
+}
+.pie .logo { gap: 4px; color: #fff; }
+.pie .logo__tu { font-size: 13px; opacity: 1; color: var(--zinc-400); }
+.pie .logo__nombre { font-size: 18px; letter-spacing: -0.04em; }
+.pie .logo__punto { width: 5px; height: 5px; margin-left: -2px; background: var(--verde-claro); box-shadow: none; }
+.pie a:not(.logo) { color: #fff; text-underline-offset: 3px; }
+.pie a:focus-visible { outline: 2px solid #fff; outline-offset: 3px; border-radius: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
-  .boton:hover { transform: none; }
+  .boton--claro:hover, .barra__boton:hover { transform: none; }
 }
 </style>
 </head>
 <body>
 
-<header class="hero">
+<nav class="barra" aria-label="Principal">
+  <div class="barra__fila ancho">
+    <a class="logo" href="#inicio" aria-label="Tu Masterplan, inicio">
+      <span class="logo__tu">tu</span><span class="logo__nombre">masterplan</span><span class="logo__punto"></span>
+    </a>
+    <div class="barra__acciones">
+      <a class="barra__enlace barra__enlace--secundario" href="#como">Cómo funciona</a>
+      <a class="barra__enlace" href="https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app/entrar">Entrar</a>
+      <a class="barra__boton" href="#contacto">Cotizar</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="inicio">
   <!-- En un teléfono la versión grande son 200 KB de más que no se ven. -->
   <img class="hero__foto" src="/hero.webp"
        srcset="/hero-chico.webp 1200w, /hero.webp 2400w" sizes="100vw"
        alt="Vista aérea de un loteo en Cauquenes: parcelas, caminos de tierra y el volcán en el horizonte."
        width="2400" height="1350" fetchpriority="high" decoding="async">
 
-  <div class="barra ancho">
-    <span class="marca">
-      <svg viewBox="0 0 32 32" aria-hidden="true">
-        <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.6"/>
-        <path d="M16 4v6M16 22v6M4 16h6M22 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-        <path d="M16 10.5 21.5 16 16 21.5 10.5 16Z" fill="currentColor"/>
-      </svg>
-      Tu Masterplan
-    </span>
-    <nav class="barra__acciones" aria-label="Tu cuenta">
-      <a class="barra__enlace" href="https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app/entrar">Entrar</a>
-      <a class="boton boton--fantasma" href="#contacto">Pedir el mío</a>
-    </nav>
-  </div>
-
   <div class="hero__cuerpo ancho">
-    <p class="rotulo">Masterplan 360 para loteos</p>
+    <span class="pastilla">Masterplan 360 para loteos</span>
     <h1>Un plano no muestra la vista. Esto sí.</h1>
     <p class="bajada">
-      Tus parcelas dibujadas sobre la fotografía real del terreno, en 360° desde el aire.
-      El comprador gira, busca su número y ve el precio, la superficie y si está disponible
-      —sin llamar a nadie, desde el teléfono, un domingo a las once de la noche.
+      Tus parcelas dibujadas sobre la foto real del terreno, en 360° desde el aire.
+      El comprador busca su número y ve precio, superficie y estado —desde el
+      teléfono, sin llamar a nadie.
     </p>
     <div class="acciones">
-      <a class="boton" href="#contacto">Cotizar mi loteo</a>
-      <a class="boton boton--fantasma" href="#como">Cómo se hace</a>
+      <a class="boton boton--claro" href="#contacto">Cotizar mi loteo</a>
+      <a class="boton boton--fantasma" href="#producto">Ver un loteo publicado</a>
     </div>
-  </div>
-
-  <div class="prueba ancho">
-    <span><b>Praderas de Cauquenes</b> · 88 parcelas · 4 etapas, cada una sobre la foto real</span>
   </div>
 </header>
 
 <main>
 
-<section class="ancho">
-  <h2>Lo que recibe tu comprador</h2>
-  <p class="intro">
-    Un sitio propio, con su dirección, que se abre desde un enlace de WhatsApp.
-    No una app que haya que instalar ni un PDF que haya que pedirle a alguien.
-  </p>
-
-  <div class="recibe">
-    <div class="pieza pieza--ancha">
-      <h3>La parcela sobre la foto, no sobre un dibujo</h3>
-      <p>
-        El polígono del topógrafo proyectado sobre la panorámica del dron, con el
-        relieve del terreno tomado en cuenta. Se ve dónde da el sol, qué árboles hay,
-        cómo llega el camino y qué se mira desde ahí.
-      </p>
-    </div>
-    <div class="pieza">
-      <h3>Precio, superficie y estado</h3>
-      <p>Al día con tu planilla. Disponible, reservada o vendida, con su número visible.</p>
-    </div>
-    <div class="pieza">
-      <h3>Buscador y filtros</h3>
-      <p>Por número, por estado, por etapa y por rango de precio. Encuentra la suya en un segundo.</p>
-    </div>
-    <div class="pieza">
-      <h3>Contacto directo</h3>
-      <p>Un botón de WhatsApp que llega a tu vendedor con la parcela ya escrita en el mensaje.</p>
-    </div>
-    <div class="pieza">
-      <h3>El entorno rotulado</h3>
-      <p>A cuántos kilómetros queda cada pueblo, marcado sobre el horizonte que se está mirando.</p>
-    </div>
-  </div>
-</section>
-
-<section class="muestra">
-  <div class="ancho">
-    <h2>Esto es exactamente lo que verá</h2>
-    <p class="intro">
-      No es una maqueta ni un render: es Praderas de Cauquenes, publicado y en uso.
-      La parcela marcada sobre la fotografía, con su superficie, su precio y el
-      botón que le escribe a tu vendedor con el número ya puesto en el mensaje.
-    </p>
-
-    <div class="pantallas">
-      <img class="pantalla" src="/producto.webp" width="1360" height="850" loading="lazy" decoding="async"
+<section class="producto" id="producto" aria-label="El visor publicado">
+  <div class="producto__escena ancho">
+    <div class="marco">
+      <!-- Sin lazy: en escritorio asoma en la primera pantalla. -->
+      <img src="/producto.webp" width="1360" height="850" decoding="async"
            alt="El visor en un computador: la parcela 2-7 resaltada sobre la fotografía aérea, con su ficha
                 mostrando 5.000 m², $8.990.000 y el botón «Me interesa esta parcela».">
-      <img class="pantalla pantalla--movil" src="/producto-movil.webp" width="420" height="840" loading="lazy" decoding="async"
-           alt="La misma vista en un teléfono.">
     </div>
 
-    <p class="pie-figura">
-      Cada pastilla lleva el <b>número del lote tal como lo escribe tu CRM</b> —«2-7»,
-      no «7»— para que el comprador y el vendedor estén hablando de la misma parcela.
-    </p>
+    <div class="flotante flotante--ficha" aria-hidden="true">
+      <span class="insignia">Disponible</span>
+      <span class="ficha__nombre">Parcela 2-7</span>
+      <span class="ficha__datos">5.000 m² · $8.990.000</span>
+    </div>
+    <div class="flotante flotante--mensaje" aria-hidden="true">
+      <span class="mensaje__icono">
+        <svg viewBox="0 0 20 20"><path d="M3 17l1-3.4A7 7 0 1 1 6.6 16L3 17Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="mensaje__texto"><b>Mensaje a tu vendedor</b>«Hola, me interesa la parcela 2-7»</span>
+    </div>
+  </div>
+  <p class="producto__pie ancho"><b>Praderas de Cauquenes</b> · 88 parcelas en 4 etapas · publicado y en uso</p>
+</section>
+
+<section class="seccion ancho" aria-labelledby="recibe-titulo">
+  <div class="recibe">
+    <div class="recibe__cabeza">
+      <div class="recibe__texto">
+        <span class="rotulo">Lo que recibe tu comprador</span>
+        <h2 id="recibe-titulo">Un enlace de WhatsApp. Nada que instalar.</h2>
+        <p>Un sitio propio, con su dirección. No una app ni un PDF que haya que pedirle a alguien.</p>
+      </div>
+      <img class="telefono" src="/producto-movil.webp" width="420" height="840" loading="lazy" decoding="async"
+           alt="El visor en un teléfono.">
+    </div>
+
+    <ol class="lista-numerada">
+      <li>
+        <b>La parcela sobre la foto, no sobre un dibujo</b>
+        <span>El polígono del topógrafo sobre la panorámica del dron, con el relieve tomado en cuenta. Se ve dónde da el sol, qué árboles hay y qué se mira desde ahí.</span>
+      </li>
+      <li>
+        <b>Precio, superficie y estado</b>
+        <span>Al día con tu planilla, con el número del lote tal como lo escribe tu CRM —«2-7», no «7».</span>
+      </li>
+      <li>
+        <b>Buscador y filtros</b>
+        <span>Por número, estado, etapa y rango de precio.</span>
+      </li>
+      <li>
+        <b>Contacto directo</b>
+        <span>Un botón de WhatsApp que llega a tu vendedor con la parcela ya escrita.</span>
+      </li>
+      <li>
+        <b>El entorno rotulado</b>
+        <span>A cuántos kilómetros queda cada pueblo, marcado sobre el horizonte.</span>
+      </li>
+    </ol>
   </div>
 </section>
 
-<section class="ancho" id="como">
-  <h2>Dos formas de tenerlo</h2>
-  <p class="intro">La diferencia es solo quién toma las fotos. El resultado es el mismo.</p>
+<section class="como seccion" id="como" aria-labelledby="como-titulo">
+  <div class="como__cuerpo ancho">
+    <div class="como__cabeza">
+      <div>
+        <span class="rotulo">Cómo funciona</span>
+        <h2 id="como-titulo">Dos formas de tenerlo. Mismo resultado.</h2>
+      </div>
+      <fieldset class="selector">
+        <legend>Quién toma las fotos</legend>
+        <label><input type="radio" name="camino" value="volamos" checked>Vamos y lo volamos</label>
+        <label><input type="radio" name="camino" value="armas">Lo armas tú</label>
+      </fieldset>
+    </div>
 
-  <div class="caminos">
-    <article class="camino camino--destacado">
-      <h3>Vamos y lo volamos</h3>
-      <p>Llegamos con el dron, tomamos las panorámicas desde los puntos que muestran mejor el loteo y lo armamos con tu KMZ.</p>
+    <div class="camino" data-camino="volamos">
+      <ol class="pasos">
+        <li><b>Nos mandas el plano</b><span>El KMZ o DXF del topógrafo. No hay que redibujar nada.</span></li>
+        <li><b>Un día de vuelo</b><span>Llegamos con el dron y tomamos las panorámicas desde los puntos que muestran mejor el loteo.</span></li>
+        <li><b>Revisas y publicamos</b><span>Lo ves antes de que salga al aire. Sale con su enlace listo para mandar.</span></li>
+      </ol>
+      <p class="camino__nota">Lo más simple si no tienes dron ni quién lo maneje.</p>
+    </div>
+
+    <div class="camino" data-camino="armas">
+      <ol class="pasos">
+        <li><b>Arrastras la carpeta del vuelo</b><span>Tus panorámicas 360 y el plano del topógrafo, en tu cuenta.</span></li>
+        <li><b>Revisas el calce</b><span>Los polígonos tienen que caer sobre los caminos. El control te lo muestra.</span></li>
+        <li><b>Publicas cuando quieras</b><span>Y lo repites cada vez que cambien los precios.</span></li>
+      </ol>
+      <p class="camino__nota">Si ya tienes dron, sale más barato.</p>
+    </div>
+
+    <div class="necesitamos">
+      <h3>Qué necesitamos de ti <span>— tres cosas, y dos ya las tienes.</span></h3>
       <ul>
-        <li>Un día de vuelo en terreno.</li>
-        <li>Tú revisas antes de que salga al aire.</li>
-        <li>Publicado, con su enlace listo para mandar.</li>
+        <li><b>El plano digital</b><span>KMZ o DXF del topógrafo, con los lotes numerados. Tal como te lo entregó.</span></li>
+        <li><b>Las panorámicas del dron</b><span>360° equirectangulares a unos 200 m. Si no las tienes, las tomamos nosotros.</span></li>
+        <li><b>Tu planilla de precios <span>· opcional</span></b><span>Sin ella las parcelas salen sin precio: honesto, pero vende menos.</span></li>
       </ul>
-      <p class="cola">Lo más simple si no tienes dron ni quién lo maneje.</p>
-    </article>
-
-    <article class="camino">
-      <h3>Lo armas tú</h3>
-      <p>Si ya tienes panorámicas 360 del dron y el plano del topógrafo, te damos una cuenta, las subes y lo construyes.</p>
-      <ul>
-        <li>Arrastras la carpeta del vuelo.</li>
-        <li>Revisas el control de calce: los polígonos tienen que caer sobre los caminos.</li>
-        <li>Publicas cuando estés conforme.</li>
-      </ul>
-      <p class="cola">Armarlo y revisarlo es gratis. Sale más barato y lo repites cada vez que cambien los precios.</p>
-      <a class="boton boton--tinta" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20una%20cuenta%20en%20Tu%20Masterplan">Pedir mi cuenta</a>
-    </article>
+    </div>
   </div>
 </section>
 
-<section class="franja">
-  <div class="ancho">
-    <h2>Qué necesitamos de ti</h2>
-    <p class="intro">Tres cosas, y dos ya las tienes.</p>
-
-    <ul class="lista-limpia">
-      <li>
-        <b>El plano digital</b>
-        <span>El KMZ o el DXF del topógrafo, con los lotes numerados. Sirve tal como te lo entregó; no hay que redibujar nada.</span>
-      </li>
-      <li>
-        <b>Las panorámicas del dron</b>
-        <span>Equirectangulares de 360°, tomadas a unos 200 m. Si no las tienes, las tomamos nosotros.</span>
-      </li>
-      <li>
-        <b>Tu planilla de precios</b>
-        <span>Opcional. Sin ella las parcelas salen sin precio, que es honesto pero vende menos.</span>
-      </li>
-    </ul>
+<section class="precio" id="contacto" aria-labelledby="precio-titulo">
+  <img class="precio__foto" src="/hero-chico.webp" width="1200" height="675" alt="" loading="lazy" decoding="async">
+  <div class="precio__cuerpo ancho">
+    <div class="precio__texto">
+      <span class="rotulo">Precio</span>
+      <h2 id="precio-titulo">Se cobra por loteo, una vez.</h2>
+      <p>Depende del tamaño del loteo y de si hay que ir a volarlo. Escríbenos con el nombre y cuántas parcelas son, y te lo decimos.</p>
+      <div class="acciones">
+        <a class="boton boton--claro" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20un%20masterplan%20para%20mi%20loteo">Cotizar mi loteo</a>
+        <a class="boton boton--fantasma" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20una%20cuenta%20en%20Tu%20Masterplan">Pedir una cuenta</a>
+      </div>
+    </div>
+    <dl class="condiciones">
+      <div><dt>Armarlo y revisarlo</dt><dd>Gratis</dd></div>
+      <div><dt>Se paga</dt><dd>Al publicarlo</dd></div>
+      <div><dt>Suscripción</dt><dd>No hay</dd></div>
+    </dl>
   </div>
-</section>
-
-<section class="ancho cierre" id="contacto">
-  <h2>Se cobra por loteo, una vez.</h2>
-  <p class="intro">
-    Armarlo y revisarlo es gratis: se paga recién al publicarlo. Sin suscripción y sin
-    cobro mensual. El precio depende del tamaño del loteo y de si hay que ir a volarlo:
-    escríbenos con el nombre y cuántas parcelas son, y te lo decimos.
-  </p>
-
-  <div class="acciones">
-    <a class="boton boton--tinta" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20un%20masterplan%20para%20mi%20loteo">Escribir un correo</a>
-    <a class="boton boton--linea" href="https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app/entrar">Entrar a la app</a>
-  </div>
-
 </section>
 
 </main>
 
-<footer class="ancho">
-  <span>Tu Masterplan · Operado por CompraTuParcela</span>
-  <span>Hecho en Chile, con drones y planos de topógrafo.</span>
+<footer class="pie">
+  <div class="pie__fila ancho">
+    <a class="logo" href="#inicio" aria-label="Tu Masterplan, inicio">
+      <span class="logo__tu">tu</span><span class="logo__nombre">masterplan</span><span class="logo__punto"></span>
+    </a>
+    <span>Operado por CompraTuParcela · Hecho en Chile, con drones y planos de topógrafo.</span>
+    <a href="https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app/entrar">Entrar a la app</a>
+  </div>
 </footer>
 
 </body>
