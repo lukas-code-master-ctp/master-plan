@@ -5,6 +5,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 LANDING = Path(__file__).resolve().parents[2] / "landing"
+# La propiedad de GA4 de tumasterplan.cl.
+MEDICION = "G-0BBZ42FZH8"
 
 
 def _politica_de_la_landing() -> dict[str, list[str]]:
@@ -32,9 +34,25 @@ def test_cada_iframe_de_la_landing_esta_permitido_por_su_politica():
         assert f"https://{partes.netloc}" in permitidos, f"{src} no está en frame-src"
 
 
-def test_la_landing_sigue_sin_javascript():
-    assert _politica_de_la_landing()["script-src"] == ["'none'"]
-    assert "<script" not in (LANDING / "index.html").read_text()
+def test_el_unico_javascript_es_el_de_google_analytics():
+    """La página no necesita script para funcionar: lo único que corre es la medición."""
+    assert _politica_de_la_landing()["script-src"] == ["'self'", "https://www.googletagmanager.com"]
+    scripts = re.findall(r"<script\b([^>]*)>(.*?)</script>", (LANDING / "index.html").read_text(), re.S)
+    assert [contenido.strip() for _, contenido in scripts] == ["", ""], "nada de scripts en línea"
+    fuentes = [re.search(r'src="([^"]+)"', atributos).group(1) for atributos, _ in scripts]
+    assert fuentes == [f"https://www.googletagmanager.com/gtag/js?id={MEDICION}", "/analitica.js"]
+
+
+def test_analitica_usa_el_mismo_id_que_carga_la_pagina():
+    assert f"gtag('config', '{MEDICION}'" in (LANDING / "analitica.js").read_text()
+
+
+def test_la_politica_deja_que_analytics_mande_sus_datos():
+    politica = _politica_de_la_landing()
+    for origen in ("https://*.google-analytics.com", "https://*.analytics.google.com",
+                   "https://*.googletagmanager.com"):
+        assert origen in politica["connect-src"], origen
+    assert "https://*.google-analytics.com" in politica["img-src"]
 
 
 def test_el_iframe_y_las_tarjetas_hablan_de_la_misma_parcela():
