@@ -84,7 +84,7 @@ WEB = Path(__file__).resolve().parent / "web"
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "comun.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
-           "vuelo.js", "configuracion.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "lienzo_plano.js",
+           "vuelo.js", "configuracion.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
            "mapa_kmz.js", "sondeo.js", "reservas.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
@@ -582,13 +582,27 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return {"paginas": paginas}
 
     @app.get("/api/kmz/{slug}/paginas/{n}")
-    def pagina_del_kmz(slug: str, n: int, mini: bool = False,
-                       mis: VistaKmz = Depends(mis_kmz)) -> FileResponse:
-        archivo = mis.plano(slug).imagen(n, mini)
+    async def pagina_del_kmz(slug: str, n: int, mini: bool = False, medio: bool = False,
+                             mis: VistaKmz = Depends(mis_kmz)) -> FileResponse:
+        """`medio`: a lo más 2.400 px, para el editor de la unión. La página 0 es la unión
+        de hojas guardada en las entradas; la primera vez se compone (segundos)."""
+        plano = mis.plano(slug)
+        archivo = await run_in_threadpool(plano.imagen, n, mini, medio)
         if archivo is None:
-            raise HTTPException(404, "esa página no existe")
+            raise HTTPException(404, "no hay hojas unidas: guarda la unión antes de pedir la página 0"
+                                if n == 0 and plano.hay() else "esa página no existe")
+        # Sin caché eterna: la página 0 cambia con la unión (la pantalla pide con `?v=`) y
+        # cualquier página cambia si se sube otro PDF; el navegador revalida con el ETag.
         return FileResponse(archivo, media_type="image/jpeg",
                             headers={"Cache-Control": "private, no-cache"})
+
+    @app.post("/api/kmz/{slug}/union/afinar")
+    async def afinar_union_kmz(slug: str, union: dict = Body(...),
+                               mis: VistaKmz = Depends(mis_kmz)) -> dict:
+        """`{"hojas": [...]}` como están en pantalla → las mismas hojas con x, y y angulo
+        calzados, más `calzada` y `residuo_mm` por hoja. No guarda nada."""
+        plano = mis.plano(slug)
+        return await run_in_threadpool(plano.afinar_union, union)
 
     @app.put("/api/kmz/{slug}/entradas")
     def entradas_del_kmz(slug: str, entradas: dict = Body(...),

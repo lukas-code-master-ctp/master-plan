@@ -475,8 +475,13 @@ def test_una_construccion_frena_la_digitalizacion(con_topes, monkeypatch):
     lambda web, slug: web.post(f"/api/kmz/{slug}/corregir", json={"accion": "deshacer"}),
     lambda web, slug: web.post(f"/api/kmz/{slug}/crear"),
     lambda web, slug: web.get(f"/api/kmz/{slug}/descargar"),
+    lambda web, slug: web.get(f"/api/kmz/{slug}/paginas/1", params={"medio": 1}),
+    lambda web, slug: web.get(f"/api/kmz/{slug}/paginas/0"),
+    lambda web, slug: web.post(f"/api/kmz/{slug}/union/afinar", json={"hojas": [
+        {"n": 1, "x": 780, "y": 513}, {"n": 2, "x": 1200, "y": 513}]}),
 ], ids=["ver", "renombrar", "borrar", "plano", "pagina", "entradas", "digitalizar",
-        "georreferenciar", "lotes", "corregir", "crear", "descargar"])
+        "georreferenciar", "lotes", "corregir", "crear", "descargar", "pagina-media", "union",
+        "afinar-union"])
 def test_el_kmz_de_otra_contesta_404_en_todas_las_rutas(consola, pedir):
     app, carpeta, _, comandos = consola
     ana, luis = entrar(app, "ana@losrobles.cl"), entrar(app, "luis@delvalle.cl")

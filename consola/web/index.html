@@ -376,17 +376,40 @@
         <div id="kmz-hojas-caja" hidden>
           <h3>Elige la página que muestra el loteo completo</h3>
           <div id="kmz-hojas" class="hojas" role="group" aria-label="Páginas del PDF"></div>
-          <h3>Gírala hasta que se lea derecha</h3>
-          <div class="fila fila--envuelve">
-            <button class="boton boton--contorno" data-accion="kmz-girar-izq" type="button"
-                    aria-label="Girar 90 grados a la izquierda">↺ 90°</button>
-            <button class="boton boton--contorno" data-accion="kmz-girar-der" type="button"
-                    aria-label="Girar 90 grados a la derecha">↻ 90°</button>
-            <span class="nota">Girada <b id="kmz-rotacion">0°</b></span>
+          <div id="kmz-unir-caja" hidden>
+            <button class="boton boton--contorno" data-accion="kmz-unir" type="button">El loteo está en varias hojas: unirlas</button>
           </div>
+          <div id="kmz-giro-caja">
+            <h3>Gírala hasta que se lea derecha</h3>
+            <div class="fila fila--envuelve">
+              <button class="boton boton--contorno" data-accion="kmz-girar-izq" type="button"
+                      aria-label="Girar 90 grados a la izquierda">↺ 90°</button>
+              <button class="boton boton--contorno" data-accion="kmz-girar-der" type="button"
+                      aria-label="Girar 90 grados a la derecha">↻ 90°</button>
+              <span class="nota">Girada <b id="kmz-rotacion">0°</b></span>
+            </div>
+          </div>
+          <p id="kmz-giro-union" class="nota" hidden>Con las hojas unidas, cada hoja se gira en el editor:
+            usa <b>Editar la unión</b>.</p>
           <div class="kmz-panel__pie">
             <button class="boton" data-accion="kmz-siguiente" type="button">Seguir: marcar el dibujo</button>
           </div>
+        </div>
+      </div>
+
+      <!-- 1b. Unir las hojas: reemplaza al panel de subir mientras está abierto (kmz_union.js). -->
+      <div class="kmz-panel" id="kmz-panel-unir" data-panel="unir" hidden>
+        <h2 tabindex="-1">Une las hojas</h2>
+        <p class="kmz-nota-fuerte union-movil">Es más cómodo en un computador.</p>
+        <p class="ayuda">Arrastra cada hoja cerca de su lugar y pulsa Afinar. Recorta cada una a su dibujo: lo que
+          quede fuera (cuadros, viñeta, timbres) no entra.</p>
+        <h3>Hojas <span class="union-orden">· la de arriba se ve encima</span></h3>
+        <ol id="kmz-union-hojas" class="union-hojas" aria-label="Hojas del PDF, de la que va encima a la que va debajo"></ol>
+        <button class="boton boton--contorno" data-union="afinar" type="button">Afinar la alineación</button>
+        <div class="kmz-panel__pie">
+          <button class="boton boton--texto" data-union="cancelar" type="button">Cancelar</button>
+          <button class="boton boton--texto" data-union="volver" type="button">Volver a una sola página</button>
+          <button class="boton" data-union="usar-union" type="button">Usar la unión</button>
         </div>
       </div>
 
@@ -736,6 +759,8 @@
         <div id="kmz-plano" class="visor-plano">
           <canvas id="kmz-lienzo" tabindex="0"
                   aria-label="El plano. Arrastra para moverlo, la rueda o + y − para acercar, 0 para verlo entero."></canvas>
+          <canvas id="kmz-union-lienzo" tabindex="0"
+                  aria-label="Las hojas. Toca una para elegirla y arrástrala para moverla (las flechas también); arrastra el fondo para mover la vista; la rueda o + y − acercan, 0 las muestra todas."></canvas>
           <div class="visor-plano__herramientas" role="toolbar" aria-label="Herramientas">
             <button type="button" data-herramienta="mover" aria-pressed="true">Mover</button>
             <button type="button" data-herramienta="dibujo" aria-pressed="false">Encerrar el dibujo</button>
@@ -749,6 +774,12 @@
             <button type="button" data-accion="kmz-acercar" aria-label="Acercar">+</button>
             <button type="button" data-accion="kmz-alejar" aria-label="Alejar">−</button>
             <button type="button" data-accion="kmz-ajustar" aria-label="Ver el plano entero">⤢</button>
+          </div>
+          <!-- Marcar con la unión de hojas: el cuadro de superficies se encierra en su hoja original. -->
+          <div id="kmz-cuadro-hoja" class="kmz-cuadro-hoja" role="group" aria-labelledby="kmz-cuadro-hoja-texto" hidden>
+            <p id="kmz-cuadro-hoja-texto"></p>
+            <div id="kmz-cuadro-hojas" class="fila fila--envuelve"></div>
+            <button class="boton boton--texto boton--chico" data-accion="kmz-volver-union" type="button">Volver a la unión</button>
           </div>
           <!-- Encima del plano y no arriba de la página: aparecer no corre lo que se está tocando. -->
           <div id="kmz-atrasado" class="kmz-atrasado" role="status" hidden>

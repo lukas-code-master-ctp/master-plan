@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  anclaDesde, aPagina, aplicarFuera, aplicarNumero, claveLote, decidirResto, devolverAlKmz, restoDe, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
+  anclaDesde, aPagina, aplicarFuera, calzaLoDigitalizado, aplicarNumero, claveLote, decidirResto, devolverAlKmz, restoDe, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, detalleUbicacion, distanciaEnPalabras, filaDelPunto, resumenUbicacion, ordenarEsquinas, PASOS, PASTILLAS, pastillaDe, pasoDeRuta, pasoSiguiente, hayQueNumerar, pasosHechos, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, semaforo, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
   tamanoRotado, normalizarGiro, puedeUbicar, ubicacionCompleta, textoHuecos, textoSemaforo, vistaAjustada, zoomEn,
@@ -420,6 +420,15 @@ test('el cuadro de superficies es un rectángulo solo, que se reemplaza y se qui
   assert.deepEqual(marcarRectangulo(otra, 'dibujo', [0, 0, 50, 50]).cuadro, otra.cuadro);
   // Quitarlo es dejarlo en null (lo que hace "Quitar" en la lista).
   assert.equal({ ...otra, cuadro: null }.cuadro, null);
+});
+
+test('con la unión, el cuadro no se marca en px de la unión (va en union.cuadro, sobre su hoja)', () => {
+  const unida = { pagina: 0, rotacion: 0, union: { hojas: [{ n: 1 }, { n: 2 }] }, mascaras: [], cuadro: null };
+  assert.equal(marcarRectangulo(unida, 'cuadro', [10, 10, 200, 200]), unida);
+  // Lo demás se marca igual que en una página.
+  assert.deepEqual(marcarRectangulo(unida, 'dibujo', [10, 10, 200, 200]).rectangulo, [10, 10, 200, 200]);
+  // Sin unión, como siempre.
+  assert.deepEqual(marcarRectangulo({ ...unida, pagina: 1, union: null }, 'cuadro', [10, 10, 200, 200]).cuadro, [10, 10, 200, 200]);
 });
 
 test('Marcar se abre en lo que toca: encerrar el dibujo, tapar o mirar', () => {
@@ -1001,6 +1010,24 @@ test('los vértices para corregir: uno por punto, aunque lo compartan dos lotes'
   assert.deepEqual(verticesDe(rasgos).map((p) => [p.lon, p.lat]),
     [[0, 0], [1, 0], [1, 1], [0, 1], [2, 0], [2, 1]]);
   assert.deepEqual(verticesDe(null), []);
+});
+
+test('calzaLoDigitalizado: misma página y giro, y con la unión, la misma unión', () => {
+  const suelta = { pagina: 2, rotacion: 90 };
+  assert.ok(calzaLoDigitalizado(null, suelta));
+  assert.ok(calzaLoDigitalizado({ numero: 2, rotacion: 90, union: null }, suelta));
+  // Lo digitalizado antes de anotar la unión no la trae.
+  assert.ok(calzaLoDigitalizado({ numero: 2, rotacion: 90 }, suelta));
+  assert.ok(!calzaLoDigitalizado({ numero: 2, rotacion: 0 }, suelta));
+  assert.ok(!calzaLoDigitalizado({ numero: 1, rotacion: 90 }, suelta));
+  const unida = { pagina: 0, rotacion: 0, union: { hojas: [] } };
+  assert.ok(calzaLoDigitalizado({ numero: 0, rotacion: 0, union: 'abc' }, unida, 'abc'));
+  // Otra unión tiene otros px de página.
+  assert.ok(!calzaLoDigitalizado({ numero: 0, rotacion: 0, union: 'abc' }, unida, 'def'));
+  assert.ok(!calzaLoDigitalizado({ numero: 0, rotacion: 0, union: 'abc' }, unida, null));
+  assert.ok(!calzaLoDigitalizado({ numero: 1, rotacion: 0, union: null }, unida, 'abc'));
+  // Una página suelta no mira la huella que haya quedado de una unión.
+  assert.ok(calzaLoDigitalizado({ numero: 2, rotacion: 90, union: null }, suelta, 'abc'));
 });
 
 test('bajo un "Seguir" apagado va por qué, en cada paso', () => {
