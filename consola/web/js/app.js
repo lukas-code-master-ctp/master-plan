@@ -62,7 +62,7 @@ function mostrar() {
     return;
   }
   document.title = {
-    planos: 'Mis planos', nuevo: 'Nuevo master', kmzs: 'Mis KMZ', disenos: 'Mis diseños', diseno: 'Diseño',
+    planos: 'Mis 360°', nuevo: 'Nuevo master', kmzs: 'Mis KMZ', disenos: 'Mis diseños', diseno: 'Diseño',
     reservas: 'Reservas', configuracion: 'Configuración',
   }[destino.pantalla] + ' — Tu Masterplan';
   if (destino.pantalla === 'planos') pintarPlanos({ animar: llegando });
