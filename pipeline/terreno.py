@@ -88,8 +88,7 @@ def cota_en(punto: geo.Punto, cache: Path, zoom: int = ZOOM) -> float:
     return cargar((punto[0], punto[1], punto[0], punto[1]), cache, margen_m=50.0, zoom=zoom).cota(punto)
 
 
-def modelo_para_vista(terreno: Terreno, vista: Vista, despegue: geo.Punto,
-                      referencia: Vista | None = None) -> ModeloTerreno:
+def modelo_para_vista(terreno: Terreno, vista: Vista, despegue: geo.Punto) -> ModeloTerreno:
     """Cota de cada punto en el datum del dron.
 
     El dron mide alturas respecto del punto de despegue, y su "altura absoluta" viene
@@ -97,11 +96,11 @@ def modelo_para_vista(terreno: Terreno, vista: Vista, despegue: geo.Punto,
     desniveles: la cota del despegue es la que dice el dron, y cada punto queda a
     tantos metros por sobre o por debajo de ella como diga el DEM.
 
-    `despegue` es de donde salió el vuelo de `referencia`. Otro vuelo pudo salir de
-    otro lado: no se sabe de dónde, pero su altura absoluta viene en el mismo datum,
-    así que se ancla al despegue de la referencia y no se supone que salió del mismo.
+    Cada vista se mide desde el despegue de su propio vuelo, que se supone en
+    `despegue`. No se ancla a otro vuelo con la altura absoluta: entre vuelos el GPS
+    se corre varios metros (ver construir).
     """
-    base = (referencia or vista).terreno_plano() - terreno.cota(despegue)
+    base = vista.terreno_plano() - terreno.cota(despegue)
     return lambda punto: base + terreno.cota(punto)
 
 
