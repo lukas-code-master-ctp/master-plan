@@ -1877,3 +1877,28 @@ button { cursor: pointer; }
 @media (min-width: 62.0625rem) and (prefers-reduced-motion: reduce) {
   .puntos__pildora { transition: none; }
 }
+
+/* --- Teléfono: las mismas islas ---------------------------------------------- */
+
+/* Los botones y cápsulas del teléfono toman el vidrio y las formas redondas de
+   las islas de escritorio: botones redondos, cápsulas de punta redonda. */
+@media (max-width: 62rem) {
+  .cabecera .pastillon, .capsula-rumbo, .puntos, .leyenda, .ver-plano, .zoom button {
+    background: var(--isla); backdrop-filter: blur(14px);
+    border: 1px solid var(--linea); box-shadow: var(--sombra-isla);
+  }
+  .cabecera .pastillon { border-radius: 50%; }
+  .puntos { border-radius: var(--radio-full); padding: 3px; }
+  .puntos__fila button { border-radius: var(--radio-full); }
+  .puntos__fila button[aria-pressed="true"] { background: var(--marca-700); color: #fff; }
+  /* La leyenda se desliza si no cabe: sin barra de desplazamiento y con el borde
+     derecho desvanecido, que avisa que hay más. */
+  .leyenda {
+    border-radius: var(--radio-full); padding: 0 0.9rem; scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 1.5rem), transparent);
+  }
+  .leyenda::-webkit-scrollbar { display: none; }
+  .ver-plano { border-radius: var(--radio-full); }
+  .ver-plano__miniatura { border-radius: 50%; }
+  .zoom button { border-radius: 50%; }
+}
