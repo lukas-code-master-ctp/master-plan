@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  anclaDesde, aPagina, aplicarFuera, calzaLoDigitalizado, aplicarNumero, claveLote, decidirResto, devolverAlKmz, restoDe, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
+  anclaDesde, aPagina, aplicarFuera, calzaLoDigitalizado, aplicarNumero, claveLote, confirmarSugerencias, decidirResto, devolverAlKmz, restoDe, conSemillas, esFalloPasajero, formaDelCuadro, mensajeNumerar, numerosQueFaltan, porQueNoSigue, aPantalla, centroide, desrotarPunto, dudosos, empujar, girarEntradas, girarPunto, leerCoordenadas, loteEn,
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, marcarRectangulo, matrizRotacion, metrosDe, nombreDelSistema, detalleUbicacion, distanciaEnPalabras, filaDelPunto, resumenUbicacion, ordenarEsquinas, PASOS, PASTILLAS, pastillaDe, pasoDeRuta, pasoSiguiente, hayQueNumerar, pasosHechos, pasoSugerido, pasosHabilitados, ponerNumero, puedeSeguirANumerar,
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, semaforo, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
   tamanoRotado, normalizarGiro, puedeUbicar, ubicacionCompleta, textoHuecos, textoSemaforo, vistaAjustada, zoomEn,
@@ -738,6 +738,74 @@ test('un número que estaba en otro lote pasa al nuevo y el otro queda sin núme
   assert.ok(repetidos[0].properties.numero === null);
   const dos = aplicarNumero(aplicarNumero([d, c, lote('6', [cuadro(40, 0, 50, 10)])], '6', [25, 5]), '7', [25, 5]);
   assert.deepEqual(dos.map((r) => r.properties.numero), ['5', '7', null]);
+});
+
+// Una parte roja con la lectura del lector por confirmar, con su rótulo al centro.
+const conSugerencia = (numero, x0) => ({
+  ...lote(null, [cuadro(x0, 0, x0 + 10, 10)], { banderas: ['sin_numero', 'de_lote'], de_lote: true,
+    sugerencia: { numero, apoyo: 1 } }),
+  rotulo: [x0 + 5, 5],
+});
+
+test('confirmar todas las sugerencias de una vez: semillas nuevas y lotes verdes', () => {
+  const rasgos = [conSugerencia('8-03', 0), conSugerencia('8-04', 10), lote('8-01', [cuadro(20, 0, 30, 10)])];
+  // La parte de 8-04 estaba dejada fuera del KMZ: con número vuelve.
+  const entradas = { semillas: [{ numero: '8-01', x: 25, y: 5 }], fuera: [[15, 5]] };
+  const r = confirmarSugerencias(entradas, rasgos, ['8-01', '8-03', '8-04']);
+  assert.deepEqual(r.confirmadas, ['8-03', '8-04']);
+  assert.deepEqual(r.omitidas, []);
+  assert.deepEqual(r.entradas.semillas, [{ numero: '8-01', x: 25, y: 5 },
+    { numero: '8-03', x: 5, y: 5 }, { numero: '8-04', x: 15, y: 5 }]);
+  assert.deepEqual(r.entradas.fuera, []);
+  assert.deepEqual(r.rasgos.map((x) => x.properties.numero), ['8-03', '8-04', '8-01']);
+  for (const x of r.rasgos.slice(0, 2)) assert.ok(!x.properties.banderas.includes('sin_numero'));
+  assert.deepEqual(sugerencias(r.rasgos), []);
+});
+
+test('confirmar todas se salta las que chocan: con una semilla o entre ellas', () => {
+  const choca = conSugerencia('8-1', 0);    // "8-01" ya está en una semilla
+  const buena = conSugerencia('8-02', 10);
+  const repetida = conSugerencia('8-2', 20); // la misma que la anterior
+  const rasgos = [choca, buena, repetida, lote('8-01', [cuadro(30, 0, 40, 10)])];
+  const entradas = { semillas: [{ numero: '8-01', x: 35, y: 5 }] };
+  const r = confirmarSugerencias(entradas, rasgos, []);
+  assert.deepEqual(r.confirmadas, ['8-02']);
+  assert.deepEqual(r.omitidas, ['8-1', '8-2']);
+  assert.deepEqual(r.entradas.semillas, [{ numero: '8-01', x: 35, y: 5 }, { numero: '8-02', x: 15, y: 5 }]);
+  // Las omitidas siguen por confirmar, una por una.
+  assert.deepEqual(sugerencias(r.rasgos).map((s) => s.numero), ['8-1', '8-2']);
+  assert.equal(r.rasgos[3].properties.numero, '8-01');
+});
+
+test('confirmar todas no le quita el número a un lote que lo leyó el lector', () => {
+  const leido = lote('8-05', [cuadro(10, 0, 20, 10)], { origen: 'lector' });
+  const r = confirmarSugerencias({ semillas: [] }, [conSugerencia('8-05', 0), leido], []);
+  assert.deepEqual(r.confirmadas, []);
+  assert.deepEqual(r.omitidas, ['8-05']);
+  assert.equal(r.rasgos[1].properties.numero, '8-05');
+});
+
+test('confirmar todas escribe el número como el cuadro de superficies', () => {
+  const r = confirmarSugerencias({ semillas: [] }, [conSugerencia('8-8', 0)], ['8-08']);
+  assert.deepEqual(r.confirmadas, ['8-08']);
+  assert.deepEqual(r.entradas.semillas, [{ numero: '8-08', x: 5, y: 5 }]);
+  assert.equal(r.rasgos[0].properties.numero, '8-08');
+});
+
+test('confirmar todas sin sugerencias no cambia nada y no toca lo que recibe', () => {
+  const entradas = { semillas: [{ numero: '1', x: 5, y: 5 }], fuera: [] };
+  const rasgos = [lote('1', [cuadro(0, 0, 10, 10)])];
+  const r = confirmarSugerencias(entradas, rasgos, []);
+  assert.equal(r.entradas, entradas);
+  assert.equal(r.rasgos, rasgos);
+  assert.deepEqual(r.confirmadas, []);
+  assert.deepEqual(r.omitidas, []);
+
+  const conAlgo = { semillas: [{ numero: '9', x: 50, y: 5 }], fuera: [[5, 5]] };
+  const partes = [conSugerencia('8-03', 0), conSugerencia('8-04', 10)];
+  const copias = [structuredClone(conAlgo), structuredClone(partes)];
+  confirmarSugerencias(conAlgo, partes, ['8-03']);
+  assert.deepEqual([conAlgo, partes], copias);
 });
 
 test('las semillas que el digitalizado no tiene todavía se ponen encima al recargar', () => {
