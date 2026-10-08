@@ -229,6 +229,27 @@ function refrescarEstilos() {
 
 // --- Controles de vuelo -------------------------------------------------------
 
+/**
+ * En escritorio, una píldora con el color de la marca se desliza hasta el punto de
+ * vuelo elegido, como la isla de secciones de la consola. Se mide sobre el botón
+ * mismo; la primera vez aparece donde va, sin viajar.
+ */
+let pildoraUbicada = false;
+function ubicarPildora({ animar = pildoraUbicada } = {}) {
+  const puntos = $('.puntos');
+  const activo = $('#controles-posicion [aria-pressed="true"]');
+  if (!activo || !activo.offsetWidth) return;
+  const pildora = $('.puntos__pildora');
+  pildora.classList.toggle('puntos__pildora--quieta', !animar);
+  // El botón se mide contra la isla, que es donde vive la píldora.
+  const x = activo.getBoundingClientRect().left - puntos.getBoundingClientRect().left - puntos.clientLeft;
+  puntos.style.setProperty('--pildora-x', `${x}px`);
+  puntos.style.setProperty('--pildora-ancho', `${activo.offsetWidth}px`);
+  pildoraUbicada = true;
+}
+addEventListener('resize', () => ubicarPildora({ animar: false }));
+document.fonts?.ready.then(() => ubicarPildora({ animar: false }));
+
 /** Despliega o pliega los puntos de vuelo (solo cambia algo en el teléfono). */
 function desplegarPuntos(abierto) {
   $('.puntos').classList.toggle('puntos--abierto', abierto);
@@ -356,6 +377,7 @@ function actualizarControles() {
   for (const boton of $('#controles-posicion').children) {
     boton.setAttribute('aria-pressed', String(Number(boton.dataset.posicion) === vista.posicion));
   }
+  ubicarPildora();
   const disponibles = new Set(estado.catalogo.vistas
     .filter((v) => v.posicion === vista.posicion)
     .map((v) => v.altura_m));

@@ -76,6 +76,10 @@
      negro puro: sobre el pasto o la tierra el negro ensucia. */
   --sombra-hud: 0 4px 12px -2px rgb(24 24 27 / 0.08), 0 2px 6px -1px rgb(24 24 27 / 0.04);
   --sombra-panel: 0 10px 25px -5px rgb(24 24 27 / 0.15), 0 2px 6px -1px rgb(24 24 27 / 0.06);
+  /* Las islas flotantes de escritorio, las mismas de la consola: vidrio claro y
+     una sombra larga que las despega de la foto. */
+  --isla: rgb(255 255 255 / 0.82);
+  --sombra-isla: 0 14px 34px -18px rgb(9 9 11 / 0.4), 0 2px 6px -2px rgb(9 9 11 / 0.08);
   --curva: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Lo que se aprieta. También en píxeles: el mínimo táctil (48 px, ver el
@@ -945,7 +949,7 @@ button { cursor: pointer; }
   body[data-plano="cerrado"] .plano-flotante { display: inline-flex; animation: subir 200ms ease-out; }
 
   body[data-plano="completo"] .carta {
-    inset: var(--alto-cabecera) 0 0;
+    inset: 0;
     width: auto;
     border-radius: 0;
     display: flex;
@@ -1808,4 +1812,68 @@ button { cursor: pointer; }
     line-height: calc(var(--alto-hud, var(--alto-control)) - 2px) !important;
     font-size: 1.125rem !important;
   }
+}
+
+/* --- Escritorio: islas flotantes, como en la consola -------------------------- */
+
+/* La píldora de los puntos solo existe en escritorio; en el teléfono los puntos
+   van plegados en su pastilla. */
+.puntos__pildora { display: none; }
+
+@media (min-width: 62.0625rem) {
+  /* Sin barra: la foto llega arriba y la marca, el buscador y los filtros flotan
+     como islas. La cabecera deja pasar el mouse para arrastrar la foto por arriba. */
+  .cabecera {
+    height: auto; align-items: flex-start; padding: 1rem 1.25rem 0;
+    background: none; backdrop-filter: none; border-bottom: 0; pointer-events: none;
+  }
+  .cabecera > * { pointer-events: auto; }
+  .escena { inset: 0; }
+
+  .marca, .cabecera__herramientas, .acciones-rapidas, .puntos, .leyenda, .zoom, .altimetro, .plano-flotante {
+    background: var(--isla); backdrop-filter: blur(14px);
+    border: 1px solid var(--linea); box-shadow: var(--sombra-isla);
+  }
+  .marca { flex: none; padding: 0.375rem 1.25rem 0.375rem 0.375rem; border-radius: var(--radio-full); }
+  .marca__hito { border-radius: 50%; }
+  .cabecera__herramientas { gap: 0.25rem; padding: 0.375rem; border-radius: var(--radio-full); }
+  .buscador input { height: 2.5rem; border-color: transparent; border-radius: var(--radio-full); background: var(--zinc-100); }
+  .buscador input:focus { background: var(--papel); }
+  .cabecera .pastillon { height: 2.5rem; border-color: transparent; border-radius: var(--radio-full); background: transparent; }
+  .cabecera .pastillon:hover, .cabecera .pastillon[aria-expanded="true"] { background: var(--zinc-100); }
+
+  .acciones-rapidas { padding: 0.375rem; border-radius: var(--radio-full); }
+  .accion { height: 2.5rem; padding: 0 1rem; border-radius: var(--radio-full); font-weight: 600; }
+
+  .puntos { position: relative; padding: 0.375rem 0.375rem 0.375rem 1.1rem; border-radius: var(--radio-full); }
+  .puntos__pildora {
+    display: block; position: absolute; top: 0.375rem; left: 0; height: 2.5rem;
+    width: var(--pildora-ancho, 0); transform: translateX(var(--pildora-x, 0));
+    border-radius: var(--radio-full); background: var(--marca-700);
+    box-shadow: 0 8px 18px -8px rgb(9 9 11 / 0.6);
+    transition: transform 500ms var(--curva), width 500ms var(--curva);
+  }
+  .puntos__pildora--quieta { transition: none; }
+  .puntos__fila button { position: relative; min-width: 2.75rem; height: 2.5rem; border-radius: var(--radio-full); font-size: 0.8125rem; transition: color 350ms, background 150ms; }
+  .puntos__fila button[aria-pressed="true"], .puntos__fila button[aria-pressed="true"]:hover { background: transparent; color: #fff; }
+
+  .leyenda { padding: 0.75rem 1.25rem; border-radius: var(--radio-full); }
+
+  .zoom { gap: 0.125rem; padding: 0.3rem; border-radius: var(--radio-full); }
+  .zoom button { border: 0; border-radius: 50%; background: transparent; box-shadow: none; }
+  .zoom button:hover { background: var(--zinc-100); }
+  .altimetro { border-radius: 1.25rem; }
+  .plano-flotante { border-radius: var(--radio-full); }
+  /* El plano a pantalla completa queda bajo las islas de arriba: su barra (achicar
+     y cerrar) pasa a ser una isla más, a la derecha, bajo el buscador. */
+  body[data-plano="completo"] .carta__barra {
+    position: absolute; z-index: 1001; top: 4.75rem; right: 1.25rem;
+    padding: 0.3rem; gap: 0.125rem; border: 1px solid var(--linea); border-radius: var(--radio-full);
+    background: var(--isla); backdrop-filter: blur(14px); box-shadow: var(--sombra-isla);
+  }
+  body[data-plano="completo"] .carta__titulo { display: none; }
+  body[data-plano="completo"] .carta__accion { width: 2.5rem; height: 2.5rem; border-radius: 50%; }
+}
+@media (min-width: 62.0625rem) and (prefers-reduced-motion: reduce) {
+  .puntos__pildora { transition: none; }
 }
