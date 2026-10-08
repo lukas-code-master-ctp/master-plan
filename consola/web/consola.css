@@ -164,39 +164,178 @@ button { cursor: pointer; }
 
 /* --- Mis planos ------------------------------------------------------------------ */
 
-.planos { display: grid; gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
+/* Los colores de estado son los del visor (pipeline/config.py), un punto más
+   claros: aquí van sobre foto o sobre tinta. */
+:root {
+  --estado-disponible: #22c55e; --estado-reservado: #f59e0b;
+  --estado-vendido: #3b82f6; --estado-no_disponible: #71717a; --estado-total: #fafafa;
+  --curva-salida: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.antetitulo {
+  display: block; margin-bottom: 0.4rem;
+  font: 700 0.75rem/1 var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--zinc-500);
+}
+#pantalla-planos { gap: 1.75rem; }
+#pantalla-planos h1 { font: 800 2.75rem/1.02 var(--sans); letter-spacing: -0.035em; }
+#pantalla-planos .guia { font-size: 0.9375rem; }
+
+/* Nuevo master: un brillo lo recorre cada tanto, para que se note dónde empieza todo. */
+.boton-nuevo { position: relative; overflow: hidden; height: 3rem; padding: 0 1.4rem; border-radius: 0.875rem; font-size: 0.9375rem; font-weight: 600;
+  transition: transform 250ms var(--curva-salida), background 200ms; }
+.boton-nuevo:hover { transform: translateY(-2px); }
+.boton-nuevo::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.2), transparent);
+  transform: translateX(-120%); animation: brillo 3.6s ease-in-out infinite 1.2s;
+}
+@keyframes brillo { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(280%); } }
+
+/* El resumen: lo que suman todos los loteos, sobre tinta. */
+.resumen-planos {
+  display: grid; gap: 1rem; padding: 1.5rem; border-radius: 1.375rem;
+  background: var(--zinc-900); color: var(--zinc-50);
+}
+.resumen-planos__cifras { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; margin: 0; }
+.resumen-planos__cifras div { display: grid; gap: 0.4rem; }
+.resumen-planos__cifras dt {
+  display: flex; align-items: center; gap: 0.5rem;
+  font: 600 0.75rem/1 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--zinc-400);
+}
+.resumen-planos__cifras dd { margin: 0; font: 800 2.5rem/1 var(--sans); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.resumen-planos__barra { height: 10px; background: var(--zinc-700); }
+.resumen-planos__pie { margin: 0; font-size: 0.8125rem; color: var(--zinc-400); }
+.punto-estado { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.punto-estado--total { background: var(--estado-total); }
+.punto-estado--disponible { background: var(--estado-disponible); }
+.punto-estado--reservado { background: var(--estado-reservado); }
+.punto-estado--vendido { background: var(--estado-vendido); }
+
+.barra-estados { display: flex; height: 6px; border-radius: 999px; overflow: hidden; background: rgb(255 255 255 / 0.18); }
+.tramo { display: block; height: 100%; }
+.tramo--disponible { background: var(--estado-disponible); }
+.tramo--reservado { background: var(--estado-reservado); }
+.tramo--vendido { background: var(--estado-vendido); }
+.tramo--no_disponible { background: var(--estado-no_disponible); }
+
+/* La rejilla: el primero destacado y dos a su lado; el resto de a tres. */
+.planos {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 1.25rem; margin: 0; padding: 0; list-style: none;
+}
+.planos__item { display: grid; min-width: 0; }
+.planos__item--destacada { grid-column: span 7; grid-row: span 2; }
+.planos__item--lateral { grid-column: span 5; }
+.planos__item--tercio { grid-column: span 4; }
+.planos__item--mitad { grid-column: span 6; grid-row: span 2; }
+.planos__item--ancha { grid-column: span 12; }
+/* Alturas por forma: la destacada mide lo que las dos de su lado, gap incluido. */
+.planos__item--lateral .plano, .planos__item--tercio .plano { min-height: 15.5rem; }
+.planos__item--destacada .plano { min-height: 32.25rem; }
+.planos__item--mitad .plano, .planos__item--ancha .plano { min-height: 26rem; }
+
 .plano {
-  display: grid; grid-template-columns: 10rem 1fr auto; align-items: center; gap: 1.25rem;
-  padding: 0.75rem 1.25rem 0.75rem 0.75rem;
-  background: #fff; border: 1px solid var(--zinc-200); border-radius: var(--radio-lg);
-  box-shadow: var(--sombra); text-decoration: none;
-  transition: border-color 150ms, box-shadow 200ms, transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative; isolation: isolate; display: flex; flex-direction: column;
+  border-radius: 1.375rem; overflow: hidden; text-decoration: none; color: #fff;
+  /* Sin construir no hay foto: queda una trama de loteo sobre tinta. */
+  background-color: var(--zinc-900);
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.045) 1px, transparent 1px);
+  background-size: 24px 24px;
+  box-shadow: 0 12px 30px -18px rgb(9 9 11 / 0.35);
+  transition: transform 450ms var(--curva-salida), box-shadow 450ms var(--curva-salida);
 }
-.plano:hover { border-color: var(--zinc-300); box-shadow: 0 8px 24px -12px rgb(0 0 0 / 0.18); transform: translateY(-1px); }
-.plano:focus-visible { outline-offset: 3px; }
-.plano__portada {
-  aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--radio-md);
-  /* Sin construir no hay foto: queda una trama de loteo, callada. */
-  background:
-    linear-gradient(var(--zinc-100) 1px, transparent 1px) 0 0 / 14px 14px,
-    linear-gradient(90deg, var(--zinc-100) 1px, var(--zinc-50) 1px) 0 0 / 14px 14px;
-  box-shadow: inset 0 0 0 1px var(--zinc-200);
+.plano:hover { transform: translateY(-6px); box-shadow: 0 30px 60px -24px rgb(9 9 11 / 0.45); }
+.plano:focus-visible { outline-offset: 4px; }
+.plano__foto { position: absolute; inset: 0; z-index: -2; overflow: hidden; transition: transform 1.2s var(--curva-salida); }
+.plano:hover .plano__foto { transform: scale(1.05); }
+/* La foto deriva despacio, como el dron que la tomó. */
+.plano__foto img { display: block; width: 100%; height: 100%; object-fit: cover; animation: deriva 26s ease-in-out infinite alternate; }
+@keyframes deriva { from { transform: scale(1.04) translate(1.5%, 0); } to { transform: scale(1.12) translate(-2.5%, -1%); } }
+.plano__velo {
+  position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(180deg, rgb(9 9 11 / 0.35) 0%, rgb(9 9 11 / 0) 32%, rgb(9 9 11 / 0.15) 55%, rgb(9 9 11 / 0.88) 100%);
 }
-.plano__portada img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1); }
-.plano:hover .plano__portada img { transform: scale(1.03); }
-.plano__cuerpo { display: grid; gap: 0.6rem; min-width: 0; }
-.plano__titulo { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
-.plano__nombre { margin: 0; font: 700 1.125rem/1.2 var(--sans); letter-spacing: -0.015em; }
-.plano__cifras { display: flex; gap: 2rem; margin: 0; flex-wrap: wrap; }
+.plano__arriba { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 1rem 1.15rem; }
+.plano .pastilla, .plano__vistas {
+  display: inline-flex; align-items: center; gap: 0.45rem; height: 1.9rem; padding: 0 0.75rem;
+  border-radius: 999px; background: rgb(255 255 255 / 0.16); color: #fff; box-shadow: none;
+  backdrop-filter: blur(10px); font: 700 0.75rem/1 var(--sans);
+}
+.plano__vistas { font-weight: 600; }
+.punto-vivo { width: 8px; height: 8px; border-radius: 50%; background: var(--estado-disponible); animation: latido 2s ease-out infinite; }
+@keyframes latido {
+  0% { box-shadow: 0 0 0 0 rgb(34 197 94 / 0.55); }
+  70% { box-shadow: 0 0 0 8px rgb(34 197 94 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(34 197 94 / 0); }
+}
+.plano__abajo { margin-top: auto; display: grid; gap: 0.9rem; padding: 1.15rem 1.25rem 1.25rem; }
+.plano__titulo { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; }
+.plano__nombre { margin: 0; font: 800 1.6rem/1.05 var(--sans); letter-spacing: -0.03em; text-wrap: balance; }
+.planos__item--destacada .plano__nombre, .planos__item--ancha .plano__nombre { font-size: 2.4rem; }
+.plano__abrir {
+  display: inline-flex; align-items: center; gap: 0.35rem; flex: none; font-weight: 600;
+  opacity: 0; transform: translateX(-8px); transition: opacity 450ms, transform 450ms var(--curva-salida);
+}
+.plano__abrir svg { width: 1.15rem; height: 1.15rem; }
+.plano:hover .plano__abrir, .plano:focus-visible .plano__abrir { opacity: 1; transform: none; }
+.plano__cifras { display: flex; gap: 1.75rem; margin: 0; flex-wrap: wrap; }
 .plano__cifras div { display: grid; gap: 0.15rem; }
-.plano__cifras dt { font: 600 0.625rem/1 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--zinc-500); }
-.plano__cifras dd { margin: 0; font: 600 1rem/1.2 var(--sans); font-variant-numeric: tabular-nums; }
-.plano__flecha { color: var(--zinc-400); transition: color 150ms, transform 200ms cubic-bezier(0.16, 1, 0.3, 1); }
-.plano__flecha svg { display: block; width: 1.5rem; height: 1.5rem; }
-.plano:hover .plano__flecha { color: var(--zinc-900); transform: translateX(3px); }
+.plano__cifras dt { font: 700 0.6875rem/1 var(--sans); letter-spacing: 0.1em; text-transform: uppercase; color: rgb(255 255 255 / 0.72); }
+.plano__cifras dd { margin: 0; font: 700 1.25rem/1.2 var(--sans); font-variant-numeric: tabular-nums; }
+.plano__cifras dd span { color: rgb(255 255 255 / 0.6); font-weight: 500; }
+
+/* La invitación al próximo master. */
+.plano-nuevo {
+  display: flex; align-items: center; gap: 1.5rem; padding: 1.6rem 2rem;
+  border: 1.5px dashed var(--zinc-400); border-radius: 1.375rem;
+  background: rgb(255 255 255 / 0.5); color: var(--zinc-900); text-decoration: none;
+  transition: border-color 300ms, background 300ms;
+}
+.plano-nuevo:hover { border-color: var(--zinc-900); background: #fff; }
+.plano-nuevo__icono { position: relative; display: grid; place-items: center; width: 4.5rem; height: 4.5rem; flex: none; }
+.plano-nuevo__icono svg { width: 1.9rem; height: 1.9rem; }
+.plano-nuevo__orbita { position: absolute; inset: 0; border: 1.5px dashed var(--zinc-400); border-radius: 50%; animation: orbita 9s linear infinite; }
+.plano-nuevo__orbita::before {
+  content: ""; position: absolute; top: -5px; left: 50%; width: 10px; height: 10px; margin-left: -5px;
+  border-radius: 50%; background: var(--zinc-900);
+}
+.plano-nuevo:hover .plano-nuevo__orbita { animation-duration: 3s; }
+@keyframes orbita { to { transform: rotate(360deg); } }
+.plano-nuevo__textos { display: grid; gap: 0.25rem; }
+.plano-nuevo__textos strong { font-size: 1.125rem; letter-spacing: -0.01em; }
+.plano-nuevo__textos span { color: var(--zinc-600); }
+
+/* La entrada, solo al llegar a la pantalla: escalonada, y las barras se llenan. */
+@keyframes asomar { from { opacity: 0; transform: translateY(18px); } }
+@keyframes llenar { from { transform: scaleX(0); } }
+.resumen-planos--entrando { animation: asomar 700ms var(--curva-salida) both; }
+.resumen-planos--entrando .barra-estados { transform-origin: left; animation: llenar 1.4s var(--curva-salida) both 300ms; }
+.planos--entrando .planos__item { animation: asomar 700ms var(--curva-salida) both; animation-delay: calc(150ms + var(--orden) * 90ms); }
+.planos--entrando .barra-estados { transform-origin: left; animation: llenar 1.4s var(--curva-salida) both; animation-delay: calc(550ms + var(--orden) * 120ms); }
+
+@media (max-width: 52rem) {
+  .planos__item { grid-column: span 12 !important; grid-row: auto !important; }
+  .planos__item .plano { min-height: 16.5rem; }
+  .planos__item--destacada .plano { min-height: 20rem; }
+  /* Sin foto no hay nada que mirar: la tarjeta se achica y deja pasar a la siguiente. */
+  .planos__item .plano--sin-foto { min-height: 11rem; }
+  .resumen-planos__cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .resumen-planos__cifras dd { font-size: 1.85rem; }
+  #pantalla-planos h1 { font-size: 2.25rem; }
+  .plano__abrir { display: none; }
+}
+/* En el teléfono, Nuevo master queda abajo, al alcance del pulgar. */
+@media (max-width: 40rem) {
+  #pantalla-planos .pantalla__acciones { position: fixed; z-index: 5; left: 1rem; right: 1rem; bottom: calc(1rem + env(safe-area-inset-bottom)); }
+  #pantalla-planos .boton-nuevo { width: 100%; justify-content: center; height: 3.5rem; box-shadow: 0 18px 40px -16px rgb(9 9 11 / 0.6); }
+  #pantalla-planos { padding-bottom: 5rem; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .plano, .plano__portada img, .plano__flecha { transition: none; }
-  .plano:hover { transform: none; }
+  .plano, .plano__foto, .plano__abrir, .boton-nuevo { transition: none; }
+  .plano:hover, .plano:hover .plano__foto { transform: none; }
+  .plano__foto img, .punto-vivo, .plano-nuevo__orbita, .boton-nuevo::after { animation: none; }
 }
 
 /* --- Nuevo master ----------------------------------------------------------------- */
@@ -1112,21 +1251,17 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
   .pestanas::-webkit-scrollbar { display: none; }
   .pestanas a:first-child { margin-left: auto; }
   .pestanas a:last-child { margin-right: auto; }
-  .pestanas a { padding: 0 0.5rem; font-size: 0.8125rem; }
+  .pestanas a { padding: 0 0.5rem; font-size: 0.8125rem; white-space: nowrap; }
   .pestanas a::after { left: 0.5rem; right: 0.5rem; }
   .lienzo { padding: 1.25rem 1rem 3rem; }
   .aviso--fijo { margin: 1rem 1rem -0.5rem; }
   .pantalla h1 { font-size: 1.5rem; }
-  .plano { grid-template-columns: 1fr; gap: 0.75rem; padding: 0.625rem 0.625rem 1rem; }
-  .plano__cuerpo { padding: 0 0.375rem; }
-  .plano__portada:empty { aspect-ratio: 16 / 3; }
   .editor { grid-template-columns: 1fr; }
   .previa { position: static; }
   .diseno { grid-template-columns: auto 1fr auto; }
   .diseno__usos { display: none; }
   .mi-kmz { grid-template-columns: 1fr; gap: 0.25rem; }
   .mi-kmz__acciones { justify-content: flex-start; padding: 0 0.25rem 0.25rem; }
-  .plano__flecha { display: none; }
   .formulario { padding: 1.25rem; }
   .renglon { grid-template-columns: 1fr; gap: 0.4rem; }
   .renglon__rotulo { padding-top: 0; }
