@@ -197,7 +197,13 @@ imágenes en WebP, **sin una línea de JavaScript** (la CSP la sirve con `script
 'none'`; la barra y el selector de caminos van con CSS). El hero sale de la panorámica
 de Cauquenes, reproyectada a perspectiva con el mismo cálculo gnomónico que usa el visor.
 
-Las capturas de `producto*.webp` son del visor real, tomadas con Chrome headless y
+Bajo el hero va Praderas publicado, en vivo dentro de un iframe: su origen está en el
+`frame-src` de `landing/vercel.json` (`pipeline/tests/test_landing.py` lo vigila) y el
+visor deja que lo inserte tumasterplan.cl (`frame-ancestors` en `web/vercel.json`).
+Dentro de un iframe el visor no se adueña del scroll: la rueda sola y el dedo que baja
+siguen bajando por la página, y se acerca con Ctrl/⌘ + rueda (`web/js/insertado.js`).
+
+Las capturas de `producto*.webp` (la de escritorio queda debajo del iframe mientras carga) son del visor real, tomadas con Chrome headless y
 `--use-angle=swiftshader` —sin eso no hay WebGL y la panorámica sale negra—: un sitio
 construido de Praderas con el `web/` actual encima, la parcela 2-7 abierta
 (`?lote=2-7`) y la cámara un paso más lejos. Llevan un WhatsApp de ejemplo porque el
