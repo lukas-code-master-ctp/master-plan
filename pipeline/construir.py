@@ -129,6 +129,9 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             print(f"  {vista.id}: giro {ajuste.giro:+.2f}°, inclinación E {ajuste.inclinacion_este:+.2f}° "
                   f"/ N {ajuste.inclinacion_norte:+.2f}°, desnivel {ajuste.desnivel:+.1f} m  "
                   f"(calce {100 * ajuste.mejora:+.0f}%){'' if ajuste.aplicado else '  <-- sin cambio'}")
+            if ajuste.tope:
+                avisos.añadir(f"{vista.id}: el ajuste fino se fue al tope ({ajuste.tope}) y se "
+                              f"descartó; la vista queda sin ajuste. Revisa su calce.")
             calibradas.append((panorama, rumbo, aplicar(vista, ajuste)))
         vistas = calibradas
 
