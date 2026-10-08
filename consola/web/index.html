@@ -53,16 +53,22 @@
   <section id="pantalla-planos" class="pantalla" aria-labelledby="titulo-planos" hidden>
     <header class="pantalla__cabecera">
       <div>
+        <span class="antetitulo">Tus loteos desde el aire</span>
         <h1 id="titulo-planos">Mis planos</h1>
         <p id="guia" class="guia"></p>
       </div>
       <div class="pantalla__acciones">
-        <a class="boton" href="#/planos/nuevo">
+        <a class="boton boton-nuevo" href="#/planos/nuevo">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           Nuevo master
         </a>
       </div>
     </header>
+    <section id="planos-resumen" class="resumen-planos" aria-label="Resumen de tus loteos" hidden>
+      <dl class="resumen-planos__cifras"></dl>
+      <div class="resumen-planos__barra barra-estados"></div>
+      <p class="resumen-planos__pie"></p>
+    </section>
     <ul id="planos" class="planos" aria-live="polite"></ul>
   </section>
 
