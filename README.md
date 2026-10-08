@@ -203,12 +203,15 @@ visor deja que lo inserte tumasterplan.cl (`frame-ancestors` en `web/vercel.json
 Dentro de un iframe el visor no se adueña del scroll: la rueda sola y el dedo que baja
 siguen bajando por la página, y se acerca con Ctrl/⌘ + rueda (`web/js/insertado.js`).
 
-Las capturas de `producto*.webp` (la de escritorio queda debajo del iframe mientras carga) son del visor real, tomadas con Chrome headless y
-`--use-angle=swiftshader` —sin eso no hay WebGL y la panorámica sale negra—: un sitio
-construido de Praderas con el `web/` actual encima, la parcela 2-7 abierta
-(`?lote=2-7`) y la cámara un paso más lejos. Llevan un WhatsApp de ejemplo porque el
-botón de contacto solo se dibuja cuando el loteo tiene número. La del teléfono se
-captura a 393 × 800 (el iPhone que la enmarca está dibujado en CSS).
+Las capturas de `producto*.webp` (la de escritorio queda debajo del iframe mientras
+carga; la del teléfono va dentro del iPhone dibujado en CSS) son de Praderas publicado,
+tomadas con Chrome headless y `--use-angle=swiftshader` —sin eso no hay WebGL y la
+panorámica sale negra—, con una parcela disponible abierta y la cámara un paso más
+lejos. La del teléfono se captura a 393 × 800.
+
+La parcela es la misma en el iframe (`?lote=`), en las dos tarjetas flotantes y en las
+capturas; hoy es la 2-21. **Si se vende, hay que cambiarla en los cuatro lugares**, o la
+landing abre mostrando una parcela vendida.
 
 Las de `paso-*.webp` muestran cada paso de «Cómo funciona»: el plano dibujado desde
 `parcelas.json`, una panorámica cruda, el control de calce y pantallas de la consola

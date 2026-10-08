@@ -35,3 +35,11 @@ def test_cada_iframe_de_la_landing_esta_permitido_por_su_politica():
 def test_la_landing_sigue_sin_javascript():
     assert _politica_de_la_landing()["script-src"] == ["'none'"]
     assert "<script" not in (LANDING / "index.html").read_text()
+
+
+def test_el_iframe_y_las_tarjetas_hablan_de_la_misma_parcela():
+    """Cuando se vende la parcela de muestra se cambia en varios lugares: que no quede uno atrás."""
+    html = (LANDING / "index.html").read_text()
+    lote = re.search(r'<iframe[^>]*\ssrc="[^"]*[?&]lote=([^"&]+)"', html).group(1)
+    assert re.search(rf'class="ficha__nombre">Parcela {re.escape(lote)}<', html), lote
+    assert f"Me interesa la parcela {lote}»" in html, lote
