@@ -56,11 +56,18 @@ class Trabajos:
         self._candado = threading.Lock()
 
     def lanzar(self, proyecto: str, accion: str, comando: list[str],
-               al_terminar=None) -> str:
+               al_terminar=None, lineas: list[str] | None = None, al_lanzar=None) -> str:
+        """`lineas`: las primeras del avance, antes de lo que imprima el comando.
+        `al_lanzar(trabajo)` corre bajo el candado, ya visto que no hay otro en curso y
+        antes de partir el proceso: lo que anote ahí no lo pisa otro lanzamiento ni lo
+        adelanta el `al_terminar` de este. Si revienta, el trabajo no se lanza."""
         with self._candado:
             if self._corriendo(proyecto):
                 raise RuntimeError(f"{proyecto} ya está en algo; espera a que termine")
-            trabajo = Trabajo(id=uuid.uuid4().hex[:12], proyecto=proyecto, accion=accion)
+            trabajo = Trabajo(id=uuid.uuid4().hex[:12], proyecto=proyecto, accion=accion,
+                              lineas=list(lineas or []))
+            if al_lanzar is not None:
+                al_lanzar(trabajo)
             self._trabajos[trabajo.id] = trabajo
 
         hilo = threading.Thread(target=self._correr, args=(trabajo, comando, al_terminar),
