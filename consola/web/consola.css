@@ -1117,6 +1117,10 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-panel h2:focus { outline: none; }
 .kmz-panel h3 { margin: 0.5rem 0 0.25rem; font: 600 0.75rem/1.2 var(--sans); letter-spacing: 0.04em; text-transform: uppercase; color: var(--zinc-500); }
 .kmz-panel .ayuda, .kmz-panel .nota { margin: 0; }
+/* Título de sección con su acción al lado ("Confirmar todos"): el título no cambia de
+   aspecto; la fila solo lo centra con el botón y, si no cabe (celular), el botón baja. */
+.kmz-titulo-accion { align-items: center; justify-content: space-between; gap: 0.25rem 0.5rem; margin: 0.5rem 0 0.25rem; }
+.kmz-titulo-accion h3 { margin: 0; }
 .kmz-panel .soltadero { margin: 0; }
 /* El pie con "Seguir" queda pegado abajo del panel aunque el panel sea largo: si no, en
    Marcar (instrucciones, lista de lo marcado) quedaba fuera de la vista y no se sabía

@@ -654,7 +654,10 @@
         </div>
         <button class="boton boton--contorno boton--chico" data-accion="kmz-siguiente-sin-numero" type="button">Ir al siguiente sin número</button>
         <div id="kmz-sugerencias-caja" hidden>
-          <h3>Números por confirmar</h3>
+          <div class="fila fila--envuelve kmz-titulo-accion">
+            <h3>Números por confirmar</h3>
+            <button class="boton boton--contorno boton--chico" data-accion="kmz-confirmar-todos" type="button" hidden>Confirmar todos</button>
+          </div>
           <div id="kmz-sugerencias" class="kmz-pastillas"></div>
         </div>
         <p id="kmz-faltantes" class="kmz-nota-fuerte" hidden></p>

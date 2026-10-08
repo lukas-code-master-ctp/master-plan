@@ -683,7 +683,7 @@ export function devolverAlKmz(entradas, anillos) {
  * chocan (el número ya está en otra semilla, o dos sugerencias traen el mismo): esas las
  * decide ella una por una, porque pasar un número de lote sin preguntar le quitaría el
  * número a otro. No toca lo que recibe.
- * Devuelve `{entradas, rasgos, confirmadas, omitidas}` (las dos últimas, números).
+ * Devuelve `{entradas, rasgos, confirmadas, omitidas}` (las dos últimas, listas de números).
  */
 export function confirmarSugerencias(entradas, rasgos, cuadro) {
   // Se calculan antes: al aplicar cada número los rasgos cambian y la lista se correría.
