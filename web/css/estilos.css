@@ -456,6 +456,9 @@ button { cursor: pointer; }
 .visor canvas, .overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
 .overlay { pointer-events: none; z-index: 2; }
 .visor:focus-visible { outline: 2px solid var(--marca-700); outline-offset: -4px; }
+/* Dentro de un iframe (insertado.js) el dedo que baja sigue bajando por la página;
+   el que se mueve de lado gira la vista. */
+.insertado .visor { touch-action: pan-y; }
 
 /* --- Parcelas sobre la vista ------------------------------------------------ */
 

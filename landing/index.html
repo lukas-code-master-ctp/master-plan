@@ -256,12 +256,25 @@ h1 {
   border: 1px solid rgb(255 255 255 / 0.14);
   box-shadow: 0 40px 80px -30px rgb(0 0 0 / 0.7);
 }
-.marco img { display: block; width: 100%; height: auto; border-radius: 13px; }
+.marco__pantalla {
+  position: relative; overflow: hidden;
+  aspect-ratio: 16 / 10; border-radius: 13px;
+  background: var(--noche);
+}
+/* La captura queda debajo del iframe: es lo que se ve mientras el visor carga, y
+   lo que queda si el navegador no lo deja entrar. */
+.marco__pantalla img, .marco__pantalla iframe {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%; border: 0;
+}
+.marco__pantalla img { object-fit: cover; object-position: left center; }
+/* En un teléfono el visor se arma en vertical: la ficha sube desde abajo. */
+@media (max-width: 48rem) { .marco__pantalla { aspect-ratio: 4 / 5; } }
 
 /* Lo que el comprador hace con la captura, contado en dos tarjetas. Solo donde
    sobra ancho; en un teléfono taparían justo la parcela. */
+/* Encima del visor en vivo: el clic las atraviesa y llega a él. */
 .flotante {
-  position: absolute; display: none;
+  position: absolute; display: none; pointer-events: none;
   padding: 14px 16px;
   background: var(--papel); border: 1px solid var(--zinc-200); border-radius: var(--radio);
   box-shadow: var(--sombra-flotante);
@@ -270,7 +283,7 @@ h1 {
 /* Asoman 20 px fuera del marco, pero dejando aire contra el borde de la pantalla:
    en 1024 px el margen es de 16 y quedarían cortadas. `100vw` incluye la barra de
    desplazamiento, de ahí que el resguardo sea de 16 y no de 8. */
-.flotante--ficha { left: calc(-1 * min(20px, (100vw - 100%) / 2 - 16px)); top: 18%; gap: 8px; }
+.flotante--ficha { left: calc(-1 * min(20px, (100vw - 100%) / 2 - 16px)); top: 10%; gap: 8px; }
 .flotante--mensaje {
   right: calc(-1 * min(20px, (100vw - 100%) / 2 - 16px)); bottom: 14%;
   grid-template-columns: 40px auto; align-items: center; gap: 12px;
@@ -297,6 +310,8 @@ h1 {
 
 .producto__pie { margin: 20px auto 0; text-align: center; font-size: 14px; color: var(--zinc-500); }
 .producto__pie b { color: var(--tinta); font-weight: 600; }
+.producto__pie a { color: var(--tinta); font-weight: 600; text-underline-offset: 3px; white-space: nowrap; }
+.producto__pie a:focus-visible { outline: 2px solid var(--tinta); outline-offset: 3px; border-radius: 2px; }
 
 /* --- Lo que recibe ------------------------------------------------------------ */
 
@@ -567,11 +582,17 @@ h1 {
 <section class="producto" id="producto" aria-label="El visor publicado">
   <div class="producto__escena ancho">
     <div class="marco">
-      <!-- Sin lazy: en escritorio asoma en la primera pantalla. -->
-      <img src="/producto.webp" srcset="/producto.webp 1360w, /producto-2x.webp 2040w"
-           sizes="(min-width: 1212px) 1164px, calc(100vw - 48px)" width="1360" height="850" decoding="async"
-           alt="El visor en un computador: la parcela 2-7 resaltada sobre la fotografía aérea, con su ficha
-                mostrando 5.000 m², $8.990.000 y el botón «Consultar por WhatsApp».">
+      <div class="marco__pantalla">
+        <!-- Sin lazy: en escritorio asoma en la primera pantalla. -->
+        <img src="/producto.webp" srcset="/producto.webp 1360w, /producto-2x.webp 2040w"
+             sizes="(min-width: 1212px) 1164px, calc(100vw - 48px)" width="1360" height="850" decoding="async"
+             alt="" aria-hidden="true">
+        <!-- Praderas publicado, en vivo. Se puede porque el visor deja que lo inserte
+             tumasterplan.cl (frame-ancestors en web/vercel.json) y, adentro de un
+             iframe, la rueda y el dedo siguen bajando por esta página (insertado.js). -->
+        <iframe src="https://masterplan-praderas-de-cauquenes.vercel.app/?lote=2-7" loading="lazy"
+                title="Praderas de Cauquenes en vivo: se puede girar la vista, acercarse y elegir parcelas"></iframe>
+      </div>
     </div>
 
     <div class="flotante flotante--ficha" aria-hidden="true">
@@ -586,7 +607,10 @@ h1 {
       <span class="mensaje__texto"><b>Mensaje a tu vendedor</b>«Hola, vengo del Masterplan de Praderas de Cauquenes. Me interesa la parcela 2-7»</span>
     </div>
   </div>
-  <p class="producto__pie ancho"><b>Praderas de Cauquenes</b> · 88 parcelas en 4 etapas · publicado y en uso</p>
+  <p class="producto__pie ancho">
+    <b>Praderas de Cauquenes</b> · 88 parcelas en 4 etapas · en vivo, pruébalo ·
+    <a href="https://masterplan-praderas-de-cauquenes.vercel.app/" target="_blank" rel="noopener">Abrir en pantalla completa ↗</a>
+  </p>
 </section>
 
 <section class="seccion ancho" aria-labelledby="recibe-titulo">

@@ -5,6 +5,7 @@ import { aplicarMarca, ponerLogo } from './marca.js';
 import { mensajeWhatsapp, renderizarFicha } from './ficha.js';
 import { agruparParcelas, resumenDeGrupo } from './grupos.js';
 import { abrirFormulario } from './reserva.js';
+import { estaInsertado, pistaDelVisor } from './insertado.js';
 import { Mapa } from './mapa.js';
 import {
   construirPerspectivas, marcarPerspectiva, pintarMiniPlano, pintarMiniatura,
@@ -546,6 +547,10 @@ function conectarPaneles() {
     mostrarPanel('visor');
   });
   const pista = $('#pista');
+  const insertado = estaInsertado();
+  document.documentElement.classList.toggle('insertado', insertado);
+  const plataforma = navigator.userAgentData?.platform ?? navigator.platform ?? '';
+  pista.textContent = pistaDelVisor(insertado, /mac|iphone|ipad/i.test(plataforma));
   $('#visor').addEventListener('pointerdown', () => pista.classList.add('pista--oculta'),
                                { once: true });
 }

@@ -8,6 +8,7 @@
  */
 import { Camara, acotar } from './camara.js';
 import { debeColapsar } from './grupos.js';
+import { estaInsertado, ruedaAcerca } from './insertado.js';
 import { rotulosSinChoques } from './rotulos.js';
 
 const VERTICE = `
@@ -85,6 +86,7 @@ export class Visor {
     this.rotuloSeleccionadoDe = rotuloSeleccionadoDe ?? this.rotuloDe;
     this.cargaEnCurso = 0;
     this.cuadroPedido = false;
+    this.insertado = estaInsertado();
 
     this._iniciarWebgl();
     this._conectarEntradas();
@@ -677,6 +679,8 @@ export class Visor {
     elemento.addEventListener('pointercancel', soltar);
 
     elemento.addEventListener('wheel', (evento) => {
+      // Dentro de un iframe, sin Ctrl/⌘ la rueda sigue bajando por la página.
+      if (!ruedaAcerca(evento, this.insertado)) return;
       evento.preventDefault();
       this.camara.acercar(Math.exp(evento.deltaY * 0.0012));
       this._pintar();
