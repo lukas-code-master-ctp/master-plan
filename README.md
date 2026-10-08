@@ -193,8 +193,11 @@ corresponde.
 ## La landing
 
 `landing/` es la página pública de tumasterplan.cl: un HTML, la tipografía y sus
-imágenes en WebP, **sin una línea de JavaScript** (la CSP la sirve con `script-src
-'none'`; la barra y el selector de caminos van con CSS). El hero sale de la panorámica
+imágenes en WebP. Funciona **sin JavaScript**: la barra y el selector de caminos van
+con CSS. Lo único que corre es Google Analytics 4 (propiedad `G-0BBZ42FZH8`): `gtag.js`
+y `analitica.js`, que lo configura y cuenta como `generate_lead` los clics en los
+botones de correo. La CSP permite solo eso (`script-src 'self'` y googletagmanager.com,
+sin scripts en línea) y `pipeline/tests/test_landing.py` lo vigila. El hero sale de la panorámica
 de Cauquenes, reproyectada a perspectiva con el mismo cálculo gnomónico que usa el visor.
 
 Bajo el hero va Praderas publicado, en vivo dentro de un iframe: su origen está en el
