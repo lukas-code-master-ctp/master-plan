@@ -26,7 +26,7 @@ from .proyeccion import Vista, proyectar_vista
 
 # Dos fotos son del mismo vuelo si el dron dice que despegaron a menos de esto. Entre
 # vuelos del mismo día la diferencia es de metros (Vichuquén: 76,5 y 84,9 m); dentro
-# de un vuelo, de décimas.
+# de un vuelo, de décimas. Solo se informa: ver la nota sobre el despegue en construir.
 TOLERANCIA_VUELO_M = 3.0
 
 # Por sobre esta diferencia entre la elevación solar calculada y la medida,
@@ -107,10 +107,13 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
 
     vuelos = _vuelos(sorted(panoramas, key=lambda p: p.momento))
     if len(vuelos) > 1:
-        print(f"  {len(vuelos)} vuelos, despegues a " + ", ".join(f"{v:.1f}" for v in vuelos)
-              + " m según el dron: se anclan al despegue del primero")
-    # El despegue indicado (o el supuesto, bajo la primera toma) es el del primer vuelo.
-    referencia = min(vistas, key=lambda t: t[0].momento)[2] if vistas else None
+        # Cada vuelo se mide desde su propio despegue, y se supone que todos salieron
+        # del punto indicado. La diferencia entre vuelos que da el GPS del dron no se
+        # usa: en Vichuquén eran 8,4 m, anclar el segundo vuelo con ella dejaba el
+        # punto III corrido, y suponer el mismo despegue lo calzaba. Entre vuelos la
+        # altura del GPS se corre varios metros.
+        print(f"  {len(vuelos)} vuelos (despegues a " + ", ".join(f"{v:.1f}" for v in vuelos)
+              + " m según el GPS del dron): se supone que todos salieron del mismo punto")
 
     hitos = _resolver_referencias(proyecto, geometrias, avisos)
     cota_despegue = relieve.cota(despegue) if relieve else None
@@ -123,7 +126,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         lineas = leer_lineas(fuentes.kmz)
         calibradas = []
         for panorama, rumbo, vista in vistas:
-            modelo = terreno.modelo_para_vista(relieve, vista, despegue, referencia) if relieve else None
+            modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
             ajuste = calibrar(vista, lineas, modelo, mapa_de_caminos(panorama.ruta))
             ajustes[vista.id] = ajuste
             print(f"  {vista.id}: giro {ajuste.giro:+.2f}°, inclinación E {ajuste.inclinacion_este:+.2f}° "
@@ -142,7 +145,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
     resumen_vistas = []
 
     for panorama, rumbo, vista in vistas:
-        modelo = terreno.modelo_para_vista(relieve, vista, despegue, referencia) if relieve else None
+        modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
         proyectadas = proyectar_vista(vista, [(g.id, g.anillo) for g in con_id.values()],
                                       terreno=modelo)
         for parcela in proyectadas:
@@ -154,7 +157,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         _escribir_json(salida.vistas / f"{vista.id}.json", {
             "id": vista.id,
             "referencias": [
-                referencias.proyectar(vista, hito, _cota_en_datum_dron(vista, hito, cota_despegue, referencia))
+                referencias.proyectar(vista, hito, _cota_en_datum_dron(vista, hito, cota_despegue))
                 for hito in hitos
             ],
             "parcelas": [
@@ -291,10 +294,9 @@ def _resolver_referencias(proyecto: config.Proyecto, geometrias: list[ParcelaGeo
 
 
 def _cota_en_datum_dron(vista: Vista, hito: referencias.Referencia,
-                        cota_despegue: float | None, referencia: Vista | None = None) -> float:
-    """La cota del hito en el datum del dron: la del despegue más el desnivel real.
-    Como en `terreno.modelo_para_vista`, anclada al vuelo de `referencia`."""
-    base = (referencia or vista).terreno_plano()
+                        cota_despegue: float | None) -> float:
+    """La cota del hito en el datum del dron: la del despegue más el desnivel real."""
+    base = vista.terreno_plano()
     if hito.cota is None or cota_despegue is None:
         return base
     return base + (hito.cota - cota_despegue)
