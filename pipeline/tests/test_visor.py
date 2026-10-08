@@ -190,3 +190,21 @@ def test_un_sitio_sin_consola_solo_se_conecta_consigo_mismo(plantilla, tmp_path)
     visor.copiar(sitio)
 
     assert _politica(sitio) == POLITICA
+
+
+def _encabezados_del_visor() -> dict[str, str]:
+    plantilla = json.loads((config.PLANTILLA_WEB / "vercel.json").read_text())
+    regla = next(r for r in plantilla["headers"] if r["source"] == "/(.*)")
+    return {e["key"]: e["value"] for e in regla["headers"]}
+
+
+def test_el_master_se_puede_insertar_en_tumasterplan_cl_y_en_ningun_otro_sitio():
+    """La landing de tumasterplan.cl muestra masters de ejemplo dentro de un iframe.
+    Ninguna otra página puede: el visor trae el formulario de reserva."""
+    encabezados = _encabezados_del_visor()
+    ancestros = next(d for d in encabezados["Content-Security-Policy"].split(";")
+                     if d.strip().startswith("frame-ancestors")).split()[1:]
+
+    assert sorted(ancestros) == ["'self'", "https://*.tumasterplan.cl", "https://tumasterplan.cl"]
+    # X-Frame-Options no sabe de listas: con SAMEORIGIN algún navegador bloquearía el iframe.
+    assert "X-Frame-Options" not in encabezados
