@@ -127,6 +127,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -144,6 +145,9 @@ from .georreferencia import cuadricula_suficiente
 
 ENTRADAS = "entradas.json"
 SALIDA = "digitalizado.json"
+# Las pasadas del lector ya leídas, por huella (`rotulos.leer(avance_en=…)`); se borra
+# cuando digitalizado.json ya tiene el resultado.
+AVANCE_LECTOR = "lector-avance"
 
 # Un rótulo leído a menos de esto de una semilla de la loteadora es el que ella corrigió.
 RADIO_CORRECCION_MM = 6.0
@@ -353,6 +357,9 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
         estadisticas=r.estadisticas,
     )
     escribir_json(carpeta / SALIDA, datos)
+    # Recién ahora: si la instancia muere digitalizando los lotes (minutos en un plano
+    # grande), la lectura se retoma entera del avance en vez de empezar de cero.
+    shutil.rmtree(carpeta / AVANCE_LECTOR, ignore_errors=True)
     avance(f"Listo: {carpeta / SALIDA}")
     return datos
 
@@ -457,6 +464,13 @@ def _leer_rotulos(carpeta: Path, entradas: dict, imagen: np.ndarray, ppmm: float
         return dict(disponible=False, motivo=motivo, huella=None, rotulos=[], cuadricula=None, cuadro={},
                     segundos=0.0)
     inicio = time.time()
+    # El avance por pasada, para retomar si la instancia muere a mitad. Otra huella es
+    # otro dibujo: lo guardado de antes ya no sirve.
+    avances = Path(carpeta) / AVANCE_LECTOR
+    if avances.is_dir():
+        for vieja in avances.iterdir():
+            if vieja.name != huella:
+                shutil.rmtree(vieja, ignore_errors=True)
     rect = entradas.get("rectangulo") or [0, 0, imagen.shape[1], imagen.shape[0]]
     x0, y0, x1, y1 = pag._rect_entero(rect, imagen.shape)
     # El dibujo con las máscaras tapadas (los cuadros y el cajetín traen números que no
@@ -464,7 +478,8 @@ def _leer_rotulos(carpeta: Path, entradas: dict, imagen: np.ndarray, ppmm: float
     dibujo = pag.tapar(imagen[y0:y1, x0:x1], [[m[0] - x0, m[1] - y0, m[2] - x0, m[3] - y0]
                                              for m in _mascaras(entradas)],
                        pag.color_papel(imagen, rect))
-    leidos = [replace(r, x=r.x + x0, y=r.y + y0) for r in rotulos.leer(dibujo, ppmm, avance)]
+    leidos = [replace(r, x=r.x + x0, y=r.y + y0)
+              for r in rotulos.leer(dibujo, ppmm, avance, avance_en=avances / huella)]
     del dibujo
     # Siempre, aunque la loteadora ya haya dado la cuadrícula: así aceptar la propuesta
     # (que cambia las entradas) no obliga a leer todo de nuevo. Son solo franjas.

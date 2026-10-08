@@ -31,13 +31,22 @@ Las pasadas corren en hebras, tantas como núcleos del contenedor (`LECTOR_HEBRA
 acota) y que quepan en su memoria (`_hebras`): el trabajo pesado es el subproceso
 `tesseract`, con `OMP_THREAD_LIMIT=1` (sin eso las pasadas en paralelo se estorban y
 un plano tarda más de 10 min en vez de 1).
+
+Avance retomable: una lectura larga (Constitución, más de 15 min) se perdía entera si
+Cloud Run cambiaba la instancia. Con `leer(…, avance_en=<carpeta>)` cada pasada que
+termina entera y sin teselas malas se guarda como `<carpeta>/e<escala>-<variante>-<ángulo>.json`
+(escritura atómica), y al empezar se cargan las que ya estén y no se vuelven a leer:
+el sondeo, `orientaciones` y `seleccionar` las usan igual que las nuevas. Un archivo
+ilegible cuenta como no leído. `digitalizar` elige la carpeta por la huella del lector.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import statistics
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter, defaultdict
@@ -394,14 +403,17 @@ def teselas(alto: int, ancho: int, escala: float, mpx: float = TESELA_MPX,
 
 
 def _correr(tareas, hebras: int, avance, etiqueta: str, pasadas=None, total: int | None = None,
-            previas: int = 0, inicio: float | None = None) -> list:
+            previas: int = 0, inicio: float | None = None, al_completar=None) -> list:
     """Corre las tareas en hebras y avisa por tandas: "Rótulos: X de Y pasadas (N s)" (la
     tarjeta del escáner lo lee). Una tarea que falla se salta.
 
     `pasadas`: a qué pasada pertenece cada tarea (las teselas de una pasada); la pasada
     cuenta como hecha cuando terminan todas sus teselas. Sin él, cada tarea es una
     pasada. `previas` pasadas ya hechas se suman a X; `total` es Y (por omisión, las
-    previas más las de aquí); `inicio`, desde cuándo se cuentan los segundos."""
+    previas más las de aquí); `inicio`, desde cuándo se cuentan los segundos.
+
+    `al_completar(pasada, lecturas)` se llama con cada pasada que terminó entera y sin
+    teselas malas (una a medias no se puede guardar: retomarla perdería esas teselas)."""
     salida = []
     inicio = time.time() if inicio is None else inicio
     pasadas = list(range(len(tareas))) if pasadas is None else list(pasadas)
@@ -410,18 +422,29 @@ def _correr(tareas, hebras: int, avance, etiqueta: str, pasadas=None, total: int
     hechas = previas
     tanda = max(1, min(hebras, len(faltan)))
     malas = set()
+    por_pasada = defaultdict(list)
+    sin_guardar = False                    # un disco lleno avisa una vez, no en cada pasada
     with ThreadPoolExecutor(hebras) as grupo:
         futuros = {grupo.submit(f, *args): p for (f, *args), p in zip(tareas, pasadas)}
         for futuro in as_completed(futuros):
             p = futuros[futuro]
             try:
-                salida.extend(futuro.result())
+                leidas = futuro.result()
+                salida.extend(leidas)
+                por_pasada[p].extend(leidas)
             except Exception:              # noqa: BLE001 - una pasada mala no tumba el lector
                 malas.add(p)
             faltan[p] -= 1
             if faltan[p]:
                 continue
             hechas += 1
+            if al_completar is not None and p not in malas:
+                try:
+                    al_completar(p, por_pasada[p])
+                except Exception as error:     # noqa: BLE001 - sin guardar se pierde el retomar, no la lectura
+                    if not sin_guardar:
+                        avance(f"{etiqueta}: no se pudo guardar el avance ({error}); se sigue sin guardarlo")
+                    sin_guardar = True
             if (hechas - previas) % tanda == 0 or not +faltan:
                 avance(f"{etiqueta}: {hechas} de {total} pasadas ({time.time() - inicio:.0f} s)")
     if malas:
@@ -594,8 +617,71 @@ def seleccionar(lecturas: list[dict], alto_modal: float, pasadas: int, radio: fl
                    len(g["pasadas"]), float(g["alto"])) for g in elegidos]
 
 
+# --- avance retomable: una pasada terminada por archivo ----------------------------------
+# Lo que `orientaciones` y `seleccionar` leen de cada lectura, con su tipo: una lectura
+# guardada que no lo cumple invalida su pasada entera (se vuelve a leer).
+CAMPOS_LECTURA = dict(numero=str, lote=bool, x=float, y=float, conf=float, ang=float, var=str,
+                      escala=float, alto=float)
+
+
+def _nombre_pasada(escalas, pasada) -> str:
+    """Nombre estable de una pasada: por el índice de la escala (la escala misma es un
+    float que no conviene poner en un nombre de archivo), la variante y el ángulo."""
+    e, var, a = pasada
+    return f"e{list(escalas).index(e)}-{var}-{int(a) % 360:03d}.json"
+
+
+def _nativo(valor):
+    """Valores de numpy a los de Python, para que el JSON no falle y vuelva igual."""
+    if isinstance(valor, np.generic):
+        return valor.item()
+    return valor
+
+
+def _lectura_valida(d) -> bool:
+    # Un número que se guardó entero (45) vuelve como int: vale donde va un float. Un
+    # bool, que en Python también es int, no.
+    return isinstance(d, dict) and all(
+        (isinstance(d.get(k), (int, float)) and not isinstance(d.get(k), bool)) if tipo is float
+        else isinstance(d.get(k), tipo)
+        for k, tipo in CAMPOS_LECTURA.items())
+
+
+def _cargar_pasada(ruta) -> list[dict] | None:
+    """Las lecturas guardadas de una pasada, o None si el archivo falta o no se entiende
+    (cortado a mitad, editado, de otra versión): esa pasada se lee de nuevo."""
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            datos = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(datos, list) or not all(_lectura_valida(d) for d in datos):
+        return None
+    return datos
+
+
+def _guardar_pasada(ruta: str, lecturas: list[dict]) -> None:
+    """Escritura atómica (temporal en la misma carpeta + `os.replace`): si la instancia
+    muere a mitad, queda el archivo anterior o ninguno, nunca uno a medias."""
+    carpeta = os.path.dirname(ruta)
+    # En un despliegue la revisión vieja y la nueva leen a la vez un rato; si la vieja
+    # termina primero borra `lector-avance/` y la nueva no puede caerse por eso.
+    os.makedirs(carpeta, exist_ok=True)
+    fd, temporal = tempfile.mkstemp(prefix=".", suffix=".tmp", dir=carpeta)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump([{k: _nativo(v) for k, v in d.items()} for d in lecturas], f)
+        os.replace(temporal, ruta)
+    except BaseException:
+        try:
+            os.unlink(temporal)
+        except OSError:
+            pass
+        raise
+
+
 def leer(imagen: np.ndarray, ppmm: float | None = None, avance=print, hebras: int | None = None,
-         paso: int = PASO_GRADOS, sondeo=ANGULOS_SONDEO) -> list[Rotulo]:
+         paso: int = PASO_GRADOS, sondeo=ANGULOS_SONDEO, avance_en=None) -> list[Rotulo]:
     """Los números de lote de `imagen` (RGB o gris: el dibujo, con las máscaras ya
     tapadas). Posiciones en px de `imagen`. `ppmm` no lo usa Tesseract (el método se
     ajusta solo al alto del texto); está en la interfaz para otros lectores.
@@ -604,7 +690,11 @@ def leer(imagen: np.ndarray, ppmm: float | None = None, avance=print, hebras: in
     Otsu; vacío lo salta) dice en qué orientaciones están los rótulos (`orientaciones`);
     después se leen solo los ángulos cercanos, a las dos escalas y en gris y Otsu. Cada
     pasada va por teselas (`teselas`) y las hebras se cuentan con la tesela más grande
-    agrandada y girada a 45° (`memoria_pasada`)."""
+    agrandada y girada a 45° (`memoria_pasada`).
+
+    `avance_en`: carpeta donde cada pasada terminada se guarda como JSON y de donde se
+    retoman las que ya estén (ver el docstring del módulo). La carpeta tiene que ser
+    propia de esta imagen: quien llama la elige por una huella de lo que se lee."""
     motivo = motivo_no_disponible()
     if motivo:
         avance(motivo)
@@ -639,10 +729,38 @@ def leer(imagen: np.ndarray, ppmm: float | None = None, avance=print, hebras: in
         n = _hebras(hebras, len(todas) * len(por_escala[e1]), pico)
         avance(f"Rótulos: texto típico de {alto:.0f} px; hasta {len(todas)} pasadas de Tesseract en {n} hebras,"
                f" por teselas ({len(por_escala[e1])} por pasada, de hasta {TESELA_MPX:.0f} Mpx)")
+        guardadas, al_completar = {}, None
+        if avance_en is not None:
+            avance_en = str(avance_en)
+            try:
+                os.makedirs(avance_en, exist_ok=True)
+            except OSError as error:       # sin carpeta se lee igual, solo que no se retoma
+                avance(f"Rótulos: no se pudo guardar el avance ({error}); se sigue sin guardarlo")
+                avance_en = None
+        if avance_en is not None:
+            for p in todas:
+                leidas = _cargar_pasada(os.path.join(avance_en, _nombre_pasada(escalas, p)))
+                if leidas is not None:
+                    guardadas[p] = leidas
+            if guardadas:
+                avance(f"Rótulos: se retoman {len(guardadas)} pasadas ya leídas")
+
+            def al_completar(p, leidas):
+                _guardar_pasada(os.path.join(avance_en, _nombre_pasada(escalas, p)), leidas)
+
+        def correr(pasadas, **contar):
+            """Las pasadas que faltan; las guardadas se suman a las lecturas y a las
+            `previas` del contador, que así parte donde quedó y nunca pasa de Y."""
+            hechas = [p for p in pasadas if p in guardadas]
+            tareas, grupos = tareas_de([p for p in pasadas if p not in guardadas])
+            previas = contar.pop("previas", 0) + len(hechas)
+            leidas = [d for p in hechas for d in guardadas[p]]
+            return leidas + _correr(tareas, n, avance, "Rótulos", grupos, previas=previas, inicio=inicio,
+                                    al_completar=al_completar, **contar)
+
         lecturas = []
         if primero:
-            tareas, grupos = tareas_de(primero)
-            lecturas = _correr(tareas, n, avance, "Rótulos", grupos, total=len(todas), inicio=inicio)
+            lecturas = correr(primero, total=len(todas))
             elegidos = orientaciones(lecturas, alto, sorted({a for _, _, a in primero}), paso)
             if elegidos is None:
                 avance("Rótulos: el sondeo no encontró la orientación de los rótulos; se leen todos los ángulos")
@@ -652,10 +770,8 @@ def leer(imagen: np.ndarray, ppmm: float | None = None, avance=print, hebras: in
                    f" se leen {len(primero) + len(resto)} pasadas de {len(todas)}")
         else:
             resto = todas
-        tareas, grupos = tareas_de(resto)
-        lecturas += _correr(tareas, n, avance, "Rótulos", grupos, previas=len(primero),
-                            inicio=inicio)
-        del tareas, g
+        lecturas += correr(resto, previas=len(primero), total=len(primero) + len(resto))
+        del g
         hechas = len(primero) + len(resto)
         rotulos = seleccionar(lecturas, alto, hechas)
         avance(f"Rótulos: {len(rotulos)} números leídos ({sum(r.apoyo >= APOYO_MIN for r in rotulos)}"
