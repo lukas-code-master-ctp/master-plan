@@ -4,7 +4,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { FALLOS_SEGUIDOS_MAX, textoInterrumpido, trasFalloDeSondeo } from './js/sondeo.js';
+import {
+  ESPERA_MAX_MS, FALLOS_SEGUIDOS_MAX, relevo, retomarRegistro, textoInterrumpido, trasFalloDeSondeo,
+} from './js/sondeo.js';
 import { avance } from './js/vuelo.js';
 
 const http = (estado) => Object.assign(new Error(`Error ${estado}`), { estado });
@@ -16,7 +18,7 @@ test('un 404 es un trabajo perdido: se deja de sondear al tiro', () => {
   assert.equal(trasFalloDeSondeo(http(404), 3).que, 'interrumpido');
 });
 
-test('errores de red y 502/503/504 seguidos: se reintenta y, al quinto, se da por interrumpido', () => {
+test('errores de red y 502/503/504 seguidos: se reintenta cerca de un minuto y después se da por interrumpido', () => {
   for (const error of [deRed(), http(502), http(503), http(504)]) {
     let fallos = 0;
     const acciones = [];
@@ -28,8 +30,13 @@ test('errores de red y 502/503/504 seguidos: se reintenta y, al quinto, se da po
       esperas.push(d.espera);
     }
     assert.deepEqual(acciones, [...Array(FALLOS_SEGUIDOS_MAX - 1).fill('reintentar'), 'interrumpido']);
-    // Cada vez se espera más: la instancia nueva tarda en arrancar.
-    assert.ok(esperas.slice(0, -1).every((e, i, todas) => e > 0 && (i === 0 || e > todas[i - 1])));
+    const reintentos = esperas.slice(0, -1);
+    // Cada vez se espera más, hasta el tope: la instancia nueva tarda en arrancar.
+    assert.ok(reintentos.every((e, i) => e > 0 && e <= ESPERA_MAX_MS && (i === 0 || e >= reintentos[i - 1])));
+    assert.equal(Math.max(...reintentos), ESPERA_MAX_MS);
+    // La del 2026-10-08 tardó ~20 s en quedar lista: se aguanta cerca de un minuto.
+    const total = reintentos.reduce((a, b) => a + b, 0);
+    assert.ok(total >= 55_000 && total <= 70_000, `aguanta ${total} ms`);
   }
 });
 
@@ -86,4 +93,71 @@ test('la barra del lector no retrocede cuando Y baja de 96 a las pasadas que se 
   // El sondeo no deja la barra al 100 % del tramo; el resto la lleva adelante.
   const tras = (n) => avance(lineas.slice(0, n), 'digitalizar-plano').fraccion;
   assert.ok(tras(5) < tras(7));
+});
+
+test('relevo: tras perder la lectura se sigue la que retomó la consola, con otro id', () => {
+  const kmz = (trabajo) => ({ slug: 'rapel', nombre: 'Rapel', trabajo });
+  const retomada = { id: 'nuevo', terminado: false, estado: 'corriendo',
+    lineas: ['Se retoma la lectura del plano donde quedó (intento 2 de 3).'] };
+  assert.equal(relevo(kmz(retomada), 'viejo'), 'nuevo');
+  // Una que lanzó otra persona después del reinicio también es la lectura de este KMZ.
+  assert.equal(relevo(kmz({ id: 'otra', terminado: false, lineas: [] }), 'viejo'), 'otra');
+});
+
+test('relevo: una retomada que ya terminó se sigue igual, para mostrar cómo terminó', () => {
+  const lista = { id: 'nuevo', terminado: true, estado: 'listo',
+    lineas: ['Se retoma la lectura del plano donde quedó (intento 2 de 3).', 'Lotes: 88'] };
+  assert.equal(relevo({ trabajo: lista }, 'viejo'), 'nuevo');
+  // Terminada y sin ser retomada no tiene que ver con lo que se estaba mirando.
+  assert.equal(relevo({ trabajo: { id: 'otra', terminado: true, estado: 'listo', lineas: ['Página 1 de 1'] } }, 'viejo'), null);
+});
+
+test('relevo: sin trabajo, el mismo id o uno ya perdido no es relevo (no se dan vueltas)', () => {
+  assert.equal(relevo({ trabajo: null }, 'viejo'), null);
+  assert.equal(relevo(null, 'viejo'), null);
+  assert.equal(relevo({ trabajo: { id: 'viejo', terminado: false } }, 'viejo'), null);
+  assert.equal(relevo({ trabajo: { id: 'a', terminado: false } }, ['a', 'b']), null);
+  assert.equal(relevo({ trabajo: { id: 'c', terminado: false } }, ['a', 'b']), 'c');
+});
+
+test('el escáner sigue la lectura retomada debajo de la perdida sin retroceder ni darla por fallida', () => {
+  const perdida = [
+    'Página 1 de 1: 5008×7038 px',
+    'Rótulos: 16 de 96 pasadas (320 s)',
+    'Rótulos: 26 de 36 pasadas (480 s)',
+  ];
+  const retomada = [
+    'Se retoma la lectura del plano donde quedó (intento 2 de 3).',
+    'Página 1 de 1: 5008×7038 px',
+    'Rótulos: se retoman 26 pasadas ya leídas',
+    'Rótulos: 28 de 36 pasadas (40 s)',
+  ];
+  const antes = avance(perdida, 'digitalizar-plano');
+  let previa = antes.fraccion;
+  for (let i = 1; i <= retomada.length; i += 1) {
+    const ahora = avance([...perdida, ...retomada.slice(0, i)], 'digitalizar-plano');
+    assert.equal(ahora.paso, 2, retomada[i - 1]);
+    assert.equal(ahora.causa, null);
+    assert.ok(ahora.fraccion >= previa, `retrocede en: ${retomada[i - 1]}`);
+    previa = ahora.fraccion;
+  }
+  // Si la retomada falla, la causa es la suya, no la línea "Se retoma…".
+  const fallida = avance([...perdida, ...retomada, 'Error: no encontré el dibujo'], 'digitalizar-plano', true, true);
+  assert.equal(fallida.causa, 'no encontré el dibujo');
+});
+
+test('retomarRegistro: el mismo trabajo sigue donde iba, aunque el registro traiga el aviso de interrumpido', () => {
+  assert.deepEqual(retomarRegistro({ id: 'a', total: 7 }, 'a'), { desde: 7, conservar: true });
+  // Se dio por interrumpido (se agregó "Error: …se interrumpió") y después volvió a contestar.
+  assert.deepEqual(retomarRegistro({ id: 'a', total: 7, perdido: true }, 'a'), { desde: 7, conservar: true });
+});
+
+test('retomarRegistro: otro trabajo empieza en su primera línea, sin saltarse las del largo del registro', () => {
+  // La consola tardó más de un minuto: la pantalla dio la lectura por interrumpida y después
+  // `refrescar` encuentra la retomada. Sus líneas van debajo de las de la perdida.
+  assert.deepEqual(retomarRegistro({ id: 'viejo', total: 30, perdido: true }, 'nuevo'), { desde: 0, conservar: true });
+  // Uno que terminó bien y otro que se lanzó después (otra pestaña): registro en limpio.
+  assert.deepEqual(retomarRegistro({ id: 'viejo', total: 30 }, 'nuevo'), { desde: 0, conservar: false });
+  // Tras recargar la página no se sabe nada: desde el principio.
+  assert.deepEqual(retomarRegistro(undefined, 'nuevo'), { desde: 0, conservar: false });
 });

@@ -24,6 +24,7 @@ import { cuadroEnHoja, EditorUnion, hojaDelCuadro, textoBorraLoMarcado, textoHoj
 import { abrirNombre, abrirUsarKmz, descargaDe, textoDeCreado } from './kmzs.js';
 import { cargarLeaflet, COLORES, MapaKmz } from './mapa_kmz.js';
 import { oyentes, seguir } from './plano.js';
+import { relevo } from './sondeo.js';
 import { soltadero } from './subida.js';
 import { pintarEscaner } from './vuelo.js';
 
@@ -386,6 +387,17 @@ async function cargarTodo(alLlegar = false) {
   pintarCabecera();
   if (!sucio) entradas = { ...VACIAS(), ...(plano.entradas ?? {}) };
   $('#kmz-es-foto').checked = Boolean(entradas.esquinas || entradas.marco_mm);
+  // La pantalla dio la lectura por interrumpida y la consola, al volver, la retomó con otro
+  // trabajo: se sigue, aunque ya haya terminado, para que el escáner diga cómo terminó de
+  // verdad y no "se interrumpió". `refrescar` solo ve las que siguen corriendo. Si es la
+  // misma (no se reinició: se cortó la red más de un minuto), se sigue donde iba.
+  const perdida = estado.registroDe.get(clave());
+  const retomada = !perdida?.perdido ? null
+    : plano.trabajo?.id === perdida.id ? perdida.id : relevo(plano, perdida.id);
+  if (retomada && !estado.sondeos.has(clave())) {
+    escuchar();
+    seguir(clave(), retomada);
+  }
   await cargarLotes();
   if (alLlegar) {
     paso = pasoSugerido(plano);
@@ -768,11 +780,24 @@ function escuchar() {
   const mio = slug;
   oyentes.set(clave(mio), (trabajo) => {
     if (mio !== slug) return;
+    const estaba = trabajando();
+    if (trabajo.id && plano && !trabajo.terminado
+      && (plano.trabajo?.id !== trabajo.id || plano.trabajo.terminado)) {
+      // La consola retomó la lectura perdida con otro trabajo y `seguir` ya lo sigue. Si la
+      // pantalla ya la había dado por interrumpida (la consola tardó más de un minuto en
+      // volver), vuelve a leerse: el botón se esconde, que relanzarla chocaría con esta.
+      plano = { ...plano, trabajo: { ...plano.trabajo, id: trabajo.id, estado: trabajo.estado, terminado: false } };
+    } else if (trabajo.id && plano?.trabajo && plano.trabajo.id !== trabajo.id) {
+      plano = { ...plano, trabajo: { ...plano.trabajo, id: trabajo.id } };
+    }
     if (trabajo.interrumpido && plano?.trabajo) {
       // Se perdió con el servidor (`seguir`): el botón vuelve aunque el servidor todavía
       // no conteste para recargar el KMZ.
       plano = { ...plano, trabajo: { ...plano.trabajo, estado: 'falló', terminado: true } };
     }
+    // Solo al pasar de "falló" a "leyendo": el panel (botón, aviso) cambia; cada tanda de
+    // líneas no lo repinta entero.
+    if (!estaba && trabajando()) pintar();
     pintarRegistro();
     if (trabajo.terminado) {
       terminoDigitalizar(trabajo).catch((error) => {
