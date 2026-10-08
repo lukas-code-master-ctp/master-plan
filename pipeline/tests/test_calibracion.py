@@ -77,6 +77,28 @@ def test_no_aplica_un_ajuste_que_no_mejora_nada():
     assert (ajuste.giro, ajuste.inclinacion_este, ajuste.inclinacion_norte, ajuste.desnivel) == (0, 0, 0, 0)
 
 
+def test_descarta_un_ajuste_que_queda_pegado_al_tope():
+    """Hacienda Vichuquén, punto IV: con el sol bajo los potreros secos también son
+    claros, y la búsqueda arrastró las líneas hacia ellos hasta el tope de cada
+    parámetro. Pegado al tope no es un óptimo sino algo que el ajuste no puede
+    explicar: el dibujo quedaba corrido y sin ajuste calzaba bien."""
+    real = Vista(**{**VISTA.__dict__, "giro": 3.5, "inclinacion_este": 0.0,
+                    "inclinacion_norte": 0.0, "desnivel": 0.0})
+    mapa = foto_sintetica(real)
+
+    ajuste = calibrar(VISTA, LINEAS, None, mapa)
+
+    assert not ajuste.aplicado
+    assert "giro" in ajuste.tope
+
+
+def test_un_ajuste_dentro_de_los_limites_no_avisa_tope():
+    real = Vista(**{**VISTA.__dict__, "giro": 0.3, "inclinacion_este": 0.8,
+                    "inclinacion_norte": -0.4, "desnivel": 0.0})
+
+    assert calibrar(VISTA, LINEAS, None, foto_sintetica(real)).tope == ""
+
+
 def test_aplicar_deja_la_correccion_en_la_vista():
     ajuste = Ajuste(giro=0.2, inclinacion_este=0.5, inclinacion_norte=-0.1, desnivel=2.0,
                     puntaje_antes=0.1, puntaje_despues=0.13)

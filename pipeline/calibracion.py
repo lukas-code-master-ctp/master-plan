@@ -10,7 +10,10 @@ y poco saturados.
 Es una búsqueda por coordenadas, de gruesa a fina, sobre un mapa suavizado de
 "camino". Un ajuste que no mejora el puntaje al menos un 3 % se descarta: en una
 foto sin caminos visibles no hay con qué calibrar, y peor que no ajustar es ajustar
-contra ruido.
+contra ruido. También se descarta uno que queda pegado al tope de algún parámetro:
+eso no es el residuo chico que se busca corregir sino la búsqueda arrastrando las
+líneas hacia otra cosa clara (en Hacienda Vichuquén, con el sol bajo, los potreros
+secos), y el dibujo queda corrido.
 """
 from __future__ import annotations
 
@@ -50,6 +53,9 @@ class Ajuste:
     desnivel: float = 0.0
     puntaje_antes: float = 0.0
     puntaje_despues: float = 0.0
+    # Si la búsqueda terminó pegada al tope, cuáles parámetros y en cuánto. El ajuste
+    # se descarta, pero se dice para que se revise el calce de esa vista.
+    tope: str = ""
 
     @property
     def mejora(self) -> float:
@@ -122,6 +128,9 @@ def calibrar(vista: Vista, lineas: list[geo.Anillo], cota: ModeloTerreno | None,
                     inclinacion_norte=round(float(actual[2]), 3),
                     desnivel=round(float(actual[3]), 1),
                     puntaje_antes=antes, puntaje_despues=mejor)
+    tope = _en_el_tope(actual)
+    if tope:
+        return replace(SIN_AJUSTE, puntaje_antes=antes, puntaje_despues=antes, tope=tope)
     if ajuste.mejora < MEJORA_MINIMA:
         return replace(SIN_AJUSTE, puntaje_antes=antes, puntaje_despues=mejor)
     return ajuste
@@ -175,6 +184,16 @@ def _muestrear(mapa: np.ndarray, px: np.ndarray, py: np.ndarray) -> float:
     valores = (mapa[i0, j0] * (1 - fi) * (1 - fj) + mapa[i0, j1] * (1 - fi) * fj
                + mapa[i1, j0] * fi * (1 - fj) + mapa[i1, j1] * fi * fj)
     return float(valores.mean())
+
+
+def _en_el_tope(parametros: np.ndarray) -> str:
+    """Los parámetros que quedaron en su límite, legibles; vacío si ninguno."""
+    holgura = PASOS[-1]
+    nombres = (("giro", LIMITE_GIRO, "°"), ("inclinación E", LIMITE_INCLINACION, "°"),
+               ("inclinación N", LIMITE_INCLINACION, "°"), ("desnivel", LIMITE_DESNIVEL, " m"))
+    return ", ".join(f"{nombre} {valor:+.1f}{unidad}"
+                     for (nombre, limite, unidad), valor, paso in zip(nombres, parametros, holgura)
+                     if abs(valor) >= limite - paso / 2)
 
 
 def _dentro_de_limites(parametros: np.ndarray) -> bool:
