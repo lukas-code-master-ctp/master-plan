@@ -283,6 +283,12 @@ function ubicarPildora({ animar = pildoraUbicada } = {}) {
   puntos.style.setProperty('--pildora-ancho', `${activo.offsetWidth}px`);
   pildoraUbicada = true;
 }
+function marcarPunto(posicion) {
+  for (const boton of $('#controles-posicion').children) {
+    boton.setAttribute('aria-pressed', String(Number(boton.dataset.posicion) === posicion));
+  }
+  ubicarPildora();
+}
 addEventListener('resize', () => ubicarPildora({ animar: false }));
 document.fonts?.ready.then(() => ubicarPildora({ animar: false }));
 
@@ -316,6 +322,8 @@ function construirControles() {
         return;
       }
       desplegarPuntos(false);
+      // La píldora va al punto elegido al tiro, sin esperar a que cargue su foto.
+      marcarPunto(posicion);
       irAPosicion(posicion);
     });
     boton.dataset.posicion = posicion;

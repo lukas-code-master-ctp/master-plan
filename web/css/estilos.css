@@ -1856,10 +1856,10 @@ button { cursor: pointer; }
     width: var(--pildora-ancho, 0); transform: translateX(var(--pildora-x, 0));
     border-radius: var(--radio-full); background: var(--marca-700);
     box-shadow: 0 8px 18px -8px rgb(9 9 11 / 0.6);
-    transition: transform 500ms var(--curva), width 500ms var(--curva);
+    transition: transform 320ms var(--curva), width 320ms var(--curva);
   }
   .puntos__pildora--quieta { transition: none; }
-  .puntos__fila button { position: relative; min-width: 2.75rem; height: 2.5rem; border-radius: var(--radio-full); font-size: 0.8125rem; transition: color 350ms, background 150ms; }
+  .puntos__fila button { position: relative; min-width: 2.75rem; height: 2.5rem; border-radius: var(--radio-full); font-size: 0.8125rem; transition: color 200ms, background 150ms; }
   .puntos__fila button[aria-pressed="true"], .puntos__fila button[aria-pressed="true"]:hover { background: transparent; color: #fff; }
 
   .leyenda { padding: 0.75rem 1.25rem; border-radius: var(--radio-full); }
