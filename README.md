@@ -192,22 +192,25 @@ corresponde.
 
 ## La landing
 
-`landing/` es la página pública de tumasterplan.cl: un HTML, la tipografía y cuatro
-imágenes, ~540 KB en escritorio y **sin una línea de JavaScript** (la CSP la sirve con
-`script-src 'none'`). El hero sale de la panorámica de Cauquenes, reproyectada a
-perspectiva con el mismo cálculo gnomónico que usa el visor.
+`landing/` es la página pública de tumasterplan.cl: un HTML, la tipografía y sus
+imágenes en WebP, **sin una línea de JavaScript** (la CSP la sirve con `script-src
+'none'`; la barra y el selector de caminos van con CSS). El hero sale de la panorámica
+de Cauquenes, reproyectada a perspectiva con el mismo cálculo gnomónico que usa el visor.
 
 Las capturas de `producto*.webp` son del visor real, tomadas con Chrome headless y
-`--use-angle=swiftshader` —sin eso no hay WebGL y la panorámica sale negra—. Se
-regeneran apuntando a un sitio construido; llevan un WhatsApp de ejemplo porque el
-botón de contacto solo se dibuja cuando el loteo tiene número.
+`--use-angle=swiftshader` —sin eso no hay WebGL y la panorámica sale negra—: un sitio
+construido de Praderas con el `web/` actual encima, la parcela 2-7 abierta
+(`?lote=2-7`) y la cámara un paso más lejos. Llevan un WhatsApp de ejemplo porque el
+botón de contacto solo se dibuja cuando el loteo tiene número. La del teléfono se
+captura a 393 × 800 (el iPhone que la enmarca está dibujado en CSS).
 
-No está publicada todavía: faltan el correo y el WhatsApp de verdad. El propio pie de
-la página lo dice, para que no se publique por descuido.
+Las de `paso-*.webp` muestran cada paso de «Cómo funciona»: el plano dibujado desde
+`parcelas.json`, una panorámica cruda, el control de calce y pantallas de la consola
+de la QA local (`docs/qa-local.md`) con la portada y el calce reales de Praderas en
+lugar de los sintéticos.
 
-```bash
-./publicar.sh landing tumasterplan --crear     # cuando estén los datos de contacto
-```
+Está publicada en www.tumasterplan.cl: el proyecto de Vercel está conectado a git con
+raíz `landing/`, así que **cada merge a `main` que la toque la publica**.
 
 ## La consola en línea
 

@@ -88,5 +88,7 @@ npm run qa:bajar                     # termina los procesos; .qa/ queda
   Cloud Build) y, al arrancar, republica los loteos publicados cuyo visor quedó
   atrasado (`consola/republicar.py`). Un cambio en `web/` llega a los sitios de los
   clientes con el merge.
+- La landing (`landing/`) también sale con el merge: Vercel la publica en
+  www.tumasterplan.cl apenas llega a `main`.
 - Mergear, desplegar o tocar producción (Cloud SQL, el bucket, Vercel) necesita
   autorización explícita.
