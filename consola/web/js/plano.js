@@ -332,6 +332,9 @@ async function lanzar(proyecto, accion, cuerpo) {
  */
 export const oyentes = new Map();
 
+// Cada cuánto se pregunta por un trabajo que espera en la cola.
+const ESPERA_EN_COLA_MS = 3000;
+
 /**
  * Sondea un trabajo y va volcando sus líneas hasta que termina. `slug` es la clave
  * del trabajo: el slug de un master o `kmz:<slug>` para un KMZ. `desde` es la primera
@@ -385,7 +388,8 @@ export function seguir(slug, identificador, desde = null, perdidos = []) {
     fallos = 0;
     try {
       estado.trabajos.set(slug, {
-        accion: trabajo.accion, estado: trabajo.estado, terminado: trabajo.terminado });
+        accion: trabajo.accion, estado: trabajo.estado, terminado: trabajo.terminado,
+        posicion: trabajo.posicion });
       if (trabajo.lineas.length || trabajo.terminado) {
         const registro = estado.registros.get(slug) ?? [];
         registro.push(...trabajo.lineas);
@@ -394,6 +398,10 @@ export function seguir(slug, identificador, desde = null, perdidos = []) {
         estado.registroDe.set(slug, { id: identificador, total: desde });
         if (slug === actual) pintarRegistro(slug);
         if (!trabajo.terminado) oyentes.get(slug)?.(trabajo);
+      } else if (trabajo.estado === 'en_cola') {
+        // Sin líneas todavía: lo que cambia es el lugar en la fila.
+        if (slug === actual) pintarRegistro(slug);
+        oyentes.get(slug)?.(trabajo);
       }
       if (trabajo.terminado) {
         estado.sondeos.delete(slug);
@@ -411,7 +419,8 @@ export function seguir(slug, identificador, desde = null, perdidos = []) {
       avisar(error.message);
       return;
     }
-    estado.sondeos.set(slug, setTimeout(tic, 600));
+    // En la fila no hay líneas que mostrar: se pregunta con más calma.
+    estado.sondeos.set(slug, setTimeout(tic, trabajo.estado === 'en_cola' ? ESPERA_EN_COLA_MS : 600));
   };
   estado.sondeos.set(slug, setTimeout(tic, 100));
 }

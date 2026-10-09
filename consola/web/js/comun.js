@@ -168,6 +168,7 @@ export function pastilla(texto, tono) {
 
 /** El estado de un loteo en una palabra, para la lista y el detalle. */
 export function etapaDe(proyecto) {
+  if (proyecto.trabajo?.estado === 'en_cola') return pastilla('En cola…', 'aviso');
   if (proyecto.trabajo) {
     return pastilla(proyecto.trabajo.accion === 'publicar' ? 'Publicando…' : 'Construyendo…', 'curso');
   }

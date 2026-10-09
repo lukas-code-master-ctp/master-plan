@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import subprocess
 import threading
+import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -22,16 +24,23 @@ class Trabajo:
     id: str
     proyecto: str                     # el slug del master, o "kmz:<slug>" para Mis KMZ
     accion: str                       # "construir" | "publicar" | "digitalizar-plano"
-    estado: str = "corriendo"         # "corriendo" | "listo" | "falló"
+    estado: str = "corriendo"         # "en_cola" | "corriendo" | "listo" | "falló"
     codigo: int | None = None
     lineas: list[str] = field(default_factory=list)
     comenzo: datetime = field(default_factory=datetime.now)
+    # Pasa por la cola de los pesados (construir, leer un plano); publicar no.
+    pesado: bool = True
+    # Reloj monótono: cuándo partió el proceso y cuándo soltó el turno.
+    partio: float | None = None
+    termino: float | None = None
+    # Cuántos esperan antes que este en la cola (1 = el próximo); None si no espera.
+    posicion: int | None = None
     # Se prende cuando ya no queda nada por hacer, lo de `al_terminar` incluido.
     fin: threading.Event = field(default_factory=threading.Event, repr=False, compare=False)
 
     @property
     def terminado(self) -> bool:
-        return self.estado != "corriendo"
+        return self.estado not in ("corriendo", "en_cola")
 
     def como_json(self, desde: int = 0) -> dict:
         return {
@@ -41,6 +50,7 @@ class Trabajo:
             "estado": self.estado,
             "codigo": self.codigo,
             "terminado": self.terminado,
+            "posicion": self.posicion,
             "desde": desde,
             "total": len(self.lineas),
             "lineas": self.lineas[desde:],
@@ -48,31 +58,44 @@ class Trabajo:
 
 
 class Trabajos:
-    """Los trabajos en curso y los últimos terminados, en memoria."""
+    """Los trabajos en curso y los últimos terminados, en memoria.
 
-    def __init__(self, directorio: Path | None = None):
+    `simultaneos`: cuántos trabajos pesados corren a la vez en la instancia. Los que
+    llegan con el tope lleno esperan en cola, en orden de llegada, y parten solos al
+    soltarse un turno. Una construcción grande pasa de 4 GB y la instancia tiene 8:
+    dos a la vez la pueden matar, y con ella todo lo que corría. None = sin tope.
+    """
+
+    def __init__(self, directorio: Path | None = None, simultaneos: int | None = None):
         self.directorio = Path(directorio) if directorio else None
+        self.simultaneos = simultaneos
         self._trabajos: dict[str, Trabajo] = {}
+        self._cola: deque[tuple[Trabajo, list[str], object]] = deque()
         self._candado = threading.Lock()
 
     def lanzar(self, proyecto: str, accion: str, comando: list[str],
-               al_terminar=None, lineas: list[str] | None = None, al_lanzar=None) -> str:
+               al_terminar=None, lineas: list[str] | None = None, al_lanzar=None,
+               pesado: bool = True) -> str:
         """`lineas`: las primeras del avance, antes de lo que imprima el comando.
         `al_lanzar(trabajo)` corre bajo el candado, ya visto que no hay otro en curso y
         antes de partir el proceso: lo que anote ahí no lo pisa otro lanzamiento ni lo
-        adelanta el `al_terminar` de este. Si revienta, el trabajo no se lanza."""
+        adelanta el `al_terminar` de este. Si revienta, el trabajo no se lanza.
+        `pesado`: si pasa por la cola (construir, leer un plano). Publicar no: sube
+        archivos y no come memoria."""
         with self._candado:
             if self._corriendo(proyecto):
                 raise RuntimeError(f"{proyecto} ya está en algo; espera a que termine")
+            # Nace esperando: no cuenta como uno que ya tiene turno hasta que lo toma.
             trabajo = Trabajo(id=uuid.uuid4().hex[:12], proyecto=proyecto, accion=accion,
-                              lineas=list(lineas or []))
+                              estado="en_cola", lineas=list(lineas or []), pesado=pesado)
             if al_lanzar is not None:
                 al_lanzar(trabajo)
             self._trabajos[trabajo.id] = trabajo
-
-        hilo = threading.Thread(target=self._correr, args=(trabajo, comando, al_terminar),
-                                daemon=True)
-        hilo.start()
+            if pesado and self._sin_turno():
+                self._cola.append((trabajo, comando, al_terminar))
+                self._numerar_cola()
+                return trabajo.id
+            self._partir(trabajo, comando, al_terminar)
         return trabajo.id
 
     def ver(self, identificador: str) -> Trabajo:
@@ -110,11 +133,47 @@ class Trabajos:
     def _corriendo(self, proyecto: str) -> bool:
         return any(t.proyecto == proyecto and not t.terminado for t in self._trabajos.values())
 
+    # --- la cola ------------------------------------------------------------------
+
+    def _sin_turno(self) -> bool:
+        """¿Uno nuevo tiene que esperar? Si hay cola, sí: nadie se salta la fila."""
+        return self._turnos_llenos() or bool(self._cola)
+
+    def _turnos_llenos(self) -> bool:
+        if self.simultaneos is None:
+            return False
+        pesados = sum(1 for t in self._trabajos.values() if t.pesado and t.estado == "corriendo")
+        return pesados >= self.simultaneos
+
+    def _numerar_cola(self) -> None:
+        for lugar, (trabajo, _, _) in enumerate(self._cola, start=1):
+            trabajo.posicion = lugar
+
+    def _partir(self, trabajo: Trabajo, comando: list[str], al_terminar) -> None:
+        """Bajo el candado: el trabajo toma su turno y parte el hilo que lo corre."""
+        trabajo.estado, trabajo.posicion, trabajo.partio = "corriendo", None, time.monotonic()
+        hilo = threading.Thread(target=self._correr, args=(trabajo, comando, al_terminar),
+                                daemon=True)
+        hilo.start()
+
+    def _soltar_turno(self, trabajo: Trabajo) -> None:
+        with self._candado:
+            trabajo.termino = time.monotonic()
+            if not trabajo.pesado:
+                return
+            while self._cola and not self._turnos_llenos():
+                siguiente, comando, al_terminar = self._cola.popleft()
+                self._partir(siguiente, comando, al_terminar)
+            self._numerar_cola()
+
     def _correr(self, trabajo: Trabajo, comando: list[str], al_terminar=None) -> None:
         try:
             self._seguir(trabajo, comando, al_terminar)
         finally:
-            # Pase lo que pase, nadie queda esperando para siempre.
+            # El turno se suelta después de guardar lo suyo (`al_terminar`): el que
+            # sigue puede leer lo que este dejó. Y pase lo que pase, nadie queda
+            # esperando para siempre.
+            self._soltar_turno(trabajo)
             trabajo.fin.set()
 
     def _seguir(self, trabajo: Trabajo, comando: list[str], al_terminar=None) -> None:
