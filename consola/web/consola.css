@@ -490,26 +490,76 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
 /* Nuevo master y Nuevo KMZ, juntos y alineados a la derecha de la cabecera. */
 .pantalla__acciones { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
-.mis-kmz { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+#pantalla-kmzs h1 { font: 800 2.75rem/1.02 var(--sans); letter-spacing: -0.035em; }
+
+/* Una tarjeta por KMZ: la miniatura del plano arriba, en qué paso va abajo. */
+.mis-kmz {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 1.25rem;
+  margin: 0; padding: 0; list-style: none;
+}
 .mi-kmz {
-  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem;
-  padding: 0.5rem 0.75rem 0.5rem 0.5rem;
-  background: #fff; border: 1px solid var(--zinc-200); border-radius: var(--radio-lg);
-  box-shadow: var(--sombra);
-  transition: border-color 150ms, box-shadow 200ms;
+  position: relative; display: flex; flex-direction: column;
+  border: 1px solid var(--zinc-200); border-radius: 1.375rem; background: #fff; overflow: hidden;
+  box-shadow: 0 12px 30px -24px rgb(9 9 11 / 0.35);
+  transition: transform 450ms var(--curva-salida), box-shadow 450ms var(--curva-salida), border-color 300ms;
 }
-.mi-kmz:hover { border-color: var(--zinc-300); box-shadow: 0 8px 24px -12px rgb(0 0 0 / 0.18); }
-.mi-kmz__abrir {
-  display: grid; gap: 0.3rem; min-width: 0; padding: 0.4rem 0.5rem;
-  border-radius: var(--radio-md); color: inherit; text-decoration: none;
+.mi-kmz:not(.mi-kmz--nuevo):hover { transform: translateY(-4px); box-shadow: 0 26px 50px -26px rgb(9 9 11 / 0.45); border-color: var(--zinc-300); }
+.mi-kmz__abrir { display: flex; flex-direction: column; flex: 1; text-decoration: none; color: inherit; }
+.mi-kmz__abrir:focus-visible { outline: 2px solid var(--marca-700); outline-offset: -2px; border-radius: 1.375rem; }
+/* El plano sobre papel cuadriculado, como en la mesa del topógrafo. */
+.mi-kmz__plano {
+  position: relative; display: grid; place-items: center; aspect-ratio: 16 / 10; overflow: hidden;
+  background-color: var(--zinc-50);
+  background-image: linear-gradient(var(--zinc-200) 1px, transparent 1px), linear-gradient(90deg, var(--zinc-200) 1px, transparent 1px);
+  background-size: 18px 18px;
+  border-bottom: 1px solid var(--zinc-100);
 }
-.mi-kmz__abrir:focus-visible { outline: 2px solid var(--marca-700); outline-offset: 2px; }
-.mi-kmz__titulo { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.mi-kmz__nombre { font-weight: 600; font-size: 0.9375rem; overflow-wrap: anywhere; }
-.mi-kmz__abrir:hover .mi-kmz__nombre { text-decoration: underline; text-underline-offset: 2px; }
-.mi-kmz__detalle { font-size: 0.75rem; color: var(--zinc-500); }
-.mi-kmz__acciones { display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; justify-content: flex-end; }
-@media (prefers-reduced-motion: reduce) { .mi-kmz { transition: none; } }
+.mi-kmz__plano img { width: 100%; height: 100%; object-fit: contain; padding: 0.75rem; mix-blend-mode: multiply; transition: transform 1.2s var(--curva-salida); }
+.mi-kmz:hover .mi-kmz__plano img { transform: scale(1.06); }
+.mi-kmz__plano > svg { width: 2.5rem; height: 2.5rem; fill: none; stroke: var(--zinc-400); stroke-width: 1.4; stroke-linejoin: round; }
+.mi-kmz__estado { position: absolute; top: 0.75rem; left: 0.75rem; box-shadow: 0 6px 14px -8px rgb(9 9 11 / 0.4); }
+.mi-kmz__estado.pastilla--ok { background: var(--verde-50); color: var(--verde-800); box-shadow: inset 0 0 0 1px var(--verde-100), 0 6px 14px -8px rgb(9 9 11 / 0.4); }
+.mi-kmz__cuerpo { display: grid; gap: 0.35rem; padding: 1rem 1.15rem 0.75rem; }
+.mi-kmz__nombre { font: 700 1.125rem/1.2 var(--sans); letter-spacing: -0.015em; overflow-wrap: anywhere; }
+.mi-kmz__detalle { font-size: 0.8125rem; color: var(--zinc-500); }
+/* Cinco tramos, uno por paso: encendidos los hechos; el que corre, latiendo. */
+.mi-kmz__avance { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 0.4rem; }
+.mi-kmz__avance i { height: 5px; border-radius: 999px; background: var(--zinc-200); }
+.mi-kmz__avance i.hecho { background: var(--verde-700); }
+.mi-kmz__avance i.en-curso { background: var(--zinc-900); animation: latir-tramo 1.2s ease-in-out infinite; }
+@keyframes latir-tramo { 50% { opacity: 0.35; } }
+.mi-kmz__acciones { display: flex; align-items: center; gap: 0.375rem; padding: 0 1rem 1rem 1.15rem; }
+.mi-kmz__acciones .boton { border-radius: 0.75rem; white-space: nowrap; }
+.mi-kmz__acciones .boton svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mi-kmz__icono {
+  display: grid; place-items: center; width: 2.25rem; height: 2.25rem; margin-left: auto; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--zinc-500); text-decoration: none; transition: background 150ms, color 150ms;
+}
+.mi-kmz__icono + .mi-kmz__icono { margin-left: 0; }
+.mi-kmz__icono:hover { background: var(--zinc-100); color: var(--zinc-900); }
+.mi-kmz__icono--peligro:hover { background: var(--rojo-50); color: var(--rojo-700); }
+.mi-kmz__icono[disabled] { opacity: 0.35; cursor: not-allowed; }
+.mi-kmz__icono svg { width: 1.1rem; height: 1.1rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* La invitación a otro KMZ, como la del próximo master. */
+.mi-kmz--nuevo { border: 1.5px dashed var(--zinc-400); background: rgb(255 255 255 / 0.5); box-shadow: none; }
+.mi-kmz--nuevo:hover { border-color: var(--zinc-900); background: #fff; }
+.mi-kmz__nuevo {
+  flex: 1; display: grid; place-items: center; align-content: center; gap: 0.5rem; min-height: 16rem;
+  padding: 1.5rem; border: 0; background: transparent; text-align: center; color: var(--zinc-900);
+}
+.mi-kmz__nuevo strong { font-size: 1.0625rem; }
+.mi-kmz__nuevo > span:last-child { max-width: 16rem; font-size: 0.8125rem; line-height: 1.5; color: var(--zinc-500); }
+.mi-kmz__nuevo-icono { position: relative; display: grid; place-items: center; width: 4.5rem; height: 4.5rem; margin-bottom: 0.25rem; }
+.mi-kmz__nuevo-icono svg { width: 1.9rem; height: 1.9rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.mi-kmz--nuevo:hover .plano-nuevo__orbita { animation-duration: 3s; }
+
+.mis-kmz--entrando .mi-kmz { animation: asomar 700ms var(--curva-salida) both; animation-delay: calc(120ms + var(--orden, 0) * 80ms); }
+@media (prefers-reduced-motion: reduce) {
+  .mi-kmz, .mi-kmz__plano img { transition: none; }
+  .mi-kmz:hover { transform: none; }
+  .mi-kmz__avance i.en-curso, .mis-kmz--entrando .mi-kmz { animation: none; }
+}
 
 /* El nombre del KMZ con su lápiz, en la pantalla de los pasos. */
 .kmz-cabecera { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
@@ -1415,8 +1465,7 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
   .previa { position: static; }
   .diseno { grid-template-columns: auto 1fr auto; }
   .diseno__usos { display: none; }
-  .mi-kmz { grid-template-columns: 1fr; gap: 0.25rem; }
-  .mi-kmz__acciones { justify-content: flex-start; padding: 0 0.25rem 0.25rem; }
+  #pantalla-kmzs h1 { font-size: 2.25rem; }
   .formulario { padding: 1.25rem; }
   .renglon { grid-template-columns: 1fr; gap: 0.4rem; }
   .renglon__rotulo { padding-top: 0; }

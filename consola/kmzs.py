@@ -142,13 +142,20 @@ class VistaKmz:
         pantalla muestra el paso; `terminado` solo habilita Descargar y Usar."""
         plano = self.registro.plano_de(guardado)
         lotes = None
+        pagina = None
         try:
             paso = plano.paso()
             digitalizado = plano.carpeta / DIGITALIZADO
             if digitalizado.is_file():
                 lotes = len(json.loads(digitalizado.read_text(encoding="utf-8")).get("lotes") or [])
+            # La miniatura de la tarjeta: la página elegida (0 es la unión de hojas) o,
+            # recién subido el plano, la primera.
+            if plano.hay():
+                entradas = plano.entradas()
+                pagina = entradas.get("pagina", 1) if entradas else 1
         except (OSError, ValueError):
             # Un plano a medio escribir no puede tumbar la lista.
             paso = "subir"
         return {"slug": guardado.slug, "nombre": guardado.nombre, "paso": paso, "lotes": lotes,
-                "terminado": plano.terminado(), "creado_en": guardado.creado_en.isoformat()}
+                "pagina": pagina, "terminado": plano.terminado(),
+                "creado_en": guardado.creado_en.isoformat()}
