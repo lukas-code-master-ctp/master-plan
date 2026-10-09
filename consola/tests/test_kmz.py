@@ -49,6 +49,19 @@ def lento(comandos, monkeypatch, segundos=2):
 
 # --- la entidad ------------------------------------------------------------------------
 
+def test_la_tarjeta_dice_que_pagina_del_plano_mostrar(ana):
+    """Mis KMZ muestra en cada tarjeta la miniatura del plano: la página elegida o,
+    recién subido, la primera. Sin plano no hay qué mostrar."""
+    web, slug, _, _ = ana
+    assert web.get("/api/kmz").json()[0]["pagina"] is None
+
+    assert subir(web, slug).status_code == 201
+
+    tarjeta = web.get("/api/kmz").json()[0]
+    assert tarjeta["pagina"] == 1
+    assert web.get(f"/api/kmz/{slug}/paginas/1", params={"mini": True}).status_code == 200
+
+
 def test_crear_listar_renombrar_y_borrar(ana):
     web, slug, carpeta, _ = ana
 

@@ -66,7 +66,7 @@ function mostrar() {
     reservas: 'Reservas', configuracion: 'Configuración',
   }[destino.pantalla] + ' — Tu Masterplan';
   if (destino.pantalla === 'planos') pintarPlanos({ animar: llegando });
-  if (destino.pantalla === 'kmzs') pintarKmzs();
+  if (destino.pantalla === 'kmzs') pintarKmzs({ animar: llegando });
   if (destino.pantalla === 'nuevo' && llegando) abrirNuevo({ kmz: destino.kmz });
   if (destino.pantalla === 'disenos') pintarDisenos();
   if (destino.pantalla === 'reservas') pintarReservas();

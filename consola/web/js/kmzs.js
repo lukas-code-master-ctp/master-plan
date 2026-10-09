@@ -33,6 +33,15 @@ export function pasoEnPalabras(kmz) {
   return PASO_EN_PALABRAS[kmz?.paso] ?? PASO_EN_PALABRAS.subir;
 }
 
+// Los pasos en orden; el KMZ está hecho cuando los cinco quedaron atrás.
+const PASOS = ['subir', 'marcar', 'digitalizar', 'ubicar', 'crear', 'listo'];
+
+/** Cuántos de los cinco pasos ya hizo un KMZ, para la barra de su tarjeta. */
+export function avanceDe(kmz) {
+  const hechos = Math.max(0, PASOS.indexOf(kmz?.paso));
+  return { hechos, total: PASOS.length - 1 };
+}
+
 /** Los que se pueden usar en un master: los que ya tienen su `.kmz`. */
 export const terminados = (kmzs) => (kmzs ?? []).filter((k) => k.terminado);
 
@@ -70,6 +79,7 @@ export function prepararKmzs(opciones) {
   $('#kmzs-nuevo').addEventListener('click', () => abrirNombre());
 
   $('#kmzs').addEventListener('click', (evento) => {
+    if (evento.target.closest('[data-nuevo]')) { abrirNombre(); return; }
     const nodo = evento.target.closest('[data-renombrar], [data-borrar], [data-usar]');
     if (!nodo) return;
     const kmz = estado.kmzs.find((k) => k.slug === (nodo.dataset.renombrar ?? nodo.dataset.borrar ?? nodo.dataset.usar));
@@ -96,15 +106,23 @@ export function prepararKmzs(opciones) {
 
 // --- la lista --------------------------------------------------------------------------
 
-export function pintarKmzs() {
+const ICONO_PLANO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5zM3 13l9 5 9-5M3 18l9 5 9-5"/></svg>';
+const ICONO_LAPIZ = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></svg>';
+const ICONO_BASURERO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
+const ICONO_BAJAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg>';
+const ICONO_MAS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+
+/**
+ * Una tarjeta por KMZ con la miniatura de su plano, en qué paso va (una barra de
+ * cinco tramos) y sus acciones. Al llegar a la pantalla entran escalonadas; un
+ * refresco mientras se lee un plano no repite la entrada.
+ */
+export function pintarKmzs({ animar = false } = {}) {
   document.title = 'Mis KMZ — Tu Masterplan';
   const lista = $('#kmzs');
-  if (!estado.kmzs.length) {
-    lista.innerHTML = `<li class="vacio"><strong>Todavía no tienes KMZ</strong>
-      <span>Créalo desde el plano aprobado del SAG con <b>Nuevo KMZ</b>.</span></li>`;
-    return;
-  }
-  lista.replaceChildren(...estado.kmzs.map(tarjeta));
+  lista.classList.toggle('mis-kmz--entrando', animar && !matchMedia('(prefers-reduced-motion: reduce)').matches);
+  lista.replaceChildren(...estado.kmzs.map(tarjeta), tarjetaNueva(estado.kmzs.length));
+  estado.kmzs.forEach((_, i) => lista.children[i].style.setProperty('--orden', i));
 }
 
 function tarjeta(kmz) {
@@ -114,48 +132,99 @@ function tarjeta(kmz) {
   const enlace = document.createElement('a');
   enlace.className = 'mi-kmz__abrir';
   enlace.href = `#/kmz/${encodeURIComponent(kmz.slug)}`;
-  const titulo = document.createElement('span');
-  titulo.className = 'mi-kmz__titulo';
+
+  const plano = document.createElement('span');
+  plano.className = 'mi-kmz__plano';
+  if (kmz.pagina != null) {
+    const imagen = document.createElement('img');
+    imagen.src = `${rutaDelKmz(kmz.slug)}/paginas/${kmz.pagina}?mini=1`;
+    imagen.alt = '';
+    imagen.loading = 'lazy';
+    imagen.addEventListener('error', () => imagen.remove());
+    plano.append(imagen);
+  } else {
+    plano.insertAdjacentHTML('beforeend', ICONO_PLANO);
+  }
+  const estadoKmz = kmz.trabajo ? pastilla('Leyendo el plano…', 'curso')
+    : kmz.terminado ? pastilla('Listo', 'ok') : pastilla(pasoEnPalabras(kmz), 'aviso');
+  estadoKmz.classList.add('mi-kmz__estado');
+  plano.append(estadoKmz);
+
+  const cuerpo = document.createElement('span');
+  cuerpo.className = 'mi-kmz__cuerpo';
   const nombre = document.createElement('strong');
   nombre.className = 'mi-kmz__nombre';
   nombre.textContent = kmz.nombre;
-  titulo.append(nombre);
-  if (kmz.terminado) titulo.append(pastilla('Listo', 'ok'));
-  if (kmz.trabajo) titulo.append(pastilla('Leyendo el plano…', 'curso'));
   const detalle = document.createElement('span');
   detalle.className = 'mi-kmz__detalle';
-  // Terminado y al día no repite "KMZ creado": ya lo dice la pastilla.
-  const avance = kmz.terminado && kmz.paso === 'listo' ? null : kmz.trabajo ? null : pasoEnPalabras(kmz);
-  detalle.textContent = [avance, cuantosLotes(kmz.lotes), `creado ${fecha(kmz.creado_en)}`]
-    .filter(Boolean).join(' · ');
-  enlace.append(titulo, detalle);
+  detalle.textContent = [cuantosLotes(kmz.lotes), `creado ${fecha(kmz.creado_en)}`].filter(Boolean).join(' · ');
+  cuerpo.append(nombre, detalle);
+
+  // La barra de avance: un tramo por paso, encendido si ya se hizo.
+  const { hechos, total } = avanceDe(kmz);
+  const avance = document.createElement('span');
+  avance.className = 'mi-kmz__avance';
+  avance.setAttribute('role', 'img');
+  avance.setAttribute('aria-label', `${hechos} de ${total} pasos hechos`);
+  for (let paso = 0; paso < total; paso += 1) {
+    const tramo = document.createElement('i');
+    if (paso < hechos) tramo.className = 'hecho';
+    else if (paso === hechos && kmz.trabajo) tramo.className = 'en-curso';
+    avance.append(tramo);
+  }
+  cuerpo.append(avance);
+  enlace.append(plano, cuerpo);
 
   const acciones = document.createElement('div');
   acciones.className = 'mi-kmz__acciones';
-  const boton = (texto, dato, clase = 'boton boton--texto boton--chico') => {
+  if (kmz.terminado) {
+    const usar = document.createElement('button');
+    usar.type = 'button';
+    usar.className = 'boton boton--chico';
+    usar.dataset.usar = kmz.slug;
+    usar.textContent = 'Usar en un master';
+    usar.setAttribute('aria-label', `Usar en un master: ${kmz.nombre}`);
+    acciones.append(usar);
+  }
+  const icono = (svg, dato, texto, peligro = false) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = clase;
-    b.textContent = texto;
+    b.className = `mi-kmz__icono${peligro ? ' mi-kmz__icono--peligro' : ''}`;
     b.dataset[dato] = kmz.slug;
+    b.title = texto;
     b.setAttribute('aria-label', `${texto}: ${kmz.nombre}`);
+    b.innerHTML = svg;
     return b;
   };
   if (kmz.terminado) {
     const bajar = document.createElement('a');
-    bajar.className = 'boton boton--contorno boton--chico';
+    bajar.className = 'mi-kmz__icono';
     bajar.href = descargaDe(kmz.slug);
     bajar.setAttribute('download', '');
-    bajar.textContent = 'Descargar';
+    bajar.title = 'Descargar el KMZ';
     bajar.setAttribute('aria-label', `Descargar ${kmz.nombre}`);
-    acciones.append(bajar, boton('Usar en un master', 'usar', 'boton boton--contorno boton--chico'));
+    bajar.innerHTML = ICONO_BAJAR;
+    acciones.append(bajar);
   }
-  acciones.append(boton('Renombrar', 'renombrar'));
-  const quitar = boton('Borrar', 'borrar', 'boton boton--texto boton--chico boton--peligro');
+  const quitar = icono(ICONO_BASURERO, 'borrar', 'Borrar', true);
   quitar.disabled = Boolean(kmz.trabajo);
-  acciones.append(quitar);
+  acciones.append(icono(ICONO_LAPIZ, 'renombrar', 'Renombrar'), quitar);
 
   item.append(enlace, acciones);
+  return item;
+}
+
+/** La última tarjeta invita a hacer otro KMZ; sin ninguno, es la bienvenida. */
+function tarjetaNueva(cantidad) {
+  const item = document.createElement('li');
+  item.className = 'mi-kmz mi-kmz--nuevo';
+  item.style.setProperty('--orden', cantidad);
+  item.innerHTML = `
+    <button type="button" class="mi-kmz__nuevo" data-nuevo>
+      <span class="mi-kmz__nuevo-icono"><span class="plano-nuevo__orbita"></span>${ICONO_MAS}</span>
+      <strong>${cantidad ? 'Nuevo KMZ' : 'Todavía no tienes KMZ'}</strong>
+      <span>Sube el plano aprobado del SAG o del CBR y lo convertimos en el KMZ de la subdivisión.</span>
+    </button>`;
   return item;
 }
 
