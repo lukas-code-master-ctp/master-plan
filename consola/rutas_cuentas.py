@@ -78,6 +78,8 @@ def pagina_de_entrada(error: str | None = None, *, con_google: bool, con_registr
     else:
         enlaces = f'<a href="{CONTACTO}">¿No tienes cuenta u olvidaste la contraseña? Escríbenos</a>'
     return pagina("Entrar", f"""
+  <h1>Entra a tu consola</h1>
+  <p>Tus loteos, tus planos y tus reservas, en un solo lugar.</p>
   {_aviso(error)}{_aviso(aviso, "ok")}
   {google}
   <form method="post" action="/entrar">

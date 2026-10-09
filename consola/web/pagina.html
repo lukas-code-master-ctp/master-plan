@@ -8,16 +8,187 @@
 <link rel="stylesheet" href="/consola.css">
 </head>
 <body class="cuenta-pagina">
-<a class="logo" href="/entrar" aria-label="Tu Masterplan">
-  <svg class="marca__hito" viewBox="0 0 32 32" aria-hidden="true">
-    <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.6"/>
-    <path d="M16 4v6M16 22v6M4 16h6M22 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-    <path d="M16 10.5 21.5 16 16 21.5 10.5 16Z" fill="currentColor"/>
+<!-- La escena: un loteo visto desde arriba que se va pintando con los colores de
+     estado del visor, la pasada del dron y la ficha de una parcela. Dice qué es
+     esto antes de leer nada; el formulario queda al lado, sin competir. -->
+<aside class="escena">
+  <div class="escena__suelo">
+  <svg class="escena__plano" viewBox="0 0 600 600" aria-hidden="true">
+    <defs><linearGradient id="pasada"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="0.5" stop-color="#fff" stop-opacity="0.16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
+    <rect class="escena__terreno" width="600" height="600" rx="18"/>
+    <rect class="lote lote--d" x="16" y="16" width="32" height="65" style="--i:0"/>
+    <rect class="lote lote--d" x="48" y="16" width="32" height="65" style="--i:1"/>
+    <rect class="lote lote--r" x="81" y="16" width="32" height="65" style="--i:2"/>
+    <rect class="lote lote--d" x="114" y="16" width="32" height="65" style="--i:6"/>
+    <rect class="lote lote--d" x="16" y="81" width="32" height="65" style="--i:3"/>
+    <rect class="lote lote--d" x="48" y="81" width="32" height="65" style="--i:4"/>
+    <rect class="lote lote--d" x="81" y="81" width="32" height="65" style="--i:5"/>
+    <rect class="lote lote--d" x="114" y="81" width="32" height="65" style="--i:7"/>
+    <rect class="lote lote--d" x="162" y="16" width="65" height="43" style="--i:8"/>
+    <rect class="lote lote--d" x="227" y="16" width="65" height="43" style="--i:18"/>
+    <rect class="lote lote--d" x="162" y="59" width="65" height="43" style="--i:10"/>
+    <rect class="lote lote--d" x="227" y="59" width="65" height="43" style="--i:19"/>
+    <rect class="lote lote--d" x="162" y="103" width="65" height="43" style="--i:12"/>
+    <rect class="lote lote--v" x="227" y="103" width="65" height="43" style="--i:20"/>
+    <rect class="lote lote--d" x="308" y="16" width="32" height="43" style="--i:30"/>
+    <rect class="lote lote--d" x="340" y="16" width="32" height="43" style="--i:41"/>
+    <rect class="lote lote--r" x="373" y="16" width="32" height="43" style="--i:51"/>
+    <rect class="lote lote--v" x="406" y="16" width="32" height="43" style="--i:62"/>
+    <rect class="lote lote--r" x="308" y="59" width="32" height="43" style="--i:34"/>
+    <rect class="lote lote--d" x="340" y="59" width="32" height="43" style="--i:42"/>
+    <rect class="lote lote--v" x="373" y="59" width="32" height="43" style="--i:52"/>
+    <rect class="lote lote--d" x="406" y="59" width="32" height="43" style="--i:63"/>
+    <rect class="lote lote--v" x="308" y="103" width="32" height="43" style="--i:36"/>
+    <rect class="lote lote--d" x="340" y="103" width="32" height="43" style="--i:43"/>
+    <rect class="lote lote--d" x="373" y="103" width="32" height="43" style="--i:53"/>
+    <rect class="lote lote--d" x="406" y="103" width="32" height="43" style="--i:65"/>
+    <rect class="lote lote--d" x="454" y="16" width="65" height="26" style="--i:74"/>
+    <rect class="lote lote--v" x="519" y="16" width="65" height="26" style="--i:99"/>
+    <rect class="lote lote--d" x="454" y="42" width="65" height="26" style="--i:73"/>
+    <rect class="lote lote--r" x="519" y="42" width="65" height="26" style="--i:98"/>
+    <rect class="lote lote--r" x="454" y="68" width="65" height="26" style="--i:76"/>
+    <rect class="lote lote--d" x="519" y="68" width="65" height="26" style="--i:100"/>
+    <rect class="lote lote--d" x="454" y="94" width="65" height="26" style="--i:78"/>
+    <rect class="lote lote--d" x="519" y="94" width="65" height="26" style="--i:101"/>
+    <rect class="lote lote--d" x="454" y="120" width="65" height="26" style="--i:80"/>
+    <rect class="lote lote--d" x="519" y="120" width="65" height="26" style="--i:103"/>
+    <rect class="lote lote--r" x="16" y="162" width="65" height="26" style="--i:9"/>
+    <rect class="lote lote--d" x="81" y="162" width="65" height="26" style="--i:11"/>
+    <rect class="lote lote--d" x="16" y="188" width="65" height="26" style="--i:13"/>
+    <rect class="lote lote--r" x="81" y="188" width="65" height="26" style="--i:14"/>
+    <rect class="lote lote--d" x="16" y="214" width="65" height="26" style="--i:15"/>
+    <rect class="lote lote--d" x="81" y="214" width="65" height="26" style="--i:17"/>
+    <rect class="lote lote--v" x="16" y="240" width="65" height="26" style="--i:21"/>
+    <rect class="lote lote--r" x="81" y="240" width="65" height="26" style="--i:23"/>
+    <rect class="lote lote--d" x="16" y="266" width="65" height="26" style="--i:24"/>
+    <rect class="lote lote--r" x="81" y="266" width="65" height="26" style="--i:27"/>
+    <rect class="lote lote--d" x="162" y="162" width="32" height="65" style="--i:16"/>
+    <rect class="lote lote--v" x="194" y="162" width="32" height="65" style="--i:22"/>
+    <rect class="lote lote--v" x="227" y="162" width="32" height="65" style="--i:25"/>
+    <rect class="lote lote--d" x="260" y="162" width="32" height="65" style="--i:29"/>
+    <rect class="lote lote--v" x="162" y="227" width="32" height="65" style="--i:26"/>
+    <rect class="lote lote--d" x="194" y="227" width="32" height="65" style="--i:28"/>
+    <rect class="lote lote--d" x="227" y="227" width="32" height="65" style="--i:32"/>
+    <rect class="lote lote--v" x="260" y="227" width="32" height="65" style="--i:38"/>
+    <rect class="lote lote--d" x="308" y="162" width="65" height="43" style="--i:39"/>
+    <rect class="lote lote--d" x="373" y="162" width="65" height="43" style="--i:59"/>
+    <rect class="lote lote--d" x="308" y="205" width="65" height="43" style="--i:47"/>
+    <rect class="lote lote--r" x="373" y="205" width="65" height="43" style="--i:67"/>
+    <rect class="lote lote--v" x="308" y="249" width="65" height="43" style="--i:54"/>
+    <rect class="lote lote--r" x="373" y="249" width="65" height="43" style="--i:70"/>
+    <rect class="lote lote--v" x="454" y="162" width="32" height="43" style="--i:83"/>
+    <rect class="lote lote--d" x="486" y="162" width="32" height="43" style="--i:92"/>
+    <rect class="lote lote--r" x="519" y="162" width="32" height="43" style="--i:105"/>
+    <rect class="lote lote--r" x="552" y="162" width="32" height="43" style="--i:119"/>
+    <rect class="lote lote--r" x="454" y="205" width="32" height="43" style="--i:86"/>
+    <rect class="lote lote--d" x="486" y="205" width="32" height="43" style="--i:97"/>
+    <rect class="lote lote--v" x="519" y="205" width="32" height="43" style="--i:112"/>
+    <rect class="lote lote--v" x="552" y="205" width="32" height="43" style="--i:122"/>
+    <rect class="lote lote--d" x="454" y="249" width="32" height="43" style="--i:93"/>
+    <rect class="lote lote--r" x="486" y="249" width="32" height="43" style="--i:104"/>
+    <rect class="lote lote--d" x="519" y="249" width="32" height="43" style="--i:117"/>
+    <rect class="lote lote--r" x="552" y="249" width="32" height="43" style="--i:127"/>
+    <rect class="lote lote--r" x="16" y="308" width="32" height="43" style="--i:31"/>
+    <rect class="lote lote--v" x="48" y="308" width="32" height="43" style="--i:33"/>
+    <rect class="lote lote--v" x="81" y="308" width="32" height="43" style="--i:35"/>
+    <rect class="lote lote--d" x="114" y="308" width="32" height="43" style="--i:37"/>
+    <rect class="lote lote--d" x="16" y="351" width="32" height="43" style="--i:44"/>
+    <rect class="lote lote--r" x="48" y="351" width="32" height="43" style="--i:45"/>
+    <rect class="lote lote--d" x="81" y="351" width="32" height="43" style="--i:46"/>
+    <rect class="lote lote--d" x="114" y="351" width="32" height="43" style="--i:49"/>
+    <rect class="lote lote--d" x="16" y="395" width="32" height="43" style="--i:57"/>
+    <rect class="lote lote--d" x="48" y="395" width="32" height="43" style="--i:58"/>
+    <rect class="lote lote--d" x="81" y="395" width="32" height="43" style="--i:60"/>
+    <rect class="lote lote--v" x="114" y="395" width="32" height="43" style="--i:61"/>
+    <rect class="lote lote--d" x="162" y="308" width="65" height="26" style="--i:40"/>
+    <rect class="lote lote--d" x="227" y="308" width="65" height="26" style="--i:50"/>
+    <rect class="lote lote--d" x="162" y="334" width="65" height="26" style="--i:48"/>
+    <rect class="lote lote--v" x="227" y="334" width="65" height="26" style="--i:56"/>
+    <rect class="lote lote--d" x="162" y="360" width="65" height="26" style="--i:55"/>
+    <rect class="lote lote--d" x="227" y="360" width="65" height="26" style="--i:66"/>
+    <rect class="lote lote--d" x="162" y="386" width="65" height="26" style="--i:64"/>
+    <rect class="lote lote--v" x="227" y="386" width="65" height="26" style="--i:71"/>
+    <rect class="lote lote--v" x="162" y="412" width="65" height="26" style="--i:69"/>
+    <rect class="lote lote--v" x="227" y="412" width="65" height="26" style="--i:79"/>
+    <rect class="lote lote--d" x="308" y="308" width="32" height="65" style="--i:68"/>
+    <rect class="lote lote--d" x="340" y="308" width="32" height="65" style="--i:72"/>
+    <rect class="lote lote--d" x="373" y="308" width="32" height="65" style="--i:81"/>
+    <rect class="lote lote--v" x="406" y="308" width="32" height="65" style="--i:88"/>
+    <rect class="lote lote--v" x="308" y="373" width="32" height="65" style="--i:82"/>
+    <rect class="lote lote--d" x="340" y="373" width="32" height="65" style="--i:87"/>
+    <rect class="lote lote--d" x="373" y="373" width="32" height="65" style="--i:95"/>
+    <rect class="lote lote--d" x="406" y="373" width="32" height="65" style="--i:109"/>
+    <rect class="lote lote--d" x="454" y="308" width="65" height="43" style="--i:106"/>
+    <rect class="lote lote--d" x="519" y="308" width="65" height="43" style="--i:126"/>
+    <rect class="lote lote--r" x="454" y="351" width="65" height="43" style="--i:116"/>
+    <rect class="lote lote--d" x="519" y="351" width="65" height="43" style="--i:130"/>
+    <rect class="lote lote--d" x="454" y="395" width="65" height="43" style="--i:124"/>
+    <rect class="lote lote--d" x="519" y="395" width="65" height="43" style="--i:135"/>
+    <rect class="lote lote--d" x="16" y="454" width="65" height="43" style="--i:75"/>
+    <rect class="lote lote--r" x="81" y="454" width="65" height="43" style="--i:77"/>
+    <rect class="lote lote--v" x="16" y="497" width="65" height="43" style="--i:90"/>
+    <rect class="lote lote--r" x="81" y="497" width="65" height="43" style="--i:91"/>
+    <rect class="lote lote--d" x="16" y="541" width="65" height="43" style="--i:110"/>
+    <rect class="lote lote--r" x="81" y="541" width="65" height="43" style="--i:111"/>
+    <rect class="lote lote--r" x="162" y="454" width="32" height="43" style="--i:84"/>
+    <rect class="lote lote--d" x="194" y="454" width="32" height="43" style="--i:85"/>
+    <rect class="lote lote--v" x="227" y="454" width="32" height="43" style="--i:89"/>
+    <rect class="lote lote--v" x="260" y="454" width="32" height="43" style="--i:94"/>
+    <rect class="lote lote--v" x="162" y="497" width="32" height="43" style="--i:96"/>
+    <rect class="lote lote--v" x="194" y="497" width="32" height="43" style="--i:102"/>
+    <rect class="lote lote--d" x="227" y="497" width="32" height="43" style="--i:108"/>
+    <rect class="lote lote--d" x="260" y="497" width="32" height="43" style="--i:113"/>
+    <rect class="lote lote--d" x="162" y="541" width="32" height="43" style="--i:114"/>
+    <rect class="lote lote--r" x="194" y="541" width="32" height="43" style="--i:118"/>
+    <rect class="lote lote--d" x="227" y="541" width="32" height="43" style="--i:121"/>
+    <rect class="lote lote--d" x="260" y="541" width="32" height="43" style="--i:125"/>
+    <rect class="lote lote--d" x="308" y="454" width="65" height="26" style="--i:107"/>
+    <rect class="lote lote--d" x="373" y="454" width="65" height="26" style="--i:120"/>
+    <rect class="lote lote--d" x="308" y="480" width="65" height="26" style="--i:115"/>
+    <rect class="lote lote--d" x="373" y="480" width="65" height="26" style="--i:128"/>
+    <rect class="lote lote--d" x="308" y="506" width="65" height="26" style="--i:123"/>
+    <rect class="lote lote--d" x="373" y="506" width="65" height="26" style="--i:131"/>
+    <rect class="lote lote--d" x="308" y="532" width="65" height="26" style="--i:129"/>
+    <rect class="lote lote--d" x="373" y="532" width="65" height="26" style="--i:134"/>
+    <rect class="lote lote--d" x="308" y="558" width="65" height="26" style="--i:132"/>
+    <rect class="lote lote--v" x="373" y="558" width="65" height="26" style="--i:137"/>
+    <rect class="lote lote--r" x="454" y="454" width="32" height="65" style="--i:133"/>
+    <rect class="lote lote--d" x="486" y="454" width="32" height="65" style="--i:136"/>
+    <rect class="lote lote--d" x="519" y="454" width="32" height="65" style="--i:138"/>
+    <rect class="lote lote--d" x="552" y="454" width="32" height="65" style="--i:141"/>
+    <rect class="lote lote--d" x="454" y="519" width="32" height="65" style="--i:139"/>
+    <rect class="lote lote--d" x="486" y="519" width="32" height="65" style="--i:140"/>
+    <rect class="lote lote--v" x="519" y="519" width="32" height="65" style="--i:142"/>
+    <rect class="lote lote--v" x="552" y="519" width="32" height="65" style="--i:143"/>
+    <rect class="escena__pasada" x="-240" y="0" width="240" height="600"/>
+    <circle class="escena__onda" cx="324" cy="340" r="22"/>
+    <circle class="escena__pin" cx="324" cy="340" r="6"/>
   </svg>
-  <strong>Tu Masterplan</strong>
-</a>
-<main class="entrada">
+  </div>
+  <div class="escena__ficha" aria-hidden="true">
+    <strong>Parcela 21</strong>
+    <span><i class="punto-estado punto-estado--disponible"></i>Disponible</span>
+    <b>$9.990.000</b>
+  </div>
+  <div class="escena__texto">
+    <span class="antetitulo">Consola de loteadoras</span>
+    <p class="escena__titulo">Tus loteos, vistos desde el aire.</p>
+    <p class="escena__bajada">Sube el vuelo, arma el plano y publica el master con tu marca.</p>
+    <ul class="escena__leyenda" aria-label="Colores de estado">
+      <li><i class="punto-estado punto-estado--disponible"></i>Disponible</li>
+      <li><i class="punto-estado punto-estado--reservado"></i>Reservada</li>
+      <li><i class="punto-estado punto-estado--vendido"></i>Vendida</li>
+    </ul>
+  </div>
+</aside>
+<div class="cuenta-lado">
+  <a class="logotipo" href="/entrar" aria-label="Tu Masterplan">
+    <span class="logotipo__tu">tu</span><span class="logotipo__nombre">masterplan</span><span class="logotipo__punto"></span>
+  </a>
+  <main class="entrada">
 <!--CONTENIDO-->
-</main>
+  </main>
+  <p class="cuenta-lado__pie">Tu Masterplan · <a href="https://www.tumasterplan.cl">tumasterplan.cl</a></p>
+</div>
 </body>
 </html>
