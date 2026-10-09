@@ -1,4 +1,5 @@
 """La landing de tumasterplan.cl muestra un master publicado dentro de un iframe."""
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -94,4 +95,22 @@ def test_la_landing_sabe_mostrar_como_salio_el_envio():
     """La consola vuelve a estas anclas (rutas_contactos.py): tienen que existir."""
     html = (LANDING / "index.html").read_text()
     assert 'id="contacto-enviado"' in html and 'id="contacto-error"' in html
+
+
+# Las imágenes y la fuente se sirven con `immutable` por un año (vercel.json): el
+# navegador no vuelve a preguntar. Si se cambia una imagen sin cambiar su dirección,
+# quien ya entró sigue viendo la vieja todo ese año. Por eso cada referencia lleva la
+# huella del archivo (`?v=`), y `python3 landing/versionar.py` la pone al día.
+ESTATICOS = re.compile(r'/([\w-]+\.(?:webp|woff2))(\?v=([0-9a-f]+))?')
+
+
+def test_cada_imagen_y_la_fuente_llevan_la_huella_de_su_archivo():
+    html = (LANDING / "index.html").read_text()
+    referencias = ESTATICOS.findall(html)
+    assert referencias, "la landing no referencia ningún archivo propio: ¿cambió la expresión?"
+    for archivo, _, huella in referencias:
+        esperada = hashlib.sha256((LANDING / archivo).read_bytes()).hexdigest()[:8]
+        assert huella == esperada, (
+            f"/{archivo} va con ?v={huella or '(nada)'} y su huella es {esperada}: "
+            "corre `python3 landing/versionar.py`")
 
