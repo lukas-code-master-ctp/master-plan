@@ -318,7 +318,17 @@ una loteadora tiene topes (`Limites` en `consola/proyectos.py`); el equipo no:
 | --- | --- | --- | --- |
 | Masters sin pagar a la vez | 3 | `CONSOLA_MAX_SIN_PAGAR` | 409 al crear |
 | Tamaño de un loteo subido | 3072 MB | `CONSOLA_MAX_MEGAS_POR_LOTEO` | 413 al subir; la página avisa antes |
-| Construcciones a la vez | 1 | `CONSOLA_MAX_CONSTRUCCIONES` | 429 al construir |
+| Construcciones a la vez, por loteadora | 1 | `CONSOLA_MAX_CONSTRUCCIONES` | 429 al construir |
+
+**La cola de la instancia.** Aparte del tope de cada loteadora, la instancia corre los
+trabajos pesados (construir, actualizar desde Cierra, leer un plano) **de a uno**,
+porque una construcción grande pasa de 4 GB y la instancia tiene 8: dos a la vez la
+pueden matar, y con ella todo lo que corría. El que llega con el turno ocupado queda
+**en cola**, en orden de llegada, y parte solo; la pantalla dice "En cola" y cuántos hay
+antes. Publicar y la republicación del visor no hacen cola: son livianos. El tope se
+cambia con `CONSOLA_TRABAJOS_SIMULTANEOS` (por defecto 1; subirlo pide más memoria). La
+cola vive en memoria, como los trabajos: si la instancia se reinicia, lo que esperaba
+se pierde y la pantalla lo da por interrumpido.
 
 Quitar de la lista un master **subido y sin pagar** borra también su vuelo y lo
 construido: si no, quitar y volver a crear sería la forma de llenar el disco igual.

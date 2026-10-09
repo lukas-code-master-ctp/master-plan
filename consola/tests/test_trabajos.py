@@ -177,3 +177,97 @@ def test_tildes_y_bytes_que_no_son_utf8_no_rompen_el_trabajo(trabajos):
     assert trabajo.estado == "listo"
     assert "rotación 90°, 1.200×900 px" in trabajo.lineas
     assert trabajo.lineas[-1] == "latin1: \N{REPLACEMENT CHARACTER}xito"
+
+
+# --- La cola: los trabajos pesados pasan de a uno ------------------------------------
+#
+# Una construcción grande usa más de 4 GB y la instancia tiene 8: dos a la vez la
+# pueden matar y con ella todo lo que corría. Las que llegan mientras otra corre
+# esperan su turno en orden, y parten solas.
+
+def tapon(segundos=0.6):
+    """Un trabajo que ocupa el turno un rato."""
+    return guion(f"import time; time.sleep({segundos}); print('listo')")
+
+
+@pytest.fixture
+def de_a_uno():
+    return Trabajos(simultaneos=1)
+
+
+def test_el_segundo_trabajo_pesado_espera_en_cola(de_a_uno):
+    primero = de_a_uno.lanzar("loteo-a", "construir", tapon())
+    segundo = de_a_uno.lanzar("loteo-b", "construir", guion("print('después')"))
+
+    en_cola = de_a_uno.ver(segundo)
+    assert en_cola.estado == "en_cola"
+    assert not en_cola.terminado
+    assert en_cola.como_json()["posicion"] == 1
+    assert de_a_uno.corriendo("loteo-b")       # nadie más le lanza nada encima
+
+    assert esperar(de_a_uno, segundo).estado == "listo"
+    assert de_a_uno.ver(primero).terminado
+    # Partió recién cuando terminó el primero.
+    assert de_a_uno.ver(segundo).partio >= de_a_uno.ver(primero).termino
+
+
+def test_la_cola_respeta_el_orden_de_llegada(de_a_uno):
+    de_a_uno.lanzar("loteo-a", "construir", tapon())
+    segundo = de_a_uno.lanzar("loteo-b", "construir", tapon(0.2))
+    tercero = de_a_uno.lanzar("loteo-c", "digitalizar-plano", guion("print('c')"))
+
+    assert de_a_uno.ver(segundo).como_json()["posicion"] == 1
+    assert de_a_uno.ver(tercero).como_json()["posicion"] == 2
+
+    esperar(de_a_uno, tercero)
+    assert de_a_uno.ver(tercero).partio >= de_a_uno.ver(segundo).termino
+
+
+def test_publicar_no_hace_cola(de_a_uno):
+    de_a_uno.lanzar("loteo-a", "construir", tapon())
+
+    publicar = de_a_uno.lanzar("loteo-b", "publicar", guion("print('arriba')"), pesado=False)
+
+    assert de_a_uno.ver(publicar).estado != "en_cola"
+    assert esperar(de_a_uno, publicar).estado == "listo"
+
+
+def test_un_trabajo_que_falla_igual_suelta_el_turno(de_a_uno):
+    de_a_uno.lanzar("loteo-a", "construir", guion("import sys; sys.exit(2)"))
+    segundo = de_a_uno.lanzar("loteo-b", "construir", guion("print('ok')"))
+
+    assert esperar(de_a_uno, segundo).estado == "listo"
+
+
+def test_un_comando_que_no_existe_igual_suelta_el_turno(de_a_uno):
+    de_a_uno.lanzar("loteo-a", "construir", ["/no/existe/este/comando"])
+    segundo = de_a_uno.lanzar("loteo-b", "construir", guion("print('ok')"))
+
+    assert esperar(de_a_uno, segundo).estado == "listo"
+
+
+def test_con_dos_turnos_corren_dos_y_el_tercero_espera():
+    trabajos = Trabajos(simultaneos=2)
+    trabajos.lanzar("loteo-a", "construir", tapon())
+    trabajos.lanzar("loteo-b", "construir", tapon())
+
+    tercero = trabajos.lanzar("loteo-c", "construir", guion("print('c')"))
+
+    assert trabajos.ver(tercero).estado == "en_cola"
+    assert esperar(trabajos, tercero).estado == "listo"
+
+
+def test_sin_tope_no_hay_cola(trabajos):
+    trabajos.lanzar("loteo-a", "construir", tapon())
+
+    segundo = trabajos.lanzar("loteo-b", "construir", guion("print('b')"))
+
+    assert trabajos.ver(segundo).estado == "corriendo"
+
+
+@pytest.mark.parametrize("valor, esperado", [("", 1), ("2", 2), ("0", 1)])
+def test_el_tope_de_la_consola_sale_del_entorno(monkeypatch, valor, esperado):
+    from consola.app import _simultaneos
+    monkeypatch.setenv("CONSOLA_TRABAJOS_SIMULTANEOS", valor)
+
+    assert _simultaneos() == esperado

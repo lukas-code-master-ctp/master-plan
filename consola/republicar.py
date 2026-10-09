@@ -75,9 +75,10 @@ def _uno(vista: Vista, trabajos, comandos, disenos, huella: str,
     # El diseño va como está hoy, igual que al publicar a mano.
     disenos.escribir_en_sitio(proyecto.diseno_id, proyecto.salida.datos)
     try:
+        # Copiar el visor y subirlo es liviano: no espera en la cola de las construcciones.
         identificador = trabajos.lanzar(
             slug, "actualizar-visor",
-            comandos.actualizar_visor(proyecto, proyecto.vercel_proyecto))
+            comandos.actualizar_visor(proyecto, proyecto.vercel_proyecto), pesado=False)
     except RuntimeError:
         # Alguien lanzó algo entre la pregunta de arriba y ahora.
         decir(f"{slug}: tiene un trabajo en curso; queda para el próximo arranque")

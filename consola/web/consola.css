@@ -1039,6 +1039,11 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
 .vuelo[data-estado="volando"] .vuelo__sombra { animation: vuelo-sombra 1.8s ease-in-out infinite alternate; }
 .vuelo[data-estado="volando"] .vuelo__helice { animation: vuelo-helice 0.11s linear infinite alternate; }
 .vuelo[data-estado="volando"] .vuelo__haz { animation: vuelo-haz 2.4s ease-in-out infinite; }
+/* En cola: el dron espera en el aire, sin recorrer el loteo, hasta que le toque. */
+.vuelo[data-estado="cola"] .vuelo__dron { animation: vuelo-flotar 2.6s ease-in-out infinite alternate; }
+.vuelo[data-estado="cola"] .vuelo__sombra { animation: vuelo-sombra 2.6s ease-in-out infinite alternate; }
+.vuelo[data-estado="cola"] .vuelo__helice { animation: vuelo-helice 0.11s linear infinite alternate; }
+.vuelo[data-estado="cola"] .vuelo__haz { opacity: 0; }
 
 /* Listo: se queda quieto sobre el loteo, sin haz. Falló: se apaga y se inclina. */
 .vuelo[data-estado="listo"] .vuelo__haz,

@@ -178,7 +178,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         conexiones = Conexiones(base=base, cifrador=Cifrador(acceso.secreto))
     registro = registro or Registro(base=base, crm_por_defecto=config.csv_del_crm(),
                                     limites=Limites.desde_el_entorno())
-    trabajos = trabajos or Trabajos(directorio=config.RAIZ)
+    trabajos = trabajos or Trabajos(directorio=config.RAIZ, simultaneos=_simultaneos())
     kmzs = kmzs or RegistroKmz(base=base, limites=registro.limites)
     comandos = comandos or Comandos()
     # Solo lo enciende el despliegue (cloudbuild.yaml): en el computador y en las
@@ -311,10 +311,11 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             raise HTTPException(429, "ya tienes otro master construyendo o un KMZ leyendo su plano;"
                                      " lanza este cuando termine ese")
 
-    def lanzar(proyecto: Proyecto, accion: str, comando: list[str], al_terminar=None) -> dict:
+    def lanzar(proyecto: Proyecto, accion: str, comando: list[str], al_terminar=None,
+               pesado: bool = True) -> dict:
         try:
             identificador = trabajos.lanzar(proyecto.slug, accion, comando,
-                                            al_terminar=al_terminar)
+                                            al_terminar=al_terminar, pesado=pesado)
         except RuntimeError as error:
             raise HTTPException(409, str(error)) from error
         return {"id": identificador}
@@ -548,7 +549,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         nombre = proyecto.vercel_proyecto or nombre_propuesto(proyecto.slug)
         lanzado = lanzar(proyecto, "publicar",
                          comandos.publicar(proyecto, vercel_proyecto=nombre, crear=primera_vez),
-                         al_terminar=_anotar_publicacion(mios, proyecto, nombre))
+                         al_terminar=_anotar_publicacion(mios, proyecto, nombre), pesado=False)
         anotar(yo, "publicación", proyecto.nombre, cliente_id=proyecto.cliente_id)
         return lanzado
 
@@ -939,7 +940,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return lanzar(proyecto, "publicar",
                       comandos.publicar(proyecto, vercel_proyecto=proyecto.vercel_proyecto),
                       al_terminar=_anotar_publicacion(registro.todos(), proyecto,
-                                                      proyecto.vercel_proyecto))
+                                                      proyecto.vercel_proyecto), pesado=False)
 
     app.include_router(rutas_de_cierra(cierra, conexiones, vista, ocupado=trabajos.corriendo,
                                        publicar_en_linea=publicar_en_linea, quien=quien))
@@ -1209,6 +1210,16 @@ def _cliente_json(cliente, base: Base) -> dict:
         "cuentas": [u.email for u in base.usuarios_de(cliente.id)],
         "loteos": len(base.proyectos(cliente_id=cliente.id)),
     }
+
+
+# Trabajos pesados (construir, leer un plano) a la vez en la instancia. Uno: una
+# construcción grande pasa de 4 GB y la instancia tiene 8 (cloudbuild.yaml).
+SIMULTANEOS = 1
+
+
+def _simultaneos() -> int:
+    valor = os.environ.get("CONSOLA_TRABAJOS_SIMULTANEOS", "").strip()
+    return max(1, int(valor)) if valor else SIMULTANEOS
 
 
 def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:

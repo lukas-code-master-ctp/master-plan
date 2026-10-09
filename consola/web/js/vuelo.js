@@ -87,6 +87,17 @@ const ESTADOS = ['disponible', 'disponible', 'reservado', 'vendido', 'disponible
   'disponible', 'reservado', 'disponible', 'vendido'];
 
 /**
+ * Lo que se dice de un trabajo que espera su turno. La instancia corre las
+ * construcciones de a una (una grande pasa de 4 GB): las demás hacen fila y parten
+ * solas. `posicion` 1 es la próxima.
+ */
+export function textoDeCola(posicion) {
+  if (!posicion || posicion <= 1) return 'Es la próxima: parte sola apenas termine la que está corriendo.';
+  const antes = posicion - 1;
+  return `Hay ${antes} ${antes === 1 ? 'otra' : 'otras'} antes en la fila. Parte sola cuando le toque.`;
+}
+
+/**
  * En qué paso va un trabajo, según sus líneas. Puro, para poder probarlo.
  * `fraccion` va de 0 a 1; un trabajo terminado bien vale 1.
  */
@@ -162,8 +173,10 @@ function causaDe(lineas) {
  */
 export function pintarVuelo(lineas, trabajo) {
   const tarjeta = $('#plano-vuelo');
-  if (!lineas?.length || !trabajo) { tarjeta.hidden = true; return; }
+  const enCola = trabajo?.estado === 'en_cola';
+  if (!trabajo || (!lineas?.length && !enCola)) { tarjeta.hidden = true; return; }
   tarjeta.hidden = false;
+  if (enCola) { pintarEnCola(tarjeta, '#vuelo', trabajo); return; }
 
   const corriendo = !trabajo.terminado;
   const fallo = trabajo.estado === 'falló';
@@ -203,6 +216,7 @@ export function pintarEscaner(lineas, trabajo) {
   const tarjeta = $('#kmz-escaner');
   if (!trabajo) { tarjeta.hidden = true; return; }
   tarjeta.hidden = false;
+  if (trabajo.estado === 'en_cola') { pintarEnCola(tarjeta, '#kmz-escaner', trabajo); return; }
 
   const corriendo = !trabajo.terminado;
   const fallo = trabajo.estado === 'falló';
@@ -233,4 +247,15 @@ export function pintarEscaner(lineas, trabajo) {
     tarjeta.dataset.abierto = '1';
   }
   if (corriendo) delete tarjeta.dataset.abierto;
+}
+
+/** La tarjeta mientras el trabajo espera su turno: el dron se mantiene en el aire, sin volar. */
+function pintarEnCola(tarjeta, prefijo, trabajo) {
+  tarjeta.dataset.estado = 'cola';
+  const [verbo] = NOMBRES[trabajo.accion] ?? NOMBRES.construir;
+  $(`${prefijo}-titulo`).textContent = 'En cola';
+  $(`${prefijo}-paso`).textContent = `${verbo} · ${textoDeCola(trabajo.posicion)}`;
+  const barra = $(`${prefijo}-barra`);
+  barra.style.transform = 'scaleX(0)';
+  barra.parentElement.setAttribute('aria-valuenow', '0');
 }
