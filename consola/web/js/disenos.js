@@ -2,10 +2,22 @@
  * Mis diseños: la lista y el editor, con una vista previa que usa el mismo
  * código que aplica la marca en el sitio publicado (`marca.js`, del visor).
  */
-import { $, avisar, estado, json, pedir } from './comun.js';
+import { $, avisar, estado, fotoDeFondo, json, pedir } from './comun.js';
 import { aplicarMarca, paleta, TEXTOS_POR_DEFECTO } from './marca.js';
 
 const POR_DEFECTO = '#27272a';
+// Colores para elegir de un toque: tinta, y tonos sobrios que se leen bien con
+// texto blanco y sobre la foto del campo. El selector sigue para cualquier otro.
+const COLORES_RAPIDOS = [
+  ['#27272a', 'Tinta'], ['#166534', 'Bosque'], ['#0f766e', 'Petróleo'], ['#1d4ed8', 'Azul'],
+  ['#6d28d9', 'Ciruela'], ['#9f1239', 'Burdeo'], ['#b45309', 'Terracota'], ['#a16207', 'Trigo'],
+];
+const ICONO_MAS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+const BRUJULA = `<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.6"/>
+  <path d="M16 4v6M16 22v6M4 16h6M22 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M16 10.5 21.5 16 16 21.5 10.5 16Z" fill="currentColor"/></svg>`;
+
+const portadaDe = (slug) => (slug ? `/api/proyectos/${slug}/portada` : null);
 let refrescar = async () => {};
 let actual = null;          // el id del diseño en edición, o null si es nuevo
 let logoElegido = null;     // un archivo elegido y todavía sin subir
@@ -31,6 +43,20 @@ export function prepararDisenos(opciones) {
   });
   $('#diseno-quitar-logo').addEventListener('click', quitarLogo);
   $('#diseno-borrar').addEventListener('click', borrar);
+  $('#diseno-colores').replaceChildren(...COLORES_RAPIDOS.map(([hex, nombre]) => {
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = 'muestra-color';
+    boton.style.setProperty('--muestra', hex);
+    boton.title = nombre;
+    boton.setAttribute('aria-label', `Color ${nombre}`);
+    boton.addEventListener('click', () => {
+      $('#diseno-color').value = hex;
+      $('#diseno-hex').value = hex;
+      pintarPrevia();
+    });
+    return boton;
+  }));
   form.addEventListener('submit', async (evento) => {
     evento.preventDefault();
     await guardar();
@@ -39,50 +65,77 @@ export function prepararDisenos(opciones) {
 
 // --- La lista --------------------------------------------------------------------
 
-export function pintarDisenos() {
+/**
+ * Una tarjeta por diseño con su muestra: el sitio en chico, con la marca puesta
+ * sobre la foto de uno de tus loteos. Al final, la invitación a crear otro.
+ */
+export function pintarDisenos({ animar = false } = {}) {
   const lista = $('#disenos');
-  if (!estado.disenos.length) {
-    lista.innerHTML = `<li class="vacio"><strong>Todavía no tienes diseños</strong>
-      <span>Sin uno, tus loteos se publican con el diseño de Tu Masterplan. Crea el tuyo
-      con <b>Nuevo diseño</b>.</span></li>`;
-    return;
-  }
-  lista.replaceChildren(...estado.disenos.map(filaDeDiseno));
+  lista.classList.toggle('disenos--entrando', animar && !matchMedia('(prefers-reduced-motion: reduce)').matches);
+  lista.replaceChildren(...estado.disenos.map(tarjetaDeDiseno), tarjetaNueva(estado.disenos.length));
+  [...lista.children].forEach((item, i) => item.style.setProperty('--orden', i));
 }
 
-function filaDeDiseno(diseno) {
+function tarjetaDeDiseno(diseno) {
   const item = document.createElement('li');
   const enlace = document.createElement('a');
   enlace.className = 'diseno';
   enlace.href = `#/disenos/${diseno.id}`;
 
-  const muestra = document.createElement('span');
-  muestra.className = 'diseno__muestra';
-  // El color va siempre a la vista: de fondo sin logo, como franja con logo.
-  muestra.style.setProperty('--muestra', paleta(diseno.color)['--marca-700']);
+  const vista = document.createElement('span');
+  vista.className = 'diseno__vista';
+  // La marca solo sobre la muestra: el resto de la tarjeta sigue con la letra de la consola.
+  aplicarMarca(vista, diseno);
+  const foto = portadaDe(fotoDeFondo(estado.proyectos, diseno.id));
+  if (foto) vista.style.backgroundImage = `url("${foto}")`;
+  const isla = document.createElement('span');
+  isla.className = 'diseno__isla';
   if (diseno.logo) {
     const logo = document.createElement('img');
     logo.src = `/api/disenos/${diseno.id}/logo`;
     logo.alt = '';
-    muestra.append(logo);
+    isla.append(logo);
+  } else {
+    isla.insertAdjacentHTML('beforeend', `<span class="diseno__hito">${BRUJULA}</span>`);
   }
+  const titulo = document.createElement('strong');
+  titulo.textContent = diseno.nombre;
+  isla.append(titulo);
+  const boton = document.createElement('span');
+  boton.className = 'diseno__boton';
+  boton.textContent = diseno.texto_pago || 'Comprar';
+  vista.append(isla, boton);
 
-  const nombre = document.createElement('span');
+  const pie = document.createElement('span');
+  pie.className = 'diseno__pie';
+  const nombre = document.createElement('strong');
   nombre.className = 'diseno__nombre';
   nombre.textContent = diseno.nombre;
-
   const usos = estado.proyectos.filter((p) => p.diseno_id === diseno.id).length;
   const detalle = document.createElement('span');
   detalle.className = 'diseno__usos';
-  detalle.textContent = usos ? `${usos} ${usos === 1 ? 'loteo' : 'loteos'}` : 'sin usar';
+  detalle.textContent = usos ? `${usos} ${usos === 1 ? 'loteo' : 'loteos'}` : 'Sin usar todavía';
+  const color = document.createElement('span');
+  color.className = 'diseno__color';
+  color.style.setProperty('--muestra', paleta(diseno.color)['--marca-700']);
+  color.textContent = diseno.color;
+  pie.append(nombre, detalle, color);
 
-  const lapiz = document.createElement('span');
-  lapiz.className = 'diseno__editar';
-  lapiz.setAttribute('aria-hidden', 'true');
-  lapiz.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4Zm11-15 4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
-
-  enlace.append(muestra, nombre, detalle, lapiz);
+  enlace.append(vista, pie);
   item.append(enlace);
+  return item;
+}
+
+/** La última tarjeta invita a crear otro diseño; sin ninguno, cuenta qué pasa sin él. */
+function tarjetaNueva(cantidad) {
+  const item = document.createElement('li');
+  item.innerHTML = `
+    <a class="diseno diseno--nuevo" href="#/disenos/nuevo">
+      <span class="diseno__nuevo-icono"><span class="plano-nuevo__orbita"></span>${ICONO_MAS}</span>
+      <strong>${cantidad ? 'Nuevo diseño' : 'Crea tu primer diseño'}</strong>
+      <span>${cantidad ? 'Tu logo, tu color y tu letra en los sitios que publiques.'
+        : 'Sin uno, tus loteos se publican con el diseño de Tu Masterplan.'}</span>
+    </a>`;
   return item;
 }
 
@@ -115,7 +168,10 @@ export function abrirDiseno(id) {
   form.elements.nombre.value = diseno?.nombre ?? '';
   $('#diseno-color').value = diseno?.color ?? POR_DEFECTO;
   $('#diseno-hex').value = diseno?.color ?? POR_DEFECTO;
-  $('#diseno-tipografia').value = diseno?.tipografia ?? 'jakarta';
+  form.elements.tipografia.value = diseno?.tipografia ?? 'jakarta';
+  // La foto de la vista previa: un loteo con este diseño o cualquiera construido.
+  const foto = portadaDe(fotoDeFondo(estado.proyectos, diseno?.id ?? null));
+  $('.previa__foto').style.backgroundImage = foto ? `url("${foto}")` : '';
   form.elements.texto_contacto.value = diseno?.texto_contacto ?? '';
   form.elements.texto_pago.value = diseno?.texto_pago ?? '';
   $('#diseno-borrar').hidden = !diseno;
@@ -130,7 +186,7 @@ function datosDelFormulario() {
   return {
     nombre: form.elements.nombre.value.trim(),
     color: $('#diseno-hex').value.trim().toLowerCase(),
-    tipografia: $('#diseno-tipografia').value,
+    tipografia: form.elements.tipografia.value || 'jakarta',
     texto_contacto: form.elements.texto_contacto.value.trim(),
     texto_pago: form.elements.texto_pago.value.trim(),
   };
@@ -143,6 +199,11 @@ function pintarPrevia() {
   aplicarMarca(previa, { color: valido ? datos.color : POR_DEFECTO, tipografia: datos.tipografia });
   $('#previa-contacto').textContent = datos.texto_contacto || TEXTOS_POR_DEFECTO.contacto;
   $('#previa-pago').textContent = datos.texto_pago || 'Comprar';
+  $('#previa-titulo').textContent = datos.nombre || 'Tu loteo';
+  // El color elegido, marcado entre los rápidos si es uno de ellos.
+  for (const boton of $('#diseno-colores').children) {
+    boton.setAttribute('aria-pressed', String(boton.style.getPropertyValue('--muestra') === datos.color));
+  }
 
   // Un color muy claro no lleva texto blanco encima: el botón se oscurece solo.
   // Se avisa, para que no sorprenda el tono publicado.

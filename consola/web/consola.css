@@ -427,31 +427,69 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
 
 /* --- Mis diseños ------------------------------------------------------------------ */
 
-.disenos { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+#pantalla-disenos h1 { font: 800 2.75rem/1.02 var(--sans); letter-spacing: -0.035em; }
+.disenos {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 1.25rem;
+  margin: 0; padding: 0; list-style: none;
+}
+.disenos > li { display: grid; }
 .diseno {
-  display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 1rem;
-  padding: 0.75rem 1rem 0.75rem 0.75rem;
-  background: #fff; border: 1px solid var(--zinc-200); border-radius: var(--radio-lg);
-  box-shadow: var(--sombra); text-decoration: none;
-  transition: border-color 150ms, box-shadow 200ms, transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex; flex-direction: column; border: 1px solid var(--zinc-200); border-radius: 1.375rem;
+  background: #fff; overflow: hidden; text-decoration: none; color: inherit;
+  box-shadow: 0 12px 30px -24px rgb(9 9 11 / 0.35);
+  transition: transform 450ms var(--curva-salida), box-shadow 450ms var(--curva-salida), border-color 300ms;
 }
-.diseno:hover { border-color: var(--zinc-300); box-shadow: 0 8px 24px -12px rgb(0 0 0 / 0.18); transform: translateY(-1px); }
-/* La muestra es el botón como se va a ver: el color ya corregido, y el logo encima. */
-.diseno__muestra {
-  display: grid; place-items: center; width: 3rem; height: 3rem; overflow: hidden;
-  background: var(--muestra); border-radius: var(--radio-md);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+.diseno:not(.diseno--nuevo):hover { transform: translateY(-4px); box-shadow: 0 26px 50px -26px rgb(9 9 11 / 0.45); }
+/* La muestra: el sitio en chico, con la marca puesta sobre la foto del campo. */
+.diseno__vista {
+  position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 1rem;
+  aspect-ratio: 16 / 10; padding: 0.75rem; overflow: hidden;
+  background: linear-gradient(180deg, #9cc3e6 0 38%, #7c9b5b 38% 100%) center / cover no-repeat;
+  font-family: var(--sans);
 }
-.diseno__muestra img {
-  width: 100%; height: 100%; object-fit: contain; padding: 0.35rem 0.35rem 0.6rem;
-  background: #fff; border-bottom: 0.3rem solid var(--muestra);
+.diseno__vista::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgb(9 9 11 / 0.1), rgb(9 9 11 / 0) 40%, rgb(9 9 11 / 0.35)); }
+.diseno__isla, .diseno__boton { position: relative; z-index: 1; }
+.diseno__isla {
+  align-self: flex-start; display: flex; align-items: center; gap: 0.5rem; max-width: 100%;
+  padding: 0.3rem 0.85rem 0.3rem 0.3rem; border-radius: 999px;
+  background: rgb(255 255 255 / 0.85); backdrop-filter: blur(10px); box-shadow: 0 10px 24px -14px rgb(9 9 11 / 0.6);
+  color: var(--zinc-900);
 }
-.diseno__nombre { font-weight: 600; font-size: 0.9375rem; }
-.diseno__usos { font-size: 0.75rem; color: var(--zinc-500); }
-.diseno__editar { color: var(--zinc-400); transition: color 150ms; }
-.diseno__editar svg { display: block; width: 1.25rem; height: 1.25rem; }
-.diseno:hover .diseno__editar { color: var(--zinc-900); }
-@media (prefers-reduced-motion: reduce) { .diseno { transition: none; } .diseno:hover { transform: none; } }
+.diseno__isla img { height: 1.75rem; max-width: 5.5rem; object-fit: contain; }
+.diseno__hito { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; padding: 0.3rem; border-radius: 50%; background: var(--marca-700); color: #fff; flex: none; }
+.diseno__hito svg { width: 100%; height: 100%; }
+.diseno__isla strong { font-size: 0.8125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.diseno__boton {
+  align-self: stretch; display: grid; place-items: center; height: 2.4rem; border-radius: 0.75rem;
+  background: var(--marca-700); color: #fff; font: 600 0.875rem/1 var(--sans);
+  box-shadow: 0 10px 22px -12px rgb(9 9 11 / 0.7);
+  transition: transform 450ms var(--curva-salida);
+}
+.diseno:hover .diseno__boton { transform: translateY(-2px); }
+.diseno__pie { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.15rem 0.75rem; padding: 0.9rem 1.1rem 1rem; }
+.diseno__nombre { font: 700 1.0625rem/1.2 var(--sans); }
+.diseno__usos { grid-column: 1; font-size: 0.8125rem; color: var(--zinc-500); }
+.diseno__color {
+  grid-column: 2; grid-row: 1 / span 2; display: inline-flex; align-items: center; gap: 0.4rem;
+  font: 500 0.75rem var(--mono); color: var(--zinc-500);
+}
+.diseno__color::before { content: ""; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: var(--muestra); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1); }
+.diseno--nuevo {
+  align-items: center; justify-content: center; gap: 0.5rem; min-height: 17rem; padding: 1.5rem; text-align: center;
+  border: 1.5px dashed var(--zinc-400); background: rgb(255 255 255 / 0.5); box-shadow: none;
+}
+.diseno--nuevo:hover { border-color: var(--zinc-900); background: #fff; }
+.diseno--nuevo strong { font-size: 1.0625rem; }
+.diseno--nuevo > span:last-child { max-width: 15rem; font-size: 0.8125rem; line-height: 1.5; color: var(--zinc-500); }
+.diseno__nuevo-icono { position: relative; display: grid; place-items: center; width: 4.5rem; height: 4.5rem; margin-bottom: 0.25rem; }
+.diseno__nuevo-icono svg { width: 1.9rem; height: 1.9rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.diseno--nuevo:hover .plano-nuevo__orbita { animation-duration: 3s; }
+.disenos--entrando > li { animation: asomar 700ms var(--curva-salida) both; animation-delay: calc(120ms + var(--orden, 0) * 80ms); }
+@media (prefers-reduced-motion: reduce) {
+  .diseno, .diseno__boton { transition: none; }
+  .diseno:hover { transform: none; }
+  .disenos--entrando > li { animation: none; }
+}
 
 /* --- Reservas ---------------------------------------------------------------------- */
 
@@ -571,55 +609,98 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
   border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); background: #fff; font: inherit; color: var(--zinc-900);
 }
 
-.editor { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: 1.5rem; align-items: start; }
+.editor { display: grid; grid-template-columns: minmax(0, 1fr) 21rem; gap: 1.5rem; align-items: start; }
+.editor__form .formulario__pie { padding-top: 0; }
 .color { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
+.colores { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-right: 0.25rem; }
+.muestra-color {
+  width: 2.25rem; height: 2.25rem; padding: 0; border: 0; border-radius: 50%; background: var(--muestra);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12); transition: transform 200ms var(--curva-salida), box-shadow 200ms;
+}
+.muestra-color:hover { transform: scale(1.1); }
+.muestra-color[aria-pressed="true"] { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--muestra); }
 .color input[type="color"] {
   width: 2.5rem; height: 2.5rem; padding: 0.2rem;
-  background: #fff; border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); cursor: pointer;
+  background: #fff; border: 1px solid var(--zinc-300); border-radius: 50%; cursor: pointer;
 }
-.renglon .color input[type="text"] { width: 7rem; font-family: var(--mono); }
+.color input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.color input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 50%; }
+.ajustes .color input[type="text"] { width: 7rem; font-family: var(--mono); }
+/* Los campos del editor estiran sus entradas; el selector de color y los textos de
+   las tarjetas de letra y del logo no son campos de texto. */
+.ajustes .color input[type="color"] { width: 2.5rem; height: 2.5rem; padding: 0; border: 1px solid var(--zinc-300); border-radius: 50%; background: #fff; }
+.ajustes .letra span, .ajustes .archivo span {
+  font: 500 0.8125rem/1.3 var(--sans); letter-spacing: 0; text-transform: none; color: var(--zinc-500);
+}
+.ajustes .archivo span { color: inherit; }
 .color .nota { margin: 0; flex-basis: 100%; }
+/* La letra se elige viéndola: una tarjeta por familia, escrita en esa familia. */
+.letras { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.625rem; }
+.letra {
+  position: relative; display: grid; justify-items: center; gap: 0.25rem; padding: 0.9rem 0.5rem;
+  border: 1px solid var(--zinc-200); border-radius: 1rem; background: var(--zinc-50); cursor: pointer;
+  transition: border-color 200ms, background 200ms, box-shadow 200ms;
+}
+.letra input { position: absolute; opacity: 0; pointer-events: none; }
+.letra b { font-size: 1.75rem; line-height: 1; }
+.letra span { font-size: 0.75rem; color: var(--zinc-500); }
+.letra:hover { border-color: var(--zinc-400); }
+.letra:has(input:checked) { border-color: var(--zinc-900); background: #fff; box-shadow: 0 0 0 3px rgb(24 24 27 / 0.08); }
+.letra:has(input:focus-visible) { outline: 2px solid var(--marca-700); outline-offset: 2px; }
+.letra--jakarta b { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+.letra--serif b { font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif; }
+.letra--sistema b { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
 .formulario__pie--separado { justify-content: space-between; }
 .formulario__pie--separado .boton:only-child { margin-left: auto; }
 
-/* La vista previa se pinta con `aplicarMarca`, que pone las mismas variables
-   --marca-* y --sans que usa el visor: lo de acá abajo solo dibuja la escena. */
-.previa {
-  position: sticky; top: 5rem;
-  display: grid; gap: 0; overflow: hidden;
-  background: #fff; border: 1px solid var(--zinc-200); border-radius: var(--radio-lg);
-  box-shadow: var(--sombra); font-family: var(--sans);
-}
+/* La vista previa: un teléfono con la foto del campo, la isla de la marca arriba y
+   la ficha de una parcela abajo. `aplicarMarca` pone las mismas variables --marca-*
+   y --sans que usa el visor; lo de acá solo dibuja la escena. */
+.previa { position: sticky; top: 6rem; display: grid; gap: 0.75rem; justify-items: center; font-family: var(--sans); }
 .previa__rotulo {
-  padding: 0.5rem 0.875rem; font: 600 0.625rem/1 var(--sans); letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--zinc-500); border-bottom: 1px solid var(--zinc-100);
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font: 700 0.6875rem/1 'Plus Jakarta Sans', system-ui, sans-serif; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--zinc-500);
 }
-.previa__barra { display: flex; align-items: center; gap: 0.625rem; padding: 0.75rem 0.875rem; border-bottom: 1px solid var(--zinc-200); }
-.previa__marca { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0.4rem; background: var(--marca-700); border-radius: var(--radio-md); color: #fff; flex: none; }
-.previa__marca--logo { width: auto; max-width: 7rem; padding: 0; background: none; }
-.previa__marca--logo .previa__hito { display: none; }
-.previa__marca img { display: block; height: 2.25rem; max-width: 7rem; object-fit: contain; }
-.previa__hito { width: 100%; height: 100%; }
-.previa__nombre { display: grid; gap: 0.1rem; min-width: 0; }
-.previa__nombre strong { font-size: 0.875rem; }
-.previa__nombre small { font-size: 0.6875rem; color: var(--zinc-500); }
+.previa__telefono {
+  position: relative; width: 100%; max-width: 19rem; aspect-ratio: 9 / 17; overflow: hidden;
+  border: 8px solid var(--zinc-900); border-radius: 2.5rem; background: var(--zinc-900);
+  box-shadow: 0 30px 60px -30px rgb(9 9 11 / 0.6);
+}
 .previa__foto {
-  height: 6rem;
-  background:
-    linear-gradient(180deg, #9cc3e6 0 32%, #7c9b5b 32% 100%);
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, #9cc3e6 0 32%, #7c9b5b 32% 100%) center / cover no-repeat;
 }
-.previa__ficha { display: grid; gap: 0.5rem; padding: 0.875rem; }
+.previa__barra {
+  position: absolute; z-index: 1; top: 0.75rem; left: 0.75rem; right: 0.75rem;
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.8rem 0.3rem 0.3rem;
+  border-radius: 999px; background: rgb(255 255 255 / 0.85); backdrop-filter: blur(10px);
+  box-shadow: 0 10px 24px -14px rgb(9 9 11 / 0.6);
+}
+.previa__marca { display: grid; place-items: center; width: 2rem; height: 2rem; padding: 0.35rem; background: var(--marca-700); border-radius: 50%; color: #fff; flex: none; }
+.previa__marca--logo { width: auto; max-width: 6rem; padding: 0; background: none; border-radius: 0; }
+.previa__marca--logo .previa__hito { display: none; }
+.previa__marca img { display: block; height: 2rem; max-width: 6rem; object-fit: contain; }
+.previa__hito { width: 100%; height: 100%; }
+.previa__nombre { display: grid; gap: 0.05rem; min-width: 0; color: var(--zinc-900); }
+.previa__nombre strong { font-size: 0.8125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.previa__nombre small { font-size: 0.625rem; color: var(--zinc-500); }
+.previa__ficha {
+  position: absolute; z-index: 1; left: 0; right: 0; bottom: 0;
+  display: grid; gap: 0.45rem; padding: 0.9rem 0.9rem 1.1rem;
+  border-radius: 1.5rem 1.5rem 0 0; background: #fff; color: var(--zinc-900);
+  box-shadow: 0 -12px 30px -18px rgb(9 9 11 / 0.6);
+}
+.previa__ficha::before { content: ""; justify-self: center; width: 2.25rem; height: 4px; margin-bottom: 0.2rem; border-radius: 2px; background: var(--zinc-300); }
 .previa__ficha strong { font-size: 1rem; }
 .previa__estado { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--zinc-700); }
 /* El verde de "disponible" no cambia con la marca: significa lo mismo en todos los sitios. */
 .previa__estado i { width: 0.6rem; height: 0.6rem; border-radius: 999px; background: #007c10; }
-.previa__precio { font-weight: 600; font-size: 0.9375rem; }
+.previa__precio { font-weight: 700; font-size: 0.9375rem; }
 .previa__precio small { font-weight: 400; color: var(--zinc-500); }
 .previa__boton {
-  display: grid; place-items: center; height: 2.5rem; padding: 0 0.75rem;
-  background: var(--marca-700); color: #fff; border-radius: var(--radio-sm);
-  font: 500 0.875rem/1 var(--sans); text-align: center;
+  display: grid; place-items: center; height: 2.4rem; padding: 0 0.75rem;
+  background: var(--marca-700); color: #fff; border-radius: 0.75rem;
+  font: 600 0.8125rem/1 var(--sans); text-align: center; transition: background 250ms;
 }
 .previa__boton--contorno { background: #fff; color: var(--zinc-900); box-shadow: inset 0 0 0 1px var(--zinc-300); }
 
@@ -1463,8 +1544,10 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
   .pantalla h1 { font-size: 1.5rem; }
   .editor { grid-template-columns: 1fr; }
   .previa { position: static; }
-  .diseno { grid-template-columns: auto 1fr auto; }
-  .diseno__usos { display: none; }
+  #pantalla-disenos h1 { font-size: 2.25rem; }
+  .letras { gap: 0.4rem; }
+  .colores { gap: 0.375rem; }
+  .muestra-color { width: 2rem; height: 2rem; }
   #pantalla-kmzs h1 { font-size: 2.25rem; }
   .formulario { padding: 1.25rem; }
   .renglon { grid-template-columns: 1fr; gap: 0.4rem; }
