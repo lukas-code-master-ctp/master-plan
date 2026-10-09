@@ -906,6 +906,8 @@
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="7" r="3.2"/><path d="M3.8 16.5c.9-3 3.3-4.6 6.2-4.6s5.3 1.6 6.2 4.6"/></svg>Tu cuenta</button>
         <button type="button" data-ir="config-equipo">
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="7.5" cy="7.5" r="2.7"/><circle cx="14" cy="8.5" r="2.1"/><path d="M2.5 16c.7-2.6 2.6-4 5-4s4.3 1.4 5 4M13 12.3c2 0 3.6 1.1 4.3 3.4"/></svg>Equipo</button>
+        <button type="button" data-ir="config-reservas">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3.5" y="4.5" width="13" height="12" rx="2"/><path d="M3.5 8.5h13M7 3v3M13 3v3M7.5 12.5l1.8 1.6 3.4-3.4"/></svg>Reservas y contacto</button>
         <button type="button" data-ir="config-integraciones">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 12 12 8M7 9.5 5.2 11.3a2.6 2.6 0 0 0 3.6 3.6L10.5 13M13 10.5l1.8-1.8a2.6 2.6 0 0 0-3.6-3.6L9.5 7"/></svg>Integraciones</button>
       </nav>
@@ -978,6 +980,34 @@
           <p id="equipo-solo-duenio" class="nota" hidden>Solo el dueño de la loteadora invita o desactiva a alguien.</p>
         </section>
 
+        <!-- Reservas y contacto -->
+        <section id="config-reservas" class="config__seccion" aria-labelledby="titulo-config-reservas">
+          <header class="config__cabecera">
+            <div>
+              <h2 id="titulo-config-reservas">Reservas y contacto</h2>
+              <p class="nota">Con esto nacen tus masters nuevos y se apartan las parcelas que piden tus compradores.</p>
+            </div>
+          </header>
+          <form id="preferencias-form" class="ajustes preferencias" novalidate>
+            <fieldset id="preferencias-campos" class="preferencias__campos">
+              <label class="campo"><span>WhatsApp de contacto</span>
+                <input id="preferencias-whatsapp" name="whatsapp" type="tel" inputmode="tel" placeholder="+56 9 1234 5678" autocomplete="off"></label>
+              <label class="campo"><span>Diseño para los masters nuevos</span>
+                <select id="preferencias-diseno" name="diseno_id"></select></label>
+              <p class="nota preferencias__ancho">El WhatsApp y el diseño se ponen solos al crear un master; en los que ya tienes se cambian en cada uno.</p>
+              <div class="preferencias__ancho" role="radiogroup" aria-labelledby="preferencias-horas-titulo">
+                <span id="preferencias-horas-titulo" class="preferencias__rotulo">Una parcela queda apartada</span>
+                <div id="preferencias-horas" class="horas"></div>
+                <p class="nota">Mientras el comprador paga, el sitio la muestra como "Reserva en proceso". Si no confirmas el pago en ese tiempo, vuelve sola a disponible.</p>
+              </div>
+            </fieldset>
+            <p id="preferencias-solo-duenio" class="nota" hidden>Esto lo cambia el dueño de la loteadora.</p>
+            <div class="perfil__pie">
+              <button id="preferencias-guardar" class="boton" type="submit" disabled>Guardar</button>
+            </div>
+          </form>
+        </section>
+
         <!-- Integraciones -->
         <section id="config-integraciones" class="config__seccion" aria-labelledby="titulo-integraciones">
           <header class="config__cabecera">
@@ -1038,7 +1068,7 @@
       <div>
         <h1 id="titulo-reservas">Reservas</h1>
         <p class="guia">Lo que piden los compradores desde tus sitios publicados. La parcela
-          queda apartada 2 horas mientras paga: confírmala cuando veas el pago, o libérala.
+          queda apartada <span id="reservas-horas">2 horas</span> mientras paga: confírmala cuando veas el pago, o libérala.
           Para que el sitio la muestre reservada para siempre, márcala en tu inventario.</p>
       </div>
     </header>

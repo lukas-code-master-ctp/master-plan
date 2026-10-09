@@ -77,6 +77,7 @@ from .rutas_cuentas import (
 )
 from .rutas_reservas import PUBLICAS as PUBLICAS_DE_RESERVAS
 from .rutas_equipo import rutas_de_equipo
+from .rutas_preferencias import preferencias_de, rutas_de_preferencias
 from .rutas_reservas import rutas_de_reservas
 from .trabajos import Trabajos
 
@@ -87,7 +88,7 @@ WEB = Path(__file__).resolve().parent / "web"
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "barra.js", "comun.js", "detalle.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
-           "vuelo.js", "configuracion.js", "equipo.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
+           "vuelo.js", "configuracion.js", "equipo.js", "preferencias.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
            "mapa_kmz.js", "sondeo.js", "reservas.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
@@ -345,6 +346,9 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             "cliente_id": quien_es.cliente_id,
             "cliente": base.cliente(quien_es.cliente_id).nombre,
             "debe_cambiar_clave": quien_es.debe_cambiar_clave,
+            # Lo de Configuración → Reservas y contacto: Nuevo master ofrece primero
+            # el diseño fijado y Reservas dice cuántas horas queda apartada una parcela.
+            "preferencias": preferencias_de(base, quien_es),
             # La carpeta del disco solo se puede vincular donde está el disco.
             "puede_vincular": acceso.local,
             # Para avisar antes de subir, no después de mandar un giga. El equipo
@@ -377,6 +381,11 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             raise HTTPException(409, str(error)) from error
         if diseno_id is not None:
             proyecto = mios.asignar_diseno(proyecto.slug, diseno_id)
+        # Nace con el WhatsApp de la loteadora: sin él, el sitio esconde el botón de
+        # contacto, y era lo que más se olvidaba al armar un master.
+        whatsapp = base.cliente(proyecto.cliente_id).whatsapp
+        if whatsapp:
+            proyecto = mios.ajustar(proyecto.slug, {"whatsapp": whatsapp})
         return _como_json(proyecto, trabajos)
 
     @app.get("/api/proyectos/{slug}/portada")
@@ -893,6 +902,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
 
     app.include_router(rutas_de_cuentas(acceso, cuentas, google))
     app.include_router(rutas_de_equipo(base, cuentas, quien, local=acceso.local))
+    app.include_router(rutas_de_preferencias(base, quien))
     app.include_router(rutas_de_reservas(reservas, registro, vista, local=acceso.local))
     def publicar_en_linea(proyecto: Proyecto) -> dict:
         """Vuelve a publicar un loteo que ya está en línea, sin preguntar: lo piden

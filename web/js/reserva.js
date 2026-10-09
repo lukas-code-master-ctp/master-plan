@@ -86,6 +86,16 @@ export async function enviarSolicitud(meta, parcela, campos, pedir = fetch) {
   }
 }
 
+// En 24 horas, como se lee en Chile.
+const HORA = new Intl.DateTimeFormat('es-CL', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+/** Lo que se le dice al comprador cuando quedó apartada sin link de pago. */
+export function textoApartada(hasta) {
+  const momento = hasta ? new Date(hasta) : null;
+  const cuando = momento && !Number.isNaN(momento.getTime()) ? ` hasta las ${HORA.format(momento)}` : '';
+  return `Listo: la parcela quedó apartada${cuando}. Te van a escribir para seguir.`;
+}
+
 /**
  * Abre el formulario de una parcela. Cuando la consola la apartó, `alTerminar(link)`
  * recibe adónde ir a pagar, o null si no hay link (y el formulario lo dice).
@@ -96,7 +106,9 @@ export function abrirFormulario(dialogo, { catalogo, parcela, alTerminar }) {
   const enviar = dialogo.querySelector('#reserva-enviar');
   dialogo.querySelector('#reserva-titulo').textContent = `Reservar ${catalogo.titulo(parcela)}`;
   dialogo.querySelector('#reserva-explicacion').textContent =
-    'Te la apartamos por 2 horas mientras pagas, para que nadie más la reserve. '
+    // Sin número de horas: cada loteadora fija las suyas y el sitio no las sabe
+    // hasta que la consola contesta. La hora exacta se dice al apartarla.
+    'Te la apartamos mientras pagas, para que nadie más la reserve. '
     + 'Te escribirán para confirmar.';
   const listo = dialogo.querySelector('#reserva-listo');
   formulario.reset();
@@ -127,7 +139,7 @@ export function abrirFormulario(dialogo, { catalogo, parcela, alTerminar }) {
       formulario.classList.add('reserva--lista');
       enviar.hidden = true;
       cancelar.textContent = 'Cerrar';
-      listo.textContent = 'Listo: la parcela quedó apartada por 2 horas. Te van a escribir para seguir.';
+      listo.textContent = textoApartada(datos.apartada_hasta);
       listo.hidden = false;
       alTerminar(null);
       return;

@@ -1,11 +1,12 @@
 /**
  * Reservas: las solicitudes que llegan desde los sitios publicados.
  *
- * Una parcela queda apartada 2 horas mientras el comprador paga. Acá la
+ * Una parcela queda apartada mientras el comprador paga (2 horas, o lo que la
+ * loteadora fijó en Configuración → Reservas y contacto). Acá la
  * loteadora la confirma cuando ve el pago (queda apartada hasta que el
  * inventario la marque) o la libera. Si nadie hace nada, vence sola.
  */
-import { $, avisar, estado, pedir } from './comun.js';
+import { $, avisar, estado, horas, pedir } from './comun.js';
 
 const ANTERIORES_A_LA_VISTA = 20;
 // En 24 horas, como se lee en Chile: según el navegador, es-CL podía salir "02:00 p. m.".
@@ -97,6 +98,7 @@ export function pintarContador() {
 }
 
 export function pintarReservas() {
+  $('#reservas-horas').textContent = horas(estado.sesion?.preferencias?.horas_apartado ?? 2);
   const lista = $('#reservas');
   const { porConfirmar, confirmadas, anteriores } = agrupar(estado.reservas);
   if (!porConfirmar.length && !confirmadas.length && !anteriores.length) {

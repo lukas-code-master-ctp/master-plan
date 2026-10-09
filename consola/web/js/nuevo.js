@@ -103,7 +103,8 @@ export function abrirNuevo({ kmz = null } = {}) {
   opcionesDeMisKmz($('#nuevo-mio'), listos, eleccion.mio);
   $('#nuevo-progreso').hidden = true;
   $('#carpeta-local').hidden = !(estado.sesion?.rol === 'plataforma' && estado.sesion?.puede_vincular);
-  opcionesDeDiseno($('#nuevo-diseno'), null);
+  // Parte con el diseño que la loteadora fijó en Configuración, si fijó uno.
+  opcionesDeDiseno($('#nuevo-diseno'), estado.sesion?.preferencias?.diseno_id ?? null);
   // Con el KMZ elegido, el nombre del master parte con el del KMZ.
   const elegido = listos.find((k) => k.slug === eleccion.mio);
   if (elegido) $('#nuevo-nombre').value = elegido.nombre;

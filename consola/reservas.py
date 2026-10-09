@@ -28,9 +28,11 @@ from .proyectos import Proyecto
 
 registro = logging.getLogger("consola.reservas")
 
-# Lo que dura apartada una parcela sin confirmar. Lo eligió el usuario (2026-10-06):
-# alcanza para pagar con calma y no deja una parcela bloqueada todo el día.
-APARTADO = timedelta(hours=2)
+# Lo que dura apartada una parcela sin confirmar, si la loteadora no eligió otra
+# cosa en Configuración. Lo eligió el usuario (2026-10-06): alcanza para pagar con
+# calma y no deja una parcela bloqueada todo el día.
+HORAS_APARTADO = 2
+HORAS_APARTADO_MAXIMO = 48
 
 # Cuántas solicitudes sin confirmar puede tener un loteo a la vez. Sin tope,
 # alguien con datos inventados podría dejar el loteo entero como "Reserva en
@@ -158,6 +160,7 @@ class Reservas:
         if estado != "disponible":
             raise NoSePuedeApartar("Esta parcela ya no está disponible.")
         ahora = self.ahora()
+        apartado = self.apartado(proyecto)
         with self._candado:
             activas = self._activas(proyecto, ahora)
             if any(s.parcela == parcela for s in activas):
@@ -174,13 +177,18 @@ class Reservas:
                 nueva = con.execute(insert(solicitudes_reserva).values(
                     proyecto_id=self._id(proyecto), parcela=parcela, nombre=comprador.nombre,
                     telefono=comprador.telefono, email=comprador.email, estado=PENDIENTE,
-                    creada_en=ahora, vence_en=ahora + APARTADO))
+                    creada_en=ahora, vence_en=ahora + apartado))
                 identificador = nueva.inserted_primary_key[0]
         solicitud = Solicitud(id=identificador, parcela=parcela, nombre=comprador.nombre,
                               telefono=comprador.telefono, email=comprador.email, estado=PENDIENTE,
-                              creada_en=ahora, vence_en=ahora + APARTADO)
+                              creada_en=ahora, vence_en=ahora + apartado)
         self._avisar(proyecto, solicitud, url_consola)
         return solicitud
+
+    def apartado(self, proyecto: Proyecto) -> timedelta:
+        """Lo que la loteadora eligió en Configuración, o las 2 horas de siempre."""
+        horas = self.base.cliente(proyecto.cliente_id).horas_apartado
+        return timedelta(hours=horas or HORAS_APARTADO)
 
     # --- lo que hace la loteadora en la consola ---------------------------------------
 
@@ -237,7 +245,7 @@ class Reservas:
             "(Datos escritos por el comprador en el sitio, sin verificar.)",
             "",
             f"La parcela queda apartada hasta las {_hora_de_chile(solicitud.vence_en)}"
-            f" ({int(APARTADO.total_seconds() // 3600)} horas) mientras paga. Si no confirmas el pago,"
+            f" ({int((solicitud.vence_en - solicitud.creada_en).total_seconds() // 3600)} horas) mientras paga. Si no confirmas el pago,"
             " vuelve sola a disponible.",
             "",
             f"Confírmala o libérala en la consola: {url_consola.rstrip('/')}/#/reservas"

@@ -61,6 +61,12 @@ clientes = Table(
     Column("nombre", String(160), nullable=False),
     Column("estado", String(20), nullable=False, default="activo"),
     Column("creado_en", DateTime(timezone=True), nullable=False),
+    # Lo que la loteadora deja fijado en Configuración → Reservas y contacto. Sin
+    # llave foránea al diseño: disenos ya apunta a clientes y el ciclo complica
+    # crear las tablas; que el diseño sea suyo lo revisa la ruta.
+    Column("whatsapp", String(20), nullable=True),
+    Column("diseno_id", Integer, nullable=True),
+    Column("horas_apartado", Integer, nullable=True),
 )
 
 usuarios = Table(
@@ -253,6 +259,9 @@ class Cliente:
     nombre: str
     estado: str
     creado_en: datetime
+    whatsapp: str | None = None
+    diseno_id: int | None = None
+    horas_apartado: int | None = None
 
 
 @dataclass(frozen=True)
@@ -446,6 +455,14 @@ class Base:
     def renombrar_usuario(self, usuario_id: int, nombre: str) -> None:
         with self.motor.begin() as con:
             con.execute(update(usuarios).where(usuarios.c.id == usuario_id).values(nombre=nombre.strip()))
+
+    def guardar_preferencias(self, cliente_id: int, **campos) -> None:
+        """whatsapp, diseno_id y horas_apartado: los que vengan, el resto igual."""
+        validos = {c: v for c, v in campos.items() if c in ("whatsapp", "diseno_id", "horas_apartado")}
+        if not validos:
+            return
+        with self.motor.begin() as con:
+            con.execute(update(clientes).where(clientes.c.id == cliente_id).values(**validos))
 
     def renombrar_cliente(self, cliente_id: int, nombre: str) -> None:
         """Solo el nombre que se muestra: el slug no cambia, que nombra carpetas."""
@@ -694,9 +711,12 @@ class Base:
         return self.diseno(diseno_id)
 
     def borrar_diseno(self, diseno_id: int) -> None:
-        """Los loteos que lo usaban vuelven al diseño por defecto."""
+        """Los loteos que lo usaban vuelven al diseño por defecto, y si era el de
+        la loteadora para sus masters nuevos, deja de serlo."""
         with self.motor.begin() as con:
             con.execute(update(proyectos).where(proyectos.c.diseno_id == diseno_id)
+                        .values(diseno_id=None))
+            con.execute(update(clientes).where(clientes.c.diseno_id == diseno_id)
                         .values(diseno_id=None))
             con.execute(delete(disenos).where(disenos.c.id == diseno_id))
 
@@ -863,6 +883,12 @@ def _migrar(motor) -> None:
     if "visor_publicado" not in columnas:
         with motor.begin() as con:
             con.execute(text("ALTER TABLE proyectos ADD COLUMN visor_publicado VARCHAR(64)"))
+    columnas = {c["name"] for c in inspect(motor).get_columns("clientes")}
+    for columna, tipo in (("whatsapp", "VARCHAR(20)"), ("diseno_id", "INTEGER"),
+                          ("horas_apartado", "INTEGER")):
+        if columna not in columnas:
+            with motor.begin() as con:
+                con.execute(text(f"ALTER TABLE clientes ADD COLUMN {columna} {tipo}"))
     # Las cuentas que ya existían las creó el equipo: nacen verificadas.
     columnas = {c["name"] for c in inspect(motor).get_columns("usuarios")}
     if "email_verificado" not in columnas:
@@ -901,7 +927,8 @@ def _utc(momento: datetime) -> datetime:
 
 def _cliente(fila) -> Cliente:
     return Cliente(id=fila.id, slug=fila.slug, nombre=fila.nombre,
-                   estado=fila.estado, creado_en=fila.creado_en)
+                   estado=fila.estado, creado_en=fila.creado_en, whatsapp=fila.whatsapp,
+                   diseno_id=fila.diseno_id, horas_apartado=fila.horas_apartado)
 
 
 def _usuario(fila) -> Usuario:
