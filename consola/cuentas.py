@@ -37,6 +37,8 @@ registro = logging.getLogger("consola.cuentas")
 
 LARGO_MINIMO_CLAVE = 10
 VIGENCIA = {"verificar": timedelta(days=2), "clave": timedelta(hours=1)}
+# Una invitación se abre cuando la persona puede, no en la hora siguiente.
+VIGENCIA_INVITACION = timedelta(days=7)
 EMAIL_VALIDO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -296,6 +298,22 @@ class Cuentas:
                      "Si no lo pediste, ignora este correo: tu contraseña sigue igual.",
                      controlar=False)
 
+    def invitar(self, usuario: Usuario, *, quien_invita: str, loteadora: str, url_base: str) -> None:
+        """El enlace para que alguien recién sumado al equipo elija su contraseña.
+
+        Es el mismo enlace de restablecer, con más plazo: entrar con él prueba que
+        el buzón es suyo, y la clave provisional con que se creó nadie la conoce.
+        """
+        token = self._token(usuario.id, "clave", VIGENCIA_INVITACION)
+        self._enviar(usuario.email, f"{quien_invita} te invitó a Tu Masterplan",
+                     "Hola:\n\n"
+                     f"{quien_invita} te sumó al equipo de {loteadora} en Tu Masterplan, donde se "
+                     "suben, construyen y publican los masters de sus loteos.\n\n"
+                     f"Elige tu contraseña para entrar:\n\n{url_base}/restablecer?t={token}\n\n"
+                     "El enlace sirve una vez y vence en 7 días. Si entras con Google, también "
+                     "puedes usar este mismo correo.\n"
+                     "Si no esperabas esta invitación, ignora este correo.")
+
     def restablecer(self, token: str, clave: str) -> Usuario | None:
         """Cambia la clave con un enlace válido. Cambiarla corta las sesiones
         abiertas; y quien recibió el correo probó que el buzón es suyo."""
@@ -310,10 +328,10 @@ class Cuentas:
         self.base.marcar_verificado(usuario.id)
         return self.base.usuario(usuario.id)
 
-    def _token(self, usuario_id: int, tipo: str) -> str:
+    def _token(self, usuario_id: int, tipo: str, vigencia: timedelta | None = None) -> str:
         token = secrets.token_urlsafe(32)
         self.base.guardar_token(usuario_id, tipo, _hash(token),
-                                datetime.now(timezone.utc) + VIGENCIA[tipo])
+                                datetime.now(timezone.utc) + (vigencia or VIGENCIA[tipo]))
         return token
 
     def _enviar(self, para: str, asunto: str, texto: str, *, controlar: bool = True) -> None:

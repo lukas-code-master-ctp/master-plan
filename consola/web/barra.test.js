@@ -8,7 +8,7 @@ test('cada pantalla marca su sección en la barra', () => {
   assert.equal(seccionDe('planos'), 'planos');
   assert.equal(seccionDe('plano'), 'planos');
   assert.equal(seccionDe('nuevo'), 'planos');
-  assert.equal(seccionDe('configuracion'), 'planos');
+  assert.equal(seccionDe('configuracion'), null);
   assert.equal(seccionDe('kmzs'), 'kmz');
   assert.equal(seccionDe('kmz'), 'kmz');
   assert.equal(seccionDe('disenos'), 'disenos');
