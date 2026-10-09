@@ -789,10 +789,15 @@ class Base:
                 cliente_id=cliente_id, usuario_id=usuario_id, que=que,
                 detalle=detalle, cuando=_ahora()))
 
-    def historial(self, cliente_id: int | None = None, limite: int = 200) -> list[Evento]:
+    def historial(self, cliente_id: int | None = None, limite: int = 200,
+                  antes: int | None = None) -> list[Evento]:
+        """Lo más nuevo primero. `antes`: solo los anteriores a ese evento, para
+        pedir el historial por partes hacia atrás."""
         consulta = select(eventos).order_by(eventos.c.id.desc()).limit(limite)
         if cliente_id is not None:
             consulta = consulta.where(eventos.c.cliente_id == cliente_id)
+        if antes is not None:
+            consulta = consulta.where(eventos.c.id < antes)
         with self.motor.connect() as con:
             return [Evento(id=f.id, cliente_id=f.cliente_id, usuario_id=f.usuario_id,
                            que=f.que, detalle=f.detalle, cuando=f.cuando)

@@ -910,6 +910,8 @@
           <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3.5" y="4.5" width="13" height="12" rx="2"/><path d="M3.5 8.5h13M7 3v3M13 3v3M7.5 12.5l1.8 1.6 3.4-3.4"/></svg>Reservas y contacto</button>
         <button type="button" data-ir="config-integraciones">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 12 12 8M7 9.5 5.2 11.3a2.6 2.6 0 0 0 3.6 3.6L10.5 13M13 10.5l1.8-1.8a2.6 2.6 0 0 0-3.6-3.6L9.5 7"/></svg>Integraciones</button>
+        <button type="button" data-ir="config-actividad">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10h3l2-5 4 10 2-5h4"/></svg>Actividad</button>
       </nav>
 
       <div class="config__secciones">
@@ -1042,6 +1044,19 @@
           <button id="config-cierra-quitar" class="boton boton--texto boton--peligro" type="button">Quitar</button>
         </div>
       </article>
+        </section>
+
+        <!-- Actividad -->
+        <section id="config-actividad" class="config__seccion" aria-labelledby="titulo-config-actividad">
+          <header class="config__cabecera">
+            <div>
+              <h2 id="titulo-config-actividad">Actividad</h2>
+              <p class="nota">Lo que pasó en tu loteadora: quién creó, construyó o publicó un master, las reservas y los cambios del equipo.</p>
+            </div>
+          </header>
+          <ol id="actividad-lista" class="actividad"></ol>
+          <p id="actividad-vacia" class="nota" hidden>Todavía no hay nada anotado.</p>
+          <button id="actividad-mas" class="boton boton--contorno actividad__mas" type="button" hidden>Ver más</button>
         </section>
       </div>
     </div>

@@ -463,6 +463,7 @@ RUTAS = {
     ("POST", "/api/cuenta/sesiones/cerrar"): SOLO_SUYO,
     ("POST", "/api/equipo"): SOLO_SUYO,
     ("GET", "/api/preferencias"): SOLO_SUYO,
+    ("GET", "/api/actividad"): SOLO_SUYO,
     ("PATCH", "/api/preferencias"): SOLO_SUYO,
     ("POST", "/api/equipo/{usuario_id}/estado"): "nombra a una persona: si no es de su loteadora, 404",
     ("GET", "/api/proyectos"): SOLO_SUYO,

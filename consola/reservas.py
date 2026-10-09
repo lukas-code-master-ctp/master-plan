@@ -182,6 +182,10 @@ class Reservas:
         solicitud = Solicitud(id=identificador, parcela=parcela, nombre=comprador.nombre,
                               telefono=comprador.telefono, email=comprador.email, estado=PENDIENTE,
                               creada_en=ahora, vence_en=ahora + apartado)
+        # Sin los datos del comprador: el historial lo ve todo el equipo y los
+        # datos ya están en la solicitud, que es donde se resuelve.
+        self.base.anotar("reserva pedida", cliente_id=proyecto.cliente_id,
+                         detalle=f"Parcela {parcela} · {proyecto.nombre}")
         self._avisar(proyecto, solicitud, url_consola)
         return solicitud
 

@@ -151,19 +151,29 @@ def rutas_de_reservas(reservas: Reservas, registro: Registro, vista, *, local: b
         ahora = reservas.ahora()
         return [s.como_json(ahora) for s in reservas.del_loteo(proyecto)]
 
+    def anotar(peticion: Request, que: str, proyecto: Proyecto, solicitud) -> None:
+        # La sesión la dejó la puerta (app.py): la vista ya probó que el loteo es suyo.
+        registro.base.anotar(que, cliente_id=proyecto.cliente_id,
+                             usuario_id=peticion.state.sesion.usuario_id,
+                             detalle=f"Parcela {solicitud.parcela} · {proyecto.nombre}")
+
     @rutas.post("/api/proyectos/{slug}/reservas/{identificador}/confirmar")
-    def confirmar(slug: str, identificador: int, mios: Vista = Depends(vista)) -> dict:
+    def confirmar(slug: str, identificador: int, peticion: Request, mios: Vista = Depends(vista)) -> dict:
         """Se vio el pago: la parcela queda apartada hasta que el inventario la marque."""
         proyecto = mios.ver(slug)
         try:
-            return reservas.resolver(proyecto, identificador, CONFIRMADA).como_json(reservas.ahora())
+            solicitud = reservas.resolver(proyecto, identificador, CONFIRMADA)
         except NoSePuedeApartar as error:
             raise HTTPException(409, str(error)) from error
+        anotar(peticion, "reserva confirmada", proyecto, solicitud)
+        return solicitud.como_json(reservas.ahora())
 
     @rutas.post("/api/proyectos/{slug}/reservas/{identificador}/liberar")
-    def liberar(slug: str, identificador: int, mios: Vista = Depends(vista)) -> dict:
+    def liberar(slug: str, identificador: int, peticion: Request, mios: Vista = Depends(vista)) -> dict:
         """No hubo pago (o se arrepintió): la parcela vuelve a estar disponible."""
         proyecto = mios.ver(slug)
-        return reservas.resolver(proyecto, identificador, LIBERADA).como_json(reservas.ahora())
+        solicitud = reservas.resolver(proyecto, identificador, LIBERADA)
+        anotar(peticion, "reserva liberada", proyecto, solicitud)
+        return solicitud.como_json(reservas.ahora())
 
     return rutas

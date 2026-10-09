@@ -1199,6 +1199,32 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
 .hora:has(input:focus-visible) { outline: 2px solid var(--zinc-900); outline-offset: 2px; }
 .preferencias__campos:disabled .hora { cursor: not-allowed; transform: none; }
 
+/* Actividad: una línea de tiempo por día; el punto de cada evento lleva el color
+   de lo que tocó (masters, publicado, reservas, marca, equipo, cuenta). */
+.actividad { display: grid; gap: 1.25rem; margin: 0; padding: 0; list-style: none; }
+.actividad__dia h3 { margin: 0 0 0.6rem; font: 700 0.75rem/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--zinc-500); }
+.actividad__eventos { position: relative; display: grid; margin: 0; padding: 0; list-style: none; }
+.actividad__eventos::before { content: ""; position: absolute; top: 0.9rem; bottom: 0.9rem; left: 0.4375rem; width: 2px; border-radius: 1px; background: var(--zinc-100); }
+.evento {
+  position: relative; display: grid; grid-template-columns: 0.875rem minmax(0, 1fr) auto; align-items: center; gap: 0.9rem;
+  padding: 0.55rem 0.6rem 0.55rem 0; border-radius: 0.75rem;
+  animation: asomar 500ms var(--curva-salida) both; animation-delay: calc(var(--orden) * 45ms);
+}
+.evento:hover { background: var(--zinc-50); }
+.evento p { margin: 0; overflow-wrap: anywhere; }
+.evento time { font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--zinc-400); }
+.evento__punto {
+  position: relative; width: 0.875rem; height: 0.875rem; border-radius: 50%;
+  background: var(--color-evento, var(--zinc-400)); box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--zinc-200);
+}
+.evento--master { --color-evento: var(--zinc-900); }
+.evento--publicado { --color-evento: var(--estado-disponible); }
+.evento--reserva { --color-evento: var(--estado-reservado); }
+.evento--marca { --color-evento: var(--violeta); }
+.evento--equipo { --color-evento: var(--estado-vendido); }
+.evento--cuenta { --color-evento: var(--zinc-400); }
+.actividad__mas { justify-self: center; border-radius: 999px; padding: 0 1.4rem; }
+
 /* Integraciones: Cierra dentro de su sección, sin tarjeta propia. */
 .config__seccion .integracion { padding: 1.25rem; border-radius: 1.125rem; box-shadow: none; }
 .integracion { display: grid; gap: 0.875rem; padding: 1.25rem; background: #fff;
@@ -1239,7 +1265,7 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
   .miembro .boton { order: 2; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .config__seccion, .miembros--entrando .miembro, .clave-provisional, .perfil__anillo::before { animation: none; }
+  .config__seccion, .miembros--entrando .miembro, .clave-provisional, .perfil__anillo::before, .evento { animation: none; }
 }
 .cierra-buscar {
   width: 100%; height: 2.375rem; margin-bottom: 0.5rem; padding: 0 0.75rem 0 2.1rem;

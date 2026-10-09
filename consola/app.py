@@ -76,6 +76,7 @@ from .rutas_cuentas import (
     url_base,
 )
 from .rutas_reservas import PUBLICAS as PUBLICAS_DE_RESERVAS
+from .rutas_actividad import rutas_de_actividad
 from .rutas_equipo import rutas_de_equipo
 from .rutas_preferencias import preferencias_de, rutas_de_preferencias
 from .rutas_reservas import rutas_de_reservas
@@ -88,7 +89,7 @@ WEB = Path(__file__).resolve().parent / "web"
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "barra.js", "comun.js", "detalle.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
-           "vuelo.js", "configuracion.js", "equipo.js", "preferencias.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
+           "vuelo.js", "configuracion.js", "equipo.js", "preferencias.js", "actividad.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
            "mapa_kmz.js", "sondeo.js", "reservas.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
@@ -230,6 +231,12 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         """Los KMZ de quien pide, y ningún otro."""
         return kmzs.para(sesion)
 
+    def anotar(sesion: Sesion, que: str, detalle: str | None = None, *, cliente_id: int | None = None) -> None:
+        """Lo que se ve en Configuración → Actividad. Va a la loteadora dueña de lo que
+        se tocó: si el equipo de CTP construye el loteo de un cliente, el cliente lo ve."""
+        base.anotar(que, cliente_id=cliente_id or sesion.cliente_id, usuario_id=sesion.usuario_id,
+                    detalle=detalle)
+
     def solo_plataforma(sesion: Sesion = Depends(quien)) -> Sesion:
         """Lo que puede hacer el equipo de CTP y ninguna loteadora."""
         if not sesion.es_plataforma:
@@ -280,6 +287,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         if len(nueva) < 10:
             raise HTTPException(400, "la clave nueva tiene que tener al menos 10 caracteres")
         base.cambiar_clave(sesion.quien, nueva)
+        anotar(sesion, "contraseña cambiada")
         respuesta = JSONResponse({"listo": True})
         respuesta.delete_cookie(GALLETA, path="/")
         return respuesta
@@ -367,7 +375,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
 
     @app.post("/api/proyectos", status_code=201)
     def crear(campos: dict = Body(...), mios: Vista = Depends(vista),
-              marcas: VistaDisenos = Depends(mis_disenos)) -> dict:
+              marcas: VistaDisenos = Depends(mis_disenos), yo: Sesion = Depends(quien)) -> dict:
         """Un master nuevo, a nombre de quien lo pide. Nace sin pagar: se puede
         subir y construir, y publicar espera a que CTP anote el cobro."""
         nombre = str(campos.get("nombre") or "").strip()
@@ -386,6 +394,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         whatsapp = base.cliente(proyecto.cliente_id).whatsapp
         if whatsapp:
             proyecto = mios.ajustar(proyecto.slug, {"whatsapp": whatsapp})
+        anotar(yo, "master creado", proyecto.nombre, cliente_id=proyecto.cliente_id)
         return _como_json(proyecto, trabajos)
 
     @app.get("/api/proyectos/{slug}/portada")
@@ -462,12 +471,13 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return _como_json(proyecto, trabajos)
 
     @app.delete("/api/proyectos/{slug}", status_code=204)
-    def olvidar(slug: str, mios: Vista = Depends(vista)) -> None:
-        mios.ver(slug)
+    def olvidar(slug: str, mios: Vista = Depends(vista), yo: Sesion = Depends(quien)) -> None:
+        proyecto = mios.ver(slug)
         # Quitar uno sin pagar borra sus archivos: no mientras el pipeline los lee.
         if trabajos.corriendo(slug):
             raise HTTPException(409, "está construyendo o publicando; espera a que termine")
         mios.olvidar(slug)
+        anotar(yo, "master quitado", proyecto.nombre, cliente_id=proyecto.cliente_id)
 
     # --- acciones ------------------------------------------------------------
 
@@ -503,11 +513,12 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                                     _anotar_publicacion(mios, proyecto, proyecto.vercel_proyecto))
             accion = "actualizar"
         lanzado = lanzar(proyecto, accion, encadenar(*pasos), al_terminar=al_terminar)
+        anotar(yo, "construcción", proyecto.nombre, cliente_id=proyecto.cliente_id)
         return {**lanzado, "aviso": aviso} if aviso else lanzado
 
     @app.post("/api/proyectos/{slug}/publicar", status_code=202)
     def publicar(slug: str, opciones: dict = Body(default={}),
-                 mios: Vista = Depends(vista)) -> dict:
+                 mios: Vista = Depends(vista), yo: Sesion = Depends(quien)) -> dict:
         proyecto = mios.ver(slug)
         if not proyecto.construido:
             raise HTTPException(409, "todavía no está construido")
@@ -529,9 +540,11 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         # pedirlo de nuevo sería intentar pisar uno existente.
         primera_vez = proyecto.vercel_proyecto is None
         nombre = proyecto.vercel_proyecto or nombre_propuesto(proyecto.slug)
-        return lanzar(proyecto, "publicar",
-                      comandos.publicar(proyecto, vercel_proyecto=nombre, crear=primera_vez),
-                      al_terminar=_anotar_publicacion(mios, proyecto, nombre))
+        lanzado = lanzar(proyecto, "publicar",
+                         comandos.publicar(proyecto, vercel_proyecto=nombre, crear=primera_vez),
+                         al_terminar=_anotar_publicacion(mios, proyecto, nombre))
+        anotar(yo, "publicación", proyecto.nombre, cliente_id=proyecto.cliente_id)
+        return lanzado
 
     # --- mis KMZ: del plano aprobado a un KMZ propio, sin master ---------------------
     #
@@ -724,12 +737,14 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return [diseno_json(d) for d in marcas.listar()]
 
     @app.post("/api/disenos", status_code=201)
-    def crear_diseno(campos: dict = Body(...),
-                     marcas: VistaDisenos = Depends(mis_disenos)) -> dict:
+    def crear_diseno(campos: dict = Body(...), marcas: VistaDisenos = Depends(mis_disenos),
+                     yo: Sesion = Depends(quien)) -> dict:
         try:
-            return diseno_json(marcas.crear(campos))
+            diseno = marcas.crear(campos)
         except DisenoYaExiste as error:
             raise HTTPException(409, str(error)) from error
+        anotar(yo, "diseño creado", diseno.nombre, cliente_id=diseno.cliente_id)
+        return diseno_json(diseno)
 
     @app.patch("/api/disenos/{diseno_id}")
     def ajustar_diseno(diseno_id: int, campos: dict = Body(...),
@@ -740,8 +755,11 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             raise HTTPException(409, str(error)) from error
 
     @app.delete("/api/disenos/{diseno_id}", status_code=204)
-    def borrar_diseno(diseno_id: int, marcas: VistaDisenos = Depends(mis_disenos)) -> None:
+    def borrar_diseno(diseno_id: int, marcas: VistaDisenos = Depends(mis_disenos),
+                      yo: Sesion = Depends(quien)) -> None:
+        diseno = marcas.ver(diseno_id)
         marcas.borrar(diseno_id)
+        anotar(yo, "diseño borrado", diseno.nombre, cliente_id=diseno.cliente_id)
 
     @app.post("/api/disenos/{diseno_id}/logo")
     async def subir_logo(diseno_id: int, archivo: UploadFile = File(...),
@@ -903,6 +921,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     app.include_router(rutas_de_cuentas(acceso, cuentas, google))
     app.include_router(rutas_de_equipo(base, cuentas, quien, local=acceso.local))
     app.include_router(rutas_de_preferencias(base, quien))
+    app.include_router(rutas_de_actividad(base, quien))
     app.include_router(rutas_de_reservas(reservas, registro, vista, local=acceso.local))
     def publicar_en_linea(proyecto: Proyecto) -> dict:
         """Vuelve a publicar un loteo que ya está en línea, sin preguntar: lo piden
