@@ -70,7 +70,7 @@ function mostrar() {
   if (destino.pantalla === 'kmzs') pintarKmzs({ animar: llegando });
   if (destino.pantalla === 'nuevo' && llegando) abrirNuevo({ kmz: destino.kmz });
   if (destino.pantalla === 'disenos') pintarDisenos({ animar: llegando });
-  if (destino.pantalla === 'reservas') pintarReservas();
+  if (destino.pantalla === 'reservas') pintarReservas({ animar: llegando });
   if (destino.pantalla === 'contactos') pintarContactos();
   if (destino.pantalla === 'configuracion' && llegando) pintarConfiguracion({ animar: true });
   // El editor se rellena al llegar: un refresco no pisa lo que se está escribiendo.

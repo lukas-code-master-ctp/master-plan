@@ -81,66 +81,70 @@ export function pintarContadorContactos() {
 }
 
 export function pintarContactos() {
-  const lista = $('#contactos');
+  const caja = $('#contactos');
   const { nuevos, atendidos } = agrupar(estado.contactos);
   if (!nuevos.length && !atendidos.length) {
-    lista.innerHTML = `<li class="vacio"><strong>Todavía no escribe nadie</strong>
-      <span>Cuando alguien mande el formulario de <b>tumasterplan.cl</b>, aparece acá y le llega
-      un correo al equipo.</span></li>`;
+    caja.replaceChildren(vacio());
     return;
   }
-  lista.replaceChildren(...grupo('Nuevos', nuevos), ...grupo('Atendidos', atendidos));
+  caja.replaceChildren(...[grupo('Nuevos', nuevos), grupo('Atendidos', atendidos)].filter(Boolean));
 }
 
 function grupo(titulo, contactos) {
-  if (!contactos.length) return [];
-  const encabezado = document.createElement('li');
-  encabezado.className = 'reservas__grupo';
-  encabezado.textContent = `${titulo} (${contactos.length})`;
-  return [encabezado, ...contactos.map(fila)];
+  if (!contactos.length) return null;
+  const seccion = nodo('section', 'reservas__grupo');
+  const cabeza = nodo('h2', null, titulo);
+  cabeza.append(nodo('span', 'config__cuenta', contactos.length));
+  const lista = nodo('ul', 'reservas__lista');
+  lista.append(...contactos.map(tarjeta));
+  seccion.append(cabeza, lista);
+  return seccion;
 }
 
-/** Un mensaje. Todo con textContent: lo escribió alguien de afuera. */
-function fila(contacto) {
-  const item = document.createElement('li');
-  item.className = `reserva-fila contacto-fila contacto-fila--${contacto.estado}`;
+// --- Las tarjetas: todo con textContent, lo escribió alguien de afuera -------------
 
-  const cabeza = document.createElement('div');
-  cabeza.className = 'reserva-fila__cabeza';
-  const titulo = document.createElement('strong');
-  titulo.textContent = contacto.loteadora ? `${contacto.nombre} · ${contacto.loteadora}` : contacto.nombre;
-  const cuando = document.createElement('span');
-  cuando.className = 'reserva-fila__plazo';
-  cuando.textContent = FECHA.format(new Date(contacto.creado_en));
-  cabeza.append(titulo, cuando);
+function nodo(etiqueta, clase, texto) {
+  const elemento = document.createElement(etiqueta);
+  if (clase) elemento.className = clase;
+  if (texto != null) elemento.textContent = texto;
+  return elemento;
+}
 
-  const que = document.createElement('p');
-  que.className = 'contacto-fila__pedido';
-  que.textContent = pedido(contacto);
+function tarjeta(contacto) {
+  const item = nodo('li', `mensaje mensaje--${contacto.estado}`);
+  const cuerpo = nodo('div', 'mensaje__cuerpo');
 
-  const datos = document.createElement('div');
-  datos.className = 'reserva-fila__comprador';
-  datos.append(enlace(`mailto:${contacto.email}`, contacto.email));
-  if (contacto.telefono) {
-    datos.append(enlace(`tel:+${contacto.telefono}`, `+${contacto.telefono}`),
-                 enlace(enlaceWhatsapp(contacto), 'WhatsApp', true));
-  }
+  // Quién: iniciales, nombre y loteadora, y cuándo escribió. Las clases son las de
+  // Reservas, para que las dos pestañas se lean igual.
+  const iniciales = contacto.nombre.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('');
+  const quien = nodo('div', 'solicitud__quien');
+  const textos = nodo('div');
+  textos.append(nodo('strong', null, contacto.loteadora ? `${contacto.nombre} · ${contacto.loteadora}` : contacto.nombre),
+                nodo('small', null, `escribió el ${FECHA.format(new Date(contacto.creado_en))}`));
+  quien.append(nodo('span', 'solicitud__avatar', iniciales || '?'), textos);
 
-  item.append(cabeza, que, datos);
-  if (contacto.mensaje) {
-    const mensaje = document.createElement('p');
-    mensaje.className = 'contacto-fila__mensaje';
-    mensaje.textContent = contacto.mensaje;
-    item.append(mensaje);
-  }
-  item.append(acciones(contacto));
+  const contactos = nodo('div', 'solicitud__contactos');
+  const whatsapp = enlaceWhatsapp(contacto);
+  if (whatsapp) contactos.append(enlace(whatsapp, 'WhatsApp', 'contacto contacto--whatsapp', true));
+  if (contacto.telefono) contactos.append(enlace(`tel:+${contacto.telefono}`, `+${contacto.telefono}`, 'contacto'));
+  contactos.append(enlace(`mailto:${contacto.email}`, contacto.email, 'contacto'));
+
+  cuerpo.append(quien, nodo('p', 'mensaje__pedido', pedido(contacto)), contactos);
+  if (contacto.mensaje) cuerpo.append(nodo('p', 'mensaje__texto', contacto.mensaje));
+
+  const atendido = contacto.estado === 'atendido';
+  const boton = nodo('button', `boton mensaje__accion${atendido ? ' boton--contorno' : ''}`,
+                     atendido ? 'Volver a nuevos' : 'Marcar atendido');
+  boton.type = 'button';
+  Object.assign(boton.dataset, { contacto: atendido ? 'nuevo' : 'atendido', id: contacto.id });
+
+  item.append(cuerpo, boton);
   return item;
 }
 
-function enlace(href, texto, externo = false) {
-  const elemento = document.createElement('a');
+function enlace(href, texto, clase, externo = false) {
+  const elemento = nodo('a', clase, texto);
   elemento.href = href;
-  elemento.textContent = texto;
   if (externo) {
     elemento.target = '_blank';
     elemento.rel = 'noopener';
@@ -148,15 +152,9 @@ function enlace(href, texto, externo = false) {
   return elemento;
 }
 
-function acciones(contacto) {
-  const zona = document.createElement('div');
-  zona.className = 'reserva-fila__acciones';
-  const boton = document.createElement('button');
-  boton.type = 'button';
-  const atendido = contacto.estado === 'atendido';
-  boton.className = atendido ? 'boton boton--contorno' : 'boton';
-  boton.textContent = atendido ? 'Volver a nuevos' : 'Marcar atendido';
-  Object.assign(boton.dataset, { contacto: atendido ? 'nuevo' : 'atendido', id: contacto.id });
-  zona.append(boton);
-  return zona;
+function vacio() {
+  const caja = nodo('div', 'reservas-vacio');
+  caja.append(nodo('strong', null, 'Todavía no escribe nadie'),
+              nodo('p', null, 'Cuando alguien mande el formulario de tumasterplan.cl, aparece acá y le llega un correo al equipo.'));
+  return caja;
 }

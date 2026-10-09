@@ -1084,28 +1084,34 @@
     <ul id="disenos" class="disenos" aria-live="polite"></ul>
   </section>
 
-  <section id="pantalla-reservas" class="pantalla pantalla--angosta" aria-labelledby="titulo-reservas" hidden>
+  <section id="pantalla-reservas" class="pantalla" aria-labelledby="titulo-reservas" hidden>
     <header class="pantalla__cabecera">
       <div>
+        <span class="antetitulo">Lo que piden tus compradores</span>
         <h1 id="titulo-reservas">Reservas</h1>
-        <p class="guia">Lo que piden los compradores desde tus sitios publicados. La parcela
-          queda apartada <span id="reservas-horas">2 horas</span> mientras paga: confírmala cuando veas el pago, o libérala.
+        <p class="guia">Llegan desde tus sitios publicados. La parcela queda apartada
+          <span id="reservas-horas">2 horas</span> mientras paga: confírmala cuando veas el pago, o libérala.
           Para que el sitio la muestre reservada para siempre, márcala en tu inventario.</p>
       </div>
     </header>
-    <ul id="reservas" class="reservas" aria-live="polite"></ul>
+    <section id="reservas-resumen" class="resumen-planos resumen-reservas" aria-label="Resumen de reservas">
+      <dl class="resumen-planos__cifras"></dl>
+    </section>
+    <nav id="reservas-filtro" class="filtro-loteos" aria-label="Filtrar por loteo" hidden></nav>
+    <div id="reservas" class="reservas" aria-live="polite"></div>
   </section>
 
   <!-- Contactos: el formulario de la landing, solo para el equipo de CTP -->
-  <section id="pantalla-contactos" class="pantalla pantalla--angosta" aria-labelledby="titulo-contactos" hidden>
+  <section id="pantalla-contactos" class="pantalla" aria-labelledby="titulo-contactos" hidden>
     <header class="pantalla__cabecera">
       <div>
+        <span class="antetitulo">Lo que escriben en la landing</span>
         <h1 id="titulo-contactos">Contactos</h1>
         <p class="guia">Lo que escriben en el formulario de tumasterplan.cl. Contéstales por correo o
           WhatsApp y márcalo atendido, para que el resto del equipo sepa que ya se respondió.</p>
       </div>
     </header>
-    <ul id="contactos" class="reservas" aria-live="polite"></ul>
+    <div id="contactos" class="reservas" aria-live="polite"></div>
   </section>
 
   <!-- Un diseño -->
