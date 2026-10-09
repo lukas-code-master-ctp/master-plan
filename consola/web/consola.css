@@ -500,28 +500,141 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
   padding: 0 0.35rem; border-radius: 999px; background: var(--ambar-200); color: var(--ambar-800);
   font: 700 0.6875rem/1 var(--sans); font-variant-numeric: tabular-nums;
 }
-.reservas { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
-.reservas__grupo {
-  margin-top: 0.75rem; font: 700 0.6875rem/1 var(--sans); letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--zinc-500);
+#pantalla-reservas { gap: 1.75rem; }
+#pantalla-reservas h1 { font: 800 2.75rem/1.02 var(--sans); letter-spacing: -0.035em; }
+#pantalla-reservas .guia { max-width: 46rem; font-size: 0.9375rem; }
+.resumen-reservas dd small { margin-left: 0.3rem; font-size: 1rem; font-weight: 600; letter-spacing: 0; color: var(--zinc-400); }
+
+/* El filtro por loteo: píldoras, la elegida en tinta, con las que esperan en ámbar. */
+.filtro-loteos { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: -0.5rem; }
+.filtro-loteos button {
+  display: inline-flex; align-items: center; gap: 0.45rem; height: 2.375rem; padding: 0 1rem;
+  border: 1px solid var(--zinc-200); border-radius: 999px; background: #fff; color: var(--zinc-700);
+  font-weight: 600; transition: background 200ms, color 200ms, border-color 200ms, transform 250ms var(--curva-salida);
 }
-.reservas__grupo:first-child { margin-top: 0; }
-.reserva-fila {
-  display: grid; gap: 0.6rem; padding: 0.9rem 1rem;
-  background: #fff; border: 1px solid var(--zinc-200); border-left: 3px solid var(--zinc-300);
-  border-radius: var(--radio-lg); box-shadow: var(--sombra);
+.filtro-loteos button:hover { border-color: var(--zinc-400); transform: translateY(-1px); }
+.filtro-loteos button[aria-pressed="true"] { background: var(--zinc-900); border-color: var(--zinc-900); color: #fff; }
+.filtro-loteos__cuenta {
+  display: inline-grid; place-items: center; min-width: 1.25rem; height: 1.25rem; padding: 0 0.35rem;
+  border-radius: 999px; background: var(--ambar-200); color: var(--ambar-800); font-size: 0.6875rem; font-weight: 800;
 }
-/* El borde dice en qué está: ámbar esperando, verde pagada, gris lo que ya pasó. */
-.reserva-fila--pendiente { border-left-color: #f59e0b; }
-.reserva-fila--confirmada { border-left-color: var(--verde-700); }
-.reserva-fila--vencida, .reserva-fila--liberada { opacity: 0.75; }
-.reserva-fila__cabeza { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; }
-.reserva-fila__cabeza strong { font-size: 0.9375rem; }
-.reserva-fila__plazo { font-size: 0.8125rem; font-variant-numeric: tabular-nums; color: var(--zinc-600); }
-.reserva-fila--pendiente .reserva-fila__plazo { color: var(--ambar-800); font-weight: 600; }
-.reserva-fila__comprador { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; font-size: 0.8125rem; color: var(--zinc-600); }
-.reserva-fila__comprador a { color: var(--zinc-900); font-weight: 500; }
-.reserva-fila__acciones { display: flex; gap: 0.5rem; }
+
+.reservas { display: grid; gap: 2rem; }
+.reservas__grupo { display: grid; gap: 0.75rem; }
+.reservas__grupo h2 { display: flex; align-items: center; gap: 0.5rem; margin: 0; font: 700 1.25rem/1.2 var(--sans); letter-spacing: -0.015em; }
+.reservas__lista { display: grid; gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
+
+/* Una solicitud: la parcela en grande, quién la pidió, el reloj y qué hacer. */
+.solicitud {
+  display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) auto auto; align-items: center; gap: 1.5rem;
+  padding: 1.25rem 1.5rem; background: #fff; border: 1px solid var(--zinc-200); border-radius: 1.375rem;
+  transition: transform 400ms var(--curva-salida), box-shadow 400ms var(--curva-salida), border-color 300ms;
+}
+.solicitud:hover { transform: translateY(-2px); border-color: var(--zinc-300); box-shadow: 0 18px 36px -24px rgb(9 9 11 / 0.35); }
+.solicitud--pendiente { border-color: var(--ambar-200); box-shadow: inset 4px 0 0 var(--estado-reservado); }
+.solicitud--pendiente:hover { box-shadow: inset 4px 0 0 var(--estado-reservado), 0 18px 36px -24px rgb(9 9 11 / 0.35); }
+.solicitud--confirmada { box-shadow: inset 4px 0 0 var(--estado-disponible); }
+.solicitud__parcela { display: grid; gap: 0.15rem; min-width: 0; }
+.solicitud__rotulo { font: 700 0.625rem/1 var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--zinc-400); }
+.solicitud__lote { font: 800 2rem/1 var(--sans); letter-spacing: -0.04em; overflow-wrap: anywhere; }
+.solicitud__loteo { color: var(--zinc-500); font-size: 0.8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.solicitud__comprador { display: grid; gap: 0.7rem; min-width: 0; }
+.solicitud__quien { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.solicitud__quien div { display: grid; min-width: 0; }
+.solicitud__quien strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.solicitud__quien small { color: var(--zinc-500); font-size: 0.8125rem; }
+.solicitud__avatar {
+  display: grid; place-items: center; flex: none; width: 2.5rem; height: 2.5rem; border-radius: 50%;
+  background: var(--ambar-50); color: var(--ambar-800); font-weight: 800; font-size: 0.875rem; box-shadow: inset 0 0 0 1px var(--ambar-200);
+}
+.solicitud__contactos { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.contacto {
+  display: inline-flex; align-items: center; height: 2rem; padding: 0 0.75rem; border-radius: 999px;
+  background: var(--zinc-100); color: var(--zinc-800); font-size: 0.8125rem; font-weight: 600; text-decoration: none;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background 200ms, color 200ms, transform 250ms var(--curva-salida);
+}
+.contacto:hover { background: var(--zinc-200); transform: translateY(-1px); }
+.contacto--whatsapp { background: #dcfce7; color: #166534; }
+.contacto--whatsapp::before { content: ""; width: 0.5rem; height: 0.5rem; margin-right: 0.45rem; border-radius: 50%; background: #22c55e; }
+.contacto--whatsapp:hover { background: #bbf7d0; }
+.solicitud__acciones { display: grid; gap: 0.35rem; justify-items: stretch; }
+.solicitud__confirmar { position: relative; overflow: hidden; height: 2.75rem; padding: 0 1.25rem; border-radius: 0.875rem; font-weight: 600; }
+.solicitud__confirmar::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.2), transparent);
+  transform: translateX(-120%); animation: brillo 3.6s ease-in-out infinite 1.2s;
+}
+
+/* El reloj: el anillo ámbar se vacía con el plazo; con poco tiempo se pone rojo y late. */
+.reloj { display: grid; justify-items: center; gap: 0.3rem; }
+.reloj__hora { font-size: 0.75rem; font-weight: 600; color: var(--zinc-500); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.reloj__anillo { position: relative; display: grid; place-items: center; width: 5.5rem; height: 5.5rem; flex: none; }
+.reloj svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.reloj circle { fill: none; stroke-width: 5; }
+.reloj__fondo { stroke: var(--zinc-100); }
+.reloj__resto {
+  stroke: var(--estado-reservado); stroke-linecap: round; stroke-dasharray: 100;
+  stroke-dashoffset: calc(100 - var(--resto, 1) * 100); transition: stroke-dashoffset 900ms var(--curva-salida), stroke 300ms;
+}
+.reloj__texto { position: relative; display: grid; justify-items: center; text-align: center; line-height: 1.1; }
+.reloj__texto strong { font: 800 1.0625rem/1.1 var(--sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.reloj__texto small { font-size: 0.6875rem; color: var(--zinc-500); }
+.reloj--urgente .reloj__resto { stroke: var(--rojo-700); }
+.reloj--urgente .reloj__anillo { animation: latido-reloj 1.6s ease-in-out infinite; }
+.reloj--urgente .reloj__hora { color: var(--rojo-700); }
+@keyframes latido-reloj { 50% { transform: scale(1.04); } }
+.reservas--entrando .reloj__resto { animation: vaciar 1.4s var(--curva-salida) both 400ms; }
+@keyframes vaciar { from { stroke-dashoffset: 0; } }
+
+.solicitud__sello { display: flex; align-items: center; gap: 0.75rem; max-width: 18rem; }
+.solicitud__sello svg {
+  width: 2.5rem; height: 2.5rem; flex: none; padding: 0.55rem; border-radius: 50%;
+  background: var(--verde-50); fill: none; stroke: var(--verde-700); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
+}
+.solicitud__sello div { display: grid; gap: 0.1rem; }
+.solicitud__sello small { color: var(--zinc-500); font-size: 0.75rem; }
+
+.anterior {
+  display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) minmax(0, 1fr) auto auto; align-items: center; gap: 1rem;
+  padding: 0.7rem 1.5rem; border-radius: 1rem; color: var(--zinc-500); font-size: 0.875rem;
+}
+.anterior:hover { background: #fff; }
+.anterior strong { color: var(--zinc-700); }
+.anterior span, .anterior small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anterior__estado { justify-self: start; padding: 0.15rem 0.6rem; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--zinc-300); font-size: 0.75rem; font-weight: 600; }
+
+.reservas--entrando .solicitud, .reservas--entrando .anterior {
+  animation: asomar 650ms var(--curva-salida) both; animation-delay: calc(200ms + var(--orden) * 80ms);
+}
+
+.reservas-vacio {
+  display: grid; justify-items: center; gap: 0.5rem; padding: 3.5rem 1.5rem; text-align: center;
+  border: 1.5px dashed var(--zinc-300); border-radius: 1.375rem; color: var(--zinc-500);
+}
+.reservas-vacio strong { color: var(--zinc-900); font-size: 1.0625rem; }
+.reservas-vacio p { max-width: 28rem; margin: 0; }
+.reservas-vacio__icono { position: relative; display: grid; place-items: center; width: 4.5rem; height: 4.5rem; margin-bottom: 0.5rem; }
+.reservas-vacio__icono svg { width: 1.75rem; height: 1.75rem; fill: none; stroke: var(--zinc-500); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+@media (max-width: 56rem) {
+  .solicitud { grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; }
+  .solicitud__comprador { grid-column: 1 / -1; grid-row: 2; }
+  .solicitud__acciones { grid-column: 1 / -1; grid-template-columns: 1fr auto; }
+  .solicitud__sello { grid-column: 1 / -1; max-width: none; }
+  .anterior { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0.15rem; }
+  .anterior > :nth-child(2), .anterior > :nth-child(3) { grid-column: 1; }
+}
+@media (max-width: 40rem) {
+  #pantalla-reservas h1 { font-size: 2.25rem; }
+  .solicitud { padding: 1rem 1.1rem; border-radius: 1.125rem; }
+  .solicitud__lote { font-size: 1.75rem; }
+  .reloj__anillo { width: 4.75rem; height: 4.75rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .solicitud__confirmar::after, .reloj--urgente .reloj__anillo, .reservas--entrando .reloj__resto,
+  .reservas--entrando .solicitud, .reservas--entrando .anterior { animation: none; }
+}
 
 /* --- Mis KMZ ---------------------------------------------------------------------- */
 
