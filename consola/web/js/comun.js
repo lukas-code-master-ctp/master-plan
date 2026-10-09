@@ -14,6 +14,8 @@ export const estado = {
   kmzs: [],
   // Las solicitudes de reserva de los loteos publicados (js/reservas.js).
   reservas: [],
+  // Los mensajes del formulario de la landing, solo para el equipo de CTP (js/contactos.js).
+  contactos: [],
   // Las líneas del último trabajo de cada loteo, y el temporizador que las sondea.
   // La clave es el slug del master, o `kmz:<slug>` para un KMZ de Mis KMZ (la misma
   // clave que usa el servidor): un slug nunca lleva ":", así que no chocan.
@@ -116,6 +118,7 @@ export function ruta(hash) {
   if (partes[0] === 'disenos' && partes[1]) return { pantalla: 'diseno', id: partes[1] };
   if (partes[0] === 'disenos') return { pantalla: 'disenos' };
   if (partes[0] === 'reservas') return { pantalla: 'reservas' };
+  if (partes[0] === 'contactos') return { pantalla: 'contactos' };
   if (partes[0] === 'configuracion') return { pantalla: 'configuracion' };
   // `#/kmz/<slug>/<paso>` abre ese paso (ver `pasoDeRuta` en kmz_geometria.js).
   if (partes[0] === 'kmz' && partes[1] && partes[2]) return { pantalla: 'kmz', slug: partes[1], paso: partes[2] };

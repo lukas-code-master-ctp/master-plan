@@ -517,6 +517,8 @@ RUTAS = {
     ("POST", "/api/plataforma/clientes/{cliente_id}/proyectos"): SOLO_CTP,
     ("POST", "/api/plataforma/proyectos/{slug}/pago"): SOLO_CTP,
     ("GET", "/api/plataforma/historial"): SOLO_CTP,
+    ("GET", "/api/plataforma/contactos"): SOLO_CTP,
+    ("POST", "/api/plataforma/contactos/{identificador}/estado"): SOLO_CTP,
     ("POST", "/api/plataforma/usuarios/clave"): SOLO_CTP,
     ("GET", "/api/disenos"): SOLO_SUYO,
     ("POST", "/api/disenos"): SOLO_SUYO,
@@ -541,6 +543,9 @@ RUTAS = {
     # ese loteo (`test_reservas.py` prueba el origen ajeno, el tope y la validación).
     ("POST", "/api/publico/reservas"): SIN_SESION,
     ("GET", "/api/publico/apartadas"): SIN_SESION,
+    # El formulario de la landing: solo acepta tumasterplan.cl, con tope por IP y
+    # campo trampa (test_contactos.py).
+    ("POST", "/api/publico/contacto"): SIN_SESION,
     ("GET", "/api/proyectos/{slug}/reservas"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/reservas/{identificador}/confirmar"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/reservas/{identificador}/liberar"): AJENO_404,
@@ -683,8 +688,10 @@ def test_dos_loteadoras_con_el_mismo_nombre_de_loteo_no_se_pisan(ana_y_luis):
     lambda web, cid: web.post("/api/plataforma/proyectos/cualquiera/pago",
                               json={"nota_cobro": "me lo regalo"}),
     lambda web, cid: web.post("/api/plataforma/usuarios/clave", json={"email": "luis@delvalle.cl"}),
+    lambda web, cid: web.get("/api/plataforma/contactos"),
+    lambda web, cid: web.post("/api/plataforma/contactos/1/estado", json={"estado": "atendido"}),
 ], ids=["listar", "crear cliente", "crear cuenta", "suspender", "habilitar loteo", "historial",
-        "anotar pago", "clave nueva"])
+        "anotar pago", "clave nueva", "ver contactos", "atender contacto"])
 def test_una_loteadora_no_entra_al_back_office(ana_y_luis, pedir):
     """Sobre todo la penúltima: si un cliente pudiera habilitarse loteos solo,
     el cobro no existiría."""

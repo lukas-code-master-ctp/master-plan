@@ -556,6 +556,75 @@ h1 {
 }
 .incluye li { display: flex; gap: 10px; align-items: baseline; color: rgb(255 255 255 / 0.88); font-size: 15px; }
 .incluye li::before { content: '✓'; flex: none; color: var(--verde-claro); font-weight: 700; }
+/* --- Formulario de contacto ------------------------------------------------------ */
+/* En papel sobre la noche, como Pro: es lo último que hay que hacer en la página. */
+
+.contacto {
+  display: grid; gap: 28px 48px; margin-top: 16px;
+  padding-top: clamp(32px, 4vw, 48px); border-top: 1px solid rgb(255 255 255 / 0.18);
+}
+@media (min-width: 60rem) { .contacto { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); } }
+.contacto__texto { display: grid; gap: 12px; align-content: start; }
+.contacto__texto h3 { margin: 0; font: 700 clamp(1.6rem, 1.2rem + 1.4vw, 2.2rem)/1.1 var(--sans); letter-spacing: -0.03em; }
+.contacto__texto p { margin: 0; max-width: 40ch; color: rgb(255 255 255 / 0.8); font-size: 16px; text-wrap: pretty; }
+.contacto__texto a { color: #fff; text-underline-offset: 3px; }
+
+.formulario {
+  display: grid; gap: 16px;
+  padding: clamp(20px, 3vw, 32px); border-radius: var(--radio-bloque);
+  background: var(--papel); color: var(--tinta);
+}
+.formulario__fila { display: grid; gap: 16px; }
+@media (min-width: 36rem) { .formulario__fila { grid-template-columns: 1fr 1fr; } }
+.formulario label { display: grid; gap: 6px; font: 600 14px/1.3 var(--sans); }
+.formulario input:not([type="radio"], [type="checkbox"]), .formulario textarea {
+  width: 100%; min-height: 46px; padding: 11px 14px;
+  border: 1px solid var(--zinc-300); border-radius: var(--radio-chico);
+  background: var(--papel); color: var(--tinta);
+  font: 400 16px/1.4 var(--sans);
+  transition: border-color var(--rapido), box-shadow var(--rapido);
+}
+.formulario textarea { resize: vertical; }
+.formulario input:focus-visible, .formulario textarea:focus-visible {
+  outline: none; border-color: var(--tinta); box-shadow: 0 0 0 3px rgb(24 24 27 / 0.12);
+}
+/* Solo después de que la persona tocó el campo: rojo antes de escribir asusta. */
+.formulario input:user-invalid, .formulario textarea:user-invalid { border-color: #b91c1c; }
+.formulario__obligatorio { color: var(--zinc-500); }
+
+.formulario__planes { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; border: 0; min-inline-size: 0; }
+.formulario__planes legend { padding: 0; margin-bottom: 8px; font: 600 14px/1.3 var(--sans); }
+.formulario__planes label {
+  display: inline-flex; align-items: center; height: 40px; padding: 0 16px;
+  border: 1px solid var(--zinc-300); border-radius: 999px;
+  font-weight: 600; cursor: pointer; transition: background var(--rapido), border-color var(--rapido), color var(--rapido);
+}
+.formulario__planes label:hover { border-color: var(--tinta); }
+.formulario__planes input { position: absolute; opacity: 0; pointer-events: none; }
+.formulario__planes label:has(:checked) { background: var(--tinta); border-color: var(--tinta); color: #fff; }
+.formulario__planes label:has(:focus-visible) { outline: 2px solid var(--tinta); outline-offset: 2px; }
+
+.formulario__casilla { display: flex !important; align-items: center; gap: 10px !important; align-self: end; min-height: 46px; font-weight: 500 !important; }
+.formulario__casilla input { width: 18px; height: 18px; accent-color: var(--tinta); }
+.formulario__casilla .formulario__nota { color: var(--zinc-500); font-weight: 400; }
+
+/* Fuera de la vista y del tabulador, pero no `display: none`: algunos robots se lo saltan. */
+.formulario__trampa { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+.formulario__pie { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.formulario__pie p { margin: 0; color: var(--zinc-500); font-size: 13px; }
+.formulario .boton--tinta { background: var(--tinta); color: #fff; }
+.formulario .boton--tinta:hover { transform: translateY(-2px); }
+.formulario .boton--tinta:active { transform: translateY(0); }
+.formulario .boton--tinta:focus-visible { outline-color: var(--tinta); }
+
+/* La consola vuelve acá con #contacto-enviado o #contacto-error: sin JavaScript,
+   el ancla es lo que dice cómo salió. */
+.formulario__aviso { display: none; margin: 0; padding: 14px 16px; border-radius: var(--radio-chico); font-size: 15px; }
+.formulario__aviso:target { display: block; }
+.formulario__aviso--ok { background: var(--insignia-fondo); color: var(--insignia-texto); }
+.formulario__aviso--error { background: #fee2e2; color: #991b1b; }
+
 .incluye__nota { margin: 6px 0 0; padding-top: 16px; border-top: 1px solid rgb(255 255 255 / 0.18); color: rgb(255 255 255 / 0.75); font-size: 15px; }
 
 /* --- Pie ---------------------------------------------------------------------- */
@@ -775,7 +844,7 @@ h1 {
     <div class="precio__cabeza">
       <span class="rotulo">Planes</span>
       <h2 id="precio-titulo">Una suscripción, según cuántos loteos publiques.</h2>
-      <p>Los planes solo cambian en la cantidad de loteos en línea; todo lo demás viene en todos. Escríbenos con el que te interesa y te mandamos el precio.</p>
+      <p>Los planes solo cambian en la cantidad de loteos en línea; todo lo demás viene en todos. Cuéntanos cuál te interesa en el formulario de abajo y te mandamos el precio.</p>
     </div>
 
     <ul class="planes">
@@ -783,19 +852,19 @@ h1 {
         <h3>Fly</h3>
         <p class="plan__cantidad"><b>1</b> loteo</p>
         <p class="plan__para">Para la loteadora con su primer proyecto en venta.</p>
-        <a class="boton boton--fantasma" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20el%20plan%20Fly%20de%20Tu%20Masterplan">Elegir Fly</a>
+        <a class="boton boton--fantasma" href="#formulario">Elegir Fly</a>
       </li>
       <li class="plan plan--medio">
         <h3>Pro</h3>
         <p class="plan__cantidad"><b>3</b> loteos</p>
         <p class="plan__para">Para vender varias etapas o proyectos a la vez.</p>
-        <a class="boton boton--tinta" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20el%20plan%20Pro%20de%20Tu%20Masterplan">Elegir Pro</a>
+        <a class="boton boton--tinta" href="#formulario">Elegir Pro</a>
       </li>
       <li class="plan">
         <h3>Master</h3>
         <p class="plan__cantidad"><b>6</b> loteos</p>
         <p class="plan__para">Para una cartera de proyectos en venta al mismo tiempo.</p>
-        <a class="boton boton--fantasma" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20el%20plan%20Master%20de%20Tu%20Masterplan">Elegir Master</a>
+        <a class="boton boton--fantasma" href="#formulario">Elegir Master</a>
       </li>
     </ul>
 
@@ -804,7 +873,7 @@ h1 {
         <h3>Enterprise</h3>
         <p>Más de seis loteos, varias loteadoras bajo un mismo grupo o algo a la medida. Lo armamos contigo.</p>
       </div>
-      <a class="boton boton--claro" href="mailto:e.ruiz@compratuparcela.cl?subject=Hablemos%20de%20Tu%20Masterplan%20Enterprise">Hablemos</a>
+      <a class="boton boton--claro" href="#formulario">Hablemos</a>
     </div>
 
     <div class="incluye">
@@ -818,6 +887,68 @@ h1 {
         <li>Crea tu KMZ desde el PDF del plano</li>
       </ul>
       <p class="incluye__nota">¿Necesitas que lo volemos nosotros? El vuelo con dron se cotiza aparte del plan.</p>
+    </div>
+
+    <div class="contacto" id="formulario">
+      <div class="contacto__texto">
+        <h3>Hablemos</h3>
+        <p>Cuéntanos de tu loteo y te escribimos con el precio del plan. Si prefieres, escríbenos a
+          <a href="mailto:e.ruiz@compratuparcela.cl">e.ruiz@compratuparcela.cl</a>.</p>
+      </div>
+
+      <!-- Un formulario común, sin JavaScript: lo recibe la consola y vuelve acá a
+           #contacto-enviado o #contacto-error, que se muestran con :target. -->
+      <form class="formulario" method="post" action="https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app/api/publico/contacto">
+        <p class="formulario__aviso formulario__aviso--ok" id="contacto-enviado" role="status">
+          <b>¡Gracias!</b> Recibimos tu mensaje y te escribimos pronto.</p>
+        <p class="formulario__aviso formulario__aviso--error" id="contacto-error" role="alert">
+          <b>No pudimos enviarlo.</b> Revisa tu correo y vuelve a intentarlo, o escríbenos a
+          e.ruiz@compratuparcela.cl.</p>
+
+        <div class="formulario__fila">
+          <label><span>Nombre <span class="formulario__obligatorio" aria-hidden="true">*</span></span>
+            <input name="nombre" type="text" required minlength="2" maxlength="120" autocomplete="name"></label>
+          <label><span>Correo <span class="formulario__obligatorio" aria-hidden="true">*</span></span>
+            <input name="email" type="email" required maxlength="160" autocomplete="email"></label>
+        </div>
+        <div class="formulario__fila">
+          <label>Teléfono o WhatsApp
+            <input name="telefono" type="tel" maxlength="20" autocomplete="tel" placeholder="+56 9 1234 5678"></label>
+          <label>Loteadora
+            <input name="loteadora" type="text" maxlength="120" autocomplete="organization"></label>
+        </div>
+
+        <fieldset class="formulario__planes">
+          <legend>¿Qué plan te interesa?</legend>
+          <label><input type="radio" name="plan" value="fly">Fly</label>
+          <label><input type="radio" name="plan" value="pro">Pro</label>
+          <label><input type="radio" name="plan" value="master">Master</label>
+          <label><input type="radio" name="plan" value="enterprise">Enterprise</label>
+          <label><input type="radio" name="plan" value="no-se" checked>Aún no sé</label>
+        </fieldset>
+
+        <div class="formulario__fila">
+          <label>¿Cuántas parcelas son?
+            <input name="parcelas" type="number" min="1" max="100000" inputmode="numeric"></label>
+          <label class="formulario__casilla">
+            <input name="vuelo" type="checkbox" value="si">
+            <span>Necesito que lo vuelen <span class="formulario__nota">(se cotiza aparte)</span></span></label>
+        </div>
+
+        <label>Mensaje
+          <textarea name="mensaje" rows="4" maxlength="2000"
+                    placeholder="Dónde queda el loteo, en qué etapa está, lo que quieras contarnos."></textarea></label>
+
+        <!-- Trampa para robots: una persona no la ve ni llega con el tabulador. -->
+        <div class="formulario__trampa" aria-hidden="true">
+          <label>No llenes esto <input name="sitio" type="text" tabindex="-1" autocomplete="off"></label>
+        </div>
+
+        <div class="formulario__pie">
+          <button class="boton boton--tinta" type="submit">Enviar</button>
+          <p>Usamos estos datos solo para responderte.</p>
+        </div>
+      </form>
     </div>
   </div>
 </section>

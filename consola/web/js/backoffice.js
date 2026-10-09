@@ -66,6 +66,7 @@ export function pintarBackOffice() {
   const equipo = estado.sesion?.rol === 'plataforma';
   $('#loteadoras').hidden = !equipo;
   $('#nuevo').hidden = !equipo;
+  $('#pestana-contactos').hidden = !equipo;
 }
 
 export function prepararBackOffice(opciones) {

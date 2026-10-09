@@ -522,6 +522,15 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
 .reserva-fila__comprador { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; font-size: 0.8125rem; color: var(--zinc-600); }
 .reserva-fila__comprador a { color: var(--zinc-900); font-weight: 500; }
 .reserva-fila__acciones { display: flex; gap: 0.5rem; }
+/* Contactos usa las filas de reservas: el borde ámbar es lo que falta atender. */
+.contacto-fila--nuevo { border-left-color: #f59e0b; }
+.contacto-fila--atendido { opacity: 0.75; }
+.contacto-fila__pedido { margin: 0; font-size: 0.8125rem; font-weight: 600; color: var(--zinc-700); }
+.contacto-fila__mensaje {
+  margin: 0; padding: 0.65rem 0.8rem; border-radius: var(--radio-md, 0.5rem);
+  background: var(--zinc-50, #fafafa); color: var(--zinc-700); font-size: 0.875rem;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
 
 /* --- Mis KMZ ---------------------------------------------------------------------- */
 
