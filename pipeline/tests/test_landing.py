@@ -61,3 +61,37 @@ def test_el_iframe_y_las_tarjetas_hablan_de_la_misma_parcela():
     lote = re.search(r'<iframe[^>]*\ssrc="[^"]*[?&]lote=([^"&]+)"', html).group(1)
     assert re.search(rf'class="ficha__nombre">Parcela {re.escape(lote)}<', html), lote
     assert f"Me interesa la parcela {lote}»" in html, lote
+
+
+CONSOLA = "https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app"
+
+
+def _formularios() -> list[tuple[str, str]]:
+    html = (LANDING / "index.html").read_text()
+    return re.findall(r'<form[^>]*\smethod="([^"]+)"[^>]*\saction="([^"]+)"', html)
+
+
+def test_el_formulario_de_contacto_va_a_la_consola_y_la_politica_lo_deja():
+    """Sin la consola en form-action el navegador no envía nada, y sin avisar. Y sin
+    'self' tampoco: Chrome aplica form-action también a la redirección con que la
+    consola vuelve a la landing, y la cortaba."""
+    [(metodo, accion)] = _formularios()
+    assert metodo == "post"
+    assert accion == f"{CONSOLA}/api/publico/contacto"
+    assert _politica_de_la_landing()["form-action"] == ["'self'", CONSOLA]
+
+
+def test_el_formulario_manda_los_campos_que_lee_la_consola():
+    """Los nombres de los campos son el contrato con consola/contactos.py."""
+    html = (LANDING / "index.html").read_text()
+    formulario = html[html.index("<form"):html.index("</form>")]
+    nombres = set(re.findall(r'name="([^"]+)"', formulario))
+    assert nombres == {"nombre", "email", "telefono", "loteadora", "plan", "parcelas", "vuelo",
+                       "mensaje", "sitio"}
+
+
+def test_la_landing_sabe_mostrar_como_salio_el_envio():
+    """La consola vuelve a estas anclas (rutas_contactos.py): tienen que existir."""
+    html = (LANDING / "index.html").read_text()
+    assert 'id="contacto-enviado"' in html and 'id="contacto-error"' in html
+

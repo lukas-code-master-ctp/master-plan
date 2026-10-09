@@ -3,7 +3,7 @@
  *
  * Las pantallas viven en la misma página y se cambian con el hash de la URL
  * (`#/planos`, `#/planos/nuevo`, `#/planos/<slug>`, `#/kmz`, `#/kmz/<slug>[/<paso>]`,
- * `#/disenos`, `#/reservas`). Así el botón
+ * `#/disenos`, `#/reservas`, `#/contactos`). Así el botón
  * atrás funciona, un enlace a un loteo se puede mandar, y no hace falta que el
  * servidor conozca más rutas que la de la página.
  */
@@ -19,8 +19,9 @@ import { cerrarDialogos, pintarPlano, prepararPlano, seguir } from './plano.js';
 import { marcarSeccion } from './barra.js';
 import { pintarPlanos } from './planos.js';
 import { cargarReservas, pintarContador, pintarReservas, prepararReservas } from './reservas.js';
+import { cargarContactos, pintarContactos, pintarContadorContactos, prepararContactos } from './contactos.js';
 
-const PANTALLAS = ['planos', 'nuevo', 'plano', 'kmzs', 'kmz', 'disenos', 'diseno', 'reservas', 'configuracion'];
+const PANTALLAS = ['planos', 'nuevo', 'plano', 'kmzs', 'kmz', 'disenos', 'diseno', 'reservas', 'contactos', 'configuracion'];
 
 let anterior = null;
 // Se llegó a un loteo que no estaba en la lista y se está trayendo: al pintarlo
@@ -63,13 +64,14 @@ function mostrar() {
   }
   document.title = {
     planos: 'Mis 360°', nuevo: 'Nuevo master', kmzs: 'Mis KMZ', disenos: 'Mis diseños', diseno: 'Diseño',
-    reservas: 'Reservas', configuracion: 'Configuración',
+    reservas: 'Reservas', contactos: 'Contactos', configuracion: 'Configuración',
   }[destino.pantalla] + ' — Tu Masterplan';
   if (destino.pantalla === 'planos') pintarPlanos({ animar: llegando });
   if (destino.pantalla === 'kmzs') pintarKmzs({ animar: llegando });
   if (destino.pantalla === 'nuevo' && llegando) abrirNuevo({ kmz: destino.kmz });
   if (destino.pantalla === 'disenos') pintarDisenos({ animar: llegando });
   if (destino.pantalla === 'reservas') pintarReservas({ animar: llegando });
+  if (destino.pantalla === 'contactos') pintarContactos();
   if (destino.pantalla === 'configuracion' && llegando) pintarConfiguracion({ animar: true });
   // El editor se rellena al llegar: un refresco no pisa lo que se está escribiendo.
   if (destino.pantalla === 'diseno' && llegando) abrirDiseno(destino.id);
@@ -81,6 +83,8 @@ async function refrescar() {
   // Después de los loteos: se piden las de cada uno publicado.
   estado.reservas = await cargarReservas(estado.proyectos);
   pintarContador();
+  estado.contactos = await cargarContactos();
+  pintarContadorContactos();
   // Un trabajo puede seguir corriendo de una recarga de página: retomarlo. Los de
   // un KMZ van con la clave del servidor, `kmz:<slug>`, para no chocar con un master.
   for (const proyecto of estado.proyectos) {
@@ -106,6 +110,7 @@ async function arrancar() {
   prepararBackOffice({ refrescar });
   prepararDisenos({ refrescar });
   prepararReservas({ refrescar });
+  prepararContactos({ refrescar });
   prepararConfiguracion();
   prepararKmz({ refrescar });
   prepararKmzs({ refrescar });

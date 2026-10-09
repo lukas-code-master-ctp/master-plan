@@ -200,6 +200,15 @@ botones de correo. La CSP permite solo eso (`script-src 'self'` y googletagmanag
 sin scripts en línea) y `pipeline/tests/test_landing.py` lo vigila. El hero sale de la panorámica
 de Cauquenes, reproyectada a perspectiva con el mismo cálculo gnomónico que usa el visor.
 
+El formulario de contacto (al final, en «Planes») es un formulario HTML común que se
+envía a la consola (`POST /api/publico/contacto`, `consola/rutas_contactos.py`). La consola
+lo guarda, avisa por correo al equipo de CTP y redirige de vuelta a la landing, a
+`#contacto-enviado` o `#contacto-error`; la landing muestra el aviso con `:target`, sin
+JavaScript. Solo acepta la landing como origen, con tope por IP y campo trampa. Los
+mensajes se ven en la consola, en la pestaña **Contactos**, que solo tiene la cuenta de
+plataforma. La CSP de la landing permite el envío con `form-action 'self' <consola>`: el
+`'self'` hace falta porque Chrome aplica `form-action` también a la redirección de vuelta.
+
 Bajo el hero va Praderas publicado, en vivo dentro de un iframe: su origen está en el
 `frame-src` de `landing/vercel.json` (`pipeline/tests/test_landing.py` lo vigila) y el
 visor deja que lo inserte tumasterplan.cl (`frame-ancestors` en `web/vercel.json`).

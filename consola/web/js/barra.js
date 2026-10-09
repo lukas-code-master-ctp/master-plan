@@ -10,6 +10,7 @@ export function seccionDe(pantalla) {
   if (pantalla.startsWith('diseno')) return 'disenos';
   if (pantalla.startsWith('kmz')) return 'kmz';
   if (pantalla === 'reservas') return 'reservas';
+  if (pantalla === 'contactos') return 'contactos';
   // Configuración se abre desde el avatar, no desde la isla: ninguna pestaña es suya.
   if (pantalla === 'configuracion') return null;
   return 'planos';

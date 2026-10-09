@@ -217,6 +217,26 @@ solicitudes_reserva = Table(
     Column("resuelta_en", DateTime(timezone=True), nullable=True),
 )
 
+# Lo que alguien escribe en el formulario de contacto de la landing (tumasterplan.cl,
+# `consola/contactos.py`). No es de ninguna loteadora: lo ve solo el equipo de CTP.
+contactos = Table(
+    "contactos", metadatos,
+    Column("id", Integer, primary_key=True),
+    Column("nombre", String(120), nullable=False),
+    Column("email", String(160), nullable=False),
+    Column("telefono", String(20), nullable=False),
+    Column("loteadora", String(120), nullable=False),
+    # fly | pro | master | enterprise | no-se
+    Column("plan", String(20), nullable=False),
+    Column("vuelo", Boolean, nullable=False),
+    Column("parcelas", Integer, nullable=True),
+    Column("mensaje", Text, nullable=False),
+    # nuevo | atendido
+    Column("estado", String(20), nullable=False),
+    Column("creado_en", DateTime(timezone=True), nullable=False, index=True),
+    Column("atendido_en", DateTime(timezone=True), nullable=True),
+)
+
 eventos = Table(
     "eventos", metadatos,
     Column("id", Integer, primary_key=True),
@@ -404,6 +424,12 @@ class Base:
             return [_usuario(f) for f in con.execute(
                 select(usuarios).where(usuarios.c.cliente_id == cliente_id)
                 .order_by(usuarios.c.email))]
+
+    def usuarios_de_plataforma(self) -> list[Usuario]:
+        """El equipo de CTP, de cualquier cliente: el rol es lo que lo hace equipo."""
+        with self.motor.connect() as con:
+            return [_usuario(f) for f in con.execute(
+                select(usuarios).where(usuarios.c.rol == "plataforma").order_by(usuarios.c.email))]
 
     def crear_usuario(self, cliente_id: int, email: str, nombre: str,
                       rol: str = "equipo") -> tuple[Usuario, str]:

@@ -46,6 +46,7 @@ from pipeline.plano.digitalizar import SALIDA as DIGITALIZADO, escribir_json
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
 from .cierra import Cierra, Cifrador, Conexiones, cierra_del_entorno
 from .comandos import Comandos, encadenar
+from .contactos import Contactos
 from .cuentas import Cuentas, Google, correo_del_entorno, google_del_entorno
 from .datos import (
     Base,
@@ -75,6 +76,8 @@ from .rutas_cuentas import (
     rutas_de_cuentas,
     url_base,
 )
+from .rutas_contactos import PUBLICAS as PUBLICAS_DE_CONTACTO
+from .rutas_contactos import rutas_de_contactos
 from .rutas_reservas import PUBLICAS as PUBLICAS_DE_RESERVAS
 from .rutas_actividad import rutas_de_actividad
 from .rutas_equipo import rutas_de_equipo
@@ -90,7 +93,7 @@ WEB = Path(__file__).resolve().parent / "web"
 MODULOS = ("app.js", "barra.js", "comun.js", "detalle.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
            "vuelo.js", "configuracion.js", "equipo.js", "preferencias.js", "actividad.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
-           "mapa_kmz.js", "sondeo.js", "reservas.js")
+           "mapa_kmz.js", "sondeo.js", "reservas.js", "contactos.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
 MODULOS_DEL_VISOR = ("marca.js",)
@@ -125,10 +128,11 @@ def url_propuesta(slug: str) -> str:
 # La revisión periódica de Cierra la llama Cloud Scheduler, sin sesión: la ruta
 # exige su propia clave (`CONSOLA_TAREAS_CLAVE`) y sin ella no existe.
 TAREAS = ("/api/tareas/cierra",)
-# Lo que pide el sitio publicado de un loteo (reservas): se cuida solo, con origen,
-# tope por IP y validación (`consola/rutas_reservas.py`).
+# Lo que pide el sitio publicado de un loteo (reservas) y el formulario de la landing
+# (contacto): se cuidan solos, con origen, tope por IP y validación
+# (`consola/rutas_reservas.py`, `consola/rutas_contactos.py`).
 LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2", *LIBRES_DE_CUENTAS, *TAREAS,
-          *PUBLICAS_DE_RESERVAS)
+          *PUBLICAS_DE_RESERVAS, *PUBLICAS_DE_CONTACTO)
 
 
 def mostrar_registro() -> None:
@@ -156,14 +160,16 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
               republicar_al_arrancar: bool | None = None,
               retomar_lecturas_al_arrancar: bool = True,
               cierra: Cierra | None | bool = True, conexiones: Conexiones | None = None,
-              kmzs: RegistroKmz | None = None, reservas: Reservas | None = None) -> FastAPI:
+              kmzs: RegistroKmz | None = None, reservas: Reservas | None = None,
+              contactos: Contactos | None = None) -> FastAPI:
     mostrar_registro()
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
     cuentas = cuentas or Cuentas(base=base, correo=correo_del_entorno(acceso.local),
                                  en_segundo_plano=True)
-    # Los avisos de reserva salen por el mismo correo que los de las cuentas.
+    # Los avisos de reserva y de contacto salen por el mismo correo que los de las cuentas.
     reservas = reservas or Reservas(base=base, correo=cuentas.correo)
+    contactos = contactos or Contactos(base=base, correo=cuentas.correo)
     # `True` = lo que diga el entorno; las pruebas pasan uno propio o `None`.
     google = google_del_entorno() if google is True else (google or None)
     disenos = disenos or Disenos(base=base)
@@ -923,6 +929,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     app.include_router(rutas_de_preferencias(base, quien))
     app.include_router(rutas_de_actividad(base, quien))
     app.include_router(rutas_de_reservas(reservas, registro, vista, local=acceso.local))
+    app.include_router(rutas_de_contactos(contactos, solo_plataforma, local=acceso.local))
     def publicar_en_linea(proyecto: Proyecto) -> dict:
         """Vuelve a publicar un loteo que ya está en línea, sin preguntar: lo piden
         los estados y precios nuevos, no una persona que decide salir al mundo. La
