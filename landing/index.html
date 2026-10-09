@@ -489,39 +489,74 @@ h1 {
 .necesitamos b { font-weight: 600; }
 .necesitamos li > span { color: var(--zinc-600); font-size: 15px; }
 
-/* --- Precio y contacto -------------------------------------------------------- */
+/* --- Planes y contacto --------------------------------------------------------- */
 
 .precio { position: relative; isolation: isolate; overflow: hidden; color: #fff; background: var(--noche); }
 .precio__foto {
   position: absolute; inset: 0; z-index: -2;
   width: 100%; height: 100%; object-fit: cover; opacity: 0.45;
 }
-/* Negro sólido a la izquierda, donde va el texto; la foto asoma a la derecha. */
+/* Arriba negro sólido, donde va el titular; la foto asoma detrás de los planes. */
 .precio::after {
   content: ''; position: absolute; inset: 0; z-index: -1;
-  background: linear-gradient(90deg, var(--noche) 0%, rgb(9 9 11 / 0.82) 50%, rgb(9 9 11 / 0.5) 100%);
+  background: linear-gradient(180deg, var(--noche) 0%, rgb(9 9 11 / 0.86) 45%, rgb(9 9 11 / 0.72) 100%);
 }
-.precio__cuerpo {
-  display: grid; align-items: end; gap: 48px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-  padding-block: clamp(80px, 3rem + 6vw, 160px);
-}
-.precio__texto { display: grid; gap: 20px; }
+.precio__cuerpo { display: grid; gap: clamp(32px, 4vw, 48px); padding-block: clamp(80px, 3rem + 6vw, 160px); }
+.precio__cabeza { display: grid; gap: 20px; }
 .precio .rotulo { color: rgb(255 255 255 / 0.75); }
 .precio h2 {
-  max-width: 14ch;
+  max-width: 18ch;
   font-size: clamp(2.2rem, 1.2rem + 3.6vw, 4.2rem); line-height: 1.02; letter-spacing: -0.04em;
 }
-.precio__texto p { margin: 0; max-width: 46ch; font-size: 17px; color: rgb(255 255 255 / 0.85); text-wrap: pretty; }
-.precio .acciones { margin-top: 12px; }
+.precio__cabeza p { margin: 0; max-width: 52ch; font-size: 17px; color: rgb(255 255 255 / 0.85); text-wrap: pretty; }
 
-.condiciones { margin: 0; display: grid; border-top: 1px solid rgb(255 255 255 / 0.2); }
-.condiciones div {
-  display: flex; justify-content: space-between; gap: 16px;
-  padding: 18px 0; border-bottom: 1px solid rgb(255 255 255 / 0.2);
+/* Los planes solo cambian en cuántos loteos: ese número es lo que más pesa. */
+.planes {
+  margin: 0; padding: 0; list-style: none;
+  display: grid; gap: 16px;
 }
-.condiciones dt { font-weight: 600; }
-.condiciones dd { margin: 0; color: rgb(255 255 255 / 0.85); }
+@media (min-width: 52rem) { .planes { grid-template-columns: repeat(3, 1fr); } }
+.plan {
+  display: grid; grid-template-rows: auto auto 1fr auto; gap: 14px;
+  padding: 28px 26px 26px;
+  border: 1px solid rgb(255 255 255 / 0.18); border-radius: var(--radio-bloque);
+  background: rgb(9 9 11 / 0.55);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.plan h3 { margin: 0; font: 700 15px/1 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; }
+.plan__cantidad { margin: 0; display: flex; align-items: baseline; gap: 10px; color: rgb(255 255 255 / 0.85); }
+.plan__cantidad b {
+  font: 800 clamp(3.4rem, 2.4rem + 3vw, 4.8rem)/0.9 var(--sans); letter-spacing: -0.05em;
+  color: #fff; font-variant-numeric: tabular-nums;
+}
+.plan__para { margin: 0; color: rgb(255 255 255 / 0.75); font-size: 15px; text-wrap: pretty; }
+.plan .boton { margin-top: 8px; }
+/* Pro, el del medio, en papel: el ojo se detiene ahí antes de comparar. */
+.plan--medio { background: var(--papel); color: var(--tinta); border-color: var(--papel); }
+.plan--medio .plan__cantidad, .plan--medio .plan__cantidad b { color: var(--tinta); }
+.plan--medio .plan__para { color: var(--zinc-600); }
+.plan--medio .boton--tinta { background: var(--tinta); color: #fff; }
+.plan--medio .boton--tinta:hover { transform: translateY(-2px); }
+.plan--medio .boton--tinta:focus-visible { outline-color: var(--tinta); }
+
+.enterprise {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px 32px;
+  padding: 26px 28px;
+  border: 1px dashed rgb(255 255 255 / 0.35); border-radius: var(--radio-bloque);
+}
+.enterprise > div { display: grid; gap: 6px; max-width: 60ch; }
+.enterprise h3 { margin: 0; font: 700 20px/1.2 var(--sans); letter-spacing: -0.02em; }
+.enterprise p { margin: 0; color: rgb(255 255 255 / 0.8); font-size: 15px; }
+
+.incluye { display: grid; gap: 14px; padding-top: 8px; }
+.incluye h3 { margin: 0; font: 600 13px/1 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: rgb(255 255 255 / 0.7); }
+.incluye ul {
+  margin: 0; padding: 0; list-style: none;
+  display: grid; gap: 10px 32px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+}
+.incluye li { display: flex; gap: 10px; align-items: baseline; color: rgb(255 255 255 / 0.88); font-size: 15px; }
+.incluye li::before { content: '✓'; flex: none; color: var(--verde-claro); font-weight: 700; }
+.incluye__nota { margin: 6px 0 0; padding-top: 16px; border-top: 1px solid rgb(255 255 255 / 0.18); color: rgb(255 255 255 / 0.75); font-size: 15px; }
 
 /* --- Pie ---------------------------------------------------------------------- */
 
@@ -699,7 +734,7 @@ h1 {
           <div class="paso__texto"><b>Revisas y publicamos</b><span>Lo armamos en tu cuenta y lo ves antes de que salga al aire. Sale con su enlace, listo para mandar.</span></div>
         </li>
       </ol>
-      <p class="camino__nota">Lo más simple si no tienes dron ni quién lo maneje.</p>
+      <p class="camino__nota">Lo más simple si no tienes dron ni quién lo maneje. El vuelo se cotiza aparte del plan.</p>
     </div>
 
     <div class="camino" data-camino="armas">
@@ -737,20 +772,53 @@ h1 {
 <section class="precio" id="contacto" aria-labelledby="precio-titulo">
   <img class="precio__foto" src="/hero-chico.webp" width="1200" height="675" alt="" loading="lazy" decoding="async">
   <div class="precio__cuerpo ancho">
-    <div class="precio__texto">
-      <span class="rotulo">Precio</span>
-      <h2 id="precio-titulo">Se cobra por loteo, una vez.</h2>
-      <p>Depende del tamaño del loteo y de si hay que ir a volarlo. Escríbenos con el nombre y cuántas parcelas son, y te lo decimos.</p>
-      <div class="acciones">
-        <a class="boton boton--claro" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20un%20masterplan%20para%20mi%20loteo">Cotizar mi loteo</a>
-        <a class="boton boton--fantasma" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20una%20cuenta%20en%20Tu%20Masterplan">Pedir una cuenta</a>
-      </div>
+    <div class="precio__cabeza">
+      <span class="rotulo">Planes</span>
+      <h2 id="precio-titulo">Una suscripción, según cuántos loteos publiques.</h2>
+      <p>Los planes solo cambian en la cantidad de loteos en línea; todo lo demás viene en todos. Escríbenos con el que te interesa y te mandamos el precio.</p>
     </div>
-    <dl class="condiciones">
-      <div><dt>Armarlo y revisarlo</dt><dd>Gratis</dd></div>
-      <div><dt>Se paga</dt><dd>Al publicarlo</dd></div>
-      <div><dt>Suscripción</dt><dd>No hay</dd></div>
-    </dl>
+
+    <ul class="planes">
+      <li class="plan">
+        <h3>Fly</h3>
+        <p class="plan__cantidad"><b>1</b> loteo</p>
+        <p class="plan__para">Para la loteadora con su primer proyecto en venta.</p>
+        <a class="boton boton--fantasma" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20el%20plan%20Fly%20de%20Tu%20Masterplan">Elegir Fly</a>
+      </li>
+      <li class="plan plan--medio">
+        <h3>Pro</h3>
+        <p class="plan__cantidad"><b>3</b> loteos</p>
+        <p class="plan__para">Para vender varias etapas o proyectos a la vez.</p>
+        <a class="boton boton--tinta" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20el%20plan%20Pro%20de%20Tu%20Masterplan">Elegir Pro</a>
+      </li>
+      <li class="plan">
+        <h3>Master</h3>
+        <p class="plan__cantidad"><b>6</b> loteos</p>
+        <p class="plan__para">Para una cartera de proyectos en venta al mismo tiempo.</p>
+        <a class="boton boton--fantasma" href="mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20el%20plan%20Master%20de%20Tu%20Masterplan">Elegir Master</a>
+      </li>
+    </ul>
+
+    <div class="enterprise">
+      <div>
+        <h3>Enterprise</h3>
+        <p>Más de seis loteos, varias loteadoras bajo un mismo grupo o algo a la medida. Lo armamos contigo.</p>
+      </div>
+      <a class="boton boton--claro" href="mailto:e.ruiz@compratuparcela.cl?subject=Hablemos%20de%20Tu%20Masterplan%20Enterprise">Hablemos</a>
+    </div>
+
+    <div class="incluye">
+      <h3>Todos los planes incluyen</h3>
+      <ul>
+        <li>El visor 360 con la marca de tu loteadora</li>
+        <li>Precio, superficie y estado de cada parcela</li>
+        <li>Buscador, filtros y deslindes en KML</li>
+        <li>Contacto por WhatsApp y reservas con link de pago</li>
+        <li>Inventario al día con tu planilla o con Cierra</li>
+        <li>Crea tu KMZ desde el PDF del plano</li>
+      </ul>
+      <p class="incluye__nota">¿Necesitas que lo volemos nosotros? El vuelo con dron se cotiza aparte del plan.</p>
+    </div>
   </div>
 </section>
 
@@ -761,7 +829,7 @@ h1 {
     <a class="logo" href="#inicio" aria-label="Tu Masterplan, inicio">
       <span class="logo__tu">tu</span><span class="logo__nombre">masterplan</span><span class="logo__punto"></span>
     </a>
-    <span>Operado por CompraTuParcela · Hecho en Chile, con drones y planos de topógrafo.</span>
+    <span>Desarrollado por <a href="https://www.impulseai.cl/" target="_blank" rel="noopener">Impulse IA</a> · Hecho en Chile, con drones y planos de topógrafo.</span>
     <a href="https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app/entrar">Entrar a la app</a>
   </div>
 </footer>
