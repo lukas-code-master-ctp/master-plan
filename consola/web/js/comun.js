@@ -171,3 +171,12 @@ export function etapaDe(proyecto) {
   if (!proyecto.fuentes_encontradas.kmz) return pastilla('Falta el vuelo', 'aviso');
   return pastilla('Sin construir', 'aviso');
 }
+
+/**
+ * El loteo cuya foto va de fondo en la muestra de un diseño: uno construido que lo
+ * lleve o, si ninguno, cualquiera construido. Así se ve la marca sobre el campo.
+ */
+export function fotoDeFondo(proyectos, disenoId) {
+  const construidos = (proyectos ?? []).filter((p) => p.construido);
+  return (construidos.find((p) => p.diseno_id === disenoId) ?? construidos[0])?.slug ?? null;
+}

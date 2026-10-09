@@ -930,14 +930,15 @@
     </section>
   </section>
 
-  <section id="pantalla-disenos" class="pantalla pantalla--angosta" aria-labelledby="titulo-disenos" hidden>
+  <section id="pantalla-disenos" class="pantalla" aria-labelledby="titulo-disenos" hidden>
     <header class="pantalla__cabecera">
       <div>
+        <span class="antetitulo">La marca de tus sitios</span>
         <h1 id="titulo-disenos">Mis diseños</h1>
         <p class="guia">La marca con que se publican tus loteos: logo, color, tipografía y
           los textos de los botones.</p>
       </div>
-      <a class="boton" href="#/disenos/nuevo">
+      <a class="boton boton-nuevo" href="#/disenos/nuevo">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         Nuevo diseño
       </a>
@@ -963,62 +964,78 @@
     <h1 id="diseno-titulo">Nuevo diseño</h1>
 
     <div class="editor">
-      <form id="diseno-form" class="formulario" novalidate>
-        <label class="renglon">
-          <span class="renglon__rotulo">Nombre</span>
-          <input name="nombre" type="text" placeholder="Los Robles" autocomplete="off" required>
-        </label>
-
-        <div class="renglon">
-          <span class="renglon__rotulo" id="rotulo-color">Color</span>
-          <div class="color">
-            <input id="diseno-color" name="color" type="color" value="#27272a" aria-labelledby="rotulo-color">
-            <input id="diseno-hex" type="text" value="#27272a" maxlength="7" spellcheck="false"
-                   aria-label="Color en hexadecimal" autocomplete="off">
-            <span id="diseno-color-nota" class="nota" role="status"></span>
+      <form id="diseno-form" class="ajustes editor__form" novalidate>
+        <fieldset class="grupo">
+          <legend class="grupo__titulo">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
+            <span><strong>Identidad</strong><small>El nombre es para ti; el logo va arriba en el sitio.</small></span>
+          </legend>
+          <div class="grupo__campos">
+            <label class="campo campo--ancho"><span>Nombre</span>
+              <input name="nombre" type="text" placeholder="Los Robles" autocomplete="off" required></label>
+            <div class="campo campo--ancho">
+              <span id="rotulo-logo">Logo</span>
+              <label class="archivo" id="caja-logo">
+                <input id="diseno-logo" type="file" accept=".png,.jpg,.jpeg,.webp,.svg" aria-labelledby="rotulo-logo">
+                <span class="archivo__texto" id="texto-logo">Subir el logo (PNG, JPG, WebP o SVG)</span>
+              </label>
+              <p class="nota">Se muestra en la barra del sitio, a 36 px de alto. Mejor con fondo
+                transparente. <button id="diseno-quitar-logo" class="enlace" type="button" hidden>Quitar el logo</button></p>
+            </div>
           </div>
-        </div>
+        </fieldset>
 
-        <div class="renglon">
-          <span class="renglon__rotulo" id="rotulo-logo">Logo</span>
-          <div>
-            <label class="archivo" id="caja-logo">
-              <input id="diseno-logo" type="file" accept=".png,.jpg,.jpeg,.webp,.svg" aria-labelledby="rotulo-logo">
-              <span class="archivo__texto" id="texto-logo">Subir el logo (PNG, JPG, WebP o SVG)</span>
-            </label>
-            <p class="nota">Se muestra en la barra del sitio, a 36 px de alto. Mejor con fondo
-              transparente. <button id="diseno-quitar-logo" class="enlace" type="button" hidden>Quitar el logo</button></p>
+        <fieldset class="grupo">
+          <legend class="grupo__titulo">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.5-.8 1.2-1.6-.6-1.4.4-2.4 1.8-2.4H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3zM7.5 11h.01M10 7.5h.01M14.5 7.5h.01"/></svg>
+            <span><strong>Color y letra</strong><small>El color va en los botones; el verde de disponible no cambia.</small></span>
+          </legend>
+          <div class="campo campo--ancho">
+            <span id="rotulo-color">Color</span>
+            <div class="color">
+              <div id="diseno-colores" class="colores" role="group" aria-label="Colores rápidos"></div>
+              <input id="diseno-color" name="color" type="color" value="#27272a" aria-labelledby="rotulo-color">
+              <input id="diseno-hex" type="text" value="#27272a" maxlength="7" spellcheck="false"
+                     aria-label="Color en hexadecimal" autocomplete="off">
+              <span id="diseno-color-nota" class="nota" role="status"></span>
+            </div>
           </div>
-        </div>
+          <div class="campo campo--ancho" role="radiogroup" aria-labelledby="rotulo-letra">
+            <span id="rotulo-letra">Letra</span>
+            <div class="letras">
+              <label class="letra letra--jakarta"><input type="radio" name="tipografia" value="jakarta" checked>
+                <b>Aa</b><span>Moderna</span></label>
+              <label class="letra letra--serif"><input type="radio" name="tipografia" value="serif">
+                <b>Aa</b><span>Clásica</span></label>
+              <label class="letra letra--sistema"><input type="radio" name="tipografia" value="sistema">
+                <b>Aa</b><span>Del sistema</span></label>
+            </div>
+          </div>
+        </fieldset>
 
-        <label class="renglon">
-          <span class="renglon__rotulo">Tipografía</span>
-          <select id="diseno-tipografia" name="tipografia">
-            <option value="jakarta">Plus Jakarta Sans</option>
-            <option value="serif">Serif clásica</option>
-            <option value="sistema">La del sistema</option>
-          </select>
-        </label>
-
-        <label class="renglon">
-          <span class="renglon__rotulo">Botón de contacto <i>opcional</i></span>
-          <input name="texto_contacto" type="text" maxlength="60" placeholder="Consultar por WhatsApp" autocomplete="off">
-        </label>
-
-        <label class="renglon">
-          <span class="renglon__rotulo">Botón de pago <i>opcional</i></span>
-          <input name="texto_pago" type="text" maxlength="40" placeholder="Comprar" autocomplete="off">
-        </label>
+        <fieldset class="grupo">
+          <legend class="grupo__titulo">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v10H4zM8 12h8"/></svg>
+            <span><strong>Textos de los botones</strong><small>Opcionales: vacíos, el sitio dice Comprar y Consultar por WhatsApp.</small></span>
+          </legend>
+          <div class="grupo__campos">
+            <label class="campo"><span>Botón de pago</span>
+              <input name="texto_pago" type="text" maxlength="40" placeholder="Comprar" autocomplete="off"></label>
+            <label class="campo"><span>Botón de contacto</span>
+              <input name="texto_contacto" type="text" maxlength="60" placeholder="Consultar por WhatsApp" autocomplete="off"></label>
+          </div>
+        </fieldset>
 
         <div class="formulario__pie formulario__pie--separado">
           <button id="diseno-borrar" class="boton boton--texto boton--peligro" type="button" hidden>Borrar diseño</button>
-          <button id="diseno-guardar" class="boton" type="submit">Guardar</button>
+          <button id="diseno-guardar" class="boton boton--grande" type="submit">Guardar</button>
         </div>
       </form>
 
       <!-- Cómo se va a ver en el sitio: la barra y la ficha de una parcela. -->
       <aside class="previa" id="diseno-previa" aria-label="Vista previa">
         <span class="previa__rotulo">Así se ve en el sitio</span>
+        <div class="previa__telefono">
         <div class="previa__barra">
           <span class="previa__marca" id="previa-marca">
             <svg class="previa__hito" viewBox="0 0 32 32" aria-hidden="true">
@@ -1027,7 +1044,7 @@
               <path d="M16 10.5 21.5 16 16 21.5 10.5 16Z" fill="currentColor"/>
             </svg>
           </span>
-          <span class="previa__nombre"><strong>Praderas de Cauquenes</strong><small>Etapas 1 a 4</small></span>
+          <span class="previa__nombre"><strong id="previa-titulo">Tu loteo</strong><small>Etapas 1 a 4</small></span>
         </div>
         <div class="previa__foto" aria-hidden="true"></div>
         <div class="previa__ficha">
@@ -1037,6 +1054,7 @@
           <span class="previa__boton" id="previa-pago">Comprar</span>
           <span class="previa__boton" id="previa-contacto">Consultar por WhatsApp</span>
           <span class="previa__boton previa__boton--contorno">Ver desde el aire</span>
+        </div>
         </div>
       </aside>
     </div>
