@@ -678,6 +678,45 @@ export function devolverAlKmz(entradas, anillos) {
 }
 
 /**
+ * Todas las lecturas sugeridas confirmadas de una vez, como si confirmara cada una:
+ * semilla nueva, la parte de vuelta al KMZ y el lote verde al tiro. Se salta las que
+ * chocan (el número ya está en otra semilla, o dos sugerencias traen el mismo): esas las
+ * decide ella una por una, porque pasar un número de lote sin preguntar le quitaría el
+ * número a otro. No toca lo que recibe.
+ * Devuelve `{entradas, rasgos, confirmadas, omitidas}` (las dos últimas, listas de números).
+ */
+export function confirmarSugerencias(entradas, rasgos, cuadro) {
+  // Se calculan antes: al aplicar cada número los rasgos cambian y la lista se correría.
+  const lista = sugerencias(rasgos);
+  // También los números que ya tiene un lote (leídos por el lector, sin semilla): confirmar
+  // en masa no debe quitárselos callado a otro lote; la pastilla sí pregunta.
+  const tomados = new Set([...(entradas.semillas ?? []).map((s) => s.numero),
+    ...rasgos.map((r) => r.properties.numero).filter((n) => n != null)].map(claveLote));
+  let salidaEntradas = entradas;
+  let salidaRasgos = rasgos;
+  const confirmadas = [];
+  const omitidas = [];
+  for (const s of lista) {
+    const numero = formaDelCuadro(s.numero, cuadro);
+    if (!numero) continue;
+    const clave = claveLote(numero);
+    if (tomados.has(clave)) {
+      omitidas.push(numero);
+      continue;
+    }
+    tomados.add(clave);
+    const anillos = s.rasgo.geometry.coordinates;
+    const semillas = ponerNumero(salidaEntradas.semillas ?? [], numero, s.rasgo.rotulo, anillos);
+    salidaEntradas = { ...devolverAlKmz(salidaEntradas, anillos), semillas };
+    // Donde quedó la semilla (si la parte ya tenía una, ahí): ahí va el rótulo.
+    const puesta = semillas.find((x) => x.numero === numero);
+    if (puesta) salidaRasgos = aplicarNumero(salidaRasgos, numero, [puesta.x, puesta.y]);
+    confirmadas.push(numero);
+  }
+  return { entradas: salidaEntradas, rasgos: salidaRasgos, confirmadas, omitidas };
+}
+
+/**
  * Los lotes con el resto dejado fuera (o vuelto atrás) al tiro, como lo dirá el servidor:
  * la parte que contiene `punto` queda fuera del KMZ, sin contar como lote sin número; o
  * vuelve a ser un lote sin número o el lote numerado que era. No toca los rasgos que recibe.

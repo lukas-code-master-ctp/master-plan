@@ -12,7 +12,7 @@
  */
 import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
-  anclaDesde, aplicarFuera, calzaLoDigitalizado, aplicarNumero, claveLote, conSemillas, decidirResto, devolverAlKmz, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
+  anclaDesde, aplicarFuera, confirmarSugerencias, calzaLoDigitalizado, aplicarNumero, claveLote, conSemillas, decidirResto, devolverAlKmz, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, detalleUbicacion, filaDelPunto, numerosQueFaltan,
   ordenarEsquinas, PASTILLAS, pastillaDe, pasoDeRuta, pasoSiguiente, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puedeUbicar, puntoDeRotulo,
   puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, siguienteNombre, sinNumero, sugerencias, tamanoRotado, textoSemaforo, verticesDe,
@@ -508,6 +508,7 @@ async function manejar(nodo) {
   }
   if (accion === 'kmz-digitalizar' || accion === 'kmz-redigitalizar') return digitalizar();
   if (accion === 'kmz-siguiente-sin-numero') return siguienteSinNumero();
+  if (accion === 'kmz-confirmar-todos') return confirmarTodos();
   if (accion === 'kmz-resto-incluir') return elegirResto(true);
   if (accion === 'kmz-resto-fuera') return elegirResto(false);
   if (accion === 'kmz-ir') return irA();
@@ -998,6 +999,34 @@ function confirmarSugerencia(i) {
   const otra = entradas.semillas.find((x) => claveLote(x.numero) === claveLote(numero));
   if (otra && !confirm(`El ${numero} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
   ponerEnLote(numero, s.rasgo.rotulo, s.rasgo.geometry.coordinates);
+}
+
+/**
+ * Confirma de una vez todas las sugerencias, como si se apretara cada pastilla, pero en un
+ * solo cambio y una sola relectura. Las que chocan con un número ya puesto (o entre ellas)
+ * no se confirman: quedan en la lista para resolverlas a mano con su pastilla, que pregunta.
+ */
+function confirmarTodos() {
+  const n = sugerencias(rasgos).length;
+  if (!n) return;
+  if (!confirm(`¿Confirmar los ${n} números sugeridos? Cada uno queda como número de su lote.`)) return;
+  const r = confirmarSugerencias(entradas, rasgos, numerosCuadro());
+  // `confirmadas` y `omitidas` son las listas de números; aquí basta cuántos.
+  const confirmadas = r.confirmadas.length;
+  const omitidas = r.omitidas.length;
+  if (!confirmadas) {
+    avisar('No se confirmó ninguno: sus números ya están en otros lotes. Confírmalos uno a uno.');
+    return;
+  }
+  rasgos = r.rasgos;
+  if (paso === 'numerar') programarRelectura();
+  cambiar(r.entradas);
+  if (omitidas) {
+    const quedan = omitidas === 1
+      ? '1 queda por confirmar porque su número ya está en otro lote.'
+      : `${omitidas} quedan por confirmar porque su número ya está en otro lote.`;
+    avisar(`Se ${confirmadas === 1 ? 'confirmó 1' : `confirmaron ${confirmadas}`}. ${quedan}`);
+  }
 }
 
 /**
@@ -1714,6 +1743,10 @@ function pintarNumerar() {
     }));
   const porConfirmar = sugerencias(rasgos);
   $('#kmz-sugerencias-caja').hidden = !porConfirmar.length;
+  // Con una sola basta su pastilla: el botón de todas es para cuando son varias.
+  const todos = $('[data-accion="kmz-confirmar-todos"]');
+  todos.hidden = porConfirmar.length < 2;
+  todos.textContent = `Confirmar todos (${porConfirmar.length})`;
   $('#kmz-sugerencias').replaceChildren(...porConfirmar.map(({ numero }, i) => {
     const boton = document.createElement('button');
     boton.type = 'button';
