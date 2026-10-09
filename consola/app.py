@@ -76,6 +76,7 @@ from .rutas_cuentas import (
     url_base,
 )
 from .rutas_reservas import PUBLICAS as PUBLICAS_DE_RESERVAS
+from .rutas_equipo import rutas_de_equipo
 from .rutas_reservas import rutas_de_reservas
 from .trabajos import Trabajos
 
@@ -86,7 +87,7 @@ WEB = Path(__file__).resolve().parent / "web"
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "barra.js", "comun.js", "detalle.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
-           "vuelo.js", "configuracion.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
+           "vuelo.js", "configuracion.js", "equipo.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
            "mapa_kmz.js", "sondeo.js", "reservas.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
@@ -891,6 +892,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return FileResponse(proyecto.salida.qa / archivo, media_type="image/jpeg")
 
     app.include_router(rutas_de_cuentas(acceso, cuentas, google))
+    app.include_router(rutas_de_equipo(base, cuentas, quien, local=acceso.local))
     app.include_router(rutas_de_reservas(reservas, registro, vista, local=acceso.local))
     def publicar_en_linea(proyecto: Proyecto) -> dict:
         """Vuelve a publicar un loteo que ya está en línea, sin preguntar: lo piden

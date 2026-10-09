@@ -1,15 +1,19 @@
 /**
  * Configuración: lo que se deja listo una vez y vale para todos los masters.
  *
- * Hoy, la integración con Cierra. La clave de API es de la loteadora, no de un
+ * Tu cuenta y el equipo viven en equipo.js; acá, el índice de la izquierda y la
+ * integración con Cierra. La clave de API es de la loteadora, no de un
  * master: se pega acá una sola vez, se guarda cifrada y solo se muestran sus
  * últimos caracteres. Después, en cada master solo se elige el proyecto.
  */
-import { $, avisar, fecha, json, pedir } from './comun.js';
+import { $, $$, avisar, fecha, json, pedir } from './comun.js';
+import { pintarEquipo, prepararEquipo } from './equipo.js';
 
 let actual = null;   // lo que contestó GET /api/cierra
 
 export function prepararConfiguracion() {
+  prepararEquipo();
+  prepararIndice();
   $('#config-cierra-guardar').addEventListener('click', guardar);
   $('#config-cierra-cambiar').addEventListener('click', () => pintar(actual, { editando: true }));
   $('#config-cierra-cancelar').addEventListener('click', () => pintar(actual));
@@ -19,7 +23,8 @@ export function prepararConfiguracion() {
   });
 }
 
-export async function pintarConfiguracion() {
+export async function pintarConfiguracion({ animar = false } = {}) {
+  pintarEquipo({ animar });
   try {
     pintar(await pedir('/api/cierra'));
   } catch (error) {
@@ -85,4 +90,31 @@ async function quitar() {
   } catch (error) {
     avisar(error.message);
   }
+}
+
+// --- El índice ---------------------------------------------------------------------
+
+/**
+ * Botones y no enlaces `#…`: el hash es de las rutas de la app. La sección que se
+ * está leyendo queda marcada mientras se baja, para saber dónde se está.
+ */
+function prepararIndice() {
+  const botones = $$('.config__indice [data-ir]');
+  for (const boton of botones) {
+    boton.addEventListener('click', () => {
+      const destino = $(`#${boton.dataset.ir}`);
+      const quieto = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      destino.scrollIntoView({ behavior: quieto ? 'auto' : 'smooth', block: 'start' });
+      marcar(boton.dataset.ir);
+    });
+  }
+  const marcar = (id) => {
+    for (const boton of botones) boton.toggleAttribute('aria-current', boton.dataset.ir === id);
+  };
+  const observador = new IntersectionObserver((entradas) => {
+    const visible = entradas.filter((e) => e.isIntersecting)
+      .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+    if (visible) marcar(visible.target.id);
+  }, { rootMargin: '-20% 0px -60% 0px' });
+  for (const boton of botones) observador.observe($(`#${boton.dataset.ir}`));
 }

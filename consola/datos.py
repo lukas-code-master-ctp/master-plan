@@ -433,6 +433,25 @@ class Base:
                         .where(func.lower(usuarios.c.email) == email.strip().lower())
                         .values(activo=False, sesiones_validas_desde=_ahora()))
 
+    def reactivar_usuario(self, usuario_id: int) -> None:
+        with self.motor.begin() as con:
+            con.execute(update(usuarios).where(usuarios.c.id == usuario_id).values(activo=True))
+
+    def cortar_sesiones(self, usuario_id: int) -> None:
+        """Lo abierto hasta ahora deja de servir, en todos los dispositivos."""
+        with self.motor.begin() as con:
+            con.execute(update(usuarios).where(usuarios.c.id == usuario_id)
+                        .values(sesiones_validas_desde=_ahora()))
+
+    def renombrar_usuario(self, usuario_id: int, nombre: str) -> None:
+        with self.motor.begin() as con:
+            con.execute(update(usuarios).where(usuarios.c.id == usuario_id).values(nombre=nombre.strip()))
+
+    def renombrar_cliente(self, cliente_id: int, nombre: str) -> None:
+        """Solo el nombre que se muestra: el slug no cambia, que nombra carpetas."""
+        with self.motor.begin() as con:
+            con.execute(update(clientes).where(clientes.c.id == cliente_id).values(nombre=nombre.strip()))
+
     def cambiar_clave(self, email: str, nueva: str) -> None:
         """Cambiar la clave corta también lo que estuviera abierto."""
         with self.motor.begin() as con:
@@ -534,6 +553,11 @@ class Base:
         with self.motor.begin() as con:
             con.execute(insert(identidades).values(usuario_id=usuario_id, proveedor=proveedor,
                                                    sujeto=sujeto, creado_en=_ahora()))
+
+    def tiene_identidad(self, usuario_id: int, proveedor: str) -> bool:
+        with self.motor.connect() as con:
+            return con.execute(select(identidades.c.id).where(
+                identidades.c.usuario_id == usuario_id, identidades.c.proveedor == proveedor)).first() is not None
 
     def ascender_a_plataforma(self, email: str) -> None:
         with self.motor.begin() as con:

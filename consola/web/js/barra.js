@@ -5,11 +5,13 @@
  */
 import { $, $$ } from './comun.js';
 
-/** La sección de la barra a la que pertenece cada pantalla. */
+/** La sección de la barra a la que pertenece cada pantalla (null: ninguna). */
 export function seccionDe(pantalla) {
   if (pantalla.startsWith('diseno')) return 'disenos';
   if (pantalla.startsWith('kmz')) return 'kmz';
   if (pantalla === 'reservas') return 'reservas';
+  // Configuración se abre desde el avatar, no desde la isla: ninguna pestaña es suya.
+  if (pantalla === 'configuracion') return null;
   return 'planos';
 }
 
