@@ -1,20 +1,22 @@
 /**
  * Configuración: lo que se deja listo una vez y vale para todos los masters.
  *
- * Tu cuenta y el equipo viven en equipo.js, y Reservas y contacto en preferencias.js;
- * acá, el índice de la izquierda y la integración con Cierra. La clave de API es de la loteadora, no de un
+ * Tu cuenta y el equipo viven en equipo.js, Reservas y contacto en preferencias.js y
+ * Actividad en actividad.js; acá, el índice de la izquierda y la integración con Cierra. La clave de API es de la loteadora, no de un
  * master: se pega acá una sola vez, se guarda cifrada y solo se muestran sus
  * últimos caracteres. Después, en cada master solo se elige el proyecto.
  */
 import { $, $$, avisar, fecha, json, pedir } from './comun.js';
 import { pintarEquipo, prepararEquipo } from './equipo.js';
 import { pintarPreferencias, prepararPreferencias } from './preferencias.js';
+import { pintarActividad, prepararActividad } from './actividad.js';
 
 let actual = null;   // lo que contestó GET /api/cierra
 
 export function prepararConfiguracion() {
   prepararEquipo();
   prepararPreferencias();
+  prepararActividad();
   prepararIndice();
   $('#config-cierra-guardar').addEventListener('click', guardar);
   $('#config-cierra-cambiar').addEventListener('click', () => pintar(actual, { editando: true }));
@@ -28,6 +30,7 @@ export function prepararConfiguracion() {
 export async function pintarConfiguracion({ animar = false } = {}) {
   pintarEquipo({ animar });
   pintarPreferencias();
+  pintarActividad();
   try {
     pintar(await pedir('/api/cierra'));
   } catch (error) {
@@ -115,9 +118,18 @@ function prepararIndice() {
     for (const boton of botones) boton.toggleAttribute('aria-current', boton.dataset.ir === id);
   };
   const observador = new IntersectionObserver((entradas) => {
+    // Al fondo de la página la última sección no alcanza a subir hasta la franja
+    // que se mira: si ya no se puede bajar más, es esa la que se está leyendo.
+    const alFondo = innerHeight + scrollY >= document.documentElement.scrollHeight - 4;
+    if (alFondo) { marcar(botones.at(-1).dataset.ir); return; }
     const visible = entradas.filter((e) => e.isIntersecting)
       .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
     if (visible) marcar(visible.target.id);
-  }, { rootMargin: '-20% 0px -60% 0px' });
+  }, { rootMargin: '-20% 0px -60% 0px', threshold: [0, 0.5, 1] });
   for (const boton of botones) observador.observe($(`#${boton.dataset.ir}`));
+  // Un salto suave termina después del último aviso del observador: al terminar
+  // de moverse se mira de nuevo si quedó al fondo.
+  addEventListener('scrollend', () => {
+    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) marcar(botones.at(-1).dataset.ir);
+  });
 }
