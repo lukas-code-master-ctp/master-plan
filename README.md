@@ -225,6 +225,12 @@ La parcela es la misma en el iframe (`?lote=`), en las dos tarjetas flotantes y 
 capturas; hoy es la 2-21. **Si se vende, hay que cambiarla en los cuatro lugares**, o la
 landing abre mostrando una parcela vendida.
 
+**Después de cambiar una imagen o la fuente, corre `python3 landing/versionar.py`.**
+Vercel las sirve con `immutable` por un año, así que el navegador no vuelve a preguntar:
+cada referencia lleva la huella del archivo (`paso-calce.webp?v=1a2b3c4d`) y solo cambia
+cuando cambia el archivo. Sin eso, quien ya entró sigue viendo la imagen vieja. La prueba
+`test_cada_imagen_y_la_fuente_llevan_la_huella_de_su_archivo` avisa si se olvida.
+
 Las de `paso-*.webp` muestran cada paso de «Cómo funciona»: el plano dibujado desde
 `parcelas.json`, una panorámica cruda, el control de calce y pantallas de la consola
 de la QA local (`docs/qa-local.md`) con la portada y el calce reales de Praderas en

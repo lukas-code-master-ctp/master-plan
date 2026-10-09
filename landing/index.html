@@ -10,11 +10,11 @@
 <meta name="description" content="Tus parcelas dibujadas sobre la fotografía real del loteo, en 360° desde el aire. El comprador gira, busca su número y ve precio, superficie y estado.">
 <meta property="og:title" content="Tu Masterplan">
 <meta property="og:description" content="Tus parcelas sobre la fotografía real del loteo, en 360° desde el aire.">
-<meta property="og:image" content="/hero-chico.webp">
+<meta property="og:image" content="/hero-chico.webp?v=c18bd2c7">
 <meta property="og:type" content="website">
 <!-- La «m» va trazada y no como texto: un SVG de favicon no carga la tipografía. -->
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2327272a'/><path d='M7.5 22.5v-9.5M7.5 16c0-2.3 1.3-3.4 3.1-3.4s3.1 1.1 3.1 3.4v6.5M13.7 16c0-2.3 1.3-3.4 3.1-3.4s3.1 1.1 3.1 3.4v6.5' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><circle cx='24.6' cy='21.6' r='2.3' fill='%2322c55e'/></svg>">
-<link rel="preload" href="/fuente.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fuente.woff2?v=cd8db90c" as="font" type="font/woff2" crossorigin>
 <!-- Google Analytics 4. Lo único de JavaScript en la página: sin él todo funciona igual. -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-0BBZ42FZH8"></script>
 <script defer src="/analitica.js"></script>
@@ -24,7 +24,7 @@
   font-style: normal;
   font-weight: 200 800;
   font-display: swap;
-  src: url(/fuente.woff2) format('woff2');
+  src: url(/fuente.woff2?v=cd8db90c) format('woff2');
 }
 
 :root {
@@ -664,8 +664,8 @@ h1 {
 
 <header class="hero" id="inicio">
   <!-- En un teléfono la versión grande son 200 KB de más que no se ven. -->
-  <img class="hero__foto" src="/hero.webp"
-       srcset="/hero-chico.webp 1200w, /hero.webp 2400w" sizes="100vw"
+  <img class="hero__foto" src="/hero.webp?v=f1f860b4"
+       srcset="/hero-chico.webp?v=c18bd2c7 1200w, /hero.webp?v=f1f860b4 2400w" sizes="100vw"
        alt="Vista aérea de un loteo en Cauquenes: parcelas, caminos de tierra y el volcán en el horizonte."
        width="2400" height="1350" fetchpriority="high" decoding="async">
 
@@ -691,7 +691,7 @@ h1 {
     <div class="marco">
       <div class="marco__pantalla">
         <!-- Sin lazy: en escritorio asoma en la primera pantalla. -->
-        <img src="/producto.webp" srcset="/producto.webp 1360w, /producto-2x.webp 2040w"
+        <img src="/producto.webp?v=d3dec20c" srcset="/producto.webp?v=d3dec20c 1360w, /producto-2x.webp?v=d89243ec 2040w"
              sizes="(min-width: 1212px) 1164px, calc(100vw - 48px)" width="1360" height="850" decoding="async"
              alt="" aria-hidden="true">
         <!-- Praderas publicado, en vivo. Se puede porque el visor deja que lo inserte
@@ -739,7 +739,7 @@ h1 {
               <svg viewBox="0 0 27 12"><rect x="0.5" y="0.5" width="23" height="11" rx="3.5" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="17" height="8" rx="2"/><path d="M25 4v4a2 2 0 0 0 0-4Z" opacity="0.4"/></svg>
             </span>
           </div>
-          <img src="/producto-movil.webp" width="600" height="1221" loading="lazy" decoding="async"
+          <img src="/producto-movil.webp?v=1328190f" width="600" height="1221" loading="lazy" decoding="async"
                alt="El visor en un iPhone: la parcela 2-21 sobre la foto aérea y su ficha con superficie, precio y el botón de WhatsApp.">
           <span class="iphone__inicio" aria-hidden="true"></span>
         </div>
@@ -788,17 +788,17 @@ h1 {
     <div class="camino" data-camino="volamos">
       <ol class="pasos">
         <li class="paso">
-          <img src="/paso-plano.webp" width="800" height="500" loading="lazy" decoding="async"
+          <img src="/paso-plano.webp?v=f75085fb" width="800" height="500" loading="lazy" decoding="async"
                alt="El plano de subdivisión de Praderas de Cauquenes, con sus lotes numerados.">
           <div class="paso__texto"><b>Nos mandas el plano</b><span>El KMZ del topógrafo, tal como te lo entregó. ¿Solo tienes el PDF del plano aprobado? Sirve igual: lo pasamos a KMZ nosotros.</span></div>
         </li>
         <li class="paso">
-          <img src="/paso-vuelo.webp" width="800" height="500" loading="lazy" decoding="async"
+          <img src="/paso-vuelo.webp?v=9ab61e66" width="800" height="500" loading="lazy" decoding="async"
                alt="Fotografía aérea de Praderas de Cauquenes tomada desde el dron.">
           <div class="paso__texto"><b>Un día de vuelo</b><span>Llegamos con el dron y tomamos las panorámicas 360 desde los puntos que mejor muestran el loteo.</span></div>
         </li>
         <li class="paso">
-          <img src="/paso-revision.webp" width="800" height="500" loading="lazy" decoding="async"
+          <img src="/paso-revision.webp?v=e9adca9b" width="800" height="500" loading="lazy" decoding="async"
                alt="El detalle del loteo en la consola: la portada con las parcelas sobre la foto aérea, las cifras y el calce con el sol.">
           <div class="paso__texto"><b>Revisas y publicamos</b><span>Lo armamos en tu cuenta y lo ves antes de que salga al aire. Sale con su enlace, listo para mandar.</span></div>
         </li>
@@ -809,17 +809,17 @@ h1 {
     <div class="camino" data-camino="armas">
       <ol class="pasos">
         <li class="paso">
-          <img src="/paso-nuevo.webp" width="800" height="500" loading="lazy" decoding="async"
+          <img src="/paso-nuevo.webp?v=03b20003" width="800" height="500" loading="lazy" decoding="async"
                alt="El formulario Nuevo master de la consola: nombre, KMZ, panorámicas e inventario.">
           <div class="paso__texto"><b>Creas el master</b><span>Subes el KMZ, arrastras la carpeta del vuelo y, si quieres, la planilla de precios o tu inventario de Cierra. ¿Solo tienes el plano en PDF? Crea tu KMZ lo convierte.</span></div>
         </li>
         <li class="paso">
-          <img src="/paso-calce.webp" width="800" height="500" loading="lazy" decoding="async"
+          <img src="/paso-calce.webp?v=baff8788" width="800" height="500" loading="lazy" decoding="async"
                alt="El control de calce: los polígonos del plano en rojo sobre la foto aérea, cayendo sobre los caminos.">
           <div class="paso__texto"><b>Revisas el calce</b><span>La consola orienta las fotos con el sol y dibuja el plano encima. Los polígonos tienen que caer sobre los caminos.</span></div>
         </li>
         <li class="paso">
-          <img src="/paso-publicado.webp" width="800" height="500" loading="lazy" decoding="async"
+          <img src="/paso-publicado.webp?v=86ba9e80" width="800" height="500" loading="lazy" decoding="async"
                alt="Mis 360° en la consola: el resumen de parcelas y el loteo publicado con sus disponibles.">
           <div class="paso__texto"><b>Publicas</b><span>Cuando estés conforme. Si cambian los precios, subes la planilla y vuelves a publicar sin procesar las fotos; conectado a Cierra, se actualiza solo.</span></div>
         </li>
@@ -839,7 +839,7 @@ h1 {
 </section>
 
 <section class="precio" id="contacto" aria-labelledby="precio-titulo">
-  <img class="precio__foto" src="/hero-chico.webp" width="1200" height="675" alt="" loading="lazy" decoding="async">
+  <img class="precio__foto" src="/hero-chico.webp?v=c18bd2c7" width="1200" height="675" alt="" loading="lazy" decoding="async">
   <div class="precio__cuerpo ancho">
     <div class="precio__cabeza">
       <span class="rotulo">Planes</span>
