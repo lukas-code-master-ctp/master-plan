@@ -1,18 +1,20 @@
 /**
  * Configuración: lo que se deja listo una vez y vale para todos los masters.
  *
- * Tu cuenta y el equipo viven en equipo.js; acá, el índice de la izquierda y la
- * integración con Cierra. La clave de API es de la loteadora, no de un
+ * Tu cuenta y el equipo viven en equipo.js, y Reservas y contacto en preferencias.js;
+ * acá, el índice de la izquierda y la integración con Cierra. La clave de API es de la loteadora, no de un
  * master: se pega acá una sola vez, se guarda cifrada y solo se muestran sus
  * últimos caracteres. Después, en cada master solo se elige el proyecto.
  */
 import { $, $$, avisar, fecha, json, pedir } from './comun.js';
 import { pintarEquipo, prepararEquipo } from './equipo.js';
+import { pintarPreferencias, prepararPreferencias } from './preferencias.js';
 
 let actual = null;   // lo que contestó GET /api/cierra
 
 export function prepararConfiguracion() {
   prepararEquipo();
+  prepararPreferencias();
   prepararIndice();
   $('#config-cierra-guardar').addEventListener('click', guardar);
   $('#config-cierra-cambiar').addEventListener('click', () => pintar(actual, { editando: true }));
@@ -25,6 +27,7 @@ export function prepararConfiguracion() {
 
 export async function pintarConfiguracion({ animar = false } = {}) {
   pintarEquipo({ animar });
+  pintarPreferencias();
   try {
     pintar(await pedir('/api/cierra'));
   } catch (error) {

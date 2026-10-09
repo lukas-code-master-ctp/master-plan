@@ -1176,6 +1176,29 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
   font: 600 1rem/1 var(--mono); letter-spacing: 0.04em; user-select: all;
 }
 
+/* Reservas y contacto. */
+.preferencias { display: grid; gap: 1rem; }
+.preferencias__campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 0; padding: 0; border: 0; min-width: 0; }
+.preferencias__campos:disabled { opacity: 0.7; }
+.preferencias__ancho { grid-column: 1 / -1; }
+.preferencias__ancho.nota, .preferencias .nota { margin: 0 !important; }
+.preferencias__rotulo { display: block; margin: 0.5rem 0 0.5rem; font: 700 0.6875rem/1 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--zinc-600); }
+/* Las horas como un riel de tarjetas: la elegida en tinta, como la píldora de la barra. */
+.horas { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.5rem; margin-bottom: 0.6rem; }
+.hora {
+  position: relative; display: grid; justify-items: center; gap: 0.1rem; padding: 0.7rem 0.25rem;
+  border: 1px solid var(--zinc-200); border-radius: 0.875rem; background: var(--zinc-50); cursor: pointer;
+  transition: transform 250ms var(--curva-salida), background 200ms, border-color 200ms, color 200ms, box-shadow 250ms;
+}
+.hora input { position: absolute; opacity: 0; pointer-events: none; }
+.hora strong { font: 800 1.375rem/1 var(--sans); letter-spacing: -0.03em; }
+.hora small { font-size: 0.6875rem; font-weight: 600; color: var(--zinc-500); }
+.hora:hover { border-color: var(--zinc-400); transform: translateY(-2px); }
+.hora:has(input:checked) { background: var(--zinc-900); border-color: var(--zinc-900); color: #fff; box-shadow: 0 12px 24px -14px rgb(9 9 11 / 0.6); }
+.hora:has(input:checked) small { color: rgb(255 255 255 / 0.7); }
+.hora:has(input:focus-visible) { outline: 2px solid var(--zinc-900); outline-offset: 2px; }
+.preferencias__campos:disabled .hora { cursor: not-allowed; transform: none; }
+
 /* Integraciones: Cierra dentro de su sección, sin tarjeta propia. */
 .config__seccion .integracion { padding: 1.25rem; border-radius: 1.125rem; box-shadow: none; }
 .integracion { display: grid; gap: 0.875rem; padding: 1.25rem; background: #fff;
@@ -1206,7 +1229,8 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
   .perfil__anillo { width: 4.25rem; height: 4.25rem; }
   .perfil__avatar { width: 3.75rem; height: 3.75rem; font-size: 1.25rem; }
   .perfil__quien h2 { font-size: 1.25rem; }
-  .perfil__form, .invitar__campos { grid-template-columns: 1fr; }
+  .perfil__form, .invitar__campos, .preferencias__campos { grid-template-columns: 1fr; }
+  .horas { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .perfil__pie .boton, .invitar .boton-nuevo { width: 100%; }
   .seguridad li { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); gap: 0.5rem 0.9rem; }
   .seguridad .boton { grid-column: 2; justify-self: start; }

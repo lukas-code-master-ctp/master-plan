@@ -138,6 +138,11 @@ export function iniciales(email) {
   return partes.slice(0, 2).map((p) => p[0].toUpperCase()).join('') || '?';
 }
 
+/** 1 → "1 hora"; 24 → "24 horas". */
+export function horas(cantidad) {
+  return `${cantidad} ${cantidad === 1 ? 'hora' : 'horas'}`;
+}
+
 const NUMERO = new Intl.NumberFormat('es-CL');
 
 /** Igual que la ficha del visor: el comprador y el dueño leen el mismo número. */

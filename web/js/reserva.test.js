@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  aplicarApartadas, cuerpoSolicitud, destinoDelPago, mensajeDeError, pedirApartadas,
+  aplicarApartadas, cuerpoSolicitud, destinoDelPago, mensajeDeError, pedirApartadas, textoApartada,
 } from './reserva.js';
 
 const META = { consola: 'https://consola.cl', loteo: 'praderas', link_reserva: 'https://pago.cl/r' };
@@ -82,4 +82,16 @@ test('demasiados intentos y fallas sin explicación dan un mensaje propio', () =
   assert.match(mensajeDeError(429, null), /muchas solicitudes/);
   assert.match(mensajeDeError(0, null), /No pudimos apartar/);
   assert.match(mensajeDeError(500, 'Internal Server Error'), /No pudimos apartar/);
+});
+
+// --- apartada sin link de pago --------------------------------------------------------
+
+test('al apartarla se dice hasta qué hora, con las horas que fijó la loteadora', () => {
+  const texto = textoApartada('2026-10-07T15:00:00+00:00');
+  assert.match(texto, /^Listo: la parcela quedó apartada hasta las \d{2}:\d{2}\./);
+});
+
+test('sin la hora de la consola se dice igual que quedó apartada', () => {
+  assert.equal(textoApartada(null), 'Listo: la parcela quedó apartada. Te van a escribir para seguir.');
+  assert.equal(textoApartada('no-es-fecha'), 'Listo: la parcela quedó apartada. Te van a escribir para seguir.');
 });
