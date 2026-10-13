@@ -271,3 +271,128 @@ def test_el_tope_de_la_consola_sale_del_entorno(monkeypatch, valor, esperado):
     monkeypatch.setenv("CONSOLA_TRABAJOS_SIMULTANEOS", valor)
 
     assert _simultaneos() == esperado
+
+
+# --- El tope: uno trabado no frena la cola ----------------------------------------------
+#
+# La instancia corre los pesados de a uno. Uno que se colgaba (una descarga que nunca
+# volvía) dejaba la cola tomada para todas las loteadoras hasta reiniciar.
+
+def colgado():
+    """Un trabajo que no termina nunca ni imprime nada."""
+    return guion("import time; time.sleep(600)")
+
+
+def vivo(pid):
+    import os
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    # Un zombi todavía responde a la señal 0; muerto es muerto aunque nadie lo recoja.
+    try:
+        with open(f"/proc/{pid}/stat") as stat:
+            return stat.read().split(")")[-1].split()[0] != "Z"
+    except FileNotFoundError:
+        return False
+
+
+def test_un_trabajo_trabado_se_corta_al_vencer_y_suelta_el_turno():
+    trabajos = Trabajos(simultaneos=1, tope_pesado=0.5)
+    trabado = trabajos.lanzar("loteo-a", "construir", colgado())
+    segundo = trabajos.lanzar("loteo-b", "construir", guion("print('ok')"))
+
+    assert esperar(trabajos, segundo).estado == "listo"
+    cortado = trabajos.ver(trabado)
+    assert cortado.estado == "falló"
+    assert cortado.vencido
+    assert cortado.como_json()["vencido"] is True
+    assert "lo corté" in cortado.lineas[-1]
+    assert not trabajos.corriendo("loteo-a")       # se puede volver a lanzar
+
+
+def test_al_vencer_avisa_igual_para_guardar_lo_suyo():
+    trabajos = Trabajos(tope_pesado=0.3)
+    vistos = []
+
+    identificador = trabajos.lanzar("loteo", "construir", colgado(), al_terminar=vistos.append)
+
+    trabajo = trabajos.esperar(identificador, tope=15)
+    assert trabajo.terminado
+    assert vistos == [trabajo] and vistos[0].estado == "falló"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="grupos de procesos POSIX")
+def test_al_vencer_se_corta_tambien_lo_que_lanzo(tmp_path):
+    # El pipeline lanza sus propios procesos (el lector del plano); cortar solo el de
+    # arriba dejaba al hijo comiendo memoria y con la salida abierta.
+    archivo = tmp_path / "hijo.pid"
+    trabajos = Trabajos(tope_pesado=0.5)
+    identificador = trabajos.lanzar("loteo", "construir", guion(
+        "import subprocess, sys, time\n"
+        "hijo = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'])\n"
+        f"open({str(archivo)!r}, 'w').write(str(hijo.pid))\n"
+        "time.sleep(600)"))
+
+    trabajo = esperar(trabajos, identificador)
+
+    assert trabajo.vencido
+    hijo = int(archivo.read_text())
+    fin = time.monotonic() + 5
+    while vivo(hijo) and time.monotonic() < fin:
+        time.sleep(0.05)
+    assert not vivo(hijo)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="grupos de procesos POSIX")
+def test_un_nieto_que_se_queda_con_la_salida_no_retiene_el_turno(monkeypatch):
+    # El proceso termina bien, pero dejó vivo a alguien que se escapó de su grupo con
+    # la salida abierta: antes la lectura no terminaba nunca y el turno tampoco.
+    monkeypatch.setattr("consola.trabajos.ESPERA_SALIDA", 0.3)
+    trabajos = Trabajos(simultaneos=1)
+    identificador = trabajos.lanzar("loteo-a", "construir", guion(
+        "import subprocess, sys\n"
+        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(5)'],"
+        " start_new_session=True)\n"
+        "print('listo')"))
+    segundo = trabajos.lanzar("loteo-b", "construir", guion("print('ok')"))
+
+    assert esperar(trabajos, segundo, limite=4).estado == "listo"
+    assert trabajos.ver(identificador).estado == "listo"
+    assert "listo" in trabajos.ver(identificador).lineas
+
+
+def test_publicar_tiene_su_propio_tope():
+    trabajos = Trabajos(tope_pesado=600, tope_liviano=0.3)
+
+    identificador = trabajos.lanzar("loteo", "publicar", colgado(), pesado=False)
+
+    assert esperar(trabajos, identificador).vencido
+
+
+def test_un_trabajo_dentro_del_tope_no_se_corta():
+    trabajos = Trabajos(tope_pesado=10)
+
+    trabajo = esperar(trabajos, trabajos.lanzar("loteo", "construir", tapon(0.2)))
+
+    assert trabajo.estado == "listo"
+    assert not trabajo.vencido
+
+
+def test_cortar_todo_termina_lo_que_corre(trabajos):
+    identificador = trabajos.lanzar("loteo", "construir", colgado())
+    fin = time.monotonic() + 5
+    while not trabajos._procesos and time.monotonic() < fin:
+        time.sleep(0.01)
+
+    trabajos.cortar_todo()
+
+    assert esperar(trabajos, identificador).estado == "falló"
+
+
+def test_los_topes_de_la_consola_tienen_margen():
+    from consola.trabajos import TOPE_LIVIANO, TOPE_PESADO
+    # Una construcción grande toma ~5 min de CPU: el tope no puede cortar una lenta.
+    assert TOPE_PESADO >= 30 * 60
+    assert TOPE_LIVIANO >= 10 * 60
+    assert Trabajos().tope_pesado == TOPE_PESADO

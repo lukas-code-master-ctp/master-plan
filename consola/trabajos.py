@@ -7,6 +7,8 @@ evita que un error en el pipeline se lleve puesta la consola.
 """
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import threading
 import time
@@ -17,6 +19,18 @@ from datetime import datetime
 from pathlib import Path
 
 LIMITE_LINEAS = 2000
+
+# Lo más que puede correr un trabajo antes de cortarlo. La instancia corre los pesados
+# de a uno: uno que se cuelga (una descarga que nunca vuelve, el lector pegado en una
+# página) dejaba la cola tomada para todas las loteadoras hasta reiniciar. Una
+# construcción grande toma unos 5 min de CPU y leer un plano grande ~5 min; los topes
+# dejan harto margen a uno lento sin que uno trabado frene al resto la tarde entera.
+TOPE_PESADO = 45 * 60
+# Publicar y actualizar el visor solo suben archivos.
+TOPE_LIVIANO = 20 * 60
+# Terminado o cortado el proceso, cuánto se espera a que se cierre su salida. Un nieto
+# que siguió vivo puede tenerla abierta para siempre; el turno no lo espera.
+ESPERA_SALIDA = 5.0
 
 
 @dataclass
@@ -35,6 +49,8 @@ class Trabajo:
     termino: float | None = None
     # Cuántos esperan antes que este en la cola (1 = el próximo); None si no espera.
     posicion: int | None = None
+    # Se pasó del tope y se cortó.
+    vencido: bool = False
     # Se prende cuando ya no queda nada por hacer, lo de `al_terminar` incluido.
     fin: threading.Event = field(default_factory=threading.Event, repr=False, compare=False)
 
@@ -51,6 +67,7 @@ class Trabajo:
             "codigo": self.codigo,
             "terminado": self.terminado,
             "posicion": self.posicion,
+            "vencido": self.vencido,
             "desde": desde,
             "total": len(self.lineas),
             "lineas": self.lineas[desde:],
@@ -64,13 +81,20 @@ class Trabajos:
     llegan con el tope lleno esperan en cola, en orden de llegada, y parten solos al
     soltarse un turno. Una construcción grande pasa de 4 GB y la instancia tiene 8:
     dos a la vez la pueden matar, y con ella todo lo que corría. None = sin tope.
+
+    `tope_pesado` / `tope_liviano`: segundos que puede correr un trabajo antes de
+    cortarlo, con todo lo que haya lanzado, y soltar su turno.
     """
 
-    def __init__(self, directorio: Path | None = None, simultaneos: int | None = None):
+    def __init__(self, directorio: Path | None = None, simultaneos: int | None = None,
+                 tope_pesado: float = TOPE_PESADO, tope_liviano: float = TOPE_LIVIANO):
         self.directorio = Path(directorio) if directorio else None
         self.simultaneos = simultaneos
+        self.tope_pesado = tope_pesado
+        self.tope_liviano = tope_liviano
         self._trabajos: dict[str, Trabajo] = {}
         self._cola: deque[tuple[Trabajo, list[str], object]] = deque()
+        self._procesos: dict[str, subprocess.Popen] = {}
         self._candado = threading.Lock()
 
     def lanzar(self, proyecto: str, accion: str, comando: list[str],
@@ -125,6 +149,12 @@ class Trabajos:
             for identificador, trabajo in list(self._trabajos.items()):
                 if trabajo.proyecto == proyecto and trabajo.terminado:
                     del self._trabajos[identificador]
+
+    def cortar_todo(self) -> None:
+        """Al apagar la consola: cada trabajo corre en su propio grupo de procesos (ver
+        `_seguir`), así que apagar la consola ya no se los lleva solos."""
+        for proceso in list(self._procesos.values()):
+            _matar(proceso)
 
     def corriendo(self, proyecto: str) -> bool:
         """¿Hay algo en curso para ese loteo?"""
@@ -187,19 +217,23 @@ class Trabajos:
                 # Sin esto Python almacena su salida en un búfer al no ver una
                 # terminal, y el avance aparecería recién al terminar.
                 env=_entorno_sin_bufer(),
+                # Su propio grupo: al vencer se corta el árbol entero (el lector del
+                # plano, el `vercel` de publicar), no solo el proceso de arriba.
+                start_new_session=os.name == "posix",
             )
         except OSError as error:
             trabajo.lineas.append(f"no pude lanzar el comando: {error}")
             trabajo.estado, trabajo.codigo = "falló", -1
             return
 
-        for linea in proceso.stdout:
-            if len(trabajo.lineas) < LIMITE_LINEAS:
-                trabajo.lineas.append(linea.rstrip("\n"))
-        proceso.wait()
+        self._procesos[trabajo.id] = proceso
+        try:
+            self._vigilar(trabajo, proceso)
+        finally:
+            self._procesos.pop(trabajo.id, None)
 
         trabajo.codigo = proceso.returncode
-        trabajo.estado = "listo" if proceso.returncode == 0 else "falló"
+        trabajo.estado = "listo" if proceso.returncode == 0 and not trabajo.vencido else "falló"
 
         # Lo durable se guarda acá: el diccionario de trabajos vive en memoria y
         # se pierde al reiniciar, pero lo que dejó el trabajo tiene que quedar.
@@ -208,6 +242,50 @@ class Trabajos:
                 al_terminar(trabajo)
             except Exception as error:      # noqa: BLE001 - nunca romper por esto
                 trabajo.lineas.append(f"aviso: no pude guardar el resultado ({error})")
+
+    def _vigilar(self, trabajo: Trabajo, proceso: subprocess.Popen) -> None:
+        """Lee la salida en otro hilo y espera al proceso con tope. Leer acá mismo no
+        sirve: un proceso colgado sin imprimir deja la lectura bloqueada y el tope
+        nunca se mira."""
+        def leer() -> None:
+            try:
+                for linea in proceso.stdout:
+                    if len(trabajo.lineas) < LIMITE_LINEAS:
+                        trabajo.lineas.append(linea.rstrip("\n"))
+            except (OSError, ValueError):
+                pass
+
+        lector = threading.Thread(target=leer, daemon=True)
+        lector.start()
+        tope = self.tope_pesado if trabajo.pesado else self.tope_liviano
+        try:
+            proceso.wait(timeout=tope)
+        except subprocess.TimeoutExpired:
+            trabajo.vencido = True
+            _matar(proceso)
+            proceso.wait()
+        # Muerto el proceso, lo que quede en la tubería se lee al tiro. Si la lectura
+        # sigue, es que un nieto se quedó con la salida: el turno no lo espera.
+        lector.join(ESPERA_SALIDA)
+        if trabajo.vencido:
+            trabajo.lineas.append(f"se pasó de {_minutos(tope)} y lo corté: "
+                                  "vuelve a lanzarlo, y si se repite, avísanos")
+
+
+def _matar(proceso: subprocess.Popen) -> None:
+    """El grupo entero donde se puede; si no, al menos el proceso."""
+    try:
+        if os.name == "posix":
+            os.killpg(proceso.pid, signal.SIGKILL)
+        else:
+            proceso.kill()
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+
+def _minutos(segundos: float) -> str:
+    minutos = round(segundos / 60)
+    return f"{minutos} min" if minutos >= 1 else f"{segundos:g} s"
 
 
 def _entorno_sin_bufer() -> dict:
