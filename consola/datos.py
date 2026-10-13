@@ -632,7 +632,7 @@ class Base:
                        carpeta: str | None = None, nota_cobro: str | None = None,
                        vercel_proyecto: str | None = None,
                        url_publicada: str | None = None,
-                       pagado: bool = True) -> ProyectoGuardado:
+                       pagado: bool = True, ocupado=None) -> ProyectoGuardado:
         """Da de alta un loteo.
 
         Por defecto nace pagado, que es lo que pasa cuando lo habilita CTP. Con
@@ -640,6 +640,8 @@ class Base:
         construir, pero publicar espera a que CTP anote el cobro.
 
         Con `slug` se adopta un loteo que ya existía afuera, con su identidad intacta.
+        `ocupado(slug)`: si ese slug está tomado aunque no esté en la base (las
+        carpetas que dejó un loteo borrado).
         """
         ahora = _ahora()
         with self.motor.begin() as con:
@@ -647,7 +649,7 @@ class Base:
             # los trabajos de Mis KMZ, y un master así se colaría en su avance.
             if slug and (":" in slug or "/" in slug):
                 raise ValueError(f"el slug {slug!r} no sirve para un loteo")
-            elegido = slug or _slug_libre(con, nombre)
+            elegido = slug or _slug_libre(con, nombre, ocupado=ocupado)
             try:
                 con.execute(insert(proyectos).values(
                     cliente_id=cliente_id, slug=elegido, nombre=nombre.strip(),
@@ -880,20 +882,25 @@ def _slug(nombre: str, defecto: str = "cliente") -> str:
 
 
 def _slug_libre(con, nombre: str, columna=None, defecto: str = "cliente",
-                largo: int | None = None) -> str:
+                largo: int | None = None, ocupado=None) -> str:
     """El slug sugerido, o el siguiente con sufijo. Dos clientes pueden llamar igual
     a su loteo; el que manda es quien llega primero. `columna` es de qué tabla
-    (la de los loteos si no se dice); `largo`, cuánto se deja del nombre."""
+    (la de los loteos si no se dice); `largo`, cuánto se deja del nombre;
+    `ocupado(slug)`, si está tomado por algo que no está en la base."""
     columna = proyectos.c.slug if columna is None else columna
     sugerido = _slug(nombre, defecto)
     if largo is not None:
         sugerido = sugerido[:largo].strip("-") or defecto
     tomados = {f[0] for f in con.execute(
         select(columna).where(columna.like(f"{sugerido}%")))}
-    if sugerido not in tomados:
+
+    def libre(candidato: str) -> bool:
+        return candidato not in tomados and not (ocupado and ocupado(candidato))
+
+    if libre(sugerido):
         return sugerido
     siguiente = 2
-    while f"{sugerido}-{siguiente}" in tomados:
+    while not libre(f"{sugerido}-{siguiente}"):
         siguiente += 1
     return f"{sugerido}-{siguiente}"
 

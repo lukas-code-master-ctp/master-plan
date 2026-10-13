@@ -319,11 +319,16 @@ class Registro:
     def _nacer(self, cliente_id: int, nombre: str, *, pagado: bool,
                nota_cobro: str | None = None) -> Proyecto:
         guardado = self.base.crear_proyecto(cliente_id, nombre, nota_cobro=nota_cobro,
-                                            pagado=pagado)
+                                            pagado=pagado, ocupado=self._con_carpetas)
         carpeta = self.subidas / guardado.slug
         carpeta.mkdir(parents=True, exist_ok=True)
         self._escribir_json(carpeta, guardado.slug, {"nombre": nombre})
         return self._leer(guardado)
+
+    def _con_carpetas(self, slug: str) -> bool:
+        """Un loteo pagado que se borró deja sus carpetas (quizá sigue publicado). Su
+        slug no se le da a otro: heredaría sus archivos, y borrar el nuevo los borraría."""
+        return (self.subidas / slug).exists() or (self.salidas / slug).exists()
 
     # --- interno, compartido con las vistas ------------------------------------
 
