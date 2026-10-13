@@ -1894,6 +1894,10 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
   .renglon__rotulo { padding-top: 0; }
   .heroe { min-height: 24rem; border-radius: 1.25rem; }
   .heroe__abajo { padding: 0 1.1rem 1.1rem; }
+  /* Centrado sobre toda la portada, el aviso de "sin construir" queda debajo del nombre
+     y los botones, que en el teléfono ocupan media altura: aquí va en su propio renglón. */
+  .portada--vacia { position: static; order: 1; flex: 1; padding: 0.5rem 1.4rem 1.5rem; }
+  .heroe__abajo { order: 2; }
   .pantalla .heroe h1 { font-size: 2.4rem; }
   .plano-detalle__acciones .boton { flex: 1 1 auto; justify-content: center; }
   .cifras__lista { grid-template-columns: repeat(2, minmax(0, 1fr)); }

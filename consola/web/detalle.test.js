@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { medicionDelSol, nombreDeVista } from './js/detalle.js';
+import { avisoAlQuitar, medicionDelSol, nombreDeVista } from './js/detalle.js';
 
 test('cada vista se nombra como en el visor: punto en romanos y altura', () => {
   assert.equal(nombreDeVista('p01-500.jpg'), 'Punto I · 500 m');
@@ -35,4 +35,24 @@ test('sobre 3° pide revisar y el medidor queda lleno', () => {
 
 test('sin vistas no hay medición', () => {
   assert.equal(medicionDelSol([]), null);
+});
+
+test('quitar uno sin pagar avisa que borra el vuelo', () => {
+  const aviso = avisoAlQuitar({ nombre: 'Loteo', subido: true, pagado: false, publicado: false });
+  assert.match(aviso, /Se borran también el vuelo subido/);
+  assert.match(aviso, /No se puede deshacer/);
+  assert.doesNotMatch(aviso, /reservas/);
+});
+
+test('quitar uno pagado sin publicar no borra archivos', () => {
+  assert.equal(avisoAlQuitar({ nombre: 'Loteo', subido: true, pagado: true, publicado: false }),
+    '¿Quitar "Loteo" de la lista? No se borra ningún archivo.');
+});
+
+test('quitar uno publicado avisa que el sitio queda sin reservas', () => {
+  const aviso = avisoAlQuitar({ nombre: 'Loteo', subido: true, pagado: true, publicado: true,
+    url: 'https://loteo.vercel.app/' });
+  assert.match(aviso, /https:\/\/loteo\.vercel\.app\/ sigue en línea, pero deja de recibir reservas/);
+  assert.match(aviso, /solicitudes de reserva, las confirmadas incluidas/);
+  assert.doesNotMatch(aviso, /No se borra ningún archivo/);
 });
