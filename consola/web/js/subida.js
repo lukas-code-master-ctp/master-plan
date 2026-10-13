@@ -63,12 +63,56 @@ export function soltadero(nodo, alSoltar) {
 
 export const megas = (lista) => lista.reduce((total, { archivo }) => total + archivo.size, 0) / 1048576;
 
+// Cuánto lleva cada pedido de la subida. El servidor recibe un pedido entero en su
+// memoria antes de guardarlo (Cloud Run no tiene disco): un vuelo de gigas en un solo
+// pedido, sumado a una construcción corriendo, la dejaba sin memoria. El servidor
+// rechaza los de más de 512 MB (MAX_CUERPO_MB en consola/app.py).
+const TANDA_MB = 256;
+
+// El KMZ primero: la subida exige que el loteo ya lo tenga. Después lo chico.
+const prioridad = ({ ruta }) => (esKmz(ruta) ? 0 : esFoto(ruta) ? 2 : 1);
+
 /**
- * Sube archivos a un loteo. Devuelve el loteo como quedó.
- *
- * XHR y no fetch: es la única forma de ver el avance de una subida de 200 MB.
+ * Los archivos repartidos en tandas de hasta `topeMb`, con el KMZ en la primera.
+ * Un archivo más grande que el tope va solo: lo que no quepa lo rechaza el servidor.
  */
-export function subir(slug, lista, alAvanzar = () => {}) {
+export function tandas(lista, topeMb = TANDA_MB) {
+  const tope = topeMb * 1048576;
+  const ordenados = [...lista].sort((a, b) => prioridad(a) - prioridad(b));
+  const grupos = [];
+  let actual = [];
+  let peso = 0;
+  for (const elegido of ordenados) {
+    if (actual.length && peso + elegido.archivo.size > tope) {
+      grupos.push(actual);
+      actual = [];
+      peso = 0;
+    }
+    actual.push(elegido);
+    peso += elegido.archivo.size;
+  }
+  if (actual.length) grupos.push(actual);
+  return grupos;
+}
+
+/**
+ * Sube archivos a un loteo, de a una tanda por pedido. Devuelve el loteo como quedó.
+ * `alAvanzar` recibe la fracción de todo lo que hay que subir, no de cada tanda.
+ */
+export async function subir(slug, lista, alAvanzar = () => {}) {
+  const total = lista.reduce((suma, { archivo }) => suma + archivo.size, 0) || 1;
+  let enviado = 0;
+  let loteo = null;
+  for (const grupo of tandas(lista)) {
+    const peso = grupo.reduce((suma, { archivo }) => suma + archivo.size, 0);
+    loteo = await subirTanda(slug, grupo, (fraccion) => alAvanzar((enviado + fraccion * peso) / total));
+    enviado += peso;
+  }
+  return loteo;
+}
+
+/** Una tanda en un pedido. XHR y no fetch: es la única forma de ver el avance de una subida. */
+function subirTanda(slug, lista, alAvanzar) {
   const cuerpo = new FormData();
   for (const { archivo, ruta } of lista) cuerpo.append('archivos', archivo, ruta);
 

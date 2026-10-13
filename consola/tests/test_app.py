@@ -1130,6 +1130,34 @@ def test_no_se_quita_un_loteo_mientras_construye(con_topes, monkeypatch):
     assert (registro.subidas / slug).exists()
 
 
+def test_un_pedido_demasiado_grande_se_rechaza_sin_leerlo(con_topes, monkeypatch):
+    """El servidor guarda el cuerpo entero en memoria antes de llamar a la ruta: lo
+    que pasa del tope se corta en la puerta, antes de recibirlo."""
+    import consola.app
+    _, ana, registro, _ = con_topes
+    slug = crear(ana)["slug"]
+    monkeypatch.setattr(consola.app, "MAX_CUERPO", 1000)
+
+    respuesta = ana.post(f"/api/proyectos/{slug}/archivos",
+                         files=[("archivos", ("loteo.kmz", b"k" * 2000, "application/octet-stream"))])
+
+    assert respuesta.status_code == 413
+    assert "partes" in respuesta.json()["detail"]
+    assert not (registro.subidas / slug / "loteo.kmz").exists()
+
+
+def test_un_pedido_dentro_del_tope_pasa(con_topes, monkeypatch):
+    import consola.app
+    _, ana, registro, _ = con_topes
+    slug = crear(ana)["slug"]
+    monkeypatch.setattr(consola.app, "MAX_CUERPO", 100_000)
+
+    respuesta = ana.post(f"/api/proyectos/{slug}/archivos",
+                         files=[("archivos", ("loteo.kmz", b"k" * 2000, "application/octet-stream"))])
+
+    assert respuesta.status_code == 201
+
+
 def test_no_se_suben_archivos_mientras_construye(con_topes, monkeypatch):
     """Subir un KMZ o una planilla aparta o pisa lo que el pipeline está leyendo."""
     _, ana, registro, comandos = con_topes
