@@ -185,7 +185,9 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
 
     print("Escribiendo los datos...")
     parcelas = _armar_parcelas(fichas, con_id, apariciones)
+    publicacion = _datos_de_la_publicacion(salida.datos / "parcelas.json")
     _escribir_json(salida.datos / "parcelas.json", {
+        **publicacion,
         "proyecto": proyecto.nombre,
         "etapa": proyecto.etapa,
         "etapas": etapas,
@@ -538,6 +540,22 @@ def _redondear_punto(punto) -> list[float]:
 
 def _redondear_anillo(anillo) -> list[list[float]]:
     return [_redondear_punto(p) for p in anillo]
+
+
+def _datos_de_la_publicacion(archivo: Path) -> dict:
+    """Lo que la publicación anotó en el parcelas.json anterior: el loteo y la consola.
+
+    Los escribe la consola al publicar (consola/inventario.py) y el sitio los usa
+    para pedir reservas. Una reconstrucción de un loteo ya publicado los conserva:
+    "Actualizar desde Cierra" reconstruye y sube sin volver a pasar por la consola.
+    """
+    try:
+        anterior = json.loads(archivo.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(anterior, dict):
+        return {}
+    return {campo: anterior[campo] for campo in ("loteo", "consola") if campo in anterior}
 
 
 def _escribir_json(ruta: Path, datos) -> None:

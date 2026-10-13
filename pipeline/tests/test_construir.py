@@ -148,3 +148,30 @@ def test_cuenta_los_vuelos_por_la_altura_del_despegue_que_guarda_el_dron():
                  P(altura_absoluta=576.2, altura_relativa=499.7), P(altura_absoluta=584.5, altura_relativa=499.6)]
 
     assert _vuelos(panoramas) == [pytest.approx(76.5), pytest.approx(84.85)]
+
+
+# --- lo que dejó la publicación sobrevive a una reconstrucción ------------------------
+#
+# La publicación anota en parcelas.json a qué consola pide reservas el sitio y cuál es
+# su loteo. Reconstruir escribe parcelas.json de nuevo: si lo pierde, "Actualizar desde
+# Cierra" sube un sitio sin reservas.
+
+def test_conserva_la_consola_y_el_loteo_de_la_publicacion(tmp_path):
+    from pipeline.construir import _datos_de_la_publicacion
+    archivo = tmp_path / "parcelas.json"
+    archivo.write_text('{"proyecto": "Praderas", "loteo": "praderas", '
+                       '"consola": "https://consola.cl", "parcelas": []}', encoding="utf-8")
+
+    assert _datos_de_la_publicacion(archivo) == {"loteo": "praderas", "consola": "https://consola.cl"}
+
+
+def test_sin_publicacion_previa_no_agrega_nada(tmp_path):
+    from pipeline.construir import _datos_de_la_publicacion
+    sin_publicar = tmp_path / "sin.json"
+    sin_publicar.write_text('{"proyecto": "Praderas", "parcelas": []}', encoding="utf-8")
+    roto = tmp_path / "roto.json"
+    roto.write_text("{a medias", encoding="utf-8")
+
+    assert _datos_de_la_publicacion(tmp_path / "no-existe.json") == {}
+    assert _datos_de_la_publicacion(sin_publicar) == {}
+    assert _datos_de_la_publicacion(roto) == {}
