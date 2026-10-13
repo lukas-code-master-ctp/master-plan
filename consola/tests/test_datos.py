@@ -312,6 +312,7 @@ def test_una_base_de_antes_de_la_huella_del_visor_se_pone_al_dia_sola(tmp_path):
     proyecto = base.proyecto("praderas")
     assert proyecto.url_publicada == "https://p.vercel.app"
     assert proyecto.visor_publicado is None
+    assert proyecto.habilitacion_pedida_en is None
 
 
 def test_anotar_el_visor_no_toca_lo_demas_de_la_publicacion(base):
@@ -324,3 +325,16 @@ def test_anotar_el_visor_no_toca_lo_demas_de_la_publicacion(base):
     proyecto = base.proyecto("praderas")
     assert proyecto.visor_publicado == "a" * 64
     assert proyecto.url_publicada == "https://p.vercel.app"
+
+
+def test_pedir_la_habilitacion_se_anota_una_vez_y_no_si_ya_se_pago(base):
+    cliente, _ = base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
+    base.crear_proyecto(cliente.id, "Praderas", pagado=False)
+    base.crear_proyecto(cliente.id, "Pagado")
+
+    assert base.pedir_habilitacion("praderas") is True
+    cuando = base.proyecto("praderas").habilitacion_pedida_en
+    assert base.pedir_habilitacion("praderas") is False
+    assert base.proyecto("praderas").habilitacion_pedida_en == cuando
+    assert base.pedir_habilitacion("pagado") is False
+    assert base.proyecto("pagado").habilitacion_pedida_en is None

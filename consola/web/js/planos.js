@@ -9,7 +9,8 @@
  * mientras se construye algo no repite la entrada— y nada si el sistema pide
  * menos movimiento.
  */
-import { $, dinero, estado, etapaDe } from './comun.js';
+import { $, dinero, estado, etapaDe, pastilla } from './comun.js';
+import { pintarPrimerosPasos } from './primeros.js';
 
 // El orden del rubro, de lo que se puede comprar a lo que no.
 const ORDEN = ['disponible', 'reservado', 'vendido', 'no_disponible'];
@@ -71,13 +72,15 @@ export function pintarPlanos({ animar = false } = {}) {
   const movimiento = animar && !matchMedia('(prefers-reduced-motion: reduce)').matches;
   pintarResumen(resumenDe(estado.proyectos), movimiento);
 
+  const conPasos = pintarPrimerosPasos();
   const lista = $('#planos');
   lista.classList.toggle('planos--entrando', movimiento);
   const proyectos = ordenarParaLista(estado.proyectos);
   const cantidad = proyectos.length;
   lista.replaceChildren(
     ...proyectos.map((proyecto, indice) => tarjeta(proyecto, indice, formaDeTarjeta(indice, cantidad))),
-    tarjetaNueva(cantidad),
+    // Sin loteos, los primeros pasos ya invitan al primer master: no se repite.
+    ...(conPasos && !cantidad ? [] : [tarjetaNueva(cantidad)]),
   );
 }
 
@@ -173,6 +176,10 @@ function tarjeta(proyecto, indice, forma) {
     etapa.prepend(vivo);
   }
   arriba.append(etapa);
+  // Sin correo configurado el aviso a CTP no sale: que se vea también en la lista.
+  if (!proyecto.pagado && proyecto.habilitacion_pedida) {
+    arriba.append(pastilla('Pidió habilitar', 'aviso'));
+  }
   if (proyecto.construido && proyecto.resumen.vistas) {
     const vistas = document.createElement('span');
     vistas.className = 'plano__vistas';

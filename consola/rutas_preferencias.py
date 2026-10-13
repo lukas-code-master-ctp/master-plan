@@ -40,7 +40,7 @@ def rutas_de_preferencias(base: Base, quien) -> APIRouter:
             raise HTTPException(403, "esto lo cambia quien es dueño de la loteadora")
         limpios = {}
         if "whatsapp" in campos:
-            limpios["whatsapp"] = _whatsapp(campos["whatsapp"])
+            limpios["whatsapp"] = whatsapp_valido(campos["whatsapp"])
         if "horas_apartado" in campos:
             limpios["horas_apartado"] = _horas(campos["horas_apartado"])
         if "diseno_id" in campos:
@@ -53,7 +53,8 @@ def rutas_de_preferencias(base: Base, quien) -> APIRouter:
     return rutas
 
 
-def _whatsapp(valor) -> str | None:
+def whatsapp_valido(valor) -> str | None:
+    """El número listo para wa.me, o None si vino vacío. 400 si no parece un teléfono."""
     numero = config.normalizar_whatsapp(str(valor or ""))
     if not numero:
         return None

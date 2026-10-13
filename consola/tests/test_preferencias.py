@@ -83,6 +83,31 @@ def test_un_master_nuevo_nace_con_el_whatsapp_de_la_loteadora(consola):  # noqa:
     assert nuevo["whatsapp"] == "56912345678"
 
 
+def test_el_whatsapp_de_nuevo_master_va_al_loteo_y_queda_como_el_primero(consola):  # noqa: F811
+    nuevo = consola["ana"].post("/api/proyectos",
+                                json={"nombre": "Los Olmos", "whatsapp": "+56 9 1234 5678"}).json()
+
+    assert nuevo["whatsapp"] == "56912345678"
+    assert preferencias(consola).json()["whatsapp"] == "56912345678"
+
+
+def test_el_whatsapp_de_nuevo_master_no_pisa_el_de_la_loteadora(consola):  # noqa: F811
+    cambiar(consola, whatsapp="56911111111")
+
+    nuevo = consola["ana"].post("/api/proyectos",
+                                json={"nombre": "Los Olmos", "whatsapp": "56922222222"}).json()
+
+    assert nuevo["whatsapp"] == "56922222222"
+    assert preferencias(consola).json()["whatsapp"] == "56911111111"
+
+
+def test_un_whatsapp_que_no_sirve_no_crea_el_master(consola):  # noqa: F811
+    respuesta = consola["ana"].post("/api/proyectos", json={"nombre": "Los Olmos", "whatsapp": "123"})
+
+    assert respuesta.status_code == 400
+    assert "Los Olmos" not in [p["nombre"] for p in consola["ana"].get("/api/proyectos").json()]
+
+
 def test_la_reserva_queda_apartada_las_horas_que_eligio_la_loteadora(consola):  # noqa: F811
     cambiar(consola, horas_apartado=24)
 

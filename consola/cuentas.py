@@ -291,12 +291,18 @@ class Cuentas:
                      "Si no creaste una cuenta, ignora este correo: sin confirmarla nadie "
                      "puede entrar con ella.", controlar=False)
 
-    def verificar(self, token: str) -> Usuario | None:
+    def verificar(self, token: str, al_confirmar=None) -> Usuario | None:
+        """`al_confirmar(usuario)` corre solo la primera vez que se confirma la cuenta:
+        un segundo enlace reenviado también sirve, pero la cuenta ya no es nueva."""
         usuario_id = self.base.usar_token("verificar", _hash(token))
         if usuario_id is None:
             return None
+        antes = self.base.usuario(usuario_id)
         self.base.marcar_verificado(usuario_id)
-        return self.base.usuario(usuario_id)
+        usuario = self.base.usuario(usuario_id)
+        if al_confirmar is not None and antes is not None and not antes.email_verificado:
+            al_confirmar(usuario)
+        return usuario
 
     def pedir_restablecer(self, email: str, url_base: str) -> None:
         """Manda el enlace si hay cuenta activa. Si no la hay, no manda nada y la

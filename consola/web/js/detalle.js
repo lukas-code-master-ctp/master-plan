@@ -14,6 +14,7 @@ const MEJORA_MINIMA = 0.03;
 const NUMERO = new Intl.NumberFormat('es-CL');
 const UN_DECIMAL = new Intl.NumberFormat('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const ROMANOS = [[10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+const DIA = new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'long' });
 const ROTULOS = { disponible: 'Disponibles', reservado: 'Reservadas', vendido: 'Vendidas', no_disponible: 'No disponibles' };
 
 function romano(numero) {
@@ -49,6 +50,10 @@ export function pintarEstado(proyecto) {
   // Sin teléfono el visor esconde el botón de contacto: el comprador mira, se
   // decide y no tiene a quién escribirle. Se avisa antes de publicar, no después.
   if (proyecto.sin_contacto) partes.push(pastilla('Sin contacto', 'aviso'));
+  // Para CTP es lo que hay que atender; para la loteadora, que ya se pidió.
+  if (!proyecto.pagado && proyecto.habilitacion_pedida) {
+    partes.push(pastilla('Pidió habilitar', 'aviso'));
+  }
   const etapa = etapaDe(proyecto);
   if (proyecto.publicado && !proyecto.trabajo) {
     const vivo = document.createElement('i');
@@ -195,4 +200,19 @@ export function avisoAlQuitar(proyecto) {
   }
   partes.push(borra || proyecto.publicado ? 'No se puede deshacer.' : 'No se borra ningún archivo.');
   return partes.join(' ');
+}
+
+/** Lo que falta para publicar, dicho en una línea. */
+export function notaDePublicar(proyecto) {
+  if (!proyecto.pagado && proyecto.habilitacion_pedida) {
+    return `Pediste habilitarlo el ${DIA.format(new Date(proyecto.habilitacion_pedida))}. Te escribimos `
+      + 'para dejarlo listo y te avisamos por correo cuando puedas publicarlo.';
+  }
+  if (!proyecto.pagado) {
+    return 'Puedes construir y revisar cuantas veces quieras. Para publicarlo, pide que '
+      + 'lo habilitemos: te contactamos y te avisamos por correo cuando esté listo.';
+  }
+  if (!proyecto.construido) return 'Se publica una vez construido y revisado el control de calce.';
+  if (proyecto.publicado) return 'Lo que cambies aquí llega al sitio cuando lo publicas de nuevo.';
+  return `Va a quedar en ${proyecto.url}`;
 }

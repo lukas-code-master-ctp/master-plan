@@ -103,8 +103,9 @@ export function abrirNuevo({ kmz = null } = {}) {
   opcionesDeMisKmz($('#nuevo-mio'), listos, eleccion.mio);
   $('#nuevo-progreso').hidden = true;
   $('#carpeta-local').hidden = !(estado.sesion?.rol === 'plataforma' && estado.sesion?.puede_vincular);
-  // Parte con el diseño que la loteadora fijó en Configuración, si fijó uno.
+  // Parte con el diseño y el WhatsApp que la loteadora fijó en Configuración, si los fijó.
   opcionesDeDiseno($('#nuevo-diseno'), estado.sesion?.preferencias?.diseno_id ?? null);
+  $('#nuevo-whatsapp').value = estado.sesion?.preferencias?.whatsapp ?? '';
   // Con el KMZ elegido, el nombre del master parte con el del KMZ.
   const elegido = listos.find((k) => k.slug === eleccion.mio);
   if (elegido) $('#nuevo-nombre').value = elegido.nombre;
@@ -238,6 +239,7 @@ async function construir(alCrear) {
     slug = (await pedir('/api/proyectos', json({
       nombre: $('#nuevo-nombre').value.trim(),
       diseno_id: $('#nuevo-diseno').value || null,
+      whatsapp: $('#nuevo-whatsapp').value.trim() || null,
     }))).slug;
     if (desdeCierra()) {
       // Conectado antes de construir: la construcción trae lo de Cierra sola.

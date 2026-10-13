@@ -2,7 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { avisoAlQuitar, medicionDelSol, nombreDeVista } from './js/detalle.js';
+import {
+  avisoAlQuitar, medicionDelSol, nombreDeVista, notaDePublicar,
+} from './js/detalle.js';
 
 test('cada vista se nombra como en el visor: punto en romanos y altura', () => {
   assert.equal(nombreDeVista('p01-500.jpg'), 'Punto I · 500 m');
@@ -55,4 +57,26 @@ test('quitar uno publicado avisa que el sitio queda sin reservas', () => {
   assert.match(aviso, /https:\/\/loteo\.vercel\.app\/ sigue en línea, pero deja de recibir reservas/);
   assert.match(aviso, /solicitudes de reserva, las confirmadas incluidas/);
   assert.doesNotMatch(aviso, /No se borra ningún archivo/);
+});
+
+test('sin pago, la nota invita a pedir la habilitación', () => {
+  const nota = notaDePublicar({ pagado: false, habilitacion_pedida: null, construido: true });
+
+  assert.match(nota, /pide que lo habilitemos/);
+  assert.doesNotMatch(nota, /escríbenos/);
+});
+
+test('ya pedida, la nota dice cuándo y que llega un correo', () => {
+  const nota = notaDePublicar({
+    pagado: false, habilitacion_pedida: '2026-10-13T15:00:00+00:00', construido: true,
+  });
+
+  assert.match(nota, /Pediste habilitarlo el 13 de octubre/);
+  assert.match(nota, /te avisamos por correo/);
+});
+
+test('pagado, la nota vuelve a hablar de construir y publicar', () => {
+  assert.match(notaDePublicar({ pagado: true, construido: false }), /una vez construido/);
+  assert.equal(notaDePublicar({ pagado: true, construido: true, publicado: false, url: 'https://x' }),
+    'Va a quedar en https://x');
 });

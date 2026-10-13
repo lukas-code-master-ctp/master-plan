@@ -240,6 +240,14 @@ h1 {
 
 .acciones { display: flex; flex-wrap: wrap; gap: 12px; }
 .hero .acciones { justify-content: center; margin-top: 36px; }
+/* Para quien ya tiene el vuelo y quiere probar sin hablar con nadie. Debajo de los
+   botones y en texto: la conversación sigue siendo el camino principal. */
+.hero__cuenta {
+  margin: 20px 0 0; max-width: 46ch;
+  font-size: 15px; line-height: 1.5; color: rgb(255 255 255 / 0.8);
+  text-wrap: pretty;
+}
+.hero__cuenta a, .precio__cabeza a { color: #fff; text-underline-offset: 3px; }
 
 /* --- Producto ----------------------------------------------------------------- */
 /* La captura se sube sobre el hero: la mitad de arriba de la sección es noche,
@@ -657,6 +665,7 @@ h1 {
     <div class="barra__acciones">
       <a class="barra__enlace barra__enlace--secundario" href="#como">Cómo funciona</a>
       <a class="barra__enlace" href="https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app/entrar">Entrar</a>
+      <a class="barra__enlace barra__enlace--secundario" href="https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app/registro">Crear cuenta</a>
       <a class="barra__boton" href="#contacto">Cotizar</a>
     </div>
   </div>
@@ -681,6 +690,8 @@ h1 {
       <a class="boton boton--claro" href="#contacto">Cotizar mi loteo</a>
       <a class="boton boton--fantasma" href="#producto">Ver un loteo publicado</a>
     </div>
+    <p class="hero__cuenta">¿Ya tienes el vuelo del dron?
+      <a href="https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app/registro">Crea tu cuenta gratis</a> y arma tu master: pagas recién cuando lo publicas.</p>
   </div>
 </header>
 
@@ -845,6 +856,8 @@ h1 {
       <span class="rotulo">Planes</span>
       <h2 id="precio-titulo">Una suscripción, según cuántos loteos publiques.</h2>
       <p>Los planes solo cambian en la cantidad de loteos en línea; todo lo demás viene en todos. Cuéntanos cuál te interesa en el formulario de abajo y te mandamos el precio.</p>
+      <p>¿Prefieres probar primero? <a href="https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app/registro">Crea tu cuenta gratis</a>, sube tu vuelo y construye
+        tu master antes de elegir un plan.</p>
     </div>
 
     <ul class="planes">

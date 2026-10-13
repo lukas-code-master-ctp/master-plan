@@ -174,6 +174,9 @@ proyectos = Table(
     # publicado) se deduce de los archivos, que nunca mienten.
     Column("pagado_en", DateTime(timezone=True), nullable=True),
     Column("nota_cobro", Text, nullable=True),
+    # Cuándo la loteadora pidió que se lo habiliten. Solo para que CTP no reciba
+    # el mismo aviso dos veces y la consola muestre "pedido el ..."; no habilita nada.
+    Column("habilitacion_pedida_en", DateTime(timezone=True), nullable=True),
     Column("creado_en", DateTime(timezone=True), nullable=False),
     # Con qué marca se publica. Vacío = la de Tu Masterplan.
     Column("diseno_id", Integer, ForeignKey("disenos.id"), nullable=True),
@@ -359,6 +362,7 @@ class ProyectoGuardado:
     nota_cobro: str | None
     diseno_id: int | None = None
     visor_publicado: str | None = None
+    habilitacion_pedida_en: datetime | None = None
 
     @property
     def pagado(self) -> bool:
@@ -809,6 +813,16 @@ class Base:
                 pagado_en=_ahora(), nota_cobro=nota_cobro))
         return cambio.rowcount == 1
 
+    def pedir_habilitacion(self, slug: str) -> bool:
+        """Anota que la loteadora pidió habilitar el loteo. Devuelve True solo la
+        primera vez y si no estaba pagado: es lo que decide si se avisa a CTP."""
+        with self.motor.begin() as con:
+            cambio = con.execute(update(proyectos).where(
+                proyectos.c.slug == slug, proyectos.c.pagado_en.is_(None),
+                proyectos.c.habilitacion_pedida_en.is_(None)).values(
+                habilitacion_pedida_en=_ahora()))
+        return cambio.rowcount == 1
+
     def asignar_diseno(self, slug: str, diseno_id: int | None) -> None:
         with self.motor.begin() as con:
             con.execute(update(proyectos).where(proyectos.c.slug == slug)
@@ -1036,6 +1050,10 @@ def _migrar(motor) -> None:
     if "visor_publicado" not in columnas:
         with motor.begin() as con:
             con.execute(text("ALTER TABLE proyectos ADD COLUMN visor_publicado VARCHAR(64)"))
+    if "habilitacion_pedida_en" not in columnas:
+        tipo = DateTime(timezone=True).compile(dialect=motor.dialect)
+        with motor.begin() as con:
+            con.execute(text(f"ALTER TABLE proyectos ADD COLUMN habilitacion_pedida_en {tipo}"))
     columnas = {c["name"] for c in inspect(motor).get_columns("clientes")}
     for columna, tipo in (("whatsapp", "VARCHAR(20)"), ("diseno_id", "INTEGER"),
                           ("horas_apartado", "INTEGER")):
@@ -1105,4 +1123,6 @@ def _proyecto(fila) -> ProyectoGuardado:
         carpeta=fila.carpeta,
         vercel_proyecto=fila.vercel_proyecto, url_publicada=fila.url_publicada,
         publicado_en=fila.publicado_en, pagado_en=fila.pagado_en, nota_cobro=fila.nota_cobro,
-        diseno_id=fila.diseno_id, visor_publicado=fila.visor_publicado)
+        diseno_id=fila.diseno_id, visor_publicado=fila.visor_publicado,
+        habilitacion_pedida_en=(_utc(fila.habilitacion_pedida_en)
+                                if fila.habilitacion_pedida_en else None))
