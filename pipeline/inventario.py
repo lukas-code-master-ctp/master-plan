@@ -49,7 +49,7 @@ class Resultado:
 DATOS_DEL_LOTEO = ("proyecto", "etapa", "whatsapp", "link_reserva", "monto_reserva")
 
 
-def _datos_del_loteo(proyecto: config.Proyecto) -> dict:
+def datos_del_loteo(proyecto: config.Proyecto) -> dict:
     return dict(zip(DATOS_DEL_LOTEO, (proyecto.nombre, proyecto.etapa, proyecto.whatsapp,
                                       proyecto.link_reserva, proyecto.monto_reserva)))
 
@@ -63,7 +63,7 @@ def poner_datos_del_loteo(proyecto: config.Proyecto, salida: config.Salida,
     """
     archivo = salida.datos / "parcelas.json"
     datos = json.loads(archivo.read_text(encoding="utf-8"))
-    nuevos = _datos_del_loteo(proyecto)
+    nuevos = datos_del_loteo(proyecto)
     if consola is not None:
         nuevos.update(loteo=proyecto.slug, consola=consola)
         if consola:
@@ -105,7 +105,7 @@ def actualizar(fuentes: config.Fuentes, proyecto: config.Proyecto,
 
     # Los datos del loteo viajan con los estados: si se cambiaron en la consola,
     # la próxima publicación ya los lleva.
-    nuevos = _datos_del_loteo(proyecto)
+    nuevos = datos_del_loteo(proyecto)
     cambia_el_loteo = any(datos.get(campo) != valor for campo, valor in nuevos.items())
     if cambiadas or cambia_el_loteo:
         datos.update(nuevos)
@@ -123,4 +123,4 @@ def _escribir(archivo: Path, datos: dict) -> None:
     os.replace(temporal.name, archivo)
 
 
-__all__ = ["DATOS_DEL_LOTEO", "Resultado", "actualizar", "poner_datos_del_loteo"]
+__all__ = ["DATOS_DEL_LOTEO", "Resultado", "actualizar", "datos_del_loteo", "poner_datos_del_loteo"]

@@ -86,6 +86,7 @@ from .rutas_actividad import rutas_de_actividad
 from .rutas_equipo import ADMINISTRAN, rutas_de_equipo
 from .rutas_preferencias import preferencias_de, rutas_de_preferencias, whatsapp_valido
 from .rutas_reservas import rutas_de_reservas
+from .rutas_vista_previa import rutas_de_vista_previa
 from .trabajos import Trabajos
 
 WEB = Path(__file__).resolve().parent / "web"
@@ -988,6 +989,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     app.include_router(rutas_de_actividad(base, quien))
     app.include_router(rutas_de_reservas(reservas, registro, vista, local=acceso.local))
     app.include_router(rutas_de_contactos(contactos, solo_plataforma, local=acceso.local))
+    app.include_router(rutas_de_vista_previa(vista, disenos, trabajos))
     def publicar_en_linea(proyecto: Proyecto) -> dict:
         """Vuelve a publicar un loteo que ya está en línea, sin preguntar: lo piden
         los estados y precios nuevos, no una persona que decide salir al mundo. La

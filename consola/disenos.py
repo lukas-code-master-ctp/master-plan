@@ -178,6 +178,21 @@ class Disenos:
         archivo = self.carpeta_de(diseno.id) / diseno.logo
         return archivo if archivo.is_file() else None
 
+    def para_el_sitio(self, diseno_id: int | None) -> tuple[dict | None, Path | None]:
+        """Lo que va en `diseno.json` del sitio y el logo que lo acompaña, sin escribir
+        nada: la vista previa de la consola lo sirve tal cual, sin tocar el sitio."""
+        if diseno_id is None:
+            return None, None
+        diseno = self.base.diseno(diseno_id)
+        logo = self.logo_de(diseno)
+        return {
+            "color": diseno.color,
+            "tipografia": diseno.tipografia,
+            "texto_contacto": diseno.texto_contacto,
+            "texto_pago": diseno.texto_pago,
+            "logo": f"logo{logo.suffix}" if logo is not None else None,
+        }, logo
+
     def escribir_en_sitio(self, diseno_id: int | None, datos: Path) -> None:
         """Deja el diseño junto a los datos del sitio.
 
@@ -189,24 +204,12 @@ class Disenos:
         """
         for viejo in datos.glob("logo.*"):
             viejo.unlink()
-        destino = datos / "diseno.json"
-        if diseno_id is None:
-            destino.write_text("null", encoding="utf-8")
-            return
-        diseno = self.base.diseno(diseno_id)
-        contenido = {
-            "color": diseno.color,
-            "tipografia": diseno.tipografia,
-            "texto_contacto": diseno.texto_contacto,
-            "texto_pago": diseno.texto_pago,
-            "logo": None,
-        }
-        logo = self.logo_de(diseno)
+        contenido, logo = self.para_el_sitio(diseno_id)
         if logo is not None:
-            nombre = f"logo{logo.suffix}"
-            shutil.copyfile(logo, datos / nombre)
-            contenido["logo"] = nombre
-        destino.write_text(json.dumps(contenido, ensure_ascii=False, indent=1), encoding="utf-8")
+            shutil.copyfile(logo, datos / contenido["logo"])
+        (datos / "diseno.json").write_text(
+            "null" if contenido is None else json.dumps(contenido, ensure_ascii=False, indent=1),
+            encoding="utf-8")
 
 
 @dataclass(frozen=True)

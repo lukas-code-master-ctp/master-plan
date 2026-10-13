@@ -497,6 +497,9 @@ RUTAS = {
     # Master ajeno → 404 (abajo); KMZ ajeno → 404 (test_kmz.py).
     ("POST", "/api/proyectos/{slug}/kmz"): AJENO_404,
     ("GET", "/calce/{slug}/{archivo}"): AJENO_404,
+    # test_vista_previa.py: test_la_vista_previa_de_otra_es_404.
+    ("GET", "/vista-previa/{slug}"): AJENO_404,
+    ("GET", "/vista-previa/{slug}/{ruta:path}"): AJENO_404,
     # Mis KMZ: lo ajeno se prueba en test_kmz.py (test_el_kmz_de_otra_contesta_404...).
     ("GET", "/api/kmz"): SOLO_SUYO,
     ("POST", "/api/kmz"): SOLO_SUYO,
