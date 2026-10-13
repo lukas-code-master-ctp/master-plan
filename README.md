@@ -326,6 +326,12 @@ una loteadora tiene topes (`Limites` en `consola/proyectos.py`); el equipo no:
 | Tamaño de un loteo subido | 3072 MB | `CONSOLA_MAX_MEGAS_POR_LOTEO` | 413 al subir; la página avisa antes |
 | Construcciones a la vez, por loteadora | 1 | `CONSOLA_MAX_CONSTRUCCIONES` | 429 al construir |
 
+**Subidas por partes.** La página sube el vuelo en tandas de hasta 256 MB, con el KMZ
+en la primera, y la consola rechaza (413) cualquier pedido de más de 512 MB antes de
+leerlo (`MAX_CUERPO` en `consola/app.py`). El servidor guarda el cuerpo de un pedido
+entero antes de llamar a la ruta, y en Cloud Run eso es memoria: un vuelo de gigas en
+un solo pedido, junto a una construcción, dejaba la instancia sin memoria.
+
 **La cola de la instancia.** Aparte del tope de cada loteadora, la instancia corre los
 trabajos pesados (construir, actualizar desde Cierra, leer un plano) **de a uno**,
 porque una construcción grande pasa de 4 GB y la instancia tiene 8: dos a la vez la

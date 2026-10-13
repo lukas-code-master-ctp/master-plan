@@ -212,6 +212,11 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                 "La consola no tiene secreto de firma. Define CONSOLA_SECRETO "
                 "antes de desplegarla."})
         ruta = peticion.url.path
+        # Antes que nada, y sin leerlo: lo que pasa del tope no llega a ocupar memoria.
+        if int(peticion.headers.get("content-length") or 0) > MAX_CUERPO:
+            return JSONResponse(status_code=413, content={"detail":
+                f"El envío pasa de {MAX_CUERPO // (1024 * 1024)} MB. Sube los archivos por "
+                "partes; si es uno solo de ese tamaño, no es parte del vuelo."})
         if ruta in LIBRES:
             return await seguir(peticion)
         sesion = acceso.leer(peticion.cookies.get(GALLETA))
@@ -1216,6 +1221,12 @@ def _cliente_json(cliente, base: Base) -> dict:
         "loteos": len(base.proyectos(cliente_id=cliente.id)),
     }
 
+
+# Lo más grande que acepta un pedido. El servidor guarda el cuerpo entero (en Cloud
+# Run, en memoria: no hay disco) antes de llamar a la ruta, así que un vuelo de gigas
+# en un solo pedido, junto a una construcción, dejaba la instancia sin memoria. La
+# página sube el vuelo en tandas de 256 MB (TANDA_MB en consola/web/js/subida.js).
+MAX_CUERPO = 512 * 1024 * 1024
 
 # Trabajos pesados (construir, leer un plano) a la vez en la instancia. Uno: una
 # construcción grande pasa de 4 GB y la instancia tiene 8 (cloudbuild.yaml).
