@@ -46,7 +46,7 @@ from pipeline.plano.digitalizar import SALIDA as DIGITALIZADO, escribir_json
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
 from .avisos import Avisos
 from .cierra import Cierra, Cifrador, Conexiones, cierra_del_entorno
-from .comandos import Comandos, encadenar
+from .comandos import Comandos, dominio_propio, encadenar
 from .contactos import Contactos
 from .cuentas import Cuentas, Google, Limitador, correo_del_entorno, google_del_entorno
 from .datos import (
@@ -121,9 +121,9 @@ def nombre_propuesto(slug: str) -> str:
 
 
 def url_propuesta(slug: str) -> str:
-    dominio = os.environ.get("MASTERPLAN_DOMINIO", "").strip().lstrip(".")
+    dominio = dominio_propio(slug)
     if dominio:
-        return f"https://{slug}.{dominio}"
+        return f"https://{dominio}"
     return f"https://{nombre_propuesto(slug)}.vercel.app"
 
 

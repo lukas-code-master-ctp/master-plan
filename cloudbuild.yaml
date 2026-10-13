@@ -85,8 +85,8 @@ substitutions:
   _INSTANCIA_BD: tumasterplan-bd          # Cloud SQL, la Postgres de las cuentas
   _IMAGEN: southamerica-east1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/tumasterplan-consola
   _VERCEL_SCOPE: lrencoret-1882s-projects   # el equipo Pro: Hobby prohíbe el uso comercial
-  _DOMINIO: ''                          # cuando exista: tumasterplan.cl
-  _CONSOLA_URL: https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app   # cuando exista: https://app.tumasterplan.cl
+  _DOMINIO: tumasterplan.cl             # cada loteo en <slug>.tumasterplan.cl (comodín en Vercel)
+  _CONSOLA_URL: https://consola.tumasterplan.cl   # el balanceador delante de Cloud Run
   _GOOGLE_CLIENT_ID: 910611168611-lc1d5fra9moaqoi69lbiiqll6a9tgvaf.apps.googleusercontent.com   # vacío: sin "Continuar con Google"
   _CIERRA_API_URL: https://api.cierra.cl   # vacío: sin "Conectar con Cierra"
 

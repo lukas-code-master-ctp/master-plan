@@ -322,7 +322,7 @@ En Cloud Run, `CONSOLA_URL` y `GOOGLE_CLIENT_ID` salen de las sustituciones
 `_CONSOLA_URL` y `_GOOGLE_CLIENT_ID` del cloudbuild, y `GOOGLE_CLIENT_SECRET` del secreto
 `google-client-secret`. **Ese secreto tiene que existir antes del despliegue** (aunque
 sea con un valor cualquiera): si falta, `gcloud run deploy` falla. Al cambiar de
-dirección (por ejemplo a `app.tumasterplan.cl`), la nueva URI de redirección se agrega
+dirección (como a `consola.tumasterplan.cl`), la nueva URI de redirección se agrega
 también en el cliente OAuth de Google.
 
 **Cuánto puede gastar una cuenta antes de pagar.** Como crear un master es gratis,
@@ -369,10 +369,21 @@ esa loteadora (`consola/proyectos.py`). Pedir uno ajeno da **404, no 403**: cont
 `consola/tests/test_app.py`, y una prueba lo compara con `app.routes` y **falla si
 alguien agrega una ruta sin decir qué pasa cuando la pide otro cliente**.
 
-**El dominio.** Hoy cada loteo queda en `masterplan-<slug>.vercel.app`. Con
-`MASTERPLAN_DOMINIO=tumasterplan.cl` (la sustitución `_DOMINIO` del cloudbuild) la
-consola pasa a mostrar `<slug>.tumasterplan.cl`; falta apuntar el dominio en Vercel,
-una vez por loteo.
+**Los dominios.** La consola está en `consola.tumasterplan.cl` y cada loteo en
+`<slug>.tumasterplan.cl`, con `MASTERPLAN_DOMINIO=tumasterplan.cl` (la sustitución
+`_DOMINIO` del cloudbuild). Al publicar, `publicar.sh --dominio <slug>.tumasterplan.cl`
+le asigna ese dominio al proyecto del loteo en Vercel (`vercel domains add`); el DNS ya
+lo cubre el comodín `*.tumasterplan.cl`, así que no hay que hacer nada por loteo. Si
+Vercel no lo acepta, el loteo se publica igual en `masterplan-<slug>.vercel.app`, que
+además sigue funcionando para siempre: los enlaces que ya se mandaron no se rompen. Un
+loteo publicado antes de tener dominio lo gana al volver a publicarse. Los slugs que
+chocarían con otra cosa (`consola`, `www`, `app`, …, en `SLUGS_RESERVADOS` de
+`consola/datos.py`) no se dan a un loteo nuevo.
+
+Cloud Run no mapea dominios en `southamerica-east1`, así que `consola.tumasterplan.cl`
+llega por un balanceador HTTPS externo con un NEG sin servidor apuntando al servicio.
+La URL `*.run.app` sigue respondiendo: los sitios publicados antes del cambio le mandan
+ahí las reservas hasta que se republican.
 
 ## Despliegue continuo
 

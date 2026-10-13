@@ -118,3 +118,20 @@ def test_actualizar_el_visor_copia_y_sube_sin_crear(comandos, tmp_path):
     assert "'pipeline.visor'" in copiar and f"'{proyecto.salida.web}'" in copiar
     assert "publicar.sh" in subir and "'masterplan-las-araucarias'" in subir
     assert "--crear" not in orden[2]
+
+
+def test_con_dominio_publicar_pide_el_del_loteo(comandos, tmp_path, monkeypatch):
+    monkeypatch.setenv("MASTERPLAN_DOMINIO", "tumasterplan.cl")
+
+    subir = comandos.publicar(proyecto_de_prueba(tmp_path), "masterplan-las-araucarias")[2]
+
+    assert subir.endswith("'--dominio' 'las-araucarias.tumasterplan.cl'")
+
+
+def test_sin_dominio_o_con_un_slug_que_no_cabe_no_lo_pide(comandos, tmp_path, monkeypatch):
+    monkeypatch.delenv("MASTERPLAN_DOMINIO", raising=False)
+    assert "--dominio" not in comandos.publicar(proyecto_de_prueba(tmp_path), "x")[2]
+
+    monkeypatch.setenv("MASTERPLAN_DOMINIO", "tumasterplan.cl")
+    largo = proyecto_de_prueba(tmp_path, slug="a" * 64)
+    assert "--dominio" not in comandos.publicar(largo, "x")[2]
