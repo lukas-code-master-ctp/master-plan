@@ -298,15 +298,15 @@ tokens se guarda el hash. Registrarse y pedir enlaces tiene un tope de 5 por hor
 
 | Variable | Para qué | Sin ella |
 | --- | --- | --- |
-| `SENDGRID_API_KEY` | Enviar los correos (el mismo proveedor que los reportes de CTP) | En este computador el correo queda en el registro de la consola. Desplegada, **Regístrate y "¿Olvidaste tu contraseña?" se cierran**: la entrada manda a escribirle al equipo, que crea las cuentas y da claves nuevas desde Loteadoras |
-| `EMAIL_FROM` | Remitente, verificado en SendGrid | `no-responder@tumasterplan.cl` |
-| `CONSOLA_URL` | La dirección pública de la consola, para los enlaces de los correos y la vuelta de Google (sin SendGrid ni Google no se usa) | La de la petición (detrás de Cloud Run llega como `http`) |
+| `RESEND_API_KEY` | Enviar los correos, por Resend. Si no está, se usa `SENDGRID_API_KEY` (el proveedor de los reportes de CTP) | En este computador el correo queda en el registro de la consola. Desplegada, **Regístrate y "¿Olvidaste tu contraseña?" se cierran**: la entrada manda a escribirle al equipo, que crea las cuentas y da claves nuevas desde Loteadoras |
+| `EMAIL_FROM` | Remitente, de un dominio verificado en Resend | `no-responder@tumasterplan.cl` |
+| `CONSOLA_URL` | La dirección pública de la consola, para los enlaces de los correos y la vuelta de Google (sin correo ni Google no se usa) | La de la petición (detrás de Cloud Run llega como `http`) |
 | `CIERRA_API_URL` | "Conectar con Cierra" en el inventario de cada loteo (ver [La planilla](#la-planilla)) | No se ofrece |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | "Continuar con Google" (cliente OAuth web; URI de redirección `<CONSOLA_URL>/entrar/google/vuelta`) | El botón no aparece |
 
 Con Google, una cuenta existente se enlaza si Google dice que el correo está verificado;
 alguien nuevo elige el nombre de su loteadora y entra.
-Sin SendGrid, Google sigue abriendo cuentas nuevas (el correo ya viene verificado): la
+Sin proveedor de correo, Google sigue abriendo cuentas nuevas (el correo ya viene verificado): la
 entrada ofrece "¿No tienes cuenta? Créala con Google", y Regístrate y "¿Olvidaste tu
 contraseña?" mandan a Google o a escribirle al equipo.
 

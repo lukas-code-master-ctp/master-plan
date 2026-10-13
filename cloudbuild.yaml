@@ -26,9 +26,9 @@
 #   python3 -c "import secrets,sys; sys.stdout.write(secrets.token_urlsafe(40))" \
 #     | gcloud secrets create consola-tareas-clave --data-file=-
 #   # Los correos (registro, contraseña, invitaciones y avisos al equipo): la clave de
-#   # API de SendGrid, con el remitente de EMAIL_FROM (no-responder@tumasterplan.cl)
-#   # verificado allá. Sin este secreto el despliegue falla: créalo antes.
-#   printf '%s' "<clave de sendgrid>" | gcloud secrets create sendgrid-api-key --data-file=-
+#   # API de Resend (permiso "Sending access"), con el dominio de EMAIL_FROM
+#   # (tumasterplan.cl) verificado allá. Sin este secreto el despliegue falla: créalo antes.
+#   printf '%s' "<clave de resend>" | gcloud secrets create resend-api-key --data-file=-
 steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', '${_IMAGEN}:$BUILD_ID', '-t', '${_IMAGEN}:latest', '.']
@@ -68,7 +68,7 @@ steps:
       - '--add-volume=name=datos,type=cloud-storage,bucket=${_BUCKET}'
       - '--add-volume-mount=volume=datos,mount-path=/datos'
       - '--add-cloudsql-instances=${PROJECT_ID}:${_REGION}:${_INSTANCIA_BD}'
-      - '--set-secrets=CONSOLA_SECRETO=consola-secreto:latest,MASTERPLAN_BD=masterplan-bd:latest,VERCEL_TOKEN=vercel-token:latest,GOOGLE_CLIENT_SECRET=google-client-secret:latest,CONSOLA_TAREAS_CLAVE=consola-tareas-clave:latest,SENDGRID_API_KEY=sendgrid-api-key:latest'
+      - '--set-secrets=CONSOLA_SECRETO=consola-secreto:latest,MASTERPLAN_BD=masterplan-bd:latest,VERCEL_TOKEN=vercel-token:latest,GOOGLE_CLIENT_SECRET=google-client-secret:latest,CONSOLA_TAREAS_CLAVE=consola-tareas-clave:latest,RESEND_API_KEY=resend-api-key:latest'
       # _DOMINIO vacío deja los loteos en masterplan-<slug>.vercel.app; con
       # tumasterplan.cl pasan a <slug>.tumasterplan.cl.
       # CONSOLA_URL: de ahí sale la vuelta de Google; desplegada no se arma con la

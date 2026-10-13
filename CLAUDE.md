@@ -62,7 +62,7 @@ npm run qa:bajar                     # termina los procesos; .qa/ queda
   `duenio@otra-loteadora.test` (otra loteadora, para aislamiento) y
   `sinconfirmar@qa.test` (no entra). En `qa:captura` se usan por alias: `plataforma`,
   `duenio`, `equipo`, `otra`, `sinconfirmar`, `anonimo`.
-- Servicios falsos: SQLite en lugar de Postgres, buzón en carpeta en lugar de SendGrid,
+- Servicios falsos: SQLite en lugar de Postgres, buzón en carpeta en lugar de Resend,
   `qa/cierra_falsa.py` (clave `qa-cierra-clave-demo-0001`) y un `vercel` falso que
   publica en `http://127.0.0.1:8792/`. Google OAuth queda apagado.
 - `source .qa/entorno.sh` para tener el mismo entorno en otro comando.
