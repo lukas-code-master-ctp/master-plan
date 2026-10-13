@@ -81,8 +81,37 @@ class CorreoSendGrid:
                 raise RuntimeError(f"SendGrid contestó {respuesta.status}")
 
 
+class CorreoResend:
+    """Resend, por su API HTTP. Es el proveedor de la consola desplegada: el dominio
+    tumasterplan.cl está verificado allá, así que el remitente puede ser cualquier
+    dirección de ese dominio."""
+
+    URL = "https://api.resend.com/emails"
+    puede_enviar = True
+
+    def __init__(self, clave: str, remitente: str, nombre: str = "Tu Masterplan"):
+        self.clave = clave
+        self.remitente = remitente
+        self.nombre = nombre
+
+    def enviar(self, para: str, asunto: str, texto: str) -> None:
+        cuerpo = json.dumps({
+            "from": f"{self.nombre} <{self.remitente}>",
+            "to": [para],
+            "subject": asunto,
+            "text": texto,
+        }).encode()
+        peticion = urllib.request.Request(self.URL, data=cuerpo, method="POST", headers={
+            "Authorization": f"Bearer {self.clave}", "Content-Type": "application/json",
+            # Cloudflare, delante de Resend, rechaza el User-Agent de urllib (error 1010).
+            "User-Agent": "tumasterplan-consola"})
+        with urllib.request.urlopen(peticion, timeout=15) as respuesta:
+            if respuesta.status >= 300:
+                raise RuntimeError(f"Resend contestó {respuesta.status}")
+
+
 class CorreoEnElRegistro:
-    """Sin SendGrid configurado: el correo queda en el registro de la consola.
+    """Sin proveedor de correo configurado: el correo queda en el registro de la consola.
 
     Sirve en este computador para probar los enlaces. Desplegada, sin clave, los
     correos no salen y se avisa en el registro en cada intento.
@@ -100,7 +129,7 @@ class CorreoEnElRegistro:
         if self.local:
             registro.warning("correo a %s — %s\n%s", para, asunto, texto)
         else:
-            registro.error("no se envió el correo a %s (%s): falta SENDGRID_API_KEY", para, asunto)
+            registro.error("no se envió el correo a %s (%s): falta RESEND_API_KEY", para, asunto)
 
 
 class CorreoEnCarpeta:
@@ -137,9 +166,14 @@ class CorreoEnCarpeta:
 
 
 def correo_del_entorno(local: bool) -> Correo:
+    remitente = os.environ.get("EMAIL_FROM", "no-responder@tumasterplan.cl")
+    clave = os.environ.get("RESEND_API_KEY", "").strip()
+    if clave:
+        return CorreoResend(clave, remitente)
+    # SendGrid queda por si se vuelve a él: es el de los reportes de CTP.
     clave = os.environ.get("SENDGRID_API_KEY", "").strip()
     if clave:
-        return CorreoSendGrid(clave, os.environ.get("EMAIL_FROM", "no-responder@tumasterplan.cl"))
+        return CorreoSendGrid(clave, remitente)
     # El buzón en disco, solo en este computador: desplegada serían correos que
     # nadie recibe con el registro abierto.
     buzon = os.environ.get("CONSOLA_BUZON", "").strip()
@@ -291,12 +325,18 @@ class Cuentas:
                      "Si no creaste una cuenta, ignora este correo: sin confirmarla nadie "
                      "puede entrar con ella.", controlar=False)
 
-    def verificar(self, token: str) -> Usuario | None:
+    def verificar(self, token: str, al_confirmar=None) -> Usuario | None:
+        """`al_confirmar(usuario)` corre solo la primera vez que se confirma la cuenta:
+        un segundo enlace reenviado también sirve, pero la cuenta ya no es nueva."""
         usuario_id = self.base.usar_token("verificar", _hash(token))
         if usuario_id is None:
             return None
+        antes = self.base.usuario(usuario_id)
         self.base.marcar_verificado(usuario_id)
-        return self.base.usuario(usuario_id)
+        usuario = self.base.usuario(usuario_id)
+        if al_confirmar is not None and antes is not None and not antes.email_verificado:
+            al_confirmar(usuario)
+        return usuario
 
     def pedir_restablecer(self, email: str, url_base: str) -> None:
         """Manda el enlace si hay cuenta activa. Si no la hay, no manda nada y la

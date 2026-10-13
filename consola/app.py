@@ -44,6 +44,7 @@ from pipeline.kmz import leer_kmz
 from pipeline.plano.digitalizar import SALIDA as DIGITALIZADO, escribir_json
 
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
+from .avisos import Avisos
 from .cierra import Cierra, Cifrador, Conexiones, cierra_del_entorno
 from .comandos import Comandos, encadenar
 from .contactos import Contactos
@@ -76,13 +77,14 @@ from .rutas_cuentas import (
     poner_sesion,
     rutas_de_cuentas,
     url_base,
+    url_para_avisos,
 )
 from .rutas_contactos import PUBLICAS as PUBLICAS_DE_CONTACTO
 from .rutas_contactos import rutas_de_contactos
 from .rutas_reservas import PUBLICAS as PUBLICAS_DE_RESERVAS
 from .rutas_actividad import rutas_de_actividad
-from .rutas_equipo import rutas_de_equipo
-from .rutas_preferencias import preferencias_de, rutas_de_preferencias
+from .rutas_equipo import ADMINISTRAN, rutas_de_equipo
+from .rutas_preferencias import preferencias_de, rutas_de_preferencias, whatsapp_valido
 from .rutas_reservas import rutas_de_reservas
 from .trabajos import Trabajos
 
@@ -93,7 +95,7 @@ WEB = Path(__file__).resolve().parent / "web"
 # llega en la URL es una ruta para leer el disco.
 MODULOS = ("app.js", "barra.js", "comun.js", "detalle.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
-           "vuelo.js", "configuracion.js", "equipo.js", "preferencias.js", "actividad.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
+           "vuelo.js", "configuracion.js", "equipo.js", "preferencias.js", "actividad.js", "primeros.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
            "mapa_kmz.js", "sondeo.js", "reservas.js", "contactos.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
@@ -162,7 +164,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
               retomar_lecturas_al_arrancar: bool = True,
               cierra: Cierra | None | bool = True, conexiones: Conexiones | None = None,
               kmzs: RegistroKmz | None = None, reservas: Reservas | None = None,
-              contactos: Contactos | None = None) -> FastAPI:
+              contactos: Contactos | None = None, avisos: Avisos | None = None) -> FastAPI:
     mostrar_registro()
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
@@ -171,6 +173,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     # Los avisos de reserva y de contacto salen por el mismo correo que los de las cuentas.
     reservas = reservas or Reservas(base=base, correo=cuentas.correo)
     contactos = contactos or Contactos(base=base, correo=cuentas.correo)
+    avisos = avisos or Avisos(base=base, correo=cuentas.correo,
+                              en_segundo_plano=cuentas.en_segundo_plano)
     # `True` = lo que diga el entorno; las pruebas pasan uno propio o `None`.
     google = google_del_entorno() if google is True else (google or None)
     disenos = disenos or Disenos(base=base)
@@ -412,17 +416,26 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         nombre = str(campos.get("nombre") or "").strip()
         if not nombre:
             raise HTTPException(400, "ponle un nombre al loteo")
-        # El diseño se revisa antes de crear: si no sirve, no queda un loteo a medias.
+        # El diseño y el WhatsApp se revisan antes de crear: si no sirven, no queda un
+        # loteo a medias.
         diseno_id = _diseno_para(marcas, campos.get("diseno_id"), mios.duenio)
+        escrito = whatsapp_valido(campos.get("whatsapp"))
         try:
             proyecto = mios.crear(nombre)
         except (ProyectoYaExiste, LimiteAlcanzado) as error:
             raise HTTPException(409, str(error)) from error
         if diseno_id is not None:
             proyecto = mios.asignar_diseno(proyecto.slug, diseno_id)
-        # Nace con el WhatsApp de la loteadora: sin él, el sitio esconde el botón de
-        # contacto, y era lo que más se olvidaba al armar un master.
-        whatsapp = base.cliente(proyecto.cliente_id).whatsapp
+        # Nace con el WhatsApp que se escribió en Nuevo master o, si no, con el de la
+        # loteadora: sin él, el sitio esconde el botón de contacto, y era lo que más se
+        # olvidaba al armar un master.
+        cliente = base.cliente(proyecto.cliente_id)
+        whatsapp = escrito or cliente.whatsapp
+        # El primero que escribe quien administra la loteadora queda como el de todos
+        # sus masters: es el paso "Tu WhatsApp" de los primeros pasos, sin otra pantalla.
+        if escrito and not cliente.whatsapp and yo.rol in ADMINISTRAN \
+                and cliente.id == yo.cliente_id:
+            base.guardar_preferencias(cliente.id, whatsapp=escrito)
         if whatsapp:
             proyecto = mios.ajustar(proyecto.slug, {"whatsapp": whatsapp})
         anotar(yo, "master creado", proyecto.nombre, cliente_id=proyecto.cliente_id)
@@ -561,7 +574,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         # El único control de cobro: un loteo se arma gratis, se publica pagado.
         if not proyecto.pagado:
             raise HTTPException(402, "este loteo todavía no está habilitado para "
-                                     "publicarse: escríbenos y lo dejamos listo")
+                                     "publicarse: pide que lo habilitemos y te avisamos")
         # Publicar deja el loteo a la vista de cualquiera con el enlace, con sus
         # precios y sus estados. Que no baste un clic ni un POST suelto.
         if not opciones.get("confirmado"):
@@ -581,6 +594,19 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                          al_terminar=_anotar_publicacion(mios, proyecto, nombre), pesado=False)
         anotar(yo, "publicación", proyecto.nombre, cliente_id=proyecto.cliente_id)
         return lanzado
+
+    @app.post("/api/proyectos/{slug}/habilitacion")
+    def pedir_habilitacion(slug: str, peticion: Request, mios: Vista = Depends(vista),
+                           yo: Sesion = Depends(quien)) -> dict:
+        """La loteadora pide que le dejen publicar el loteo. No habilita nada: avisa a
+        CTP, que cobra fuera del sistema y anota el pago. Solo el primer pedido avisa."""
+        proyecto, nuevo = mios.pedir_habilitacion(slug)
+        if nuevo:
+            avisos.habilitacion_pedida(loteo=proyecto.nombre, slug=proyecto.slug,
+                                       cliente_id=proyecto.cliente_id, quien=yo.quien,
+                                       url_consola=url_para_avisos(peticion, acceso.local))
+            anotar(yo, "habilitación pedida", proyecto.nombre, cliente_id=proyecto.cliente_id)
+        return _como_json(proyecto, trabajos)
 
     # --- mis KMZ: del plano aprobado a un KMZ propio, sin master ---------------------
     #
@@ -923,7 +949,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return _como_json(proyecto, trabajos)
 
     @app.post("/api/plataforma/proyectos/{slug}/pago")
-    def anotar_pago(slug: str, campos: dict = Body(...),
+    def anotar_pago(slug: str, peticion: Request, campos: dict = Body(...),
                     yo: Sesion = Depends(solo_plataforma)) -> dict:
         """Deja publicar un loteo que el cliente se creó solo, porque ya pagó.
 
@@ -938,6 +964,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             raise HTTPException(409, "este loteo ya tiene su pago anotado")
         base.anotar("loteo pagado", cliente_id=guardado.cliente_id,
                     usuario_id=yo.usuario_id, detalle=f"{slug} · {cobro}")
+        avisos.loteo_habilitado(loteo=guardado.nombre, slug=slug, cliente_id=guardado.cliente_id,
+                                url_consola=url_para_avisos(peticion, acceso.local))
         return _como_json(registro.para(yo).ver(slug), trabajos)
 
     @app.get("/api/plataforma/historial")
@@ -954,7 +982,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             raise HTTPException(404, "esa imagen de control no existe")
         return FileResponse(proyecto.salida.qa / archivo, media_type="image/jpeg")
 
-    app.include_router(rutas_de_cuentas(acceso, cuentas, google))
+    app.include_router(rutas_de_cuentas(acceso, cuentas, google, avisos=avisos))
     app.include_router(rutas_de_equipo(base, cuentas, quien, local=acceso.local))
     app.include_router(rutas_de_preferencias(base, quien))
     app.include_router(rutas_de_actividad(base, quien))
@@ -1288,6 +1316,8 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "url": proyecto.url_publicada or url_propuesta(proyecto.slug),
         "publicado": proyecto.publicado,
         "pagado": proyecto.pagado,
+        "habilitacion_pedida": (proyecto.habilitacion_pedida_en.isoformat()
+                                if proyecto.habilitacion_pedida_en else None),
         # Quitar de la lista uno subido y sin pagar borra sus archivos.
         "subido": proyecto.subido,
         "diseno_id": proyecto.diseno_id,

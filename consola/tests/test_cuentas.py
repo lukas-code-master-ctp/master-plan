@@ -662,6 +662,7 @@ def test_con_buzon_y_en_este_computador_los_correos_van_a_la_carpeta(tmp_path, m
     from consola.cuentas import CorreoEnCarpeta, correo_del_entorno
 
     monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.setenv("CONSOLA_BUZON", str(tmp_path / "buzon"))
 
     correo = correo_del_entorno(local=True)
@@ -675,6 +676,7 @@ def test_desplegada_el_buzon_se_ignora(tmp_path, monkeypatch):
     from consola.cuentas import CorreoEnElRegistro, correo_del_entorno
 
     monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.setenv("CONSOLA_BUZON", str(tmp_path / "buzon"))
 
     correo = correo_del_entorno(local=False)
@@ -686,10 +688,54 @@ def test_desplegada_el_buzon_se_ignora(tmp_path, monkeypatch):
 def test_con_clave_de_sendgrid_gana_sendgrid_aunque_haya_buzon(tmp_path, monkeypatch):
     from consola.cuentas import CorreoSendGrid, correo_del_entorno
 
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.setenv("SENDGRID_API_KEY", "SG.clave-de-prueba")
     monkeypatch.setenv("CONSOLA_BUZON", str(tmp_path / "buzon"))
 
     assert isinstance(correo_del_entorno(local=True), CorreoSendGrid)
+
+
+def test_con_clave_de_resend_gana_resend(tmp_path, monkeypatch):
+    from consola.cuentas import CorreoResend, correo_del_entorno
+
+    monkeypatch.setenv("RESEND_API_KEY", "re_clave-de-prueba")
+    monkeypatch.setenv("SENDGRID_API_KEY", "SG.clave-de-prueba")
+    monkeypatch.setenv("CONSOLA_BUZON", str(tmp_path / "buzon"))
+    monkeypatch.delenv("EMAIL_FROM", raising=False)
+
+    correo = correo_del_entorno(local=False)
+
+    assert isinstance(correo, CorreoResend)
+    assert correo.puede_enviar is True
+    assert correo.remitente == "no-responder@tumasterplan.cl"
+
+
+def test_resend_recibe_remitente_destino_y_texto(monkeypatch):
+    import json
+    from consola import cuentas
+    from consola.cuentas import CorreoResend
+
+    pedidas = []
+
+    class Respuesta:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+
+    def abrir(peticion, timeout):
+        pedidas.append(peticion)
+        return Respuesta()
+
+    monkeypatch.setattr(cuentas.urllib.request, "urlopen", abrir)
+
+    CorreoResend("re_clave", "no-responder@tumasterplan.cl").enviar("pia@bosques.cl", "Hola", "Texto")
+
+    [peticion] = pedidas
+    assert peticion.full_url == "https://api.resend.com/emails"
+    assert peticion.get_header("Authorization") == "Bearer re_clave"
+    assert json.loads(peticion.data) == {
+        "from": "Tu Masterplan <no-responder@tumasterplan.cl>",
+        "to": ["pia@bosques.cl"], "subject": "Hola", "text": "Texto"}
 
 
 # --- tope de intentos al entrar --------------------------------------------------------

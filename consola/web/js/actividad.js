@@ -17,6 +17,7 @@ const FRASES = {
   'publicación': ['publicó {d}', 'publicado'],
   'loteo habilitado': ['habilitó para publicar {d}', 'publicado'],
   'loteo pagado': ['anotó el pago de {d}', 'publicado'],
+  'habilitación pedida': ['pidió habilitar {d}', 'publicado'],
   'reserva confirmada': ['confirmó la reserva de la {d}', 'reserva'],
   'reserva liberada': ['liberó la {d}', 'reserva'],
   'diseño creado': ['creó el diseño {d}', 'marca'],

@@ -492,6 +492,7 @@ RUTAS = {
     ("POST", "/api/proyectos/{slug}/archivos"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/construir"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/publicar"): AJENO_404,
+    ("POST", "/api/proyectos/{slug}/habilitacion"): AJENO_404,
     ("GET", "/api/trabajos/{identificador}"): AJENO_404,
     # Master ajeno → 404 (abajo); KMZ ajeno → 404 (test_kmz.py).
     ("POST", "/api/proyectos/{slug}/kmz"): AJENO_404,
@@ -614,13 +615,14 @@ def de_ana(ctp, ana, registro, nombre="De Ana"):
     lambda web, slug: web.delete(f"/api/proyectos/{slug}"),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/construir", json={}),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/publicar", json={"confirmado": True}),
+    lambda web, slug: web.post(f"/api/proyectos/{slug}/habilitacion"),
     lambda web, slug: web.get(f"/calce/{slug}/p01-210.jpg"),
     lambda web, slug: web.get(f"/api/proyectos/{slug}/portada"),
     lambda web, slug: web.get(f"/api/proyectos/{slug}/plantilla"),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/archivos",
                                files=[("archivos", ("x.kmz", b"kmz", "application/octet-stream"))]),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/kmz", json={"kmz": "x", "confirmar_reemplazo": True}),
-], ids=["ajustar", "olvidar", "construir", "publicar", "calce", "portada", "plantilla", "subir",
+], ids=["ajustar", "olvidar", "construir", "publicar", "pedir-habilitacion", "calce", "portada", "plantilla", "subir",
         "usar-kmz"])
 def test_el_loteo_de_otra_contesta_404_en_todas_las_rutas(ana_y_luis, pedir):
     ctp, ana, luis, registro, comandos = ana_y_luis

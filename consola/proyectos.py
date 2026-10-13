@@ -196,6 +196,8 @@ class Proyecto:
     diseno_id: int | None = None
     # La huella del visor con que quedó publicado; None si nunca se anotó.
     visor_publicado: str | None = None
+    # Cuándo la loteadora pidió que se lo habiliten, si lo pidió.
+    habilitacion_pedida_en: datetime | None = None
 
     @property
     def publicado(self) -> bool:
@@ -356,6 +358,7 @@ class Registro:
             cliente_id=guardado.cliente_id,
             diseno_id=guardado.diseno_id,
             visor_publicado=guardado.visor_publicado,
+            habilitacion_pedida_en=guardado.habilitacion_pedida_en,
         )
 
     def _escribir_json(self, carpeta: Path, slug: str, campos: dict) -> None:
@@ -512,6 +515,13 @@ class Vista:
         self.ver(slug)
         self.registro.base.asignar_diseno(slug, diseno_id)
         return self.ver(slug)
+
+    def pedir_habilitacion(self, slug: str) -> tuple[Proyecto, bool]:
+        """Anota el pedido y dice si es nuevo (si hay que avisar a CTP). Pedirlo de
+        nuevo, o pedirlo ya pagado, no hace nada: el botón puede apretarse dos veces."""
+        self.ver(slug)
+        nuevo = self.registro.base.pedir_habilitacion(slug)
+        return self.ver(slug), nuevo
 
     def anotar_publicacion(self, slug: str, *, vercel_proyecto: str, url: str) -> Proyecto:
         """Guarda con qué nombre y en qué URL quedó publicado el loteo.

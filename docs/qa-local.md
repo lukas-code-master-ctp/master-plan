@@ -74,7 +74,7 @@ Praderas Demo no se pudo construir o publicar, lo avisa con `⚠` y deja el rest
 | Postgres (Cloud SQL) | SQLite | `.qa/datos/consola.db` | `MASTERPLAN_DATOS` |
 | Bucket de datos | carpeta | `.qa/datos/` | `MASTERPLAN_DATOS` |
 | La consola | hypercorn | `http://127.0.0.1:8780` | `QA_PUERTO_CONSOLA` |
-| SendGrid | buzón en carpeta (`CorreoEnCarpeta`) | `.qa/buzon/` | `CONSOLA_BUZON`, `QA_BUZON` |
+| Resend / SendGrid | buzón en carpeta (`CorreoEnCarpeta`) | `.qa/buzon/` | `CONSOLA_BUZON`, `QA_BUZON` |
 | Cierra (API de integraciones) | `qa/cierra_falsa.py` | `http://127.0.0.1:8791` | `QA_PUERTO_CIERRA` |
 | Vercel (CLI) | `qa/bin/vercel`, primero en el `PATH` | `.qa/publicados/`, servido en `http://127.0.0.1:8792` | `QA_PUERTO_PUBLICADOS` |
 | Google (OAuth) | apagado | — | — |
@@ -87,7 +87,7 @@ QA_PUERTO_CONSOLA=9780 QA_PUERTO_CIERRA=9791 QA_PUERTO_PUBLICADOS=9792 npm run q
 ```
 
 `qa:levantar` vacía antes las variables que podrían apuntar a algo real
-(`MASTERPLAN_BD`, `SENDGRID_API_KEY`, `GOOGLE_CLIENT_*`, `VERCEL_TOKEN`, `CIERRA_API_URL`,
+(`MASTERPLAN_BD`, `RESEND_API_KEY`, `SENDGRID_API_KEY`, `GOOGLE_CLIENT_*`, `VERCEL_TOKEN`, `CIERRA_API_URL`,
 `CONSOLA_URL`...) y fija `CONSOLA_ENTORNO=local`. Deja todo eso en `.qa/entorno.sh`:
 
 ```bash

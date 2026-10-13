@@ -15,6 +15,7 @@ from fastapi import APIRouter, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .acceso import GALLETA, Acceso, Sesion
+from .avisos import Avisos
 from .cuentas import (
     CuentaInvalida,
     Cuentas,
@@ -231,6 +232,15 @@ def url_base(peticion: Request, local: bool) -> str:
     raise HTTPException(503, "Falta CONSOLA_URL: sin ella no se pueden mandar enlaces por correo.")
 
 
+def url_para_avisos(peticion: Request, local: bool) -> str:
+    """Como `url_base`, pero sin `CONSOLA_URL` desplegada da vacío en vez de un 503:
+    un aviso sin enlace igual sirve, y no puede trabar lo que lo disparó."""
+    try:
+        return url_base(peticion, local)
+    except HTTPException:
+        return ""
+
+
 def ip_de(peticion: Request, local: bool) -> str:
     """La IP de quien pide.
 
@@ -247,7 +257,7 @@ def ip_de(peticion: Request, local: bool) -> str:
 # --- rutas ------------------------------------------------------------------------
 
 def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
-                     limitador: Limitador | None = None) -> APIRouter:
+                     limitador: Limitador | None = None, avisos: Avisos | None = None) -> APIRouter:
     rutas = APIRouter()
     # Registrarse y pedir enlaces por correo, juntos: 5 por hora por IP.
     limitador = limitador or Limitador(maximo=5, segundos=3600)
@@ -318,7 +328,10 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
 
     @rutas.post("/verificar")
     def verificar(peticion: Request, t: str = Form(default="")) -> Response:
-        sesion = acceso.sesion_para(cuentas.verificar(t) if t else None)
+        def avisar(usuario) -> None:
+            if avisos is not None:
+                avisos.cuenta_nueva(usuario, url_para_avisos(peticion, acceso.local))
+        sesion = acceso.sesion_para(cuentas.verificar(t, al_confirmar=avisar) if t else None)
         if sesion is None:
             return _enlace_vencido("Entra con tu correo y contraseña: te mandamos otro.")
         return poner_sesion(RedirectResponse("/#/planos", status_code=303), acceso, sesion, peticion)
@@ -526,6 +539,8 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
             return pagina_de_entrada("Ese correo ya tiene cuenta. Entra con Google de nuevo.",
                                      con_google=True, con_registro=cuentas.registro_abierto, estado=409)
         base.enlazar_identidad(usuario.id, "google", alta["s"])
+        if avisos is not None:
+            avisos.cuenta_nueva(usuario, url_para_avisos(peticion, acceso.local))
         sesion = acceso.sesion_para(usuario)
         respuesta = poner_sesion(RedirectResponse("/#/planos", status_code=303), acceso, sesion, peticion)
         respuesta.delete_cookie(GALLETA_ALTA, path="/")
@@ -538,4 +553,5 @@ def _vuelta(peticion: Request, local: bool) -> str:
     return f"{url_base(peticion, local)}/entrar/google/vuelta"
 
 
-__all__ = ["LIBRES_DE_CUENTAS", "pagina_de_entrada", "poner_sesion", "rutas_de_cuentas"]
+__all__ = ["LIBRES_DE_CUENTAS", "pagina_de_entrada", "poner_sesion", "rutas_de_cuentas",
+           "url_para_avisos"]

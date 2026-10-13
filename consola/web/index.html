@@ -81,6 +81,12 @@
         </a>
       </div>
     </header>
+    <!-- Hasta el primer master publicado: qué preparar y qué viene después (js/primeros.js). -->
+    <section id="primeros-pasos" class="primeros-pasos" aria-labelledby="primeros-pasos-titulo" hidden>
+      <h2 id="primeros-pasos-titulo">Tus primeros pasos</h2>
+      <p class="nota">De tu vuelo del dron a un sitio que puedes mandar a tus compradores.</p>
+      <ol id="primeros-pasos-lista" class="primeros-pasos__lista"></ol>
+    </section>
     <section id="planos-resumen" class="resumen-planos" aria-label="Resumen de tus loteos" hidden>
       <dl class="resumen-planos__cifras"></dl>
       <div class="resumen-planos__barra barra-estados"></div>
@@ -120,6 +126,16 @@
         <span class="renglon__rotulo">Nombre</span>
         <input id="nuevo-nombre" name="nombre" type="text" placeholder="Praderas de Cauquenes"
                autocomplete="off" required>
+      </label>
+
+      <label class="renglon">
+        <span class="renglon__rotulo">WhatsApp <i>opcional</i></span>
+        <span>
+          <input id="nuevo-whatsapp" name="whatsapp" type="text" inputmode="tel"
+                 placeholder="Ej.: +56 9 1234 5678" autocomplete="tel">
+          <span class="nota">El número al que te escriben los compradores desde el sitio. Sin él,
+            el sitio no muestra el botón de contacto. Puedes ponerlo después.</span>
+        </span>
       </label>
 
       <div class="renglon">
@@ -329,7 +345,7 @@
             </legend>
             <div class="grupo__campos">
               <label class="campo"><span>Nombre</span><input name="nombre" type="text" autocomplete="off"></label>
-              <label class="campo"><span>Etapa</span><input name="etapa" type="text" placeholder="Etapas 1 a 4" autocomplete="off"></label>
+              <label class="campo"><span>Etapa</span><input name="etapa" type="text" placeholder="Ej.: Etapas 1 a 4" autocomplete="off"></label>
               <label class="campo campo--ancho"><span>Diseño</span><select name="diseno"></select></label>
             </div>
           </fieldset>
@@ -339,20 +355,20 @@
               <span><strong>Contacto y reserva</strong><small>Lo que ve el comprador en la ficha de cada parcela.</small></span>
             </legend>
             <div class="grupo__campos">
-              <label class="campo"><span>WhatsApp</span><input name="whatsapp" type="text" inputmode="tel" placeholder="56912345678" autocomplete="off"></label>
-              <label class="campo"><span>Monto de reserva <i>en pesos</i></span><input name="monto_reserva" type="text" inputmode="numeric" placeholder="250000" autocomplete="off"></label>
-              <label class="campo campo--ancho"><span>Link de reserva <i>para todas las parcelas disponibles</i></span><input name="link_reserva" type="url" inputmode="url" placeholder="https://www.webpay.cl/..." autocomplete="off"></label>
+              <label class="campo"><span>WhatsApp</span><input name="whatsapp" type="text" inputmode="tel" placeholder="Ej.: +56 9 1234 5678" autocomplete="off"></label>
+              <label class="campo"><span>Monto de reserva <i>en pesos</i></span><input name="monto_reserva" type="text" inputmode="numeric" placeholder="Ej.: 250.000" autocomplete="off"></label>
+              <label class="campo campo--ancho"><span>Link de reserva <i>para todas las parcelas disponibles</i></span><input name="link_reserva" type="url" inputmode="url" placeholder="Ej.: https://www.webpay.cl/..." autocomplete="off"></label>
             </div>
           </fieldset>
           <fieldset class="grupo">
             <legend class="grupo__titulo">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M12 8.5 15.5 12 12 15.5 8.5 12Z"/></svg>
-              <span><strong>Datos técnicos</strong><small>Para construir y para traer el inventario del CRM.</small></span>
+              <span><strong>Datos técnicos <i>opcionales</i></strong><small>Se resuelven solos al construir. Cámbialos solo si el CRM usa otro nombre, el despegue quedó corrido o quieres nombrar pueblos en el horizonte.</small></span>
             </legend>
             <div class="grupo__campos">
               <label class="campo"><span>Nombre en el CRM</span><input name="parcelacion" type="text" autocomplete="off"></label>
-              <label class="campo"><span>Despegue del dron <i>lon, lat</i></span><input name="despegue" type="text" placeholder="-72.27591, -35.86774" autocomplete="off"></label>
-              <label class="campo campo--ancho"><span>Referencias en el horizonte</span><input name="referencias" type="text" placeholder="Cauquenes, Pelluhue, Chanco" autocomplete="off"></label>
+              <label class="campo"><span>Despegue del dron <i>lon, lat</i></span><input name="despegue" type="text" placeholder="Ej.: -72.27591, -35.86774" autocomplete="off"></label>
+              <label class="campo campo--ancho"><span>Referencias en el horizonte</span><input name="referencias" type="text" placeholder="Ej.: Cauquenes, Pelluhue, Chanco" autocomplete="off"></label>
             </div>
           </fieldset>
           <!-- Aparece flotando abajo apenas se cambia algo (plano.js marca el formulario). -->
@@ -377,6 +393,7 @@
             </div>
             <button class="boton boton--claro" data-accion="publicar" type="button">Publicar</button>
             <p id="plano-publicar-nota" class="nota"></p>
+            <button class="boton boton--contorno-claro" data-accion="pedir-habilitacion" type="button" hidden>Pedir habilitación</button>
             <button class="boton boton--texto" data-accion="pago" type="button" hidden>Anotar pago</button>
           </footer>
 

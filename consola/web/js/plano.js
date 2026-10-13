@@ -9,7 +9,9 @@ import {
 import { anotarResultado, manejarCierra, pintarCierra, prepararCierra } from './cierra.js';
 import { opcionesDeDiseno } from './disenos.js';
 import { abrirElegirKmz } from './kmzs.js';
-import { avisoAlQuitar, meta, pintarCalce, pintarCifras, pintarEstado } from './detalle.js';
+import {
+  avisoAlQuitar, meta, notaDePublicar, pintarCalce, pintarCifras, pintarEstado,
+} from './detalle.js';
 import { pintarVuelo } from './vuelo.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
@@ -175,22 +177,16 @@ function pintarPublicar(proyecto) {
   }
   boton.className = proyecto.publicado ? 'boton boton--contorno-claro' : 'boton boton--claro';
   pago.hidden = !(equipo && !proyecto.pagado);
+  // El equipo de CTP no se pide permiso a sí mismo: anota el pago.
+  $('[data-accion="pedir-habilitacion"]').hidden = equipo || proyecto.pagado
+    || Boolean(proyecto.habilitacion_pedida);
   const enLinea = proyecto.publicado && !proyecto.trabajo;
   const estadoPublicacion = $('#plano-publicar-estado');
   estadoPublicacion.classList.toggle('publicar__estado--vivo', enLinea);
   estadoPublicacion.textContent = proyecto.trabajo?.accion === 'publicar' ? 'Publicando…'
     : proyecto.publicado ? 'En línea' : 'Sin publicar';
 
-  if (!proyecto.pagado) {
-    nota.textContent = 'Puedes construir y revisar cuantas veces quieras. Para publicarlo, '
-      + 'escríbenos y lo habilitamos.';
-  } else if (!proyecto.construido) {
-    nota.textContent = 'Se publica una vez construido y revisado el control de calce.';
-  } else if (proyecto.publicado) {
-    nota.textContent = 'Lo que cambies aquí llega al sitio cuando lo publicas de nuevo.';
-  } else {
-    nota.textContent = `Va a quedar en ${proyecto.url}`;
-  }
+  nota.textContent = notaDePublicar(proyecto);
 }
 
 // --- Datos del loteo ---------------------------------------------------------
@@ -291,6 +287,7 @@ async function manejar(accion, proyecto) {
     if (accion === 'copiar-url') return await copiarEnlace(proyecto);
     if (accion === 'olvidar') return await olvidar(proyecto);
     if (accion === 'pago') return abrirPago(proyecto);
+    if (accion === 'pedir-habilitacion') return await pedirHabilitacion(proyecto);
     if (accion === 'construir') return await lanzar(proyecto, 'construir', {});
     if (accion === 'publicar') {
       // Publicar deja el loteo a la vista de cualquiera con el enlace: se confirma.
@@ -308,6 +305,12 @@ async function manejar(accion, proyecto) {
   } catch (error) {
     avisar(error.message);
   }
+}
+
+async function pedirHabilitacion(proyecto) {
+  await pedir(`/api/proyectos/${proyecto.slug}/habilitacion`, json({}));
+  // La nota de la tarjeta pasa a decir que ya se pidió: no hace falta otro aviso.
+  await refrescar();
 }
 
 async function lanzar(proyecto, accion, cuerpo) {
