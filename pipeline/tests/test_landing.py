@@ -64,7 +64,7 @@ def test_el_iframe_y_las_tarjetas_hablan_de_la_misma_parcela():
     assert f"Me interesa la parcela {lote}»" in html, lote
 
 
-CONSOLA = "https://consola.tumasterplan.cl"
+CONSOLA = "https://tumasterplan-consola-tvqjoeo5oq-rj.a.run.app"
 
 
 def _formularios() -> list[tuple[str, str]]:
