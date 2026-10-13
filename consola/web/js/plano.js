@@ -9,7 +9,7 @@ import {
 import { anotarResultado, manejarCierra, pintarCierra, prepararCierra } from './cierra.js';
 import { opcionesDeDiseno } from './disenos.js';
 import { abrirElegirKmz } from './kmzs.js';
-import { meta, pintarCalce, pintarCifras, pintarEstado } from './detalle.js';
+import { avisoAlQuitar, meta, pintarCalce, pintarCifras, pintarEstado } from './detalle.js';
 import { pintarVuelo } from './vuelo.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
@@ -271,12 +271,7 @@ async function copiarEnlace(proyecto) {
 }
 
 async function olvidar(proyecto) {
-  // Uno subido y sin pagar se borra entero: si no, quitarlo sería la forma de
-  // saltarse el tope de masters sin pagar. Hay que decirlo antes.
-  const borra = proyecto.subido && !proyecto.pagado;
-  if (!confirm(borra
-    ? `¿Quitar "${proyecto.nombre}"? Se borran también el vuelo subido y lo construido. No se puede deshacer.`
-    : `¿Quitar "${proyecto.nombre}" de la lista? No se borra ningún archivo.`)) return;
+  if (!confirm(avisoAlQuitar(proyecto))) return;
   await pedir(`/api/proyectos/${proyecto.slug}`, { method: 'DELETE' });
   estado.registros.delete(proyecto.slug);
   estado.registroDe.delete(proyecto.slug);

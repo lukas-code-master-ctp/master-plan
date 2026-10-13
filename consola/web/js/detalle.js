@@ -176,3 +176,23 @@ export function pintarCalce(proyecto) {
   }));
   seccion.hidden = false;
 }
+
+/**
+ * Lo que se pregunta antes de quitar un loteo de la lista. Uno subido y sin pagar se
+ * borra entero: si no, quitarlo sería la forma de saltarse el tope de masters sin
+ * pagar. Uno publicado deja su sitio en línea, pero la consola ya no le aparta
+ * parcelas y se borran sus solicitudes: el comprador que intente reservar ve un error.
+ */
+export function avisoAlQuitar(proyecto) {
+  const borra = proyecto.subido && !proyecto.pagado;
+  const partes = [borra
+    ? `¿Quitar "${proyecto.nombre}"? Se borran también el vuelo subido y lo construido.`
+    : `¿Quitar "${proyecto.nombre}" de la lista?`];
+  if (proyecto.publicado) {
+    partes.push(`El sitio ${proyecto.url} sigue en línea, pero deja de recibir reservas: `
+      + 'quien intente reservar verá un error. Se borran también sus solicitudes de reserva, '
+      + 'las confirmadas incluidas.');
+  }
+  partes.push(borra || proyecto.publicado ? 'No se puede deshacer.' : 'No se borra ningún archivo.');
+  return partes.join(' ');
+}
