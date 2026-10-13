@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 
-from consola.acceso import Acceso
+from consola.acceso import GALLETA, Acceso
 from consola.app import crear_app
 from consola.cuentas import Cuentas, Google, Limitador
 from consola.datos import Base
@@ -690,3 +690,64 @@ def test_con_clave_de_sendgrid_gana_sendgrid_aunque_haya_buzon(tmp_path, monkeyp
     monkeypatch.setenv("CONSOLA_BUZON", str(tmp_path / "buzon"))
 
     assert isinstance(correo_del_entorno(local=True), CorreoSendGrid)
+
+
+# --- tope de intentos al entrar --------------------------------------------------------
+#
+# Sin tope se pueden probar contraseñas sin fin, y cada intento es un bcrypt: unos
+# pocos por segundo ocupan las dos CPU de la instancia. Cuentan solo los fallidos.
+
+def intentar(web, email, clave="no-es-esta-clave"):
+    return web.post("/entrar", data={"email": email, "clave": clave})
+
+
+@pytest.fixture
+def topes_chicos(tmp_path, monkeypatch):
+    import consola.app
+    monkeypatch.setattr(consola.app, "INTENTOS_POR_CORREO", 3)
+    monkeypatch.setattr(consola.app, "INTENTOS_POR_IP", 5)
+    return montar(tmp_path)
+
+
+def test_tras_varios_intentos_fallidos_el_correo_queda_en_espera(topes_chicos):
+    web, _, _ = topes_chicos
+    for _ in range(3):
+        assert intentar(web, "ctp@ctp.cl").status_code == 401
+
+    respuesta = intentar(web, "ctp@ctp.cl", CLAVE)     # ni con la clave buena
+
+    assert respuesta.status_code == 429
+    assert "Demasiados intentos" in respuesta.text
+    assert GALLETA not in respuesta.cookies
+
+
+def test_un_correo_en_espera_no_bloquea_a_otro(topes_chicos):
+    web, base, _ = topes_chicos
+    base.crear_cuenta_propia("Bosques", "pia@bosques.cl", "Pía", CLAVE, verificado=True)
+    for _ in range(3):
+        intentar(web, "ctp@ctp.cl")
+
+    assert intentar(web, "pia@bosques.cl", CLAVE).status_code == 303
+
+
+def test_entrar_bien_no_gasta_intentos(topes_chicos):
+    web, _, _ = topes_chicos
+
+    for _ in range(6):
+        assert intentar(web, "ctp@ctp.cl", CLAVE).status_code == 303
+
+
+def test_muchos_correos_distintos_desde_la_misma_conexion_tambien_esperan(topes_chicos):
+    web, _, _ = topes_chicos
+    for numero in range(5):
+        intentar(web, f"alguien{numero}@x.cl")
+
+    assert intentar(web, "otro@x.cl").status_code == 429
+
+
+def test_el_correo_se_cuenta_sin_importar_mayusculas(topes_chicos):
+    web, _, _ = topes_chicos
+    for email in ("CTP@ctp.cl", "ctp@CTP.cl", " ctp@ctp.cl "):
+        intentar(web, email)
+
+    assert intentar(web, "ctp@ctp.cl", CLAVE).status_code == 429

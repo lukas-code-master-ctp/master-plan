@@ -47,7 +47,7 @@ from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
 from .cierra import Cierra, Cifrador, Conexiones, cierra_del_entorno
 from .comandos import Comandos, encadenar
 from .contactos import Contactos
-from .cuentas import Cuentas, Google, correo_del_entorno, google_del_entorno
+from .cuentas import Cuentas, Google, Limitador, correo_del_entorno, google_del_entorno
 from .datos import (
     Base,
     ClienteYaExiste,
@@ -71,6 +71,7 @@ from .reservas import Reservas
 from .rutas_cierra import rutas_de_cierra, sincronizar_antes_de_construir
 from .rutas_cuentas import (
     LIBRES_DE_CUENTAS,
+    ip_de,
     pagina_de_entrada,
     poner_sesion,
     rutas_de_cuentas,
@@ -262,9 +263,22 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                                  con_google=google is not None,
                                  con_registro=cuentas.registro_abierto, estado=401 if mal else 200)
 
+    # Intentos fallidos de entrar, por correo y por conexión. Pasado el tope ni se
+    # mira la clave: probar contraseñas deja de ser gratis, y cada intento es un
+    # bcrypt que, de a varios por segundo, ocupa las dos CPU de la instancia.
+    fallidos_por_correo = Limitador(maximo=INTENTOS_POR_CORREO, segundos=VENTANA_INTENTOS)
+    fallidos_por_ip = Limitador(maximo=INTENTOS_POR_IP, segundos=VENTANA_INTENTOS)
+
     @app.post("/entrar")
     def entrar(peticion: Request, email: str = Form(default=""),
                clave: str = Form(default="")) -> Response:
+        correo, ip = email.strip().lower(), ip_de(peticion, acceso.local)
+        if fallidos_por_correo.agotado(correo) or fallidos_por_ip.agotado(ip):
+            # El mismo aviso para el correo y la conexión, exista o no la cuenta.
+            return pagina_de_entrada(
+                f"Demasiados intentos seguidos. Espera {VENTANA_INTENTOS // 60} minutos y "
+                "vuelve a intentarlo.", con_google=google is not None,
+                con_registro=cuentas.registro_abierto, estado=429)
         usuario = acceso.credenciales(email, clave)
         # La clave es la suya pero no confirmó el correo: decírselo solo le cuenta
         # algo a quien ya sabe la clave. Se le reenvía el enlace.
@@ -275,6 +289,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                 con_google=google is not None, con_registro=cuentas.registro_abierto, estado=403)
         sesion = acceso.sesion_para(usuario)
         if sesion is None:
+            fallidos_por_correo.anotar(correo)
+            fallidos_por_ip.anotar(ip)
             # Un solo mensaje para clave mala, correo inexistente y cuenta
             # desactivada: distinguirlos convierte el formulario en un buscador.
             return pagina_de_entrada("El correo o la contraseña no son esos.",
@@ -1221,6 +1237,12 @@ def _cliente_json(cliente, base: Base) -> dict:
         "loteos": len(base.proyectos(cliente_id=cliente.id)),
     }
 
+
+# Intentos fallidos de entrar antes de tener que esperar: por correo, y por conexión
+# (más holgado, porque una oficina sale a internet por una sola IP).
+INTENTOS_POR_CORREO = 10
+INTENTOS_POR_IP = 30
+VENTANA_INTENTOS = 15 * 60
 
 # Lo más grande que acepta un pedido. El servidor guarda el cuerpo entero (en Cloud
 # Run, en memoria: no hay disco) antes de llamar a la ruta, así que un vuelo de gigas
