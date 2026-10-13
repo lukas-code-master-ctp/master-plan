@@ -124,3 +124,60 @@ def test_despliegue_http_a_otro_host_no_se_acepta(tmp_path, despliegue):
 
     assert hecho.returncode != 0
     assert not (tmp_path / "salida" / "publicacion.json").exists()
+
+
+# --- el dominio propio del loteo ---------------------------------------------------
+
+def con_dominio(tmp_path, respuesta_domains: str, falla: bool):
+    """Publica con --dominio y un `vercel domains add` que contesta `respuesta_domains`."""
+    sitio = tmp_path / "salida" / "sitio"
+    sitio.mkdir(parents=True)
+    (sitio / "index.html").write_text("<html></html>", encoding="utf-8")
+    bin_ = vercel_de_mentira(tmp_path, ["https://masterplan-loteo.vercel.app"])
+    vercel = bin_ / "vercel"
+    salida = 1 if falla else 0
+    vercel.write_text(vercel.read_text(encoding="utf-8").replace(
+        "case \"$1\" in\n",
+        f"case \"$1\" in\n  domains) echo \"$@\" > \"{bin_ / 'domains.txt'}\"; "
+        f"echo '{respuesta_domains}'; exit {salida} ;;\n"), encoding="utf-8")
+    entorno = {**os.environ, "PATH": f"{bin_}:{os.environ['PATH']}", "VERCEL_TOKEN": "x"}
+    hecho = subprocess.run(["bash", str(SCRIPT), str(sitio), "masterplan-loteo",
+                            "--dominio", "loteo.tumasterplan.cl"],
+                           env=entorno, capture_output=True, text=True)
+    assert hecho.returncode == 0, hecho.stderr
+    datos = json.loads((tmp_path / "salida" / "publicacion.json").read_text(encoding="utf-8"))
+    return datos, hecho, (bin_ / "domains.txt").read_text(encoding="utf-8")
+
+
+def test_pide_el_dominio_para_el_proyecto_del_loteo(tmp_path):
+    datos, _, pedido = con_dominio(tmp_path, "Success! Domain added", falla=False)
+
+    assert pedido.split()[:4] == ["domains", "add", "loteo.tumasterplan.cl", "masterplan-loteo"]
+    assert datos["url"] == "https://loteo.tumasterplan.cl"
+
+
+def test_ya_asignado_a_este_proyecto_es_lo_normal_al_republicar(tmp_path):
+    datos, _, _ = con_dominio(tmp_path, "Error: Domain is already assigned to this project", falla=True)
+
+    assert datos["url"] == "https://loteo.tumasterplan.cl"
+
+
+def test_si_el_dominio_es_de_otro_proyecto_publica_en_vercel_app_y_avisa(tmp_path):
+    datos, hecho, _ = con_dominio(
+        tmp_path, "Error: Domain is already in use by a different project", falla=True)
+
+    assert datos["url"] == "https://masterplan-loteo.vercel.app"
+    assert "No se pudo asignar loteo.tumasterplan.cl" in hecho.stderr
+
+
+def test_una_opcion_desconocida_no_publica(tmp_path):
+    sitio = tmp_path / "salida" / "sitio"
+    sitio.mkdir(parents=True)
+    (sitio / "index.html").write_text("<html></html>", encoding="utf-8")
+    bin_ = vercel_de_mentira(tmp_path, [])
+    entorno = {**os.environ, "PATH": f"{bin_}:{os.environ['PATH']}"}
+
+    hecho = subprocess.run(["bash", str(SCRIPT), str(sitio), "masterplan-loteo", "--dominoi", "x"],
+                           env=entorno, capture_output=True, text=True)
+
+    assert hecho.returncode == 2

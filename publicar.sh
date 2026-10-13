@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # publicar.sh — Sube al hosting el sitio ya construido de un loteo.
 #
-#   ./publicar.sh <carpeta-del-sitio> <proyecto-en-vercel> [--crear]
+#   ./publicar.sh <carpeta-del-sitio> <proyecto-en-vercel> [--crear] [--dominio <host>]
 #
 # La consola dice qué publicar y cómo se llama el proyecto; el script no deduce
 # nada. Eso importa: el nombre del proyecto es la identidad del loteo en el
@@ -12,15 +12,29 @@
 # falla y el script **muere**: ese error es justamente la colisión que antes se
 # tragaba un `|| true` y terminaba desplegando encima del sitio de otro.
 #
+# `--dominio` (p. ej. praderas.tumasterplan.cl) se le pide al hosting en cada
+# publicación, así un loteo publicado antes de tener dominio lo gana al republicar.
+# Si el hosting no lo acepta, el loteo se publica igual en su .vercel.app y se avisa.
+#
 # Al terminar deja <sitio>/../publicacion.json con la URL fija del loteo (el
 # alias de producción que dio el hosting), para que la consola la guarde en vez
 # de adivinarla.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-sitio="${1:?uso: ./publicar.sh <carpeta-del-sitio> <proyecto-en-vercel> [--crear]}"
+sitio="${1:?uso: ./publicar.sh <carpeta-del-sitio> <proyecto-en-vercel> [--crear] [--dominio <host>]}"
 proyecto="${2:?falta el nombre del proyecto en el hosting}"
-crear="${3:-}"
+shift 2
+crear=""
+dominio=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --crear) crear="--crear" ;;
+    --dominio) dominio="${2:?falta el host de --dominio}"; shift ;;
+    *) echo "opción desconocida: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
 
 # El equipo Pro. No es un detalle de cuenta: el plan Hobby prohíbe el uso
 # comercial —"Hobby teams are restricted to non-commercial personal use only"—
@@ -50,6 +64,20 @@ vercel link --yes --project "$proyecto" --scope "$scope" ${token[@]+"${token[@]}
 salida=$(vercel deploy --prod --yes --scope "$scope" ${token[@]+"${token[@]}"} --cwd "$sitio")
 echo "$salida"
 
+# Ya asignado a este mismo proyecto es lo normal desde la segunda publicación; en
+# otro proyecto, no: ese dominio es de otro loteo y no se toca.
+propio_pedido=""
+if [ -n "$dominio" ]; then
+  if respuesta=$(vercel domains add "$dominio" "$proyecto" --scope "$scope" ${token[@]+"${token[@]}"} 2>&1) \
+     || { printf '%s\n' "$respuesta" | grep -qi 'already' \
+          && ! printf '%s\n' "$respuesta" | grep -qiE 'another|different'; }; then
+    propio_pedido="https://$dominio"
+  else
+    printf '%s\n' "$respuesta" >&2
+    echo "⚠ No se pudo asignar $dominio: el loteo queda en su dirección de vercel.app" >&2
+  fi
+fi
+
 # La URL de ESTE despliegue (`…-5huo5t5m5.vercel.app`): cambia en cada
 # publicación. `vercel deploy` imprime un JSON cuando el CLI no está en una
 # terminal; si no, la última línea con https.
@@ -69,7 +97,7 @@ alias_=$(vercel inspect "$despliegue" --scope "$scope" ${token[@]+"${token[@]}"}
   | grep -E "$url_valida" || true)
 propio=$(printf '%s\n' "$alias_" | grep -v '\.vercel\.app$' | grep -E "$url_valida" | head -1 || true)
 corto=$(printf '%s\n' "$alias_" | grep '\.vercel\.app$' | awk '{print length, $0}' | sort -n | head -1 | cut -d' ' -f2- || true)
-url="${propio:-${corto:-$despliegue}}"
+url="${propio_pedido:-${propio:-${corto:-$despliegue}}}"
 
 printf '{"proyecto": "%s", "url": "%s", "despliegue": "%s"}\n' "$proyecto" "$url" "$despliegue" \
   > "$sitio/../publicacion.json"

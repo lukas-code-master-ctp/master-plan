@@ -9,6 +9,7 @@ porque sus constantes globales son las mismas para todos los clientes.
 """
 from __future__ import annotations
 
+import os
 import sys
 
 from pipeline import config
@@ -45,6 +46,9 @@ class Comandos:
         subir = [str(PUBLICAR), str(proyecto.salida.web), vercel_proyecto]
         if crear:
             subir.append("--crear")
+        dominio = dominio_propio(proyecto.slug)
+        if dominio:
+            subir += ["--dominio", dominio]
         return encadenar(self.copiar_visor(proyecto), subir)
 
     def copiar_visor(self, proyecto) -> list[str]:
@@ -57,6 +61,15 @@ class Comandos:
         falle a que nazca otro.
         """
         return self.publicar(proyecto, vercel_proyecto, crear=False)
+
+
+def dominio_propio(slug: str) -> str | None:
+    """`<slug>.<MASTERPLAN_DOMINIO>`, o nada si no hay dominio o el slug no cabe en
+    una etiqueta de DNS (63 caracteres): ese loteo se queda en su .vercel.app."""
+    base = os.environ.get("MASTERPLAN_DOMINIO", "").strip().strip(".")
+    if not base or not slug or len(slug) > 63:
+        return None
+    return f"{slug}.{base}"
 
 
 def encadenar(*comandos: list[str]) -> list[str]:

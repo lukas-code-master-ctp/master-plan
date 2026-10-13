@@ -338,3 +338,12 @@ def test_pedir_la_habilitacion_se_anota_una_vez_y_no_si_ya_se_pago(base):
     assert base.proyecto("praderas").habilitacion_pedida_en == cuando
     assert base.pedir_habilitacion("pagado") is False
     assert base.proyecto("pagado").habilitacion_pedida_en is None
+
+
+def test_un_loteo_no_toma_un_slug_reservado(base):
+    """Cada loteo queda en <slug>.tumasterplan.cl: "Consola" no puede tapar la consola."""
+    cliente, _ = base.crear_cliente("Los Robles", "ana@losrobles.cl", "Ana")
+
+    assert base.crear_proyecto(cliente.id, "Consola").slug == "consola-2"
+    assert base.crear_proyecto(cliente.id, "WWW").slug == "www-2"
+    assert base.crear_proyecto(cliente.id, "Praderas").slug == "praderas"

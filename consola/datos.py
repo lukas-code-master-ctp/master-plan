@@ -1010,6 +1010,12 @@ def _slug(nombre: str, defecto: str = "cliente") -> str:
     return re.sub(r"[^a-z0-9]+", "-", plano.lower()).strip("-") or defecto
 
 
+# Cada loteo publicado queda en <slug>.tumasterplan.cl: un loteo llamado "Consola"
+# o "WWW" no puede quedarse con la dirección de la consola o de la landing.
+SLUGS_RESERVADOS = frozenset({"www", "consola", "app", "api", "admin", "mail", "correo",
+                              "landing", "static", "cdn", "blog", "ayuda", "soporte"})
+
+
 def _slug_libre(con, nombre: str, columna=None, defecto: str = "cliente",
                 largo: int | None = None, ocupado=None) -> str:
     """El slug sugerido, o el siguiente con sufijo. Dos clientes pueden llamar igual
@@ -1023,8 +1029,11 @@ def _slug_libre(con, nombre: str, columna=None, defecto: str = "cliente",
     tomados = {f[0] for f in con.execute(
         select(columna).where(columna.like(f"{sugerido}%")))}
 
+    reservados = SLUGS_RESERVADOS if columna is proyectos.c.slug else frozenset()
+
     def libre(candidato: str) -> bool:
-        return candidato not in tomados and not (ocupado and ocupado(candidato))
+        return (candidato not in tomados and candidato not in reservados
+                and not (ocupado and ocupado(candidato)))
 
     if libre(sugerido):
         return sugerido
