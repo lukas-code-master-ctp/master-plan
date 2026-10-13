@@ -1130,6 +1130,24 @@ def test_no_se_quita_un_loteo_mientras_construye(con_topes, monkeypatch):
     assert (registro.subidas / slug).exists()
 
 
+def test_no_se_suben_archivos_mientras_construye(con_topes, monkeypatch):
+    """Subir un KMZ o una planilla aparta o pisa lo que el pipeline está leyendo."""
+    _, ana, registro, comandos = con_topes
+    slug = crear(ana)["slug"]
+    ana.post(f"/api/proyectos/{slug}/archivos",
+             files=[("archivos", ("loteo.kmz", b"kmz", "application/octet-stream"))])
+    monkeypatch.setattr(comandos, "construir",
+                        lambda p, sin_imagenes=False: [sys.executable, "-c", "import time; time.sleep(2)"])
+    ana.post(f"/api/proyectos/{slug}/construir", json={})
+
+    respuesta = ana.post(f"/api/proyectos/{slug}/archivos",
+                         files=[("archivos", ("otro.kmz", b"otro", "application/octet-stream"))])
+
+    assert respuesta.status_code == 409
+    assert (registro.subidas / slug / "loteo.kmz").exists()
+    assert not (registro.subidas / slug / "otro.kmz").exists()
+
+
 # --- mis diseños ---------------------------------------------------------------
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
