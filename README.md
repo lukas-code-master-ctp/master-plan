@@ -342,6 +342,14 @@ cambia con `CONSOLA_TRABAJOS_SIMULTANEOS` (por defecto 1; subirlo pide más memo
 cola vive en memoria, como los trabajos: si la instancia se reinicia, lo que esperaba
 se pierde y la pantalla lo da por interrumpido.
 
+**Un trabajo trabado no frena la cola.** Cada trabajo tiene un tope de tiempo: **45 min**
+los pesados y **20 min** publicar y actualizar el visor (`TOPE_PESADO` y `TOPE_LIVIANO`
+en `consola/trabajos.py`). Una construcción grande toma ~5 min, así que el tope solo
+salta con uno colgado. Al vencer se corta el proceso con todo lo que lanzó (corre en su
+propio grupo de procesos), el trabajo queda como fallido con el aviso "se pasó de … y lo
+corté", y el turno pasa al siguiente de la cola. Al apagar la consola también se cortan
+los que estaban corriendo.
+
 Quitar de la lista un master **subido y sin pagar** borra también su vuelo y lo
 construido: si no, quitar y volver a crear sería la forma de llenar el disco igual.
 Una carpeta vinculada o un loteo pagado conservan sus archivos.

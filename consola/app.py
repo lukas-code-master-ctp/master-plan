@@ -199,6 +199,9 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         if republicar_al_arrancar:
             _republicar_en_segundo_plano(registro, trabajos, comandos, disenos)
         yield
+        # Cada trabajo es su propio grupo de procesos: sin esto, apagar la consola
+        # dejaría construcciones huérfanas comiendo memoria.
+        trabajos.cortar_todo()
 
     # Sin documentación automática ni esquema: la consola tiene una sola página que
     # la usa, y el inventario de rutas lo vigila una prueba, no un JSON público.
