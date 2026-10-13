@@ -178,6 +178,21 @@ class Limitador:
                 self._podar(ahora)
             return True
 
+    def agotado(self, clave: str) -> bool:
+        """¿Ya llegó al máximo en la ventana? Mira sin contar: para lo que se cuenta
+        solo cuando sale mal (un intento de entrar fallido), con `anotar`."""
+        ahora = time.monotonic()
+        with self._candado:
+            return sum(1 for m in self._marcas.get(clave, []) if ahora - m < self.segundos) >= self.maximo
+
+    def anotar(self, clave: str) -> None:
+        ahora = time.monotonic()
+        with self._candado:
+            recientes = [m for m in self._marcas.get(clave, []) if ahora - m < self.segundos]
+            self._marcas[clave] = [*recientes, ahora]
+            if len(self._marcas) > self.TOPE_DE_CLAVES:
+                self._podar(ahora)
+
     def _podar(self, ahora: float) -> None:
         self._marcas = {c: m for c, m in self._marcas.items() if ahora - m[-1] < self.segundos}
         if len(self._marcas) > self.TOPE_DE_CLAVES:
