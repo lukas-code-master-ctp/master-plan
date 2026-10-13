@@ -10,7 +10,8 @@ import { anotarResultado, manejarCierra, pintarCierra, prepararCierra } from './
 import { opcionesDeDiseno } from './disenos.js';
 import { abrirElegirKmz } from './kmzs.js';
 import {
-  avisoAlQuitar, meta, notaDePublicar, pintarCalce, pintarCifras, pintarEstado,
+  avisoAlQuitar, hayVistaPrevia, meta, notaDePublicar, pintarCalce, pintarCifras, pintarEstado,
+  urlDeVistaPrevia,
 } from './detalle.js';
 import { pintarVuelo } from './vuelo.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
@@ -176,6 +177,12 @@ function pintarPublicar(proyecto) {
     url.textContent = proyecto.url.replace(/^https?:\/\//, '');
   }
   boton.className = proyecto.publicado ? 'boton boton--contorno-claro' : 'boton boton--claro';
+  // Antes de pagar es lo único que se puede hacer con lo construido, y lo que
+  // convence: va como principal hasta que publicar se puede.
+  const previa = $('#plano-vista-previa');
+  previa.hidden = !hayVistaPrevia(proyecto);
+  previa.href = urlDeVistaPrevia(proyecto);
+  previa.className = proyecto.pagado ? 'boton boton--contorno-claro' : 'boton boton--claro';
   pago.hidden = !(equipo && !proyecto.pagado);
   // El equipo de CTP no se pide permiso a sí mismo: anota el pago.
   $('[data-accion="pedir-habilitacion"]').hidden = equipo || proyecto.pagado

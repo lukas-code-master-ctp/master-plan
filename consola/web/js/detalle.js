@@ -44,6 +44,17 @@ export function medicionDelSol(calce) {
 
 // --- Sobre la portada -------------------------------------------------------------------
 
+/** Construido, sin publicar y sin una construcción encima (rehace el sitio entero):
+ * se puede mirar en la consola. Publicado no hace falta, ya está "Ver sitio". */
+export function hayVistaPrevia(proyecto) {
+  const construyendo = Boolean(proyecto.trabajo) && proyecto.trabajo.accion !== 'publicar';
+  return proyecto.construido && !proyecto.publicado && !construyendo;
+}
+
+export function urlDeVistaPrevia(proyecto) {
+  return `/vista-previa/${encodeURIComponent(proyecto.slug)}/`;
+}
+
 /** Arriba a la derecha: en qué está el loteo y, si está en línea, el atajo al sitio. */
 export function pintarEstado(proyecto) {
   const partes = [];
@@ -68,6 +79,14 @@ export function pintarEstado(proyecto) {
     enlace.target = '_blank';
     enlace.rel = 'noopener';
     enlace.textContent = 'Ver sitio ↗';
+    partes.push(enlace);
+  } else if (hayVistaPrevia(proyecto)) {
+    const enlace = document.createElement('a');
+    enlace.className = 'pastilla pastilla--enlace';
+    enlace.href = urlDeVistaPrevia(proyecto);
+    enlace.target = '_blank';
+    enlace.rel = 'noopener';
+    enlace.textContent = 'Vista previa ↗';
     partes.push(enlace);
   }
   $('#plano-estado').replaceChildren(...partes);

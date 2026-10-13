@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  avisoAlQuitar, medicionDelSol, nombreDeVista, notaDePublicar,
+  avisoAlQuitar, hayVistaPrevia, medicionDelSol, nombreDeVista, notaDePublicar, urlDeVistaPrevia,
 } from './js/detalle.js';
 
 test('cada vista se nombra como en el visor: punto en romanos y altura', () => {
@@ -79,4 +79,16 @@ test('pagado, la nota vuelve a hablar de construir y publicar', () => {
   assert.match(notaDePublicar({ pagado: true, construido: false }), /una vez construido/);
   assert.equal(notaDePublicar({ pagado: true, construido: true, publicado: false, url: 'https://x' }),
     'Va a quedar en https://x');
+});
+
+test('la vista previa se ofrece construido y sin publicar, aunque no esté pagado', () => {
+  const base = { slug: 'praderas', construido: true, publicado: false, pagado: false, trabajo: null };
+
+  assert.equal(hayVistaPrevia(base), true);
+  assert.equal(hayVistaPrevia({ ...base, construido: false }), false);
+  // Publicado ya tiene "Ver sitio".
+  assert.equal(hayVistaPrevia({ ...base, publicado: true }), false);
+  // Construir rehace el sitio: a medio camino se vería roto.
+  assert.equal(hayVistaPrevia({ ...base, trabajo: { accion: 'construir' } }), false);
+  assert.equal(urlDeVistaPrevia(base), '/vista-previa/praderas/');
 });

@@ -286,6 +286,14 @@ escribió. Concentrar el control en un punto es lo que evita repartirlo por cada
 que escribe algo, que es como se termina con un cliente trabajando gratis sin que
 nadie se entere.
 
+**Vista previa antes de pagar.** Un loteo construido y sin publicar se puede recorrer
+en `/vista-previa/<slug>/`: la consola sirve el mismo sitio que subiría al hosting, con
+el nombre, el WhatsApp y el diseño que el loteo tiene hoy, sin escribir nada en él
+(`consola/rutas_vista_previa.py`). Pide sesión y es 404 para otra loteadora, como
+cualquier ruta con slug; lleva una marca "Vista previa", `noindex` y la CSP del sitio, y
+no ofrece reservar, porque sin publicar no hay sitio que reciba la reserva y el link de
+pago sería un cobro de verdad.
+
 **Cuentas propias.** Cualquiera se registra en `/registro` (su loteadora, su nombre,
 correo y contraseña) o entra con Google. Quien se registra con correo confirma que es
 suyo con un enlace (y un botón) antes de poder entrar: sin eso, cualquiera registraría
