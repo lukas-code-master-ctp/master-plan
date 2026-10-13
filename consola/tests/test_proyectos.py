@@ -514,3 +514,29 @@ def test_el_inventario_subido_se_muestra_aunque_el_vuelo_traiga_otro_xlsx(base, 
     assert proyecto.fuentes_encontradas()["planilla"] == "inventario.xlsx"
     # El del vuelo no se toca: es un archivo que subió la persona, no el inventario.
     assert (proyecto.fuentes / "aaa-viejo.xlsx").exists()
+
+
+# --- un slug con carpetas de un loteo borrado no se reusa ----------------------------
+#
+# Borrar un loteo pagado conserva sus carpetas (quizá está publicado). Si otra
+# loteadora crea uno con el mismo nombre y recibe el mismo slug, hereda esas
+# carpetas: sus panorámicas, sus precios y su sitio en línea.
+
+def test_un_loteo_nuevo_no_hereda_las_carpetas_de_uno_borrado(base, registro, ana, luis):
+    habilitado = registro.habilitar(id_de(base, "ana@losrobles.cl"), "Los Robles")
+    (habilitado.fuentes / "inventario.csv").write_text("parcela,precio\n1-7,100\n", encoding="utf-8")
+    (habilitado.salida.base / "sitio").mkdir(parents=True)
+    ana.olvidar(habilitado.slug)
+    assert habilitado.fuentes.exists()          # pagado: sus archivos se quedan
+
+    nuevo = luis.crear("Los Robles")
+
+    assert nuevo.slug != habilitado.slug
+    assert not (nuevo.fuentes / "inventario.csv").exists()
+    # Y quitar el nuevo (sin pagar, se borra entero) no toca lo de la otra loteadora.
+    luis.olvidar(nuevo.slug)
+    assert (habilitado.fuentes / "inventario.csv").exists()
+
+
+def test_sin_carpetas_viejas_el_slug_sigue_siendo_el_del_nombre(luis):
+    assert luis.crear("Los Robles").slug == "los-robles"
