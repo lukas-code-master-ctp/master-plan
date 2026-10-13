@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
+from .correo_html import html_del_correo
 from .datos import Base, EmailYaExiste, Invitacion, Usuario
 
 registro = logging.getLogger("consola.cuentas")
@@ -72,7 +73,8 @@ class CorreoSendGrid:
             "personalizations": [{"to": [{"email": para}]}],
             "from": {"email": self.remitente, "name": self.nombre},
             "subject": asunto,
-            "content": [{"type": "text/plain", "value": texto}],
+            "content": [{"type": "text/plain", "value": texto},
+                        {"type": "text/html", "value": html_del_correo(asunto, texto)}],
         }).encode()
         peticion = urllib.request.Request(self.URL, data=cuerpo, method="POST", headers={
             "Authorization": f"Bearer {self.clave}", "Content-Type": "application/json"})
@@ -100,6 +102,7 @@ class CorreoResend:
             "to": [para],
             "subject": asunto,
             "text": texto,
+            "html": html_del_correo(asunto, texto),
         }).encode()
         peticion = urllib.request.Request(self.URL, data=cuerpo, method="POST", headers={
             "Authorization": f"Bearer {self.clave}", "Content-Type": "application/json",
@@ -157,6 +160,8 @@ class CorreoEnCarpeta:
             "enviado_en": datetime.now(timezone.utc).isoformat(),
         }
         nombre = f"{time.time_ns():020d}-{secrets.token_hex(3)}.json"
+        # Al lado, el correo como lo vería la persona, para abrirlo en el navegador.
+        (self.carpeta / f"{nombre[:-5]}.html").write_text(html_del_correo(asunto, texto), encoding="utf-8")
         # Primero a un temporal y después se renombra: quien lee la carpeta nunca
         # ve un correo a medio escribir.
         temporal = self.carpeta / f".{nombre}.tmp"

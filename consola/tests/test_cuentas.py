@@ -733,7 +733,9 @@ def test_resend_recibe_remitente_destino_y_texto(monkeypatch):
     [peticion] = pedidas
     assert peticion.full_url == "https://api.resend.com/emails"
     assert peticion.get_header("Authorization") == "Bearer re_clave"
-    assert json.loads(peticion.data) == {
+    cuerpo = json.loads(peticion.data)
+    assert cuerpo.pop("html").startswith("<!doctype html>")
+    assert cuerpo == {
         "from": "Tu Masterplan <no-responder@tumasterplan.cl>",
         "to": ["pia@bosques.cl"], "subject": "Hola", "text": "Texto"}
 
