@@ -466,6 +466,9 @@ RUTAS = {
     ("GET", "/api/actividad"): SOLO_SUYO,
     ("PATCH", "/api/preferencias"): SOLO_SUYO,
     ("POST", "/api/equipo/{usuario_id}/estado"): "nombra a una persona: si no es de su loteadora, 404",
+    # test_equipo.py: test_una_invitacion_de_otra_loteadora_es_404.
+    ("DELETE", "/api/equipo/invitaciones/{invitacion_id}"):
+        "nombra una invitación: si no es de su loteadora, 404",
     ("GET", "/api/proyectos"): SOLO_SUYO,
     ("POST", "/api/proyectos"): SOLO_SUYO,
     ("GET", "/api/proyectos/{slug}/portada"): AJENO_404,
@@ -535,6 +538,9 @@ RUTAS = {
     ("POST", "/olvide"): SIN_SESION,
     ("GET", "/restablecer"): SIN_SESION,
     ("POST", "/restablecer"): SIN_SESION,
+    # Se abre con el token de la invitación: sin él no muestra ni acepta nada.
+    ("GET", "/invitacion"): SIN_SESION,
+    ("POST", "/invitacion"): SIN_SESION,
     ("GET", "/entrar/google"): SIN_SESION,
     ("GET", "/entrar/google/vuelta"): SIN_SESION,
     ("GET", "/registro/google"): SIN_SESION,

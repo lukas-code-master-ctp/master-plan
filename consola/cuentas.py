@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
-from .datos import Base, EmailYaExiste, Usuario
+from .datos import Base, EmailYaExiste, Invitacion, Usuario
 
 registro = logging.getLogger("consola.cuentas")
 
@@ -313,21 +313,39 @@ class Cuentas:
                      "Si no lo pediste, ignora este correo: tu contraseña sigue igual.",
                      controlar=False)
 
-    def invitar(self, usuario: Usuario, *, quien_invita: str, loteadora: str, url_base: str) -> None:
-        """El enlace para que alguien recién sumado al equipo elija su contraseña.
+    def invitar(self, cliente_id: int, email: str, nombre: str, *, invitado_por: int) -> str:
+        """Guarda la invitación y devuelve el token del enlace para aceptarla.
 
-        Es el mismo enlace de restablecer, con más plazo: entrar con él prueba que
-        el buzón es suyo, y la clave provisional con que se creó nadie la conoce.
+        No crea la cuenta: eso pasa recién cuando la persona acepta. `EmailYaExiste`
+        si ese correo ya tiene cuenta (una cuenta es de una sola loteadora).
         """
-        token = self._token(usuario.id, "clave", VIGENCIA_INVITACION)
-        self._enviar(usuario.email, f"{quien_invita} te invitó a Tu Masterplan",
+        token = secrets.token_urlsafe(32)
+        self.base.crear_invitacion(cliente_id, email, nombre, invitado_por, _hash(token),
+                                   datetime.now(timezone.utc) + VIGENCIA_INVITACION)
+        return token
+
+    def mandar_invitacion(self, email: str, token: str, *, quien_invita: str, loteadora: str,
+                          url_base: str) -> None:
+        self._enviar(email, f"{quien_invita} te invitó a Tu Masterplan",
                      "Hola:\n\n"
-                     f"{quien_invita} te sumó al equipo de {loteadora} en Tu Masterplan, donde se "
-                     "suben, construyen y publican los masters de sus loteos.\n\n"
-                     f"Elige tu contraseña para entrar:\n\n{url_base}/restablecer?t={token}\n\n"
-                     "El enlace sirve una vez y vence en 7 días. Si entras con Google, también "
-                     "puedes usar este mismo correo.\n"
-                     "Si no esperabas esta invitación, ignora este correo.")
+                     f"{quien_invita} te invitó a sumarte al equipo de {loteadora} en Tu "
+                     "Masterplan, donde se suben, construyen y publican los masters de sus loteos.\n\n"
+                     f"Para aceptar, abre este enlace:\n\n{url_base}/invitacion?t={token}\n\n"
+                     "El enlace vence en 7 días. Puedes aceptar eligiendo una contraseña o "
+                     "entrando con Google con este mismo correo.\n"
+                     "Si no esperabas esta invitación, ignora este correo: mientras no la "
+                     "aceptes no quedas en ningún equipo.")
+
+    def invitacion(self, token: str) -> Invitacion | None:
+        """La invitación de ese enlace, sin gastarlo: para mostrar a qué se suma."""
+        return self.base.invitacion_por_hash(_hash(token)) if token else None
+
+    def aceptar_invitacion(self, token: str, clave: str | None) -> Usuario | None:
+        """Crea la cuenta en la loteadora que invitó. Con `clave` la valida antes;
+        sin ella es que entró con Google. Ver `Base.aceptar_invitacion`."""
+        if clave is not None:
+            validar_clave(clave)
+        return self.base.aceptar_invitacion(_hash(token), clave) if token else None
 
     def restablecer(self, token: str, clave: str) -> Usuario | None:
         """Cambia la clave con un enlace válido. Cambiarla corta las sesiones

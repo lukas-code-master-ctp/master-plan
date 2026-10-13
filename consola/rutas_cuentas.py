@@ -28,7 +28,7 @@ from .datos import EmailYaExiste
 WEB = Path(__file__).resolve().parent / "web"
 
 # Lo que se puede pedir sin haber entrado. Se suma a LIBRES en `app.py`.
-LIBRES_DE_CUENTAS = ("/registro", "/verificar", "/olvide", "/restablecer",
+LIBRES_DE_CUENTAS = ("/registro", "/verificar", "/olvide", "/restablecer", "/invitacion",
                      "/entrar/google", "/entrar/google/vuelta", "/registro/google")
 
 GALLETA_ESTADO = "google-estado"
@@ -167,6 +167,43 @@ def _formulario_de_alta_google(email: str, error: str | None = None, estado: int
       <input name="loteadora" autocomplete="organization" autofocus required></label>
     <button class="boton" type="submit">Crear cuenta</button>
   </form>""", estado)
+
+
+def _formulario_de_invitacion(token: str, email: str, quien_invita: str, loteadora: str, *,
+                              con_google: bool, error: str | None = None,
+                              estado: int = 200) -> HTMLResponse:
+    google = (f'<a class="boton boton--google" href="/entrar/google?invitacion={escape(token, quote=True)}">'
+              f'{LOGO_GOOGLE}Aceptar con Google</a><p class="separador">o</p>') if con_google else ""
+    return pagina("Invitación", f"""
+  <h1>Te invitaron a Tu Masterplan</h1>
+  <p><strong>{escape(quien_invita)}</strong> te invitó a sumarte al equipo de
+    <strong>{escape(loteadora)}</strong>. Vas a entrar como <strong>{escape(email)}</strong>.</p>
+  {_aviso(error)}
+  {google}
+  <form method="post" action="/invitacion">
+    <input type="hidden" name="t" value="{escape(token, quote=True)}">
+    <label class="campo"><span>Elige tu contraseña <i>al menos 10 caracteres</i></span>
+      <input name="clave" type="password" autocomplete="new-password" minlength="10" required></label>
+    <button class="boton" type="submit">Aceptar y entrar</button>
+  </form>
+  <p>Si no quieres sumarte, cierra esta página: mientras no aceptes no quedas en ningún equipo.</p>""",
+                  estado)
+
+
+def _invitacion_vencida() -> HTMLResponse:
+    return pagina("Invitación vencida", """
+  <h1>Esa invitación ya no sirve</h1>
+  <p>Las invitaciones vencen en 7 días y se aceptan una sola vez. Pídele a quien te
+    invitó que te mande otra.</p>
+  <nav class="entrada__enlaces"><a href="/entrar">Entrar</a></nav>""", 400)
+
+
+def _ya_tienes_cuenta(email: str) -> HTMLResponse:
+    return pagina("Ya tienes cuenta", f"""
+  <h1>Ya tienes una cuenta</h1>
+  <p><strong>{escape(email)}</strong> ya tiene una cuenta en Tu Masterplan, y cada cuenta es
+    de una sola loteadora. Para sumarte a este equipo, pide que te inviten con otro correo.</p>
+  <nav class="entrada__enlaces"><a href="/entrar">Entrar con mi cuenta</a></nav>""", 409)
 
 
 # --- ayudas -----------------------------------------------------------------------
@@ -331,15 +368,63 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
             return _enlace_vencido("Pide otro enlace.")
         return poner_sesion(RedirectResponse("/#/planos", status_code=303), acceso, sesion, peticion)
 
+    # --- aceptar una invitación al equipo ---------------------------------------------
+
+    def datos_de_invitacion(invitacion) -> tuple[str, str]:
+        """Quién invitó y a qué loteadora, para que la persona sepa a qué dice que sí."""
+        base = acceso.base
+        quien = base.usuario(invitacion.invitado_por) if invitacion.invitado_por else None
+        return (quien.nombre or quien.email) if quien else "Alguien", base.cliente(invitacion.cliente_id).nombre
+
+    @rutas.get("/invitacion", response_class=HTMLResponse)
+    def ver_invitacion(t: str = "") -> HTMLResponse:
+        # Un formulario y no el clic en el enlace, como al confirmar el correo: los
+        # antivirus que abren los enlaces del correo no aceptan nada por nadie.
+        invitacion = cuentas.invitacion(t)
+        if invitacion is None:
+            return _invitacion_vencida()
+        if acceso.base.usuario_por_email(invitacion.email) is not None:
+            return _ya_tienes_cuenta(invitacion.email)
+        quien_invita, loteadora = datos_de_invitacion(invitacion)
+        return _formulario_de_invitacion(t, invitacion.email, quien_invita, loteadora,
+                                         con_google=con_google)
+
+    @rutas.post("/invitacion")
+    def aceptar_invitacion(peticion: Request, t: str = Form(default=""),
+                           clave: str = Form(default="")) -> Response:
+        invitacion = cuentas.invitacion(t)
+        if invitacion is None:
+            return _invitacion_vencida()
+        try:
+            usuario = cuentas.aceptar_invitacion(t, clave)
+        except CuentaInvalida as error:
+            quien_invita, loteadora = datos_de_invitacion(invitacion)
+            return _formulario_de_invitacion(t, invitacion.email, quien_invita, loteadora,
+                                             con_google=con_google, error=str(error), estado=400)
+        except EmailYaExiste:
+            return _ya_tienes_cuenta(invitacion.email)
+        return _entrar_por_invitacion(peticion, usuario, invitacion)
+
+    def _entrar_por_invitacion(peticion: Request, usuario, invitacion) -> Response:
+        sesion = acceso.sesion_para(usuario)
+        if sesion is None:
+            # Venció en el medio, o la loteadora quedó suspendida.
+            return _invitacion_vencida()
+        acceso.base.anotar("invitación aceptada", cliente_id=invitacion.cliente_id,
+                           usuario_id=usuario.id, detalle=usuario.email)
+        return poner_sesion(RedirectResponse("/#/planos", status_code=303), acceso, sesion, peticion)
+
     # --- Google -------------------------------------------------------------------
 
     @rutas.get("/entrar/google")
-    def entrar_con_google(peticion: Request) -> Response:
+    def entrar_con_google(peticion: Request, invitacion: str = "") -> Response:
         if google is None:
             raise HTTPException(404, "entrar con Google no está configurado")
         estado = secrets.token_urlsafe(24)
         respuesta = RedirectResponse(google.url_de_entrada(estado, _vuelta(peticion, acceso.local)), status_code=303)
-        respuesta.set_cookie(GALLETA_ESTADO, acceso.sellar({"s": estado}, minutos=10), max_age=600,
+        # Si viene a aceptar una invitación, el enlace viaja sellado hasta la vuelta.
+        sello = {"s": estado, "i": invitacion} if invitacion else {"s": estado}
+        respuesta.set_cookie(GALLETA_ESTADO, acceso.sellar(sello, minutos=10), max_age=600,
                              httponly=True, samesite="lax", secure=peticion.url.scheme == "https",
                              path="/")
         return respuesta
@@ -360,6 +445,10 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
             return pagina_de_entrada(str(error), con_google=True, con_registro=cuentas.registro_abierto, estado=400)
 
         base = acceso.base
+        if guardado.get("i"):
+            respuesta = aceptar_con_google(peticion, str(guardado["i"]), quien_es)
+            respuesta.delete_cookie(GALLETA_ESTADO, path="/")
+            return respuesta
         usuario = base.usuario_por_identidad("google", quien_es.sujeto)
         if usuario is None:
             usuario = base.usuario_por_email(quien_es.email)
@@ -386,6 +475,31 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
         respuesta = poner_sesion(RedirectResponse("/#/planos", status_code=303), acceso, sesion, peticion)
         respuesta.delete_cookie(GALLETA_ESTADO, path="/")
         return respuesta
+
+    def aceptar_con_google(peticion: Request, token: str, quien_es) -> Response:
+        """Aceptar una invitación entrando con Google. Tiene que ser el correo
+        invitado: un enlace reenviado no deja que otra persona ocupe ese lugar."""
+        invitacion = cuentas.invitacion(token)
+        if invitacion is None:
+            return _invitacion_vencida()
+        if quien_es.email != invitacion.email:
+            quien_invita, loteadora = datos_de_invitacion(invitacion)
+            return _formulario_de_invitacion(
+                token, invitacion.email, quien_invita, loteadora, con_google=True, estado=400,
+                error=f"Entraste a Google como {quien_es.email}, pero la invitación es para "
+                      f"{invitacion.email}. Elige esa cuenta de Google o una contraseña.")
+        base = acceso.base
+        if (base.usuario_por_identidad("google", quien_es.sujeto) is not None
+                or base.usuario_por_email(invitacion.email) is not None):
+            return _ya_tienes_cuenta(invitacion.email)
+        try:
+            usuario = cuentas.aceptar_invitacion(token, None)
+        except EmailYaExiste:
+            return _ya_tienes_cuenta(invitacion.email)
+        if usuario is None:
+            return _invitacion_vencida()
+        base.enlazar_identidad(usuario.id, "google", quien_es.sujeto)
+        return _entrar_por_invitacion(peticion, usuario, invitacion)
 
     @rutas.get("/registro/google", response_class=HTMLResponse)
     def formulario_de_alta_google(peticion: Request) -> HTMLResponse:
