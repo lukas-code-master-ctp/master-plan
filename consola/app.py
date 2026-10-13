@@ -428,6 +428,11 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                     mios: Vista = Depends(vista)) -> dict:
         """Sube el vuelo a un loteo que ya existe. Se puede repetir para agregar
         lo que faltó."""
+        mios.ver(slug)
+        # Subir aparta el KMZ anterior y pisa planillas y panorámicas: no mientras el
+        # pipeline las está leyendo, igual que cambiar el KMZ o quitar el loteo.
+        if trabajos.corriendo(slug):
+            raise HTTPException(409, "está construyendo o publicando; sube los archivos cuando termine")
         # El archivo ya está en un temporal del servidor: se copia de ahí al
         # destino, sin cargar cientos de megas en memoria.
         subidas = [Subida(ruta=a.filename or "", contenido=a.file, tamano=a.size)
