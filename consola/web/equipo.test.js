@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { fichasDe, inicialesDe, ordenarEquipo, tonoDe } from './js/equipo.js';
+import { equipoConInvitaciones, fichasDe, inicialesDe, ordenarEquipo, tonoDe } from './js/equipo.js';
 
 test('las iniciales salen del nombre y, sin nombre, del correo', () => {
   assert.equal(inicialesDe({ nombre: 'Pía Soto Rivas', email: 'pia@x.cl' }), 'PS');
@@ -33,4 +33,27 @@ test('el equipo se ordena: tú, los activos por nombre y al final los desactivad
   ];
   assert.deepEqual(ordenarEquipo(equipo).map((m) => m.nombre), ['Pía', 'Bruno', 'Zoe', 'Ana']);
   assert.equal(equipo[0].nombre, 'Zoe', 'no reordena la lista original');
+});
+
+test('una invitación sin aceptar no tiene rol: dice si está enviada o vencida', () => {
+  const textos = (m) => fichasDe(m).map((f) => f.texto);
+  assert.deepEqual(textos({ invitacion: true, vencida: false }), ['Invitación enviada']);
+  assert.deepEqual(textos({ invitacion: true, vencida: true }), ['Invitación vencida']);
+});
+
+test('las invitaciones van después de los activos y antes de los desactivados', () => {
+  const lista = equipoConInvitaciones({
+    equipo: [
+      { id: 1, nombre: 'Pía', email: 'p@x.cl', activo: true, yo: true },
+      { id: 2, nombre: 'Ana', email: 'a@x.cl', activo: false, yo: false },
+      { id: 3, nombre: 'Zoe', email: 'z@x.cl', activo: true, yo: false },
+    ],
+    invitaciones: [{ id: 1, nombre: 'Bruno', email: 'b@x.cl', vencida: false }],
+  });
+  assert.deepEqual(ordenarEquipo(lista).map((m) => m.nombre), ['Pía', 'Zoe', 'Bruno', 'Ana']);
+  assert.equal(lista.find((m) => m.nombre === 'Bruno').invitacion, true);
+});
+
+test('sin invitaciones en la respuesta queda solo el equipo', () => {
+  assert.equal(equipoConInvitaciones({ equipo: [{ id: 1 }] }).length, 1);
 });

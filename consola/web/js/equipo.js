@@ -11,6 +11,11 @@ const ROLES = { 'dueño': 'Dueño', equipo: 'Equipo', plataforma: 'Operación CT
 
 let cuenta = null;   // lo que contestó GET /api/cuenta
 
+/** Las personas del equipo y, detrás, las invitaciones que nadie ha aceptado. */
+export function equipoConInvitaciones({ equipo, invitaciones = [] }) {
+  return [...equipo, ...invitaciones.map((i) => ({ ...i, invitacion: true, activo: true, yo: false }))];
+}
+
 /** "Pía Soto Rivas" → "PS"; sin nombre, del correo: "tomas@x.cl" → "T". */
 export function inicialesDe({ nombre, email }) {
   const palabras = String(nombre ?? '').trim().split(/\s+/).filter(Boolean);
@@ -27,6 +32,12 @@ export function tonoDe(email) {
 
 /** Las fichas al lado del nombre de un miembro, en orden de importancia. */
 export function fichasDe(miembro) {
+  // Una invitación no es todavía alguien del equipo: no tiene rol hasta que acepta.
+  if (miembro.invitacion) {
+    return [miembro.vencida
+      ? { texto: 'Invitación vencida', tono: 'apagada' }
+      : { texto: 'Invitación enviada', tono: 'aviso' }];
+  }
   const fichas = [{ texto: ROLES[miembro.rol] ?? miembro.rol, tono: miembro.rol === 'dueño' ? 'tinta' : '' }];
   if (miembro.yo) fichas.push({ texto: 'Tú', tono: '' });
   if (!miembro.activo) fichas.push({ texto: 'Desactivada', tono: 'apagada' });
@@ -34,9 +45,10 @@ export function fichasDe(miembro) {
   return fichas;
 }
 
-/** Primero quien mira, después los activos por nombre y al final los desactivados. */
+/** Primero quien mira, después los activos por nombre, las invitaciones sin aceptar
+ * y al final los desactivados. */
 export function ordenarEquipo(equipo) {
-  const peso = (m) => (m.yo ? 0 : m.activo ? 1 : 2);
+  const peso = (m) => (m.yo ? 0 : m.invitacion ? 2 : m.activo ? 1 : 3);
   return [...equipo].sort((a, b) => peso(a) - peso(b)
     || (a.nombre || a.email).localeCompare(b.nombre || b.email, 'es'));
 }
@@ -53,10 +65,15 @@ export function prepararEquipo() {
   $('#seguridad-sesiones').addEventListener('click', cerrarSesiones);
   $('#equipo-invitar').addEventListener('submit', (evento) => { evento.preventDefault(); invitar(); });
   $('#equipo-lista').addEventListener('click', (evento) => {
+    const anular = evento.target.closest('[data-anular]');
+    if (anular) {
+      anularInvitacion(Number(anular.dataset.anular));
+      return;
+    }
     const boton = evento.target.closest('[data-estado]');
     if (boton) cambiarEstado(Number(boton.dataset.id), boton.dataset.estado === 'activar');
   });
-  $('#equipo-clave-copiar').addEventListener('click', copiarClave);
+  $('#equipo-enlace-copiar').addEventListener('click', copiarEnlace);
 }
 
 export async function pintarEquipo({ animar = false } = {}) {
@@ -87,20 +104,20 @@ function pintar(datos, { animar = false } = {}) {
   $('#perfil-nota-loteadora').hidden = datos.administra;
   $('#perfil-guardar').disabled = true;
 
-  pintarMiembros(datos.equipo, datos.administra, animar);
+  pintarMiembros(equipoConInvitaciones(datos), datos.administra, animar);
   $('#equipo-invitar').hidden = !datos.administra;
   $('#equipo-solo-duenio').hidden = datos.administra;
 }
 
 function pintarMiembros(equipo, administra, animar) {
-  const activos = equipo.filter((m) => m.activo).length;
+  const activos = equipo.filter((m) => m.activo && !m.invitacion).length;
   $('#equipo-cantidad').textContent = String(activos);
   const lista = $('#equipo-lista');
   const movimiento = animar && !matchMedia('(prefers-reduced-motion: reduce)').matches;
   lista.classList.toggle('miembros--entrando', movimiento);
   lista.replaceChildren(...ordenarEquipo(equipo).map((miembro, orden) => {
     const li = document.createElement('li');
-    li.className = `miembro${miembro.activo ? '' : ' miembro--apagado'}`;
+    li.className = `miembro${miembro.activo && !miembro.vencida ? '' : ' miembro--apagado'}`;
     li.style.setProperty('--orden', orden);
     const avatar = document.createElement('span');
     avatar.className = 'miembro__avatar';
@@ -122,7 +139,14 @@ function pintarMiembros(equipo, administra, animar) {
       return ficha;
     }));
     li.append(avatar, quien, fichas);
-    if (administra && !miembro.yo) {
+    if (administra && miembro.invitacion) {
+      const boton = document.createElement('button');
+      boton.type = 'button';
+      boton.className = 'boton boton--texto boton--peligro';
+      boton.dataset.anular = miembro.id;
+      boton.textContent = 'Anular';
+      li.append(boton);
+    } else if (administra && !miembro.yo) {
       const boton = document.createElement('button');
       boton.type = 'button';
       boton.className = `boton boton--texto${miembro.activo ? ' boton--peligro' : ''}`;
@@ -187,7 +211,7 @@ async function invitar() {
     const respuesta = await pedir('/api/equipo', json({ nombre, email }));
     $('#invitar-nombre').value = '';
     $('#invitar-email').value = '';
-    mostrarClave(respuesta.invitacion === 'clave' ? { quien: nombre, clave: respuesta.clave_provisional } : null);
+    mostrarEnlace(respuesta.invitacion === 'enlace' ? { quien: nombre, enlace: respuesta.enlace } : null);
     if (respuesta.invitacion === 'correo') avisar(`Listo: le mandamos la invitación a ${respuesta.email}.`, 'ok');
     pintar(await pedir('/api/cuenta'));
   } catch (error) {
@@ -197,18 +221,33 @@ async function invitar() {
   }
 }
 
-function mostrarClave(provisional) {
-  $('#equipo-clave').hidden = !provisional;
-  $('#equipo-clave-quien').textContent = provisional?.quien ?? '';
-  $('#equipo-clave-texto').textContent = provisional?.clave ?? '';
+/** Sin correo que llegue, el dueño entrega el enlace. El servidor lo manda sin
+ * dominio: se completa con el de esta página. */
+function mostrarEnlace(invitacion) {
+  $('#equipo-enlace').hidden = !invitacion;
+  $('#equipo-enlace-quien').textContent = invitacion?.quien ?? '';
+  $('#equipo-enlace-texto').textContent = invitacion ? new URL(invitacion.enlace, location.origin).href : '';
+  $('#equipo-enlace-copiar').textContent = 'Copiar';
 }
 
-async function copiarClave() {
+async function copiarEnlace() {
   try {
-    await navigator.clipboard.writeText($('#equipo-clave-texto').textContent);
-    $('#equipo-clave-copiar').textContent = 'Copiada';
+    await navigator.clipboard.writeText($('#equipo-enlace-texto').textContent);
+    $('#equipo-enlace-copiar').textContent = 'Copiado';
   } catch {
-    avisar('No se pudo copiar: selecciónala y cópiala a mano.');
+    avisar('No se pudo copiar: selecciónalo y cópialo a mano.');
+  }
+}
+
+async function anularInvitacion(id) {
+  const invitacion = cuenta?.invitaciones?.find((i) => i.id === id);
+  if (!invitacion) return;
+  if (!confirm(`¿Anular la invitación a ${invitacion.nombre || invitacion.email}? El enlace deja de servir.`)) return;
+  try {
+    await pedir(`/api/equipo/invitaciones/${id}`, { method: 'DELETE' });
+    pintar(await pedir('/api/cuenta'));
+  } catch (error) {
+    avisar(error.message);
   }
 }
 

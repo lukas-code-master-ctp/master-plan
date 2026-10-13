@@ -105,6 +105,24 @@ tokens = Table(
     Column("creado_en", DateTime(timezone=True), nullable=False),
 )
 
+# Invitar a alguien al equipo no le crea la cuenta: queda acá hasta que esa persona
+# la acepta con el enlace. Antes la cuenta nacía en la loteadora que invitaba, y
+# con eso el correo quedaba tomado sin que su dueño dijera nada: no podía crear su
+# propia loteadora, y entrar con Google lo dejaba en el equipo ajeno. Se guarda el
+# hash del token, como en `tokens`. "Vencida" no se guarda: se deduce de `vence_en`.
+invitaciones = Table(
+    "invitaciones", metadatos,
+    Column("id", Integer, primary_key=True),
+    Column("cliente_id", Integer, ForeignKey("clientes.id"), nullable=False, index=True),
+    Column("email", String(200), nullable=False, index=True),
+    Column("nombre", String(160), nullable=False),
+    Column("invitado_por", Integer, ForeignKey("usuarios.id"), nullable=True),
+    Column("hash", String(64), nullable=False, unique=True),
+    Column("vence_en", DateTime(timezone=True), nullable=False),
+    Column("aceptada_en", DateTime(timezone=True), nullable=True),
+    Column("creado_en", DateTime(timezone=True), nullable=False),
+)
+
 # Cuentas de afuera (Google) enlazadas a una cuenta de acá. `sujeto` es el id
 # que da el proveedor, que no cambia aunque la persona cambie de correo.
 identidades = Table(
@@ -300,6 +318,21 @@ class Usuario:
     @property
     def es_plataforma(self) -> bool:
         return self.rol == "plataforma"
+
+
+@dataclass(frozen=True)
+class Invitacion:
+    id: int
+    cliente_id: int
+    email: str
+    nombre: str
+    invitado_por: int | None
+    vence_en: datetime
+    aceptada_en: datetime | None
+
+    @property
+    def vencida(self) -> bool:
+        return self.vence_en < _ahora()
 
 
 @dataclass(frozen=True)
@@ -561,6 +594,86 @@ class Base:
         with self.motor.begin() as con:
             con.execute(update(usuarios).where(usuarios.c.id == usuario_id)
                         .values(email_verificado=True))
+
+    # --- invitaciones al equipo -------------------------------------------------------
+
+    def crear_invitacion(self, cliente_id: int, email: str, nombre: str, invitado_por: int,
+                         hash_token: str, vence_en: datetime) -> Invitacion:
+        """Una invitación pendiente. Si la loteadora ya había invitado a ese correo,
+        la anterior se reemplaza: el enlace que vale es el último que se mandó."""
+        email = email.strip().lower()
+        with self.motor.begin() as con:
+            if con.execute(select(usuarios.c.id)
+                           .where(func.lower(usuarios.c.email) == email)).first():
+                raise EmailYaExiste(f"{email} ya tiene cuenta")
+            con.execute(delete(invitaciones).where(
+                invitaciones.c.cliente_id == cliente_id, invitaciones.c.email == email,
+                invitaciones.c.aceptada_en.is_(None)))
+            nueva = con.execute(insert(invitaciones).values(
+                cliente_id=cliente_id, email=email, nombre=nombre.strip(),
+                invitado_por=invitado_por, hash=hash_token, vence_en=vence_en,
+                creado_en=_ahora())).inserted_primary_key[0]
+            return _invitacion(con.execute(select(invitaciones)
+                                           .where(invitaciones.c.id == nueva)).first())
+
+    def invitacion_por_hash(self, hash_token: str) -> Invitacion | None:
+        """La invitación de ese enlace si todavía se puede aceptar; si no, None."""
+        with self.motor.connect() as con:
+            fila = con.execute(select(invitaciones).where(invitaciones.c.hash == hash_token)).first()
+        invitacion = _invitacion(fila) if fila else None
+        if invitacion is None or invitacion.aceptada_en is not None or invitacion.vencida:
+            return None
+        return invitacion
+
+    def invitaciones_de(self, cliente_id: int) -> list[Invitacion]:
+        """Las que nadie ha aceptado, vencidas incluidas: así el dueño ve a quién
+        tiene que volver a invitar."""
+        with self.motor.connect() as con:
+            return [_invitacion(f) for f in con.execute(
+                select(invitaciones).where(invitaciones.c.cliente_id == cliente_id,
+                                           invitaciones.c.aceptada_en.is_(None))
+                .order_by(invitaciones.c.email))]
+
+    def anular_invitacion(self, invitacion_id: int, cliente_id: int) -> Invitacion | None:
+        """Borra una pendiente de esa loteadora. None si no es suya o ya no está."""
+        with self.motor.begin() as con:
+            fila = con.execute(select(invitaciones).where(
+                invitaciones.c.id == invitacion_id, invitaciones.c.cliente_id == cliente_id,
+                invitaciones.c.aceptada_en.is_(None))).first()
+            if fila is None:
+                return None
+            con.execute(delete(invitaciones).where(invitaciones.c.id == invitacion_id))
+        return _invitacion(fila)
+
+    def aceptar_invitacion(self, hash_token: str, clave: str | None) -> Usuario | None:
+        """La persona dijo que sí: recién ahora existe su cuenta, en esa loteadora.
+
+        None si el enlace no existe, venció o ya se usó. `EmailYaExiste` si entre
+        la invitación y el sí ese correo se creó una cuenta propia. Sin `clave`
+        (entró con Google) queda una al azar que nadie conoce. Nace verificada:
+        el enlace llegó a ese buzón, o se lo pasó en mano quien la invitó, que es
+        lo mismo que valía con la clave provisional.
+        """
+        ahora = _ahora()
+        with self.motor.begin() as con:
+            fila = con.execute(select(invitaciones).where(invitaciones.c.hash == hash_token)).first()
+            if fila is None or fila.aceptada_en is not None or _utc(fila.vence_en) < ahora:
+                return None
+            if con.execute(select(usuarios.c.id)
+                           .where(func.lower(usuarios.c.email) == fila.email)).first():
+                raise EmailYaExiste(f"{fila.email} ya tiene cuenta")
+            # Condicionado, como `usar_token`: dos clics a la vez no crean dos cuentas.
+            gastada = con.execute(update(invitaciones).where(
+                invitaciones.c.id == fila.id, invitaciones.c.aceptada_en.is_(None))
+                .values(aceptada_en=ahora))
+            if gastada.rowcount != 1:
+                return None
+            con.execute(insert(usuarios).values(
+                cliente_id=fila.cliente_id, email=fila.email, nombre=fila.nombre,
+                clave_hash=CLAVES.hash(clave or secrets.token_urlsafe(32)), rol="equipo",
+                activo=True, debe_cambiar_clave=False, sesiones_validas_desde=ahora,
+                creado_en=ahora, email_verificado=True))
+        return self.usuario_por_email(fila.email)
 
     # --- enlaces de un solo uso y cuentas de afuera --------------------------------
 
@@ -969,6 +1082,13 @@ def _cliente(fila) -> Cliente:
     return Cliente(id=fila.id, slug=fila.slug, nombre=fila.nombre,
                    estado=fila.estado, creado_en=fila.creado_en, whatsapp=fila.whatsapp,
                    diseno_id=fila.diseno_id, horas_apartado=fila.horas_apartado)
+
+
+def _invitacion(fila) -> Invitacion:
+    return Invitacion(id=fila.id, cliente_id=fila.cliente_id, email=fila.email,
+                      nombre=fila.nombre, invitado_por=fila.invitado_por,
+                      vence_en=_utc(fila.vence_en),
+                      aceptada_en=_utc(fila.aceptada_en) if fila.aceptada_en else None)
 
 
 def _usuario(fila) -> Usuario:
