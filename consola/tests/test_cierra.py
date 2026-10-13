@@ -568,6 +568,35 @@ def test_la_vuelta_salta_un_loteo_ocupado_sin_preguntarle_a_cierra(entorno):
     assert len(http.pedidos) == pedidos
 
 
+
+def test_un_loteo_que_falla_no_corta_la_vuelta_de_los_demas(caplog):
+    """Un error inesperado en un loteo queda anotado en su revisión y en el
+    registro, y los loteos que vienen después se revisan igual."""
+    from types import SimpleNamespace
+
+    from consola.inventario import revisar_cierra
+
+    class Todos:
+        def ver(self, slug):
+            if slug == "roto":
+                raise RuntimeError("la carpeta desapareció")
+            return SimpleNamespace(construido=False)
+
+    class ConexionesFalsas:
+        def loteos_conectados(self):
+            return ["primero", "roto", "ultimo"]
+
+    with caplog.at_level("ERROR", logger="consola.inventario"):
+        revisiones = revisar_cierra(Todos(), cierra=None, conexiones=ConexionesFalsas(),
+                                    ocupado=lambda s: False, publicar_en_linea=None)
+
+    assert [(r.slug, r.resultado) for r in revisiones] == [
+        ("primero", "sin construir"),
+        ("roto", "error: RuntimeError: la carpeta desapareció"),
+        ("ultimo", "sin construir"),
+    ]
+    assert "roto" in caplog.text and "RuntimeError" in caplog.text
+
 # --- desde Nuevo master: la clave y los proyectos de la loteadora, sin loteo -----------
 
 def test_nuevo_master_ve_si_hay_cierra_y_la_clave_de_su_loteadora(entorno):

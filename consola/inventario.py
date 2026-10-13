@@ -71,7 +71,14 @@ def revisar_cierra(todos: Vista, cierra: Cierra, conexiones: Conexiones, ocupado
     lanza la publicación y devuelve el id del trabajo."""
     revisiones = []
     for slug in conexiones.loteos_conectados():
-        revisiones.append(_revisar(todos, cierra, conexiones, ocupado, publicar_en_linea, slug))
+        # Un loteo roto (carpeta borrada, planilla ilegible, un error nuestro) no puede
+        # dejar sin revisar a los demás: su fallo queda anotado y la vuelta sigue.
+        try:
+            revision = _revisar(todos, cierra, conexiones, ocupado, publicar_en_linea, slug)
+        except Exception as error:
+            registro.exception("[cierra] %s: falló la revisión", slug)
+            revision = Revision(slug, f"error: {type(error).__name__}: {error}")
+        revisiones.append(revision)
     for revision in revisiones:
         registro.info("[cierra] %s: %s", revision.slug, revision.resultado)
     return revisiones
