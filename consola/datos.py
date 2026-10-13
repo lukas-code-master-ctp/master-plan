@@ -799,6 +799,8 @@ class Base:
         with self.motor.begin() as con:
             ids = select(proyectos.c.id).where(proyectos.c.slug == slug).scalar_subquery()
             con.execute(delete(cierra_loteos).where(cierra_loteos.c.proyecto_id.in_(ids)))
+            # Las solicitudes apuntan al loteo: en Postgres, si quedan, no deja borrarlo.
+            con.execute(delete(solicitudes_reserva).where(solicitudes_reserva.c.proyecto_id.in_(ids)))
             con.execute(delete(proyectos).where(proyectos.c.slug == slug))
 
     # --- registro de lo que pasó ------------------------------------------------------

@@ -4,10 +4,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from consola.acceso import Acceso
 from consola.app import crear_app
-from consola.datos import Base
+from consola.datos import Base, solicitudes_reserva
 from consola.disenos import Disenos
 from consola.kmzs import RegistroKmz
 from consola.proyectos import Registro
@@ -310,3 +311,17 @@ def test_el_correo_avisa_que_los_datos_no_estan_verificados(consola):
 @pytest.mark.parametrize("email", ['a"b<x>@x.y', "pedro@correo", "http://malo.example"])
 def test_un_correo_con_forma_rara_se_rechaza(consola, email):
     assert solicitar(consola, email=email).status_code == 400
+
+
+# --- quitar un loteo que tuvo reservas ------------------------------------------------
+
+def test_quitar_un_loteo_con_reservas_borra_sus_solicitudes(consola):
+    """En Postgres las solicitudes apuntan al loteo y la base no deja borrarlo si
+    quedan: quitarlo daba 500. SQLite no lo revisa, así que se mira que no queden."""
+    solicitar(consola)
+
+    respuesta = consola["ana"].delete(f"/api/proyectos/{consola['slug']}")
+
+    assert respuesta.status_code == 204, respuesta.text
+    with consola["base"].motor.connect() as con:
+        assert con.execute(select(solicitudes_reserva)).first() is None
