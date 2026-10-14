@@ -456,6 +456,11 @@ button { cursor: pointer; }
   overflow: hidden;
   background: var(--zinc-950);
   touch-action: none;
+  /* Arrastrar para girar seleccionaba como texto los números de las parcelas, y en
+     el iPhone dejar el dedo quieto abría el menú de copiar. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 .visor canvas, .overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* Al cambiar de vista, la foto anterior se apaga un poco mientras llega la nueva:

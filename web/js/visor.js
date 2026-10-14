@@ -7,6 +7,7 @@
  * así que imagen y polígonos no pueden desincronizarse.
  */
 import { Camara, acotar } from './camara.js';
+import { Gesto } from './gesto.js';
 import { debeColapsar } from './grupos.js';
 import { estaInsertado, ruedaAcerca } from './insertado.js';
 import { rotulosSinChoques } from './rotulos.js';
@@ -644,10 +645,7 @@ export class Visor {
   // --- Entradas --------------------------------------------------------------
 
   _conectarEntradas() {
-    const punteros = new Map();
-    let arrastre = null;
-    let separacionPrevia = 0;
-
+    const gesto = new Gesto(ARRASTRE_MINIMO_PX);
     const elemento = this.elemento;
 
     elemento.addEventListener('pointerdown', (evento) => {
@@ -657,47 +655,27 @@ export class Visor {
         // Sin captura el arrastre solo deja de seguir al puntero si sale del
         // visor. No es motivo para abortar el resto del manejador.
       }
-      punteros.set(evento.pointerId, { x: evento.clientX, y: evento.clientY });
-      if (punteros.size === 1) {
-        arrastre = { x: evento.clientX, y: evento.clientY, recorrido: 0 };
-      }
-      separacionPrevia = 0;
+      gesto.bajar(evento.pointerId, evento.clientX, evento.clientY);
     });
 
     elemento.addEventListener('pointermove', (evento) => {
-      if (!punteros.has(evento.pointerId)) return;
-      punteros.set(evento.pointerId, { x: evento.clientX, y: evento.clientY });
-
-      if (punteros.size >= 2) {
-        const separacion = separacionDe(punteros);
-        if (separacionPrevia) this.camara.acercar(separacionPrevia / separacion);
-        separacionPrevia = separacion;
-        this._pintar();
-        return;
+      const paso = gesto.mover(evento.pointerId, evento.clientX, evento.clientY);
+      if (!paso) return;
+      if (paso.tipo === 'pellizco') {
+        this.camara.acercar(paso.factor);
+      } else {
+        const gradosPorPixel = this.camara.fov / Math.max(this.alto, 1);
+        this.camara.girar(-paso.dx * gradosPorPixel, paso.dy * gradosPorPixel);
       }
-
-      if (!arrastre) return;
-      const dx = evento.clientX - arrastre.x;
-      const dy = evento.clientY - arrastre.y;
-      arrastre.recorrido += Math.hypot(dx, dy);
-      arrastre.x = evento.clientX;
-      arrastre.y = evento.clientY;
-
-      const gradosPorPixel = this.camara.fov / Math.max(this.alto, 1);
-      this.camara.girar(-dx * gradosPorPixel, dy * gradosPorPixel);
       this._pintar();
     });
 
-    const soltar = (evento) => {
-      punteros.delete(evento.pointerId);
-      if (punteros.size < 2) separacionPrevia = 0;
-      if (punteros.size === 0 && arrastre) {
-        if (arrastre.recorrido < ARRASTRE_MINIMO_PX) this._clic(evento);
-        arrastre = null;
-      }
-    };
-    elemento.addEventListener('pointerup', soltar);
-    elemento.addEventListener('pointercancel', soltar);
+    elemento.addEventListener('pointerup', (evento) => {
+      if (gesto.soltar(evento.pointerId)) this._clic(evento);
+    });
+    elemento.addEventListener('pointercancel', (evento) => {
+      gesto.soltar(evento.pointerId, { cancelado: true });
+    });
 
     elemento.addEventListener('wheel', (evento) => {
       // Dentro de un iframe, sin Ctrl/⌘ la rueda sigue bajando por la página.
@@ -893,7 +871,3 @@ function fueraDePantalla(pixeles, ancho, alto) {
     x < -margen || x > ancho + margen || y < -margen || y > alto + margen);
 }
 
-function separacionDe(punteros) {
-  const [a, b] = [...punteros.values()];
-  return Math.hypot(a.x - b.x, a.y - b.y) || 1;
-}
