@@ -60,7 +60,7 @@ def _aviso(texto: str | None, tono: str = "") -> str:
     return f'<p class="{clase}" role="alert">{escape(texto)}</p>'
 
 
-CONTACTO = "mailto:e.ruiz@compratuparcela.cl?subject=Quiero%20una%20cuenta%20en%20Tu%20Masterplan"
+CONTACTO = "mailto:eduardo@impulseai.cl?subject=Quiero%20una%20cuenta%20en%20Tu%20Masterplan"
 
 
 def pagina_de_entrada(error: str | None = None, *, con_google: bool, con_registro: bool = True,
