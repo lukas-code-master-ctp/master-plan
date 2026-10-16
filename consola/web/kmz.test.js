@@ -630,6 +630,7 @@ test('el número va tal cual y se compara normalizado', () => {
   assert.equal(claveLote('LOTE 8-01'), '8-1');
   assert.equal(claveLote('lote-12'), '12');
   assert.equal(claveLote('A03'), 'A3');
+  assert.equal(claveLote('A-03'), 'A3');
   assert.equal(claveLote('10-6'), '10-6');
   // Igual que `pipeline.plano.numeros.clave`.
   assert.equal(claveLote('LOTE12'), '12');

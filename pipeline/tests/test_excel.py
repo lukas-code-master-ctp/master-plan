@@ -323,3 +323,28 @@ def test_sin_etapas_no_cambia_nada():
     fichas = {"A1": FichaComercial(id="A1", numero="A1")}
 
     assert alinear_con(fichas, {"A1"}) == fichas
+
+
+def test_por_descarte_cada_etapa_se_cruza_con_su_grupo_del_kmz():
+    """Lomas de Quillón: la planilla dice 1-7, 2-7 y 3-7; el KMZ rotula la etapa 1 sin
+    prefijo ("7"), la 2 con su etapa ("2-7") y la 3 con letra ("A-7" → "A7")."""
+    fichas = _fichas(*[(1, str(n)) for n in range(1, 18)], *[(2, str(n)) for n in range(1, 27)],
+                     *[(3, str(n)) for n in range(1, 33)], (3, "B1"))
+    kmz = ({str(n) for n in range(1, 18)} | {f"2-{n}" for n in range(1, 27)}
+           | {f"A{n}" for n in range(1, 33)})
+    explicaciones = []
+
+    alineadas = alinear_con(fichas, kmz, explicaciones)
+
+    assert set(alineadas) == kmz | {"3-B1"}
+    assert alineadas["7"].etapa == 1
+    assert alineadas["2-7"].etapa == 2
+    assert alineadas["A7"].etapa == 3 and alineadas["A7"].id == "A7"
+    assert any("etapa 3" in e and "«A»" in e for e in explicaciones)
+    assert any("etapa 1" in e and "sin prefijo" in e for e in explicaciones)
+
+
+def test_por_descarte_no_adivina_entre_dos_etapas_que_calzan_igual():
+    fichas = _fichas((1, "1"), (1, "2"), (2, "1"), (2, "2"))
+
+    assert alinear_con(fichas, {"1", "2"}) == fichas

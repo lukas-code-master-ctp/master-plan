@@ -81,8 +81,8 @@ class _Dibujo:
 
 
 def normalizar_id(texto: str | None) -> str | None:
-    """"LOTE A 420" → "A420".  "LOTE 42" → "42".  "7-1", "LOTE 8-01" → "7-1", "8-1".
-    "LOTE-12" → "12".  Basura → None.
+    """"LOTE A 420", "A-420" → "A420".  "LOTE 42" → "42".  "7-1", "LOTE 8-01" → "7-1",
+    "8-1".  "LOTE-12" → "12".  Basura → None.
 
     Conviven tres formas de numerar: con letra de sector ("A214"), solo con el
     número ("LOTE 42") y como par sector-lote ("7-1"). Un loteo usa una sola, pero
@@ -94,7 +94,9 @@ def normalizar_id(texto: str | None) -> str | None:
         texto = int(texto)
     limpio = re.sub(r"\bLOTES?\b", " ", str(texto).strip().upper())
 
-    con_letra = re.search(r"([A-Z])\s*0*(\d+)", limpio)
+    # El guion entre la letra y el número es solo separador: Lomas de Quillón rotula
+    # su tercera etapa "A-1" … "A-32", y sin esto esos 32 lotes no se leían.
+    con_letra = re.search(r"([A-Z])\s*-?\s*0*(\d+)", limpio)
     if con_letra:
         return f"{con_letra.group(1)}{int(con_letra.group(2))}"
 

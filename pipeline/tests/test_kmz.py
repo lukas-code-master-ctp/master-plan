@@ -49,6 +49,10 @@ def cuadrado(este, norte, lado=70):
     ("  lote a 007 ", "A7"),
     ("LOTES A99", "A99"),
     ("B15", "B15"),
+    # Lomas de Quillón rotula su tercera etapa con guion entre la letra y el número.
+    ("A-1", "A1"),
+    ("A-32", "A32"),
+    ("LOTE B-07", "B7"),
     # Loteos que numeran sin letra de sector (Talhuenes) o con par sector-lote.
     ("LOTE 42", "42"),
     ("lote 007", "7"),

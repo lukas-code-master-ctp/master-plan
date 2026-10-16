@@ -1,7 +1,7 @@
 """Calibración fina de la pose de cada vista contra la propia foto.
 
-Después del sol (que fija el rumbo) y del terreno (que fija las cotas) queda un
-residuo de ~0,5–1°: el nivelado de la panorámica no es perfecto, el GPS del dron
+Después del sol (que fija el rumbo), del terreno (que fija las cotas) y del
+horizonte (que nivela la foto, ver horizonte.py) queda un residuo de ~0,5–1°: el nivelado de la panorámica no es perfecto, el GPS del dron
 tiene unos metros de error y el DEM también. Como el KMZ trae los caminos y los
 caminos de tierra se ven claros en la foto, se ajusta por vista un giro, dos
 inclinaciones y un desnivel para que las líneas del KMZ caigan sobre píxeles claros
@@ -97,8 +97,12 @@ def calibrar(vista: Vista, lineas: list[geo.Anillo], cota: ModeloTerreno | None,
     azimut = np.arctan2(este, norte)
     alto, ancho = mapa.shape
 
+    # La búsqueda parte de la pose que ya trae la vista (la nivelación con el horizonte)
+    # y lo que devuelve es lo que hay que sumarle. Los topes valen para esa diferencia.
+    base = np.array([vista.giro, vista.inclinacion_este, vista.inclinacion_norte, vista.desnivel])
+
     def puntaje(parametros: np.ndarray) -> float:
-        giro, este_i, norte_i, desnivel = parametros
+        giro, este_i, norte_i, desnivel = base + parametros
         az, el = _proyectar(azimut, caida - desnivel, distancia, giro, este_i, norte_i)
         px = ((az - vista.rumbo0) % 360.0) / 360.0 * ancho
         py = (90.0 - el) / 180.0 * alto
@@ -137,8 +141,11 @@ def calibrar(vista: Vista, lineas: list[geo.Anillo], cota: ModeloTerreno | None,
 
 
 def aplicar(vista: Vista, ajuste: Ajuste) -> Vista:
-    return replace(vista, giro=ajuste.giro, inclinacion_este=ajuste.inclinacion_este,
-                   inclinacion_norte=ajuste.inclinacion_norte, desnivel=ajuste.desnivel)
+    """Suma el ajuste a la pose de la vista: se busca a partir de ella (ver `calibrar`)."""
+    return replace(vista, giro=round(vista.giro + ajuste.giro, 3),
+                   inclinacion_este=round(vista.inclinacion_este + ajuste.inclinacion_este, 3),
+                   inclinacion_norte=round(vista.inclinacion_norte + ajuste.inclinacion_norte, 3),
+                   desnivel=round(vista.desnivel + ajuste.desnivel, 1))
 
 
 def _muestras(lineas: list[geo.Anillo], vista: Vista, cota: ModeloTerreno | None) -> np.ndarray:
