@@ -12,6 +12,7 @@ from pipeline.panoramas import (
     asignar_posiciones,
     buscar_panoramas,
     leer_panorama,
+    por_que_no_sirven,
     resolver_rumbo,
 )
 from pipeline.sintetico import escribir_panorama
@@ -224,3 +225,18 @@ def test_una_posicion_llamada_plano_sigue_siendo_del_vuelo(tmp_path):
     escribir_panorama(tmp_path / "plano" / "100 METROS.JPG", relativa=100.0)
 
     assert len(buscar_panoramas(tmp_path)) == 1
+
+
+def test_dice_por_que_ninguna_foto_sirve(tmp_path):
+    """Lomas de Quillón: sin panorámicas válidas la construcción se caía con un
+    error de Python. Ahora cada foto dice qué le falta."""
+    Image.new("RGB", (400, 300)).save(tmp_path / "exportada.jpg", "JPEG")
+    Image.new("RGB", (400, 300)).save(tmp_path / "toma.jpg", "JPEG",
+                                      xmp=b'<x:xmpmeta drone-dji:GpsLatitude="-36.7"/>')
+    escribir_panorama(tmp_path / "buena.jpg")
+
+    motivos = por_que_no_sirven(tmp_path)
+
+    assert len(motivos) == 2
+    assert any(m.startswith("exportada.jpg") and "XMP" in m for m in motivos)
+    assert any(m.startswith("toma.jpg") and "tomas sueltas" in m for m in motivos)

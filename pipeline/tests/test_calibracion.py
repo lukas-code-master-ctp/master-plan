@@ -108,3 +108,28 @@ def test_aplicar_deja_la_correccion_en_la_vista():
     assert (corregida.giro, corregida.inclinacion_este, corregida.inclinacion_norte,
             corregida.desnivel) == (0.2, 0.5, -0.1, 2.0)
     assert corregida.rumbo0 == VISTA.rumbo0
+
+
+def test_aplicar_suma_a_la_pose_que_ya_traia_la_vista():
+    """La nivelación con el horizonte deja una pose; el ajuste fino se suma a ella."""
+    nivelada = Vista(**{**VISTA.__dict__, "inclinacion_este": 0.6, "inclinacion_norte": 1.2})
+    ajuste = Ajuste(giro=0.2, inclinacion_este=-0.1, inclinacion_norte=0.1, desnivel=2.0)
+
+    corregida = aplicar(nivelada, ajuste)
+
+    assert (corregida.giro, corregida.inclinacion_este, corregida.inclinacion_norte,
+            corregida.desnivel) == (0.2, 0.5, 1.3, 2.0)
+
+
+def test_busca_a_partir_de_la_pose_nivelada():
+    """Con la vista ya cerca del óptimo, el ajuste es solo la diferencia que falta,
+    aunque la inclinación total pase el tope de la búsqueda."""
+    real = Vista(**{**VISTA.__dict__, "giro": 0.3, "inclinacion_este": 2.6,
+                    "inclinacion_norte": -0.4, "desnivel": 0.0})
+    nivelada = Vista(**{**VISTA.__dict__, "inclinacion_este": 2.0})
+
+    ajuste = calibrar(nivelada, LINEAS, None, foto_sintetica(real))
+
+    assert ajuste.tope == ""
+    assert ajuste.inclinacion_este == pytest.approx(0.6, abs=0.1)
+    assert aplicar(nivelada, ajuste).inclinacion_este == pytest.approx(2.6, abs=0.1)

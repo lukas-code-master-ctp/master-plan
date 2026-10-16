@@ -109,6 +109,39 @@ def buscar_panoramas(carpeta: Path) -> list[Panorama]:
     return encontradas
 
 
+def por_que_no_sirven(carpeta: Path) -> list[str]:
+    """Para cada foto de la carpeta, por qué no se tomó como panorámica.
+
+    Lomas de Quillón (octubre de 2026): sin ninguna panorámica válida la construcción
+    se caía con un error de Python que no decía nada útil. Esto es lo que se le
+    muestra a la persona en su lugar.
+    """
+    motivos = []
+    for ruta in sorted(Path(carpeta).rglob("*")):
+        if ruta.suffix.lower() not in (".jpg", ".jpeg"):
+            continue
+        if "REFERENCIA" in ruta.stem.upper() or config.del_plano(ruta, carpeta):
+            continue
+        with Image.open(ruta) as imagen:
+            xmp = imagen.info.get("xmp", b"")
+            ancho, alto = imagen.size
+        texto = xmp.decode("utf-8", "ignore") if xmp else ""
+        if not texto:
+            motivo = ("no trae los datos del dron (XMP); pasa cuando la foto se exporta, "
+                      "se comprime o se manda por WhatsApp")
+        elif "equirectangular" not in texto:
+            motivo = (f"no es una panorámica 360 cosida ({ancho}×{alto}); parece una de "
+                      "las tomas sueltas con que el dron arma la panorámica")
+        else:
+            try:
+                leer_panorama(ruta)
+                continue
+            except ValueError as error:
+                motivo = str(error).split(": ", 1)[-1]
+        motivos.append(f"{ruta.name}: {motivo}")
+    return motivos
+
+
 def asignar_posiciones(panoramas: list[Panorama]) -> None:
     """Numera las posiciones de vuelo que la carpeta no rotula.
 

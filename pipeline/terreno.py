@@ -62,6 +62,22 @@ class Terreno:
         return float(c[i, j] * (1 - fi) * (1 - fj) + c[i, j2] * (1 - fi) * fj
                      + c[i2, j] * fi * (1 - fj) + c[i2, j2] * fi * fj)
 
+    def cotas_en(self, lon: np.ndarray, lat: np.ndarray) -> np.ndarray:
+        """`cota` para muchos puntos a la vez: el horizonte pide cientos de miles."""
+        n = LADO * 2 ** self.zoom
+        lat_r = np.radians(lat)
+        gx = (np.asarray(lon, dtype=np.float64) + 180.0) / 360.0 * n
+        gy = (1.0 - np.log(np.tan(lat_r) + 1.0 / np.cos(lat_r)) / math.pi) / 2.0 * n
+        alto, ancho = self.cotas.shape
+        px = np.clip(gx - self.x0 * LADO - 0.5, 0.0, ancho - 1.0)
+        py = np.clip(gy - self.y0 * LADO - 0.5, 0.0, alto - 1.0)
+        j = np.minimum(px.astype(int), ancho - 2)
+        i = np.minimum(py.astype(int), alto - 2)
+        fj, fi = px - j, py - i
+        c = self.cotas
+        return (c[i, j] * (1 - fi) * (1 - fj) + c[i, j + 1] * (1 - fi) * fj
+                + c[i + 1, j] * fi * (1 - fj) + c[i + 1, j + 1] * fi * fj)
+
 
 def cargar(caja: tuple[float, float, float, float], cache: Path, margen_m: float = MARGEN_M,
            zoom: int = ZOOM, descarga: Descarga = None) -> Terreno:

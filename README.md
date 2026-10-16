@@ -473,15 +473,28 @@ pero no seguro: en Praderas de Cauquenes despegó bajo la última, y la diferenc
 (16 m de cota) corría los lotes lejanos unos 40 m. La forma de comprobarlo es el
 control de calce: los polígonos tienen que caer sobre los caminos.
 
+## El nivel de la foto
+
+El sol fija el rumbo pero no dice si la panorámica quedó horizontal, y DJI a veces la
+cose caída uno o dos grados. Desde 500 m eso corre los lotes decenas de metros: en
+Lomas de Quillón la foto venía 1,3° caída y el camino del KMZ quedaba 30–40 m al sur
+del real en el lado lejano del dron. `horizonte.py` calcula con el DEM dónde debería
+verse la línea del horizonte (cerros a pocos km y cordillera a 100–200 km, con la
+curvatura de la Tierra), busca en la foto el borde entre el cielo azul y la tierra, y
+ajusta las dos inclinaciones que los superponen. No usa el KMZ. El horizonte a menos
+de 2,5 km no cuenta (son árboles y casas que el DEM no tiene), y si no se distingue
+(nubes, bruma) la vista queda sin nivelar y lo dice. Queda en `vistas.json`
+(`diagnostico.nivelacion`); el DEM lejano son unas 75 teselas más, en el mismo caché.
+
 ## El calce fino
 
-Con el sol y el terreno resueltos queda un residuo de ~0,5–1°: el nivelado de la
-panorámica no es perfecto, el GPS del dron tiene unos metros de error y el DEM
-también. Como el KMZ trae los caminos y los caminos de tierra se ven claros en la
-foto, el pipeline ajusta por vista un giro, dos inclinaciones y un desnivel hasta que
-las líneas del KMZ caen sobre los píxeles de camino. El ajuste queda en
-`vistas.json` (`diagnostico.calibracion`); si no mejora el calce al menos un 3 % se
-descarta, y `--sin-calibrar` lo apaga.
+Con el sol, el terreno y el nivel resueltos queda un residuo de ~0,5–1°: el GPS del
+dron tiene unos metros de error y el DEM también. Como el KMZ trae los caminos y los
+caminos de tierra se ven claros en la foto, el pipeline ajusta por vista un giro, dos
+inclinaciones y un desnivel, a partir de la pose nivelada, hasta que las líneas del
+KMZ caen sobre los píxeles de camino. El ajuste queda en `vistas.json`
+(`diagnostico.calibracion`, y la suma de los dos pasos en `diagnostico.pose`); si no
+mejora el calce al menos un 3 % se descarta, y `--sin-calibrar` apaga los dos pasos.
 
 ## El KMZ
 
@@ -502,6 +515,12 @@ cuadrito de cada color junto a un rótulo `ETAPA 1`, `ETAPA 2`… (así viene de
 Mapper). El id de cada lote queda como `etapa-número` (`2-7`) y el sitio lo muestra
 como "Parcela 7 · Etapa 2". Sin leyenda, dos lotes con el mismo nombre cortan el
 pipeline con un aviso: es un dato que falta, no algo que se pueda adivinar.
+
+Hay KMZ que separan las etapas en el rótulo y no por color, cada una a su manera
+(Lomas de Quillón: la etapa 1 sin prefijo, `7`; la 2 como `2-7`; la 3 con letra,
+`A-7`). Con la planilla separada por etapas, cada grupo de rótulos del KMZ se cruza
+con la única etapa que contiene sus números, por descarte, y la construcción dice qué
+cruzó con qué. Si dos etapas calzan igual con un grupo, no se adivina.
 
 ## Crea tu KMZ
 

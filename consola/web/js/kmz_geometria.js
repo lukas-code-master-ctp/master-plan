@@ -400,14 +400,14 @@ export function loteEn(rasgos, x, y) {
 
 /**
  * El número de lote para comparar, como `pipeline.plano.numeros.clave`: "8-01", "8-1" y
- * "LOTE 8-01" son el mismo lote ("8-1"); "A03" → "A3". Se guarda como lo escribió ella.
+ * "LOTE 8-01" son el mismo lote ("8-1"); "A03" y "A-03" → "A3". Se guarda como lo escribió ella.
  */
 export function claveLote(numero) {
   const t = String(numero ?? '').trim().toUpperCase()
     .replace(/^(?:LOTES?(?=\d)|LOTES?\b\s*[-#]?\s*|[-#]\s*)/, '');
   const pares = t.match(/^(\d+(?:\s*-\s*\d+)*)[\s.]*$/);
   if (pares) return pares[1].replace(/\s/g, '').split('-').map((p) => String(Number(p))).join('-');
-  const letra = t.match(/^([A-Z])\s*(\d+)$/);
+  const letra = t.match(/^([A-Z])\s*-?\s*(\d+)$/);
   if (letra) return `${letra[1]}${Number(letra[2])}`;
   return t.replace(/\s+/g, '');
 }

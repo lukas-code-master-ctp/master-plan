@@ -21,7 +21,8 @@ def test_distinto_lote(a, b):
 
 def test_clave_y_repetidos():
     assert numeros.clave("8-01") == numeros.clave("LOTE 8-1") == "8-1"
-    assert numeros.clave("A-3?") == "A-3?"                     # lo que no se reconoce, tal cual
+    assert numeros.clave("A+3?") == "A+3?"                     # lo que no se reconoce, tal cual
+    assert numeros.clave("A-03") == "A3"                       # el guion es separador
     # "LOTE12" pegado: la E de LOTE no es letra de sector (como `claveLote` en la consola).
     assert numeros.clave("LOTE12") == numeros.clave("lote 012") == "12"
     assert numeros.clave("A03") == "A3"

@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -90,22 +91,86 @@ class FichaComercial:
     reserva: float | None = None
 
 
-def alinear_con(fichas: dict[str, FichaComercial], ids: set[str] | dict) -> dict[str, FichaComercial]:
-    """Las fichas con el id que usa el KMZ cuando la planilla trae etapas y el KMZ no.
+def alinear_con(fichas: dict[str, FichaComercial], ids: set[str] | dict,
+                explicaciones: list[str] | None = None) -> dict[str, FichaComercial]:
+    """Las fichas con el id que usa el KMZ cuando la planilla y el KMZ nombran distinto.
 
-    Con varias etapas la planilla arma "etapa-número" ("1-A1"), pero hay KMZ que no
-    distinguen etapas porque el lote ya es único en todo el loteo ("A1"). Entonces se
-    cruza por el número, siempre que no se repita entre etapas (si "7" está en la
-    etapa 1 y en la 2, sin etapa no hay cómo saber cuál es) y que así calcen más.
+    Con varias etapas la planilla arma "etapa-número" ("1-A1"), pero el KMZ no siempre
+    rotula igual. Las fichas que ya calzan se quedan como están; el resto se cruza:
+
+    1. Por el número solo, si no se repite entre etapas (Hacienda Vichuquén: la
+       planilla dice 1-A1, el KMZ A1). Si "7" está en la etapa 1 y en la 2, sin etapa
+       no hay cómo saber cuál es.
+    2. Por descarte, etapa contra grupo de rótulos del KMZ (Lomas de Quillón: la etapa
+       2 viene "2-7", la 1 sin prefijo, "7", y la 3 con letra, "A-7"). Un grupo del KMZ
+       se asigna a la única etapa que contiene sus números, y se repite hasta que no
+       quede ninguno sin ambigüedad.
+
+    En `explicaciones` se dice qué se cruzó, para que la persona lo pueda revisar.
     """
     conocidos = set(ids)
-    numeros = [f.numero for f in fichas.values()]
-    if not numeros or None in numeros or len(set(numeros)) != len(numeros):
+    pendientes = [f for f in fichas.values() if f.id not in conocidos]
+    libres = conocidos - set(fichas)
+    if not pendientes or not libres:
         return fichas
-    calzan_por_numero = sum(numero in conocidos for numero in numeros)
-    if calzan_por_numero <= len(conocidos & set(fichas)):
+
+    nuevos: dict[str, str] = {}
+    repeticiones = Counter(f.numero for f in pendientes)
+    for ficha in pendientes:
+        if ficha.numero in libres and repeticiones[ficha.numero] == 1:
+            nuevos[ficha.id] = ficha.numero
+    if nuevos and explicaciones is not None:
+        explicaciones.append(f"{len(nuevos)} parcela(s) se cruzaron con el KMZ por el número "
+                             "del lote, sin la etapa")
+    libres -= set(nuevos.values())
+
+    etapas: dict[int, dict[str, FichaComercial]] = {}
+    for ficha in pendientes:
+        if ficha.id not in nuevos and ficha.numero and ficha.etapa is not None:
+            etapas.setdefault(ficha.etapa, {})[ficha.numero] = ficha
+    grupos: dict[str, dict[str, str]] = {}
+    for identificador in libres:
+        prefijo, numero = _prefijo_y_numero(identificador)
+        grupos.setdefault(prefijo, {})[numero] = identificador
+
+    asignado = True
+    while asignado and grupos and etapas:
+        asignado = False
+        for prefijo, numeros in list(grupos.items()):
+            candidatas = [e for e, propias in etapas.items()
+                          if sum(n in propias for n in numeros) >= CALCE_POR_DESCARTE * len(numeros)]
+            if len(candidatas) != 1:
+                continue
+            etapa = candidatas[0]
+            cruzadas = 0
+            for numero, identificador in numeros.items():
+                if numero in etapas[etapa]:
+                    nuevos[etapas[etapa][numero].id] = identificador
+                    cruzadas += 1
+            if explicaciones is not None:
+                rotulo = f"con prefijo «{prefijo}»" if prefijo else "sin prefijo"
+                explicaciones.append(f"la etapa {etapa} de la planilla se cruzó con los lotes "
+                                     f"{rotulo} del KMZ ({cruzadas} parcelas)")
+            del grupos[prefijo]
+            del etapas[etapa]
+            asignado = True
+
+    if not nuevos:
         return fichas
-    return {f.numero: replace(f, id=f.numero) for f in fichas.values()}
+    return {nuevos.get(f.id, f.id): replace(f, id=nuevos.get(f.id, f.id)) for f in fichas.values()}
+
+
+# Un grupo del KMZ se cruza con una etapa si casi todos sus números están en ella: un
+# lote de más en el dibujo (un "RESTO", una reserva) no debe impedir el cruce.
+CALCE_POR_DESCARTE = 0.9
+
+
+def _prefijo_y_numero(identificador: str) -> tuple[str, str]:
+    """"A7" → ("A", "7").  "7" → ("", "7").  "3-7" → ("3-", "7")."""
+    coincidencia = re.fullmatch(r"(.*?)(\d+)", identificador)
+    if not coincidencia:
+        return identificador, ""
+    return coincidencia.group(1), coincidencia.group(2)
 
 
 def leer_planilla(ruta: Path, parcelacion: str | None = None) -> dict[str, FichaComercial]:

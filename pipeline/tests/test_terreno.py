@@ -106,3 +106,13 @@ def test_cada_vuelo_se_mide_desde_su_propio_despegue_aunque_el_gps_diga_otra_cot
     # La cámara queda a su altura relativa sobre el despegue, sea cual sea el vuelo.
     assert segundo.altura_absoluta - modelo(despegue) == pytest.approx(500.0)
     assert modelo(lejos) == pytest.approx(segundo.terreno_plano() + 20.0)
+
+
+def test_las_cotas_de_muchos_puntos_son_las_mismas_que_de_a_uno():
+    rng = np.random.default_rng(3)
+    terreno = Terreno(zoom=14, x0=4902, y0=9942, cotas=rng.random((256, 256)) * 300)
+    puntos = [(-72.273 + 0.004 * rng.random(), -35.866 + 0.004 * rng.random()) for _ in range(50)]
+
+    juntas = terreno.cotas_en(np.array([p[0] for p in puntos]), np.array([p[1] for p in puntos]))
+
+    assert juntas == pytest.approx([terreno.cota(p) for p in puntos], abs=1e-6)

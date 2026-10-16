@@ -175,3 +175,26 @@ def test_sin_publicacion_previa_no_agrega_nada(tmp_path):
     assert _datos_de_la_publicacion(tmp_path / "no-existe.json") == {}
     assert _datos_de_la_publicacion(sin_publicar) == {}
     assert _datos_de_la_publicacion(roto) == {}
+
+
+def test_sin_panoramicas_validas_corta_con_un_mensaje_claro(tmp_path, capsys):
+    from PIL import Image
+
+    from pipeline import construir as modulo
+    from pipeline.config import Fuentes, Proyecto, Salida
+    import zipfile
+    Image.new("RGB", (400, 300)).save(tmp_path / "DJI_0001.JPG", "JPEG")
+    kmz = tmp_path / "loteo.kmz"
+    with zipfile.ZipFile(kmz, "w") as archivo:
+        archivo.writestr("doc.kml", (
+            '<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>LOTE 1</name>'
+            '<Polygon><outerBoundaryIs><LinearRing><coordinates>-72,-36 -72.001,-36 '
+            '-72.001,-36.001 -72,-36.001 -72,-36</coordinates></LinearRing></outerBoundaryIs>'
+            '</Polygon></Placemark></Document></kml>'))
+
+    with pytest.raises(modulo.SinPanoramas) as error:
+        modulo.construir(Fuentes(kmz=kmz, panoramas=tmp_path), Proyecto(nombre="X"),
+                         Salida(tmp_path / "salida"), sin_imagenes=True)
+
+    assert "DJI_0001.JPG" in str(error.value)
+    assert "XMP" in str(error.value)

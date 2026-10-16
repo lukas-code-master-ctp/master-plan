@@ -40,6 +40,12 @@ La diferencia entre ambos da el rumbo de la columna x=0.
 Validado en la posición 01: azimut solar calculado 279,3°, medido en la imagen 279,9°.
 Error 0,6°.
 
+### El nivel de la panorámica
+
+El sol no dice si la foto quedó horizontal. Desde octubre de 2026 se nivela con el
+horizonte que predice el DEM (ver `horizonte.py` y el README): en Lomas de Quillón la
+panorámica de 500 m venía 1,3° caída y eso corría el loteo 30–40 m.
+
 ### Supuesto de terreno
 
 La proyección asume el suelo plano a la altura del despegue. Produce un desfase vertical
@@ -65,6 +71,7 @@ El pipeline corre en el PC cuando cambian los datos. La web solo lee archivos es
 | `kmz.py` | KMZ → polígonos con nombre normalizado |
 | `excel.py` | xlsx → fichas comerciales con IDs normalizados |
 | `panoramas.py` | XMP/EXIF → pose de cada vista; resuelve el rumbo |
+| `horizonte.py` | Nivela cada vista con el horizonte que predice el DEM |
 | `proyeccion.py` | Polígonos → anillos (azimut, elevación), con subdivisión adaptativa |
 | `imagenes.py` | Niveles progresivos 2048 / 4096 / 8192 px |
 | `construir.py` | Orquesta y escribe la salida |

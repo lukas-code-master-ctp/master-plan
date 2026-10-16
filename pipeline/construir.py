@@ -11,17 +11,18 @@ import argparse
 import json
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
-from . import config, geo, referencias, terreno, visor
+from . import config, geo, horizonte, referencias, terreno, visor
 from .crm import leer_crm
 from .excel import FichaComercial, alinear_con, leer_planilla
 from .calibracion import Ajuste, aplicar, calibrar, mapa_de_caminos
 from .imagenes import generar_niveles
 from .kmz import ParcelaGeometrica, leer_kmz, leer_lineas
-from .panoramas import Panorama, RumboResuelto, a_vista, buscar_panoramas, resolver_rumbo
+from .panoramas import (Panorama, RumboResuelto, a_vista, buscar_panoramas, por_que_no_sirven,
+                        resolver_rumbo)
 from .proyeccion import Vista, proyectar_vista
 
 # Dos fotos son del mismo vuelo si el dron dice que despegaron a menos de esto. Entre
@@ -51,6 +52,19 @@ class Avisos:
         print(f"  aviso: {texto}")
 
 
+class SinPanoramas(ValueError):
+    """Ninguna foto sirve como panorámica: sin eso no hay nada que construir."""
+
+    def __init__(self, carpeta: Path):
+        motivos = por_que_no_sirven(carpeta)
+        detalle = "".join(f"\n  - {m}" for m in motivos[:10])
+        if len(motivos) > 10:
+            detalle += f"\n  - y {len(motivos) - 10} más"
+        super().__init__(
+            "Ninguna de las fotos sirve como panorámica 360 del dron. Hace falta la "
+            "panorámica que cose el dron, en resolución completa y sin editar." + detalle)
+
+
 def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config.Salida,
               sin_imagenes: bool = False, forzar_imagenes: bool = False,
               sin_calibrar: bool = False) -> dict:
@@ -71,14 +85,16 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
           f"{f', {len(etapas)} etapas' if etapas else ''}")
 
     fichas = _leer_fichas(fuentes, proyecto, avisos)
-    alineadas = alinear_con(fichas, con_id)
-    if alineadas is not fichas:
-        print("  la planilla separa etapas y el KMZ no: se cruzan por el número del lote")
-    fichas = alineadas
+    cruces: list[str] = []
+    fichas = alinear_con(fichas, con_id, cruces)
+    for cruce in cruces:
+        print(f"  {cruce}")
     _revisar_cobertura(fichas, con_id, avisos)
 
     print("Leyendo las panorámicas...")
     panoramas = buscar_panoramas(fuentes.panoramas)
+    if not panoramas:
+        raise SinPanoramas(fuentes.panoramas)
     print(f"  {len(panoramas)} panorámicas en {len({p.posicion for p in panoramas})} posiciones")
     _revisar_ids_de_vista(panoramas)
 
@@ -119,9 +135,26 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
     cota_despegue = relieve.cota(despegue) if relieve else None
 
     ajustes: dict[str, Ajuste] = {}
+    niveles: dict[str, horizonte.Nivelacion] = {}
     if sin_calibrar:
         print("Sin calibración fina contra la foto (--sin-calibrar).")
     else:
+        if relieve:
+            print("Nivelando cada panorámica con el horizonte...")
+            niveladas = []
+            for panorama, rumbo, vista in vistas:
+                nivel = _nivelar(panorama, vista, cota_despegue, avisos)
+                niveles[vista.id] = nivel
+                if nivel.aplicada:
+                    print(f"  {vista.id}: inclinación E {nivel.inclinacion_este:+.2f}° / "
+                          f"N {nivel.inclinacion_norte:+.2f}° ({nivel.puntos} puntos del "
+                          f"horizonte, quedan a {nivel.residuo:.2f}°)")
+                    vista = replace(vista, inclinacion_este=nivel.inclinacion_este,
+                                    inclinacion_norte=nivel.inclinacion_norte)
+                else:
+                    print(f"  {vista.id}: sin nivelar ({nivel.motivo})")
+                niveladas.append((panorama, rumbo, vista))
+            vistas = niveladas
         print("Calibrando la pose de cada vista contra la foto...")
         lineas = leer_lineas(fuentes.kmz)
         calibradas = []
@@ -134,9 +167,14 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
                   f"(calce {100 * ajuste.mejora:+.0f}%){'' if ajuste.aplicado else '  <-- sin cambio'}")
             if ajuste.tope:
                 avisos.añadir(f"{vista.id}: el ajuste fino se fue al tope ({ajuste.tope}) y se "
-                              f"descartó; la vista queda sin ajuste. Revisa su calce.")
+                              f"descartó; la vista queda con la pose de antes. Revisa su calce.")
             calibradas.append((panorama, rumbo, aplicar(vista, ajuste)))
         vistas = calibradas
+        # Lo que queda en la vista es la suma de los dos pasos.
+        for _, _, vista in vistas:
+            print(f"  {vista.id} queda con giro {vista.giro:+.2f}°, inclinación E "
+                  f"{vista.inclinacion_este:+.2f}° / N {vista.inclinacion_norte:+.2f}°, "
+                  f"desnivel {vista.desnivel:+.1f} m")
 
     print("Proyectando parcelas sobre cada vista...")
     visor.copiar(salida.web)
@@ -173,7 +211,8 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         })
         resumen_vistas.append(_resumen_vista(panorama, rumbo, vista, proyectadas,
                                              "dem" if relieve else "plano", despegue,
-                                             ajustes.get(vista.id, Ajuste())))
+                                             ajustes.get(vista.id, Ajuste()),
+                                             niveles.get(vista.id, horizonte.SIN_NIVELAR)))
         print(f"  {vista.id}: {len(proyectadas)} parcelas visibles")
 
     if not sin_imagenes:
@@ -248,6 +287,19 @@ def _leer_fichas(fuentes: config.Fuentes, proyecto: config.Proyecto,
         return {}
     print(f"  {len(fichas)} parcelas con datos comerciales")
     return fichas
+
+
+def _nivelar(panorama: Panorama, vista: Vista, cota_despegue: float,
+             avisos: Avisos) -> horizonte.Nivelacion:
+    """La nivelación de una vista. Sin red para el DEM lejano se avisa y se sigue."""
+    # El dron mide la altura desde el despegue; el perfil se calcula en el datum del DEM.
+    altura = cota_despegue + vista.altura_relativa
+    try:
+        perfil = horizonte.perfil(vista.lon, vista.lat, altura, config.CACHE_TERRENO)
+    except (OSError, ValueError) as error:
+        avisos.añadir(f"{vista.id}: no pude cargar el relieve lejano para nivelar ({error})")
+        return horizonte.SIN_NIVELAR
+    return horizonte.nivelar(horizonte.cargar_imagen(panorama.ruta), perfil, vista.rumbo0, vista.giro)
 
 
 def _cargar_terreno(geometrias: list[ParcelaGeometrica], panoramas: list[Panorama],
@@ -457,7 +509,7 @@ def _descomponer(identificador: str, etapa: int | None,
 
 def _resumen_vista(panorama: Panorama, rumbo: RumboResuelto, vista: Vista,
                    proyectadas: list, terreno_usado: str, despegue: geo.Punto,
-                   ajuste: Ajuste) -> dict:
+                   ajuste: Ajuste, nivel: horizonte.Nivelacion) -> dict:
     return {
         "id": vista.id,
         "posicion": vista.posicion,
@@ -491,6 +543,19 @@ def _resumen_vista(panorama: Panorama, rumbo: RumboResuelto, vista: Vista,
                 "inclinacion_norte": ajuste.inclinacion_norte,
                 "desnivel": ajuste.desnivel,
                 "mejora": round(ajuste.mejora, 3),
+            },
+            "nivelacion": {
+                "inclinacion_este": nivel.inclinacion_este,
+                "inclinacion_norte": nivel.inclinacion_norte,
+                "puntos": nivel.puntos,
+                "residuo": nivel.residuo,
+                "motivo": nivel.motivo,
+            },
+            "pose": {
+                "giro": vista.giro,
+                "inclinacion_este": vista.inclinacion_este,
+                "inclinacion_norte": vista.inclinacion_norte,
+                "desnivel": vista.desnivel,
             },
         },
     }
@@ -618,10 +683,15 @@ def main(argv=None) -> int:
         print(error, file=sys.stderr)
         return 1
 
-    construir(fuentes, proyecto, salida,
-              sin_imagenes=argumentos.sin_imagenes,
-              forzar_imagenes=argumentos.forzar_imagenes,
-              sin_calibrar=argumentos.sin_calibrar)
+    try:
+        construir(fuentes, proyecto, salida,
+                  sin_imagenes=argumentos.sin_imagenes,
+                  forzar_imagenes=argumentos.forzar_imagenes,
+                  sin_calibrar=argumentos.sin_calibrar)
+    except SinPanoramas as error:
+        # "error:" es lo que la consola busca para mostrar la causa en la tarjeta.
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     return 0
 
 
