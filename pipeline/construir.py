@@ -18,7 +18,7 @@ from pathlib import Path
 from . import config, geo, horizonte, referencias, terreno, visor
 from .crm import leer_crm
 from .excel import FichaComercial, alinear_con, leer_planilla
-from .calibracion import Ajuste, aplicar, calibrar, mapa_de_caminos
+from .calibracion import DESNIVELES_PROBADOS, Ajuste, aplicar, calibrar, calibrar_altura, mapa_de_caminos
 from .imagenes import generar_niveles
 from .kmz import ParcelaGeometrica, leer_kmz, leer_lineas
 from .panoramas import (Panorama, RumboResuelto, a_vista, buscar_panoramas, por_que_no_sirven,
@@ -136,6 +136,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
 
     ajustes: dict[str, Ajuste] = {}
     niveles: dict[str, horizonte.Nivelacion] = {}
+    inclinaciones: dict[str, dict[float, tuple[float, float]]] = {}
     if sin_calibrar:
         print("Sin calibración fina contra la foto (--sin-calibrar).")
     else:
@@ -143,7 +144,8 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             print("Nivelando cada panorámica con el horizonte...")
             niveladas = []
             for panorama, rumbo, vista in vistas:
-                nivel = _nivelar(panorama, vista, cota_despegue, avisos)
+                por_desnivel = _nivelar(panorama, vista, cota_despegue, avisos)
+                nivel = por_desnivel.get(0.0, horizonte.SIN_NIVELAR)
                 niveles[vista.id] = nivel
                 if nivel.aplicada:
                     print(f"  {vista.id}: inclinación E {nivel.inclinacion_este:+.2f}° / "
@@ -151,6 +153,8 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
                           f"horizonte, quedan a {nivel.residuo:.2f}°)")
                     vista = replace(vista, inclinacion_este=nivel.inclinacion_este,
                                     inclinacion_norte=nivel.inclinacion_norte)
+                    inclinaciones[vista.id] = {d: (n.inclinacion_este, n.inclinacion_norte)
+                                               for d, n in por_desnivel.items() if n.aplicada}
                 else:
                     print(f"  {vista.id}: sin nivelar ({nivel.motivo})")
                 niveladas.append((panorama, rumbo, vista))
@@ -160,7 +164,13 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         calibradas = []
         for panorama, rumbo, vista in vistas:
             modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
-            ajuste = calibrar(vista, lineas, modelo, mapa_de_caminos(panorama.ruta))
+            mapa = mapa_de_caminos(panorama.ruta)
+            if vista.id in inclinaciones:
+                # Nivelada: la altura del dron se elige con los caminos y la
+                # inclinación la sigue dando el horizonte (ver calibrar_altura).
+                ajuste = calibrar_altura(vista, lineas, modelo, mapa, inclinaciones[vista.id])
+            else:
+                ajuste = calibrar(vista, lineas, modelo, mapa)
             ajustes[vista.id] = ajuste
             print(f"  {vista.id}: giro {ajuste.giro:+.2f}°, inclinación E {ajuste.inclinacion_este:+.2f}° "
                   f"/ N {ajuste.inclinacion_norte:+.2f}°, desnivel {ajuste.desnivel:+.1f} m  "
@@ -290,16 +300,18 @@ def _leer_fichas(fuentes: config.Fuentes, proyecto: config.Proyecto,
 
 
 def _nivelar(panorama: Panorama, vista: Vista, cota_despegue: float,
-             avisos: Avisos) -> horizonte.Nivelacion:
-    """La nivelación de una vista. Sin red para el DEM lejano se avisa y se sigue."""
+             avisos: Avisos) -> dict[float, horizonte.Nivelacion]:
+    """La nivelación de una vista para cada desnivel que la calibración va a probar.
+    Sin red para el DEM lejano se avisa y se sigue sin nivelar."""
     # El dron mide la altura desde el despegue; el perfil se calcula en el datum del DEM.
     altura = cota_despegue + vista.altura_relativa
     try:
         perfil = horizonte.perfil(vista.lon, vista.lat, altura, config.CACHE_TERRENO)
     except (OSError, ValueError) as error:
         avisos.añadir(f"{vista.id}: no pude cargar el relieve lejano para nivelar ({error})")
-        return horizonte.SIN_NIVELAR
-    return horizonte.nivelar(horizonte.cargar_imagen(panorama.ruta), perfil, vista.rumbo0, vista.giro)
+        return {}
+    return horizonte.nivelar_por_desnivel(horizonte.cargar_imagen(panorama.ruta), perfil,
+                                          vista.rumbo0, list(DESNIVELES_PROBADOS), vista.giro)
 
 
 def _cargar_terreno(geometrias: list[ParcelaGeometrica], panoramas: list[Panorama],

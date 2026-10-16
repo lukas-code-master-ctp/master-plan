@@ -7,7 +7,7 @@ from PIL import Image
 
 from pipeline import horizonte
 from pipeline.calibracion import _proyectar
-from pipeline.horizonte import Perfil, nivelar, perfil
+from pipeline.horizonte import Perfil, nivelar, nivelar_por_desnivel, perfil
 
 RUMBO0 = 37.0
 ANCHO = 3600
@@ -102,3 +102,27 @@ def test_el_perfil_de_un_terreno_plano_es_el_horizonte_geometrico(tmp_path):
     # El horizonte de una esfera con refracción: la curvatura le gana a la altura.
     assert np.all(resultado.elevacion < -0.4) and np.all(resultado.elevacion > -0.9)
     assert np.all(resultado.distancia > 50000)
+
+
+def test_bajar_el_perfil_sube_los_cerros():
+    """Desde 50 m más abajo, un cerro a 5 km se ve 0,57° más alto."""
+    llano = Perfil(np.array([0.0, 90.0]), np.array([0.0, -1.0]), np.array([5000.0, 5000.0]))
+
+    bajado = llano.bajado(50.0)
+
+    assert bajado.elevacion[0] == pytest.approx(np.degrees(np.arctan(50 / 5000)), abs=1e-6)
+    assert bajado.elevacion[1] > -1.0
+
+
+def test_nivela_para_cada_desnivel():
+    """La inclinación que calza depende de la altura supuesta: con el dron 40 m más
+    abajo, el horizonte de la foto pide otra."""
+    dem = perfil_de_cerros()
+    foto = foto_con_horizonte(dem.bajado(40.0), 0.6, 1.2)
+
+    niveles = nivelar_por_desnivel(foto, dem, RUMBO0, [-20.0, 20.0, 40.0])
+
+    assert sorted(niveles) == [-20.0, 0.0, 20.0, 40.0]
+    assert niveles[40.0].inclinacion_este == pytest.approx(0.6, abs=0.08)
+    assert niveles[40.0].inclinacion_norte == pytest.approx(1.2, abs=0.08)
+    assert niveles[0.0].aplicada

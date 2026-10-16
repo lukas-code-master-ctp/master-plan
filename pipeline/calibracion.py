@@ -14,12 +14,21 @@ contra ruido. También se descarta uno que queda pegado al tope de algún parám
 eso no es el residuo chico que se busca corregir sino la búsqueda arrastrando las
 líneas hacia otra cosa clara (en Hacienda Vichuquén, con el sol bajo, los potreros
 secos), y el dibujo queda corrido.
+
+Cuando la foto se pudo nivelar con el horizonte hay una búsqueda mejor:
+`calibrar_altura`. La altura del dron sobre el suelo no es segura (en Lomas de
+Quillón el dibujo pedía el dron ~55 m más abajo de lo que decía, y todo quedaba
+estirado hacia afuera un 10 %), y la inclinación que da el horizonte depende de esa
+altura. Así que se prueba cada desnivel con la inclinación que el horizonte da para
+él, y los caminos eligen el desnivel y el giro. Las inclinaciones quedan atadas al
+horizonte: sueltas, los caminos las arrastran hacia cualquier cosa clara.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Mapping
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -43,6 +52,12 @@ LIMITE_GIRO = 1.5
 LIMITE_INCLINACION = 2.0
 LIMITE_DESNIVEL = 15.0
 MEJORA_MINIMA = 0.03
+
+# La búsqueda de la altura (ver calibrar_altura): de gruesa a fina, en (desnivel m, giro °).
+PASOS_ALTURA = ((5.0, 0.1), (1.0, 0.02))
+# Los desniveles donde se nivela con el horizonte; entre ellos se interpola. Quillón
+# pedía ~55 m, y más allá de 80 m (16 % de 500) ya sería otra cosa que la altura.
+DESNIVELES_PROBADOS = tuple(float(d) for d in range(-80, 81, 10))
 
 
 @dataclass(frozen=True)
@@ -133,6 +148,74 @@ def calibrar(vista: Vista, lineas: list[geo.Anillo], cota: ModeloTerreno | None,
                     desnivel=round(float(actual[3]), 1),
                     puntaje_antes=antes, puntaje_despues=mejor)
     tope = _en_el_tope(actual)
+    if tope:
+        return replace(SIN_AJUSTE, puntaje_antes=antes, puntaje_despues=antes, tope=tope)
+    if ajuste.mejora < MEJORA_MINIMA:
+        return replace(SIN_AJUSTE, puntaje_antes=antes, puntaje_despues=mejor)
+    return ajuste
+
+
+def calibrar_altura(vista: Vista, lineas: list[geo.Anillo], cota: ModeloTerreno | None,
+                    mapa: np.ndarray, inclinaciones: Mapping[float, tuple[float, float]]) -> Ajuste:
+    """El desnivel y el giro que mejor ponen las líneas sobre los caminos, con las
+    inclinaciones que el horizonte da para cada desnivel.
+
+    `inclinaciones` va del desnivel (m) a la nivelación (este, norte) en grados; entre
+    uno y otro se interpola. La vista llega nivelada para el desnivel que ya trae.
+    """
+    muestras = _muestras(lineas, vista, cota)
+    if len(muestras) < 50 or len(inclinaciones) < 3:
+        return SIN_AJUSTE
+    este, norte, cotas = muestras.T
+    distancia = np.hypot(este, norte)
+    caida = vista.altura_absoluta - cotas
+    azimut = np.arctan2(este, norte)
+    alto, ancho = mapa.shape
+    tabla = np.array([(d, *inclinaciones[d]) for d in sorted(inclinaciones)])
+    minimo, maximo = tabla[0, 0], tabla[-1, 0]
+
+    def inclinacion(desnivel: float) -> tuple[float, float]:
+        return (float(np.interp(desnivel, tabla[:, 0], tabla[:, 1])),
+                float(np.interp(desnivel, tabla[:, 0], tabla[:, 2])))
+
+    def puntaje(desnivel: float, giro: float) -> float:
+        az, el = _proyectar(azimut, caida - desnivel, distancia, vista.giro + giro, *inclinacion(desnivel))
+        return _muestrear(mapa, ((az - vista.rumbo0) % 360.0) / 360.0 * ancho, (90.0 - el) / 180.0 * alto)
+
+    antes = puntaje(vista.desnivel, 0.0)
+    if antes <= 0:
+        return SIN_AJUSTE
+    mejor, desnivel, giro = antes, vista.desnivel, 0.0
+    for paso_desnivel, paso_giro in PASOS_ALTURA:
+        if paso_desnivel == PASOS_ALTURA[0][0]:
+            desniveles = np.arange(minimo, maximo + 1e-9, paso_desnivel)
+            giros = np.arange(-LIMITE_GIRO, LIMITE_GIRO + 1e-9, paso_giro)
+        else:
+            anterior = PASOS_ALTURA[0]
+            desniveles = np.clip(desnivel + np.arange(-anterior[0], anterior[0] + 1e-9, paso_desnivel),
+                                 minimo, maximo)
+            giros = np.clip(giro + np.arange(-anterior[1], anterior[1] + 1e-9, paso_giro),
+                            -LIMITE_GIRO, LIMITE_GIRO)
+        for d in desniveles:
+            for g in giros:
+                valor = puntaje(float(d), float(g))
+                if valor > mejor + 1e-9:
+                    mejor, desnivel, giro = valor, float(d), float(g)
+
+    este_i, norte_i = inclinacion(desnivel)
+    ajuste = Ajuste(giro=round(giro, 3),
+                    inclinacion_este=round(este_i - vista.inclinacion_este, 3),
+                    inclinacion_norte=round(norte_i - vista.inclinacion_norte, 3),
+                    desnivel=round(desnivel - vista.desnivel, 1),
+                    puntaje_antes=antes, puntaje_despues=mejor)
+    # En el borde del rango probado el óptimo puede estar más allá: no es confiable.
+    holgura_d, holgura_g = PASOS_ALTURA[-1]
+    topes = []
+    if min(desnivel - minimo, maximo - desnivel) < holgura_d:
+        topes.append(f"desnivel {desnivel:+.0f} m")
+    if abs(giro) >= LIMITE_GIRO - holgura_g / 2:
+        topes.append(f"giro {giro:+.1f}°")
+    tope = ", ".join(topes)
     if tope:
         return replace(SIN_AJUSTE, puntaje_antes=antes, puntaje_despues=antes, tope=tope)
     if ajuste.mejora < MEJORA_MINIMA:
