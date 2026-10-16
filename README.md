@@ -488,13 +488,22 @@ de 2,5 km no cuenta (son árboles y casas que el DEM no tiene), y si no se disti
 
 ## El calce fino
 
-Con el sol, el terreno y el nivel resueltos queda un residuo de ~0,5–1°: el GPS del
-dron tiene unos metros de error y el DEM también. Como el KMZ trae los caminos y los
-caminos de tierra se ven claros en la foto, el pipeline ajusta por vista un giro, dos
-inclinaciones y un desnivel, a partir de la pose nivelada, hasta que las líneas del
-KMZ caen sobre los píxeles de camino. El ajuste queda en `vistas.json`
-(`diagnostico.calibracion`, y la suma de los dos pasos en `diagnostico.pose`); si no
-mejora el calce al menos un 3 % se descarta, y `--sin-calibrar` apaga los dos pasos.
+Con el sol, el terreno y el nivel resueltos queda un residuo: el GPS del dron tiene
+unos metros de error, el DEM también, y la altura del dron sobre el suelo no es
+segura. Como el KMZ trae los caminos y los caminos de tierra se ven claros en la
+foto, el pipeline ajusta la pose por vista hasta que las líneas del KMZ caen sobre
+los píxeles de camino.
+
+Si la foto se niveló con el horizonte, lo que se busca es la altura: se prueba el
+dron entre 80 m más abajo y 80 m más arriba de lo que dice, cada altura con la
+inclinación que el horizonte da para ella, y los caminos eligen la altura y el giro.
+En Lomas de Quillón el dibujo pedía el dron ~60 m más abajo: con la altura del dron
+todo quedaba estirado hacia afuera (la casa de la 2-7 caía en la 2-8 y el camino
+Caimaco dentro de las parcelas), y contra Google Earth el error mediano bajó de 24 m
+a 6 m. Sin nivelar se ajustan, como antes, un giro, dos inclinaciones y un desnivel
+chico. El ajuste queda en `vistas.json` (`diagnostico.calibracion`, y la pose final
+en `diagnostico.pose`); si no mejora el calce al menos un 3 %, o queda en el borde
+de lo probado, se descarta, y `--sin-calibrar` apaga los dos pasos.
 
 ## El KMZ
 

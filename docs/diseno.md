@@ -46,6 +46,13 @@ El sol no dice si la foto quedó horizontal. Desde octubre de 2026 se nivela con
 horizonte que predice el DEM (ver `horizonte.py` y el README): en Lomas de Quillón la
 panorámica de 500 m venía 1,3° caída y eso corría el loteo 30–40 m.
 
+La inclinación que da el horizonte depende de la altura que se suponga para el dron
+(un cerro a 3 km sube 1° con el dron 50 m más abajo), y esa altura tampoco es segura:
+en Quillón el dibujo calzaba con el dron ~60 m más abajo de lo que decía. Por eso la
+calibración contra los caminos elige la altura, y la inclinación de cada altura la
+sigue poniendo el horizonte (`calibracion.calibrar_altura`). Dejar la inclinación
+suelta en esa búsqueda la arrastraba a otra cosa clara y empeoraba el calce.
+
 ### Supuesto de terreno
 
 La proyección asume el suelo plano a la altura del despegue. Produce un desfase vertical

@@ -15,6 +15,11 @@ deja empezando cerca del óptimo: esa búsqueda tiene topes chicos a propósito 
 desnivel de 1,5° la mandaba al tope y se descartaba.
 
 No toca el giro: el sol lo resuelve mejor que un perfil de cerros.
+
+La inclinación que sale depende de la altura que se suponga para el dron: un cerro a
+3 km sube 1° si el dron está 50 m más abajo. Por eso `nivelar_por_desnivel` da la
+nivelación para varias alturas, y la calibración elige la altura con la foto (ver
+calibracion.calibrar_altura).
 """
 from __future__ import annotations
 
@@ -66,6 +71,13 @@ class Perfil:
     azimut: np.ndarray       # grados
     elevacion: np.ndarray    # grados
     distancia: np.ndarray    # metros hasta el punto que forma el horizonte
+
+    def bajado(self, metros: float) -> Perfil:
+        """El horizonte visto desde `metros` más abajo. Aproximado: supone que el punto
+        que forma el horizonte sigue siendo el mismo, lo que vale para unas decenas de
+        metros y ahorra recalcular el perfil para cada altura."""
+        tangente = np.tan(np.radians(self.elevacion)) + metros / np.maximum(self.distancia, 1.0)
+        return Perfil(self.azimut, np.degrees(np.arctan(tangente)), self.distancia)
 
 
 @dataclass(frozen=True)
@@ -119,38 +131,74 @@ def cargar_imagen(ruta: Path, ancho: int = ANCHO_ANALISIS) -> np.ndarray:
 
 def nivelar(rgb: np.ndarray, horizonte: Perfil, rumbo0: float, giro: float = 0.0) -> Nivelacion:
     """Las inclinaciones que ponen el horizonte del DEM sobre el de la foto."""
-    lejos = horizonte.distancia >= DISTANCIA_MINIMA_M
-    if lejos.sum() < PUNTOS_MINIMOS:
-        return Nivelacion(motivo="no hay horizonte lejano a la vista")
-    azimut = np.radians(horizonte.azimut[lejos])
-    tangente = np.tan(np.radians(horizonte.elevacion[lejos]))
-    gris = rgb.mean(axis=2)
-    azul = rgb[..., 2].astype(np.float64) - rgb[..., 0]
+    return _Foto(rgb).nivelar(horizonte, rumbo0, giro)
 
-    def predecir(x):
-        return _proyectar(azimut, -tangente, np.ones_like(tangente), giro, x[0], x[1])
 
-    # Primero una búsqueda gruesa sobre todo el rango: el ajuste fino solo mira cerca de
-    # donde ya está, y partiendo de cero se queda con bordes de nubes o de bruma.
-    x = _busqueda_gruesa(_mapa_de_bordes(gris, azul), predecir, rumbo0)
-    medidas = validos = None
-    for ventana in VENTANAS_GRADOS:
-        az, el = predecir(x)
-        medidas, validos = _medir(gris, azul, az, el, rumbo0, ventana)
-        if validos.sum() < PUNTOS_MINIMOS:
-            return Nivelacion(puntos=int(validos.sum()),
-                              motivo="no se distingue el horizonte (nubes o bruma)")
-        x = _ajustar(x, predecir, medidas, validos)
-        if np.hypot(*x) > INCLINACION_MAXIMA:
-            return Nivelacion(motivo=f"la inclinación daba {np.hypot(*x):.1f}°, demasiado para ser real")
+def nivelar_por_desnivel(rgb: np.ndarray, horizonte: Perfil, rumbo0: float,
+                         desniveles: list[float], giro: float = 0.0) -> dict[float, Nivelacion]:
+    """La nivelación suponiendo el dron cada uno de esos metros más abajo.
 
-    residuo = float(np.median(np.abs(predecir(x)[1] - medidas)[validos]))
-    if residuo > RESIDUO_MAXIMO:
-        return Nivelacion(puntos=int(validos.sum()), residuo=round(residuo, 3),
-                          motivo=f"el horizonte no calza ni nivelado (queda a {residuo:.2f}°)")
-    return Nivelacion(inclinacion_este=round(float(x[0]), 3),
-                      inclinacion_norte=round(float(x[1]), 3),
-                      puntos=int(validos.sum()), residuo=round(residuo, 3))
+    Parte del desnivel cero con la búsqueda completa y sigue hacia arriba y hacia abajo
+    desde la solución vecina, que cambia poco de una altura a la siguiente.
+    """
+    foto = _Foto(rgb)
+    resultado = {0.0: foto.nivelar(horizonte, rumbo0, giro)}
+    for tramo in (sorted(d for d in desniveles if d > 0), sorted((d for d in desniveles if d < 0), reverse=True)):
+        anterior = resultado[0.0]
+        for desnivel in tramo:
+            desde = (np.array([anterior.inclinacion_este, anterior.inclinacion_norte])
+                     if anterior.aplicada else None)
+            anterior = foto.nivelar(horizonte.bajado(desnivel), rumbo0, giro, desde)
+            resultado[float(desnivel)] = anterior
+    return {float(d): resultado[float(d)] for d in sorted(set(desniveles) | {0.0})}
+
+
+class _Foto:
+    """Lo que la nivelación saca de la foto, calculado una vez para varias alturas."""
+
+    def __init__(self, rgb: np.ndarray):
+        self.gris = rgb.mean(axis=2)
+        self.azul = rgb[..., 2].astype(np.float64) - rgb[..., 0]
+        self._bordes = None
+
+    @property
+    def bordes(self) -> np.ndarray:
+        if self._bordes is None:
+            self._bordes = _mapa_de_bordes(self.gris, self.azul)
+        return self._bordes
+
+    def nivelar(self, horizonte: Perfil, rumbo0: float, giro: float,
+                desde: np.ndarray | None = None) -> Nivelacion:
+        lejos = horizonte.distancia >= DISTANCIA_MINIMA_M
+        if lejos.sum() < PUNTOS_MINIMOS:
+            return Nivelacion(motivo="no hay horizonte lejano a la vista")
+        azimut = np.radians(horizonte.azimut[lejos])
+        tangente = np.tan(np.radians(horizonte.elevacion[lejos]))
+
+        def predecir(x):
+            return _proyectar(azimut, -tangente, np.ones_like(tangente), giro, x[0], x[1])
+
+        # Primero una búsqueda gruesa sobre todo el rango: el ajuste fino solo mira cerca
+        # de donde ya está, y partiendo de cero se queda con bordes de nubes o de bruma.
+        x = _busqueda_gruesa(self.bordes, predecir, rumbo0) if desde is None else desde
+        medidas = validos = None
+        for ventana in VENTANAS_GRADOS:
+            az, el = predecir(x)
+            medidas, validos = _medir(self.gris, self.azul, az, el, rumbo0, ventana)
+            if validos.sum() < PUNTOS_MINIMOS:
+                return Nivelacion(puntos=int(validos.sum()),
+                                  motivo="no se distingue el horizonte (nubes o bruma)")
+            x = _ajustar(x, predecir, medidas, validos)
+            if np.hypot(*x) > INCLINACION_MAXIMA:
+                return Nivelacion(motivo=f"la inclinación daba {np.hypot(*x):.1f}°, demasiado para ser real")
+
+        residuo = float(np.median(np.abs(predecir(x)[1] - medidas)[validos]))
+        if residuo > RESIDUO_MAXIMO:
+            return Nivelacion(puntos=int(validos.sum()), residuo=round(residuo, 3),
+                              motivo=f"el horizonte no calza ni nivelado (queda a {residuo:.2f}°)")
+        return Nivelacion(inclinacion_este=round(float(x[0]), 3),
+                          inclinacion_norte=round(float(x[1]), 3),
+                          puntos=int(validos.sum()), residuo=round(residuo, 3))
 
 
 def _mapa_de_bordes(gris: np.ndarray, azul: np.ndarray) -> np.ndarray:
