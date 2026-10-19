@@ -93,6 +93,10 @@ export class Visor {
     // botones de HTML sobre el SVG: quedan encima de las parcelas y se pueden
     // alcanzar con el teclado.
     this.puntos = [];
+    // Los esteros: una línea azul con su nombre, bajo las parcelas.
+    this.aguas = [];
+    this.nodosAgua = [];
+    this.capaAguas = null;
     this.capaPuntos = document.createElement('div');
     this.capaPuntos.className = 'puntos-360';
     elemento.append(this.capaPuntos);
@@ -196,7 +200,9 @@ export class Visor {
    * nueva se dibujaban un momento sobre la foto anterior. Devuelve false si
    * mientras tanto se pidió otra vista.
    */
-  async mostrarVista(vista, overlay, { avisar, referencias = [], caminos = [], puntos = [] } = {}) {
+  async mostrarVista(vista, overlay, {
+    avisar, referencias = [], caminos = [], puntos = [], aguas = [],
+  } = {}) {
     const token = ++this.cargaEnCurso;
     const niveles = this._nivelesUtiles(vista.imagenes);
     avisar?.('Cargando vista…');
@@ -214,6 +220,7 @@ export class Visor {
     this.referencias = referencias;
     this.caminos = caminos;
     this.puntos = puntos;
+    this.aguas = aguas;
     this._detener();
     this._limpiarNodos();
     this._crearPuntos();
@@ -443,6 +450,7 @@ export class Visor {
     if (!ancho) return;
     this._dibujarReferencias(ancho, alto);
     this._dibujarCaminos(ancho, alto);
+    this._dibujarAguas(ancho, alto);
     this._dibujarPuntos(ancho, alto);
 
     const candidatas = [];
@@ -720,6 +728,8 @@ export class Visor {
     this.capaReferencias = null;
     this.nodosCamino = [];
     this.capaCaminos = null;
+    this.nodosAgua = [];
+    this.capaAguas = null;
   }
 
   // Los accesos del KMZ: una franja amarilla bajo las parcelas, sin interacción.
@@ -752,6 +762,76 @@ export class Visor {
     }
     this.capaCaminos.append(nodo);
     this.nodosCamino[indice] = nodo;
+    return nodo;
+  }
+
+  /**
+   * Los esteros: líneas abiertas, así que no se recortan como un polígono sino que
+   * se cortan donde pasan detrás de la cámara. El nombre va en el tramo visible más
+   * cerca del centro de la pantalla, que es donde se está mirando.
+   */
+  _dibujarAguas(ancho, alto) {
+    this.aguas.forEach((agua, indice) => {
+      const nodo = this._nodoAgua(indice, agua.nombre);
+      const corridas = [];
+      for (const tramo of agua.tramos) {
+        let actual = [];
+        for (const [az, el] of tramo) {
+          const enCamara = this.camara.aCamara(az, el);
+          if (enCamara[2] > 0.05) {
+            actual.push(this.camara.aPantalla(enCamara, ancho, alto));
+          } else if (actual.length) {
+            corridas.push(actual);
+            actual = [];
+          }
+        }
+        if (actual.length >= 2) corridas.push(actual);
+      }
+      const visibles = corridas.filter((c) => c.length >= 2 && !fueraDePantalla(c, ancho, alto));
+      if (!visibles.length) {
+        nodo.grupo.style.display = 'none';
+        return;
+      }
+      nodo.grupo.style.display = '';
+      const d = visibles.map((c) => `M${c.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join('L')}`).join('');
+      nodo.linea.setAttribute('d', d);
+      nodo.borde.setAttribute('d', d);
+      let mejor = null;
+      for (const corrida of visibles) {
+        for (const [x, y] of corrida) {
+          if (x < 0 || x > ancho || y < 0 || y > alto) continue;
+          const lejania = Math.hypot(x - ancho / 2, y - alto / 2);
+          if (!mejor || lejania < mejor.lejania) mejor = { x, y, lejania };
+        }
+      }
+      nodo.nombre.style.display = mejor ? '' : 'none';
+      if (mejor) nodo.nombre.setAttribute('transform', `translate(${mejor.x.toFixed(1)} ${(mejor.y - 8).toFixed(1)})`);
+    });
+  }
+
+  _nodoAgua(indice, nombre) {
+    let nodo = this.nodosAgua[indice];
+    if (nodo) return nodo;
+    const grupo = document.createElementNS(SVG_NS, 'g');
+    grupo.setAttribute('class', 'agua');
+    const borde = document.createElementNS(SVG_NS, 'path');
+    borde.setAttribute('class', 'agua__borde');
+    const linea = document.createElementNS(SVG_NS, 'path');
+    linea.setAttribute('class', 'agua__linea');
+    const texto = document.createElementNS(SVG_NS, 'text');
+    texto.setAttribute('class', 'agua__nombre');
+    texto.textContent = nombre;
+    grupo.append(borde, linea, texto);
+    // Sobre los caminos y bajo las parcelas, como los hitos: nadie que recorra el
+    // overlay buscando parcelas se lo encuentra.
+    if (!this.capaAguas) {
+      this.capaAguas = document.createElementNS(SVG_NS, 'g');
+      this.capaAguas.setAttribute('class', 'aguas');
+      this.svg.prepend(this.capaAguas);
+    }
+    this.capaAguas.append(grupo);
+    nodo = { grupo, borde, linea, nombre: texto };
+    this.nodosAgua[indice] = nodo;
     return nodo;
   }
 

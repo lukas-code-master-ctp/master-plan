@@ -37,6 +37,7 @@ export class Catalogo {
     this.referencias = new Map();
     this.caminos = new Map();
     this.puntos = new Map();
+    this.aguas = new Map();
   }
 
   static async cargar() {
@@ -64,6 +65,7 @@ export class Catalogo {
       // Los sitios construidos antes de los caminos no los traen.
       this.caminos.set(idVista, datos.caminos ?? []);
       this.puntos.set(idVista, datos.puntos ?? []);
+      this.aguas.set(idVista, datos.aguas ?? []);
     }
     return this.overlays.get(idVista);
   }
@@ -76,6 +78,11 @@ export class Catalogo {
   /** Los accesos del KMZ en una vista, cada uno como sus anillos. Pide antes overlayDe. */
   caminosDe(idVista) {
     return this.caminos.get(idVista) ?? [];
+  }
+
+  /** Los esteros de una vista, cada uno con sus tramos visibles. Pide antes overlayDe. */
+  aguasDe(idVista) {
+    return this.aguas.get(idVista) ?? [];
   }
 
   /** Dónde caen en esta vista los otros puntos de vuelo. Pide antes overlayDe. */

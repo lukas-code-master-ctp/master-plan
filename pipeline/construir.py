@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from dataclasses import dataclass, replace
@@ -20,7 +21,7 @@ from .crm import leer_crm
 from .excel import FichaComercial, alinear_con, leer_planilla
 from .calibracion import DESNIVELES_PROBADOS, Ajuste, aplicar, calibrar, calibrar_altura, mapa_de_caminos
 from .imagenes import generar_niveles
-from .kmz import ParcelaGeometrica, leer_caminos, leer_kmz, leer_lineas
+from .kmz import ParcelaGeometrica, leer_aguas, leer_caminos, leer_kmz, leer_lineas
 from .panoramas import (Panorama, RumboResuelto, a_vista, buscar_panoramas, por_que_no_sirven,
                         resolver_rumbo)
 from .proyeccion import ModeloTerreno, Vista, proyectar_parcela, proyectar_punto, proyectar_vista
@@ -43,6 +44,8 @@ PENALIZACION_DEPRESION = 0.5
 TOPE_AREA_POR_PARCELA = 50.0
 # Dos puntos de vuelo más cerca que esto son el mismo lugar a distinta altura.
 DISTANCIA_MINIMA_ENTRE_PUNTOS_M = 15.0
+# Cada cuánto se toma un punto de un estero para que siga el terreno.
+PASO_AGUA_M = 8.0
 
 
 @dataclass
@@ -88,6 +91,9 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
     caminos = leer_caminos(fuentes.kmz)
     if caminos:
         print(f"  {len(caminos)} caminos dibujados")
+    aguas = leer_aguas(fuentes.kmz)
+    if aguas:
+        print(f"  agua: {', '.join(sorted({nombre for nombre, _ in aguas}))}")
 
     fichas = _leer_fichas(fuentes, proyecto, avisos)
     cruces: list[str] = []
@@ -215,6 +221,8 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             ],
             # Los accesos del KMZ, para que se vea por dónde se llega a cada lote.
             "caminos": _proyectar_caminos(vista, caminos, modelo),
+            # Los esteros y canales que la loteadora marcó en el KMZ.
+            "aguas": _proyectar_aguas(vista, aguas, modelo),
             # Los otros puntos de vuelo, para saltar a su 360 tocándolos en la foto.
             "puntos": _proyectar_puntos(vista, [v for _, _, v in vistas], modelo),
             "parcelas": [
@@ -259,6 +267,9 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         "estados": config.ESTADOS,
         "resumen": _resumen(parcelas),
         "parcelas": parcelas,
+        # Para el plano: el trazo de cada estero en lon/lat.
+        "aguas": [{"nombre": nombre, "linea": [_redondear_punto(p) for p in puntos]}
+                  for nombre, puntos in aguas],
         "otros_poligonos": [
             {"poligono": _redondear_anillo(g.anillo),
              "motivo": "no_en_venta" if not g.en_venta else "sin_identificar"}
@@ -320,6 +331,45 @@ def _proyectar_caminos(vista: Vista, caminos: list[list[geo.Anillo]],
         partes = [proyectar_parcela(vista, "camino", anillo, modelo) for anillo in anillos]
         proyectados.append([[list(v) for v in parte.anillo] for parte in partes if parte])
     return proyectados
+
+
+def _proyectar_aguas(vista: Vista, aguas: list[tuple[str, list[geo.Punto]]],
+                     modelo: ModeloTerreno | None) -> list[dict]:
+    """Cada estero como sus tramos visibles en azimut y elevación.
+
+    Es una línea abierta, no un polígono: se densifica para que siga el terreno y se
+    corta donde se aleja más de lo que el visor muestra, para no tender una recta
+    entre dos tramos lejanos.
+    """
+    proyectadas = []
+    for nombre, puntos in aguas:
+        tramos: list[list[list[float]]] = []
+        actual: list[list[float]] = []
+        for punto in _densificar(puntos, PASO_AGUA_M):
+            cota = modelo(punto) if modelo else None
+            azimut, elevacion, distancia = proyectar_punto(vista, punto, cota)
+            if distancia > config.DISTANCIA_MAXIMA_M:
+                if len(actual) >= 2:
+                    tramos.append(actual)
+                actual = []
+                continue
+            actual.append([round(azimut, config.DECIMALES_ANGULO), round(elevacion, config.DECIMALES_ANGULO)])
+        if len(actual) >= 2:
+            tramos.append(actual)
+        if tramos:
+            proyectadas.append({"nombre": nombre, "tramos": tramos})
+    return proyectadas
+
+
+def _densificar(puntos: list[geo.Punto], paso_m: float) -> list[geo.Punto]:
+    """La línea con un punto cada `paso_m` metros como mucho: en la foto una recta
+    del suelo es una curva, y así sube y baja con el terreno."""
+    densos = [puntos[0]]
+    for inicio, fin in zip(puntos, puntos[1:]):
+        pasos = max(1, math.ceil(geo.distancia(inicio, fin) / paso_m))
+        densos += [(inicio[0] + (fin[0] - inicio[0]) * k / pasos, inicio[1] + (fin[1] - inicio[1]) * k / pasos)
+                   for k in range(1, pasos + 1)]
+    return densos
 
 
 def _proyectar_puntos(vista: Vista, todas: list[Vista],

@@ -141,6 +141,7 @@ async function cambiarVista(vista) {
     referencias: estado.catalogo.referenciasDe(vista.id),
     caminos: estado.catalogo.caminosDe(vista.id),
     puntos: estado.catalogo.puntosDe(vista.id),
+    aguas: estado.catalogo.aguasDe(vista.id),
   });
   // Mientras cargaba eligieron otra vista: esa se encarga del resto.
   if (!mostrada) return;

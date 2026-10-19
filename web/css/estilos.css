@@ -1979,3 +1979,19 @@ button { cursor: pointer; }
 .punto-360:focus-visible { outline: none; }
 /* Con una parcela elegida, los puntos dan un paso atrás como las demás parcelas. */
 .visor:has(.overlay--con-seleccion) .punto-360 { opacity: 0.35; }
+
+/* Los esteros del KMZ (visor.js, _dibujarAguas): azul, con un borde oscuro que lo
+   despega del bosque, y su nombre en cursiva como en un mapa. */
+.agua { pointer-events: none; }
+.agua__borde, .agua__linea { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.agua__borde { stroke: rgb(0 30 60 / 0.45); stroke-width: 6.5; }
+.agua__linea { stroke: #3fa9ff; stroke-width: 4; }
+.agua__nombre {
+  font: italic 600 0.6875rem var(--sans);
+  letter-spacing: 0.04em;
+  fill: #d6eeff;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgb(0 30 60 / 0.7);
+  stroke-width: 3px;
+}

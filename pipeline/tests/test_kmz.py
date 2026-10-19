@@ -446,3 +446,34 @@ def test_leer_caminos_no_toma_los_deslindes(tmp_path):
                                      + punto("LOTE 2", desplazar(105, 35))))
 
     assert leer_caminos(ruta) == []
+
+
+def estero(nombre, puntos):
+    return (f"<Placemark><name>{nombre}</name>"
+            f"<LineString><coordinates>{coords(puntos)}</coordinates></LineString></Placemark>")
+
+
+def test_un_estero_del_kmz_se_lee_aparte_y_no_parte_los_lotes(tmp_path):
+    """Lomas de Quillón: el estero corre por el borde norte de los lotes. Agregado en
+    Google Earth como una ruta "Estero", no puede volverse deslinde ni camino."""
+    from pipeline.kmz import leer_aguas, leer_caminos
+    # Cruza los dos lotes por el medio: como deslinde los partiría en cuatro.
+    trazo = [desplazar(-10, 35), desplazar(150, 35)]
+    ruta = guardar_kmz(tmp_path, kml(rejilla_de_dos() + punto("LOTE 1", desplazar(35, 50))
+                                     + punto("LOTE 2", desplazar(105, 50)) + estero("Estero Coihueco", trazo)))
+
+    [(nombre, puntos)] = leer_aguas(ruta)
+    assert nombre == "Estero Coihueco"
+    assert puntos == [pytest.approx(p, abs=1e-9) for p in trazo]
+    assert sorted(p.id for p in leer_kmz(ruta)) == ["1", "2"]
+    assert leer_caminos(ruta) == []
+
+
+@pytest.mark.parametrize("nombre, es_agua", [
+    ("Estero", True), ("estero las Toscas", True), ("Río Itata", True), ("Rio Itata", True),
+    ("Quebrada Honda", True), ("Canal de regadío", True), ("LOTE 7", False), ("Laguna", False),
+    ("Esterilla", False),
+])
+def test_que_nombres_cuentan_como_agua(nombre, es_agua):
+    from pipeline.kmz import NOMBRE_DE_AGUA
+    assert bool(NOMBRE_DE_AGUA.match(nombre)) is es_agua

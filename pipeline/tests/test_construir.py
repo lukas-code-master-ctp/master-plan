@@ -222,3 +222,22 @@ def test_marca_el_suelo_bajo_cada_otro_punto_una_vez_por_punto():
     # 100 m más abajo y a 500 m: unos 11° bajo el horizonte.
     assert puntos[0]["el"] == pytest.approx(-11.3, abs=0.1)
     assert puntos[0]["distancia_m"] == pytest.approx(500, abs=1)
+
+
+def test_un_estero_se_proyecta_como_linea_y_se_corta_lejos():
+    from pipeline.construir import _proyectar_aguas
+    from pipeline.proyeccion import Vista
+
+    aqui = Vista(id="p01-100", posicion=1, lon=-72.0, lat=-35.0, altura_relativa=100.0,
+                 altura_absoluta=400.0, rumbo0=0.0)
+    norte = lambda m: (-72.0, -35.0 + m / 111320.0)
+    # De 100 m a 300 m al norte, y un tramo a 5 km que el visor no muestra.
+    aguas = [("Estero", [norte(100), norte(300)]), ("Río lejano", [norte(5000), norte(5100)])]
+
+    proyectadas = _proyectar_aguas(aqui, aguas, None)
+
+    assert [a["nombre"] for a in proyectadas] == ["Estero"]
+    tramo = proyectadas[0]["tramos"][0]
+    assert len(tramo) > 20                      # densificado para seguir el terreno
+    assert all(az == pytest.approx(0.0, abs=0.05) for az, _ in tramo)
+    assert tramo[0][1] == pytest.approx(-45.0, abs=0.1) and tramo[-1][1] == pytest.approx(-18.43, abs=0.1)

@@ -93,3 +93,23 @@ test('un hito con tiempo de viaje dice el tiempo; sin él, los kilómetros', () 
   assert.equal(textoReferencia({ nombre: 'Quillón', distancia_km: 6.4, tiempo: '10 min' }), 'QUILLÓN · 10 MIN');
   assert.equal(textoReferencia({ nombre: 'Cauquenes', distancia_km: 12.4 }), 'CAUQUENES · 12 KM');
 });
+
+test('los esteros de una vista llegan con su overlay, y un sitio viejo no trae ninguno', async () => {
+  const catalogo = catalogoCon([vista('p01-500', 1, 500), vista('p02-500', 2, 500)]);
+  const estero = { nombre: 'Estero', tramos: [[[10, -40], [12, -41]]] };
+  const respuestas = {
+    'datos/vistas/p01-500.json': { parcelas: [], aguas: [estero] },
+    'datos/vistas/p02-500.json': { parcelas: [] },
+  };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (ruta) => ({ ok: true, json: async () => respuestas[ruta] });
+  try {
+    await catalogo.overlayDe('p01-500');
+    await catalogo.overlayDe('p02-500');
+  } finally {
+    globalThis.fetch = original;
+  }
+
+  assert.deepEqual(catalogo.aguasDe('p01-500'), [estero]);
+  assert.deepEqual(catalogo.aguasDe('p02-500'), []);
+});

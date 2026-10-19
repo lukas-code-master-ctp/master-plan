@@ -548,6 +548,13 @@ menos de 200 m² (cotas, restos) se descarta. Cada vista los trae en
 `datos/vistas/<id>.json` (`caminos`) y el visor los pinta en amarillo bajo las
 parcelas. Un sitio construido antes no los tiene hasta que se vuelve a construir.
 
+**Esteros.** El topógrafo no los dibuja, así que la loteadora los agrega en Google
+Earth como una ruta (o un polígono) cuyo nombre empieza por Estero, Río, Quebrada,
+Canal, Arroyo, Acequia o Vertiente ("Estero Coihueco"), y guarda el KMZ de nuevo. Esas
+rutas no cuentan como deslindes ni como caminos: se leen aparte (`leer_aguas`), cada
+vista las trae en `aguas` y el visor las dibuja en azul con su nombre, también en el
+plano.
+
 **Los otros puntos.** Cada vista trae también dónde cae el suelo bajo los demás puntos
 de vuelo (`puntos`, uno por punto), y el visor pone ahí un botón "360° · Punto III"
 que salta a esa vista. Igual que los caminos, aparecen al volver a construir.
