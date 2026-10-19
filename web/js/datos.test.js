@@ -48,3 +48,23 @@ test('el conteo por estado cuenta todas las parcelas de cada estado', () => {
   assert.deepEqual(conteoPorEstado(parcelas),
                    new Map([['disponible', 3], ['vendido', 1], ['reservado', 1]]));
 });
+
+test('los caminos de una vista llegan con su overlay, y un sitio viejo no trae ninguno', async () => {
+  const catalogo = catalogoCon([vista('p01-500', 1, 500), vista('p02-500', 2, 500)]);
+  const camino = [[[10, -40], [12, -40], [12, -42]]];
+  const respuestas = {
+    'datos/vistas/p01-500.json': { parcelas: [], caminos: [camino] },
+    'datos/vistas/p02-500.json': { parcelas: [] },
+  };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (ruta) => ({ ok: true, json: async () => respuestas[ruta] });
+  try {
+    await catalogo.overlayDe('p01-500');
+    await catalogo.overlayDe('p02-500');
+  } finally {
+    globalThis.fetch = original;
+  }
+
+  assert.deepEqual(catalogo.caminosDe('p01-500'), [camino]);
+  assert.deepEqual(catalogo.caminosDe('p02-500'), []);
+});

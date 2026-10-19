@@ -26,6 +26,7 @@ export class Catalogo {
     this.vistaInicial = this.vistaPorId.get(vistas.inicial) ?? this.vistas[0];
     this.overlays = new Map();
     this.referencias = new Map();
+    this.caminos = new Map();
   }
 
   static async cargar() {
@@ -50,6 +51,8 @@ export class Catalogo {
       const datos = await pedirJson(`${RUTA_DATOS}/vistas/${idVista}.json`);
       this.overlays.set(idVista, new Map(datos.parcelas.map((p) => [p.id, p])));
       this.referencias.set(idVista, datos.referencias ?? []);
+      // Los sitios construidos antes de los caminos no los traen.
+      this.caminos.set(idVista, datos.caminos ?? []);
     }
     return this.overlays.get(idVista);
   }
@@ -57,6 +60,11 @@ export class Catalogo {
   /** Los hitos del horizonte de una vista (pueblos cercanos). Pide antes overlayDe. */
   referenciasDe(idVista) {
     return this.referencias.get(idVista) ?? [];
+  }
+
+  /** Los accesos del KMZ en una vista, cada uno como sus anillos. Pide antes overlayDe. */
+  caminosDe(idVista) {
+    return this.caminos.get(idVista) ?? [];
   }
 
   posiciones() {

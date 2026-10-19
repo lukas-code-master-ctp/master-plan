@@ -70,6 +70,9 @@ export class Visor {
     this.referencias = [];
     this.nodosReferencia = [];
     this.capaReferencias = null;
+    this.caminos = [];
+    this.nodosCamino = [];
+    this.capaCaminos = null;
     this.halo = null;
     this.nodos = new Map();
     // Grupos de parcelas vecinas (grupos.js): cuáles se ven como burbuja y cuál
@@ -167,7 +170,7 @@ export class Visor {
    * nueva se dibujaban un momento sobre la foto anterior. Devuelve false si
    * mientras tanto se pidió otra vista.
    */
-  async mostrarVista(vista, overlay, { avisar, referencias = [] } = {}) {
+  async mostrarVista(vista, overlay, { avisar, referencias = [], caminos = [] } = {}) {
     const token = ++this.cargaEnCurso;
     const niveles = this._nivelesUtiles(vista.imagenes);
     avisar?.('Cargando vista…');
@@ -183,6 +186,7 @@ export class Visor {
     this.vista = vista;
     this.overlay = overlay;
     this.referencias = referencias;
+    this.caminos = caminos;
     this._limpiarNodos();
     this._subirTextura(primera);
     this._pintar();
@@ -323,6 +327,7 @@ export class Visor {
     const { ancho, alto } = this;
     if (!ancho) return;
     this._dibujarReferencias(ancho, alto);
+    this._dibujarCaminos(ancho, alto);
 
     const candidatas = [];
     const enPantalla = [];
@@ -587,6 +592,41 @@ export class Visor {
     this.nodos.clear();
     this.nodosReferencia = [];
     this.capaReferencias = null;
+    this.nodosCamino = [];
+    this.capaCaminos = null;
+  }
+
+  // Los accesos del KMZ: una franja amarilla bajo las parcelas, sin interacción.
+  _dibujarCaminos(ancho, alto) {
+    this.caminos.forEach((anillos, indice) => {
+      const nodo = this._nodoCamino(indice);
+      const contorno = this.camara.proyectarAnillo(anillos[0], ancho, alto);
+      if (!contorno || fueraDePantalla(contorno, ancho, alto)) {
+        nodo.style.display = 'none';
+        return;
+      }
+      // Los huecos son los lotes que encierra un camino que da la vuelta.
+      const huecos = anillos.slice(1).map((a) => this.camara.proyectarAnillo(a, ancho, alto)).filter(Boolean);
+      nodo.style.display = '';
+      nodo.setAttribute('d', [contorno, ...huecos].map(aRuta).join(''));
+    });
+  }
+
+  _nodoCamino(indice) {
+    let nodo = this.nodosCamino[indice];
+    if (nodo) return nodo;
+    nodo = document.createElementNS(SVG_NS, 'path');
+    nodo.setAttribute('class', 'camino');
+    // En su propia capa y al fondo, como los hitos: las parcelas quedan encima y
+    // nadie que recorra el overlay buscando parcelas se los encuentra.
+    if (!this.capaCaminos) {
+      this.capaCaminos = document.createElementNS(SVG_NS, 'g');
+      this.capaCaminos.setAttribute('class', 'caminos');
+      this.svg.prepend(this.capaCaminos);
+    }
+    this.capaCaminos.append(nodo);
+    this.nodosCamino[indice] = nodo;
+    return nodo;
   }
 
   // Hitos del horizonte ("CAUQUENES · 12 KM"): un tick y un rótulo, sin interacción.
