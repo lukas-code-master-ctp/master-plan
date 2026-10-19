@@ -10,8 +10,8 @@ import { anotarResultado, manejarCierra, pintarCierra, prepararCierra } from './
 import { opcionesDeDiseno } from './disenos.js';
 import { abrirElegirKmz } from './kmzs.js';
 import {
-  avisoAlQuitar, hayVistaPrevia, meta, notaDePublicar, pintarCalce, pintarCifras, pintarEstado,
-  urlDeVistaPrevia,
+  avisoAlQuitar, hayVistaPrevia, leerReferencias, meta, notaDePublicar, pintarCalce, pintarCifras,
+  pintarEstado, textoDeReferencias, urlDeVistaPrevia,
 } from './detalle.js';
 import { pintarVuelo } from './vuelo.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
@@ -209,8 +209,8 @@ function rellenarAjustes(proyecto) {
   // Vacío es "el nombre en mayúsculas": se muestra como sugerencia, no como valor.
   form.elements.parcelacion.placeholder = (proyecto.nombre ?? '').toUpperCase();
   form.elements.despegue.value = proyecto.despegue ? proyecto.despegue.join(', ') : '';
-  form.elements.referencias.value = (proyecto.referencias ?? [])
-    .map((r) => (typeof r === 'string' ? r : r.nombre)).join(', ');
+  form.elements.referencias.value = textoDeReferencias(proyecto.referencias);
+  form.elements.numeros_fijos.checked = Boolean(proyecto.numeros_fijos);
   opcionesDeDiseno(form.elements.diseno, proyecto.diseno_id);
   $('#plano-ajustes').classList.remove('ajustes--sucio');
 }
@@ -230,7 +230,8 @@ async function guardar(proyecto) {
     monto_reserva: form.elements.monto_reserva.value.trim(),
     parcelacion: form.elements.parcelacion.value.trim(),
     despegue: numeros.length === 2 ? numeros : null,
-    referencias: lista(form.elements.referencias.value),
+    referencias: leerReferencias(form.elements.referencias.value),
+    numeros_fijos: form.elements.numeros_fijos.checked,
     diseno_id: form.elements.diseno.value || null,
   }, 'PATCH'));
   await refrescar();
@@ -243,7 +244,7 @@ async function guardar(proyecto) {
   const pideReconstruir = !igual(proyecto.parcelacion, despues.parcelacion)
     || !igual(proyecto.despegue, despues.despegue) || !igual(proyecto.referencias, despues.referencias);
   const alPublicar = !igual(antes, despues.diseno_id)
-    || ['nombre', 'etapa', 'whatsapp', 'link_reserva', 'monto_reserva']
+    || ['nombre', 'etapa', 'whatsapp', 'link_reserva', 'monto_reserva', 'numeros_fijos']
       .some((campo) => !igual(proyecto[campo], despues[campo]));
   let aviso = 'Guardado.';
   if (proyecto.construido && pideReconstruir) aviso = 'Guardado. Reconstruye para que se vea en el sitio.';

@@ -66,6 +66,13 @@ CAMINO_AREA_MINIMA_M2 = 200.0
 CAMINO_FRACCION_EN_DESLINDE = 0.8
 CAMINO_SIMPLIFICAR_M = 0.5
 
+# Esteros, ríos y canales: el topógrafo no los dibuja, pero son lo primero que
+# pregunta un comprador. La loteadora los agrega en Google Earth como una ruta con
+# ese nombre ("Estero Coihueco"), y así no entran en la red de deslindes ni en los
+# caminos: un estero que corre por el borde de los lotes los partiría.
+NOMBRE_DE_AGUA = re.compile(r"^\s*(estero|r[ií]o|quebrada|canal|arroyo|acequia|vertiente)\b",
+                            re.IGNORECASE)
+
 
 @dataclass
 class ParcelaGeometrica:
@@ -204,6 +211,31 @@ def leer_caminos(ruta: Path) -> list[list[geo.Anillo]]:
     return caminos
 
 
+def leer_aguas(ruta: Path) -> list[tuple[str, list[geo.Punto]]]:
+    """Los esteros, ríos y canales del KMZ (ver NOMBRE_DE_AGUA): su nombre y su
+    trazo. Un polígono con ese nombre cuenta por su contorno."""
+    with zipfile.ZipFile(ruta) as archivo:
+        nombres = [n for n in archivo.namelist() if n.lower().endswith(".kml")]
+        if not nombres:
+            raise ValueError(f"{ruta.name} no contiene ningún .kml")
+        kml = archivo.read(nombres[0]).decode("utf-8", "ignore")
+    aguas = []
+    for marca in ET.fromstring(kml).iter(NS + "Placemark"):
+        nombre = " ".join(_texto(marca.find(NS + "name")).split())
+        if not NOMBRE_DE_AGUA.match(nombre):
+            continue
+        for linea in marca.iter(NS + "LineString"):
+            coordenadas = linea.find(NS + "coordinates")
+            if coordenadas is not None and coordenadas.text:
+                aguas.append((nombre, _coordenadas(coordenadas.text)))
+        for anillo in marca.iter(NS + "LinearRing"):
+            coordenadas = anillo.find(NS + "coordinates")
+            if coordenadas is not None and coordenadas.text:
+                puntos = _coordenadas(coordenadas.text, cerrado=True)
+                aguas.append((nombre, puntos + puntos[:1]))
+    return [(nombre, puntos) for nombre, puntos in aguas if len(puntos) >= 2]
+
+
 def _parsear(kml: str) -> list[ParcelaGeometrica]:
     raiz = ET.fromstring(kml)
     dibujo = _leer_dibujo(raiz, _colores_de_estilo(raiz))
@@ -227,6 +259,8 @@ def _leer_dibujo(raiz: ET.Element, colores: dict[str, str]) -> _Dibujo:
     dibujo = _Dibujo([], [], [], [])
     for marca in raiz.iter(NS + "Placemark"):
         nombre = _texto(marca.find(NS + "name"))
+        if NOMBRE_DE_AGUA.match(nombre):
+            continue   # un estero no es lote ni camino (leer_aguas)
         descripcion = _texto(marca.find(NS + "description"))
         color = _color_de(marca, colores)
         etapa = numero_de_etapa(nombre)

@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  avisoAlQuitar, hayVistaPrevia, medicionDelSol, nombreDeVista, notaDePublicar, urlDeVistaPrevia,
+  avisoAlQuitar, hayVistaPrevia, leerReferencias, medicionDelSol, nombreDeVista, notaDePublicar,
+  textoDeReferencias, urlDeVistaPrevia,
 } from './js/detalle.js';
 
 test('cada vista se nombra como en el visor: punto en romanos y altura', () => {
@@ -91,4 +92,18 @@ test('la vista previa se ofrece construido y sin publicar, aunque no esté pagad
   // Construir rehace el sitio: a medio camino se vería roto.
   assert.equal(hayVistaPrevia({ ...base, trabajo: { accion: 'construir' } }), false);
   assert.equal(urlDeVistaPrevia(base), '/vista-previa/praderas/');
+});
+
+test('las referencias se separan por coma, salvo la coma de unas coordenadas', () => {
+  assert.deepEqual(
+    leerReferencias('Quillón 10 minutos,  Ruta 5 (-36.7465, -72.3378) 20 min, , Los Ángeles 1 hora 20 minutos'),
+    ['Quillón 10 minutos', 'Ruta 5 (-36.7465, -72.3378) 20 min', 'Los Ángeles 1 hora 20 minutos']);
+  assert.deepEqual(leerReferencias(''), []);
+});
+
+test('una referencia guardada con coordenadas vuelve al campo con ellas', () => {
+  assert.equal(
+    textoDeReferencias(['Quillón 10 min', { nombre: 'Fundo El Peumo', lon: -72.3, lat: -35.9 }]),
+    'Quillón 10 min, Fundo El Peumo (-35.9, -72.3)');
+  assert.equal(textoDeReferencias(undefined), '');
 });

@@ -185,3 +185,71 @@ export function rumboCardinal(azimut) {
 export function rumboCorto(azimut) {
   return RUMBOS_CORTOS[octante(azimut)];
 }
+
+// --- Movimiento ----------------------------------------------------------------
+//
+// Arrastrar y soltar dejaba la cámara clavada en seco, la rueda saltaba de a
+// escalones y tocar una parcela teletransportaba la vista. Lo que sigue es lo que
+// hace que se sienta como mover algo con peso: inercia al soltar, zoom que llega
+// suave y vuelos cortos de un encuadre a otro.
+
+// Cuánto tarda la inercia en perder dos tercios de su velocidad. Con más se siente
+// resbaloso; con menos, que no hubo inercia.
+export const FRENADO_MS = 320;
+// Solo cuentan los últimos movimientos del dedo: lo de antes ya no es el gesto con
+// que se soltó, y un dedo que se detuvo antes de soltar no debe lanzar nada.
+export const VENTANA_INERCIA_MS = 90;
+// Por debajo de esto (grados por milisegundo) la inercia ya no se nota.
+export const VELOCIDAD_MINIMA = 0.004;
+// Más rápido que esto es un tirón del dedo y no un giro: se acota.
+export const VELOCIDAD_MAXIMA = 0.6;
+
+/**
+ * La velocidad con que se soltó el arrastre, en grados por milisegundo, a partir
+ * de las muestras {t, azimut, elevacion} (el delta de cada movimiento). Cuentan los
+ * movimientos de la última ventana, medidos desde el anterior a ellos: un teléfono
+ * lento manda pocos eventos y con uno solo en la ventana igual hay impulso. Cero si
+ * el dedo se quedó quieto antes de soltar.
+ */
+export function velocidadAlSoltar(muestras, ahora, ventana = VENTANA_INERCIA_MS) {
+  const primera = muestras.findIndex((m) => ahora - m.t <= ventana);
+  if (primera < 0) return { azimut: 0, elevacion: 0 };
+  const recientes = muestras.slice(primera);
+  // El movimiento anterior sirve de punto de partida si fue parte del mismo gesto;
+  // si es de antes de una pausa, se mide desde el primero de la ventana.
+  const previa = muestras[primera - 1];
+  const conPrevia = Boolean(previa) && recientes[0].t - previa.t <= ventana;
+  const desde = conPrevia ? previa.t : recientes[0].t;
+  const duracion = Math.max(recientes.at(-1).t - desde, 16);
+  const suma = recientes.slice(conPrevia ? 0 : 1).reduce(
+    (total, m) => ({ azimut: total.azimut + m.azimut, elevacion: total.elevacion + m.elevacion }),
+    { azimut: 0, elevacion: 0 });
+  const acotada = (v) => acotar(v / duracion, -VELOCIDAD_MAXIMA, VELOCIDAD_MAXIMA);
+  return { azimut: acotada(suma.azimut), elevacion: acotada(suma.elevacion) };
+}
+
+/** La velocidad que queda tras `dt` milisegundos de frenado. */
+export function frenar(velocidad, dt, frenadoMs = FRENADO_MS) {
+  const factor = Math.exp(-dt / frenadoMs);
+  return { azimut: velocidad.azimut * factor, elevacion: velocidad.elevacion * factor };
+}
+
+/** Diferencia de azimut por el camino corto: de 350° a 10° son +20°, no −340°. */
+export function giroMasCorto(desde, hasta) {
+  return ((((hasta - desde) % 360) + 540) % 360) - 180;
+}
+
+/** Arranca y llega despacio. t entre 0 y 1. */
+export function suavizar(t) {
+  const x = acotar(t, 0, 1);
+  return x < 0.5 ? 4 * x * x * x : 1 - ((-2 * x + 2) ** 3) / 2;
+}
+
+/**
+ * Cuánto escala la pastilla de una parcela con los números fijos: del todo
+ * cuando la parcela se ve grande, y achicándose con ella hasta un mínimo que
+ * todavía se lee. Así de lejos no tapan el terreno y ninguna desaparece.
+ */
+export function escalaDeRotulo(anchoParcelaPx, { pleno = 64, minima = 0.5 } = {}) {
+  return acotar(anchoParcelaPx / pleno, minima, 1);
+}

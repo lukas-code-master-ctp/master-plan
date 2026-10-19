@@ -80,7 +80,16 @@ Una carpeta con:
    [El terreno](#el-terreno). `referencias` son pueblos u otros hitos que se rotulan
    en el horizonte ("CAUQUENES · 12 KM") para que el visitante se ubique; van por
    nombre (se geocodifican solos, eligiendo el homónimo más cercano) o como
-   `{"nombre": …, "lon": …, "lat": …}`.
+   `{"nombre": …, "lon": …, "lat": …}`. El texto puede terminar en el tiempo de viaje
+   ("Quillón 10 minutos", "Los Ángeles 1 hora 20 minutos"), y entonces el rótulo dice
+   "QUILLÓN · 10 MIN" en vez de los kilómetros; y lo que el geocodificador no conoce
+   (un parque, una playa, el acceso a la Ruta 5) lleva las coordenadas de Google Maps
+   entre paréntesis: "Ruta 5 (-36.7465, -72.3378) 20 min". Lo que no se encuentra se
+   avisa al construir.
+
+   `"numeros_fijos": true` deja los números de todas las parcelas siempre a la vista,
+   achicándose con la distancia, en vez de juntarlos en burbujas cuando no caben. Es
+   para loteos chicos; en la consola es la casilla "Números siempre a la vista".
 
 4. **Una planilla .xlsx** con los datos comerciales (opcional). Si no hay, salen del
    export del CRM. Ver [La planilla](#la-planilla).
@@ -539,6 +548,17 @@ menos de 200 m² (cotas, restos) se descarta. Cada vista los trae en
 `datos/vistas/<id>.json` (`caminos`) y el visor los pinta en amarillo bajo las
 parcelas. Un sitio construido antes no los tiene hasta que se vuelve a construir.
 
+**Esteros.** El topógrafo no los dibuja, así que la loteadora los agrega en Google
+Earth como una ruta (o un polígono) cuyo nombre empieza por Estero, Río, Quebrada,
+Canal, Arroyo, Acequia o Vertiente ("Estero Coihueco"), y guarda el KMZ de nuevo. Esas
+rutas no cuentan como deslindes ni como caminos: se leen aparte (`leer_aguas`), cada
+vista las trae en `aguas` y el visor las dibuja en azul con su nombre, también en el
+plano.
+
+**Los otros puntos.** Cada vista trae también dónde cae el suelo bajo los demás puntos
+de vuelo (`puntos`, uno por punto), y el visor pone ahí un botón "360° · Punto III"
+que salta a esa vista. Igual que los caminos, aparecen al volver a construir.
+
 ## Crea tu KMZ
 
 Muchas loteadoras no tienen el KMZ de la subdivisión, y pedirle el DWG al topógrafo no
@@ -912,6 +932,7 @@ distinguir tildes ni mayúsculas. Reconoce:
 | `Precio` | No | Si falta o es 0, la ficha dice "A consultar" |
 | `Moneda` | No | `CLP` (por defecto) o `UF` |
 | `Link de pago` | No | Puede ser distinto por parcela |
+| `Mostrar número` | No | `No` deja la parcela sin su número sobre la foto y el plano (una laguna, un área común). Se sigue pudiendo tocar, y al elegirla muestra su globo |
 | `Rol` (o `Rol de avalúo`) | No | Texto, como `8073-145`. La ficha lo muestra en una tarjeta |
 | `Topografía` | No | Texto corto: `Plana`, `Plana y lomaje`. La ficha lo muestra en una tarjeta |
 | `Pie` | No | En la moneda del precio. `20%` se calcula sobre el precio. La ficha dice el monto y el porcentaje |

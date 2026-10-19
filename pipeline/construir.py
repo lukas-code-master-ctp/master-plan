@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from dataclasses import dataclass, replace
@@ -20,10 +21,10 @@ from .crm import leer_crm
 from .excel import FichaComercial, alinear_con, leer_planilla
 from .calibracion import DESNIVELES_PROBADOS, Ajuste, aplicar, calibrar, calibrar_altura, mapa_de_caminos
 from .imagenes import generar_niveles
-from .kmz import ParcelaGeometrica, leer_caminos, leer_kmz, leer_lineas
+from .kmz import ParcelaGeometrica, leer_aguas, leer_caminos, leer_kmz, leer_lineas
 from .panoramas import (Panorama, RumboResuelto, a_vista, buscar_panoramas, por_que_no_sirven,
                         resolver_rumbo)
-from .proyeccion import ModeloTerreno, Vista, proyectar_parcela, proyectar_vista
+from .proyeccion import ModeloTerreno, Vista, proyectar_parcela, proyectar_punto, proyectar_vista
 
 # Dos fotos son del mismo vuelo si el dron dice que despegaron a menos de esto. Entre
 # vuelos del mismo día la diferencia es de metros (Vichuquén: 76,5 y 84,9 m); dentro
@@ -41,6 +42,10 @@ PENALIZACION_DEPRESION = 0.5
 
 # Tope al aporte de una sola parcela al puntaje de encuadre de una vista.
 TOPE_AREA_POR_PARCELA = 50.0
+# Dos puntos de vuelo más cerca que esto son el mismo lugar a distinta altura.
+DISTANCIA_MINIMA_ENTRE_PUNTOS_M = 15.0
+# Cada cuánto se toma un punto de un estero para que siga el terreno.
+PASO_AGUA_M = 8.0
 
 
 @dataclass
@@ -86,6 +91,9 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
     caminos = leer_caminos(fuentes.kmz)
     if caminos:
         print(f"  {len(caminos)} caminos dibujados")
+    aguas = leer_aguas(fuentes.kmz)
+    if aguas:
+        print(f"  agua: {', '.join(sorted({nombre for nombre, _ in aguas}))}")
 
     fichas = _leer_fichas(fuentes, proyecto, avisos)
     cruces: list[str] = []
@@ -213,6 +221,10 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             ],
             # Los accesos del KMZ, para que se vea por dónde se llega a cada lote.
             "caminos": _proyectar_caminos(vista, caminos, modelo),
+            # Los esteros y canales que la loteadora marcó en el KMZ.
+            "aguas": _proyectar_aguas(vista, aguas, modelo),
+            # Los otros puntos de vuelo, para saltar a su 360 tocándolos en la foto.
+            "puntos": _proyectar_puntos(vista, [v for _, _, v in vistas], modelo),
             "parcelas": [
                 {
                     "id": p.id,
@@ -249,10 +261,15 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         "whatsapp": proyecto.whatsapp,
         "link_reserva": proyecto.link_reserva,
         "monto_reserva": proyecto.monto_reserva,
-        "referencias": [{"nombre": h.nombre, "lon": h.lon, "lat": h.lat} for h in hitos],
+        "numeros_fijos": proyecto.numeros_fijos,
+        "referencias": [{"nombre": h.nombre, "lon": h.lon, "lat": h.lat,
+                         **({"tiempo": h.tiempo} if h.tiempo else {})} for h in hitos],
         "estados": config.ESTADOS,
         "resumen": _resumen(parcelas),
         "parcelas": parcelas,
+        # Para el plano: el trazo de cada estero en lon/lat.
+        "aguas": [{"nombre": nombre, "linea": [_redondear_punto(p) for p in puntos]}
+                  for nombre, puntos in aguas],
         "otros_poligonos": [
             {"poligono": _redondear_anillo(g.anillo),
              "motivo": "no_en_venta" if not g.en_venta else "sin_identificar"}
@@ -316,6 +333,65 @@ def _proyectar_caminos(vista: Vista, caminos: list[list[geo.Anillo]],
     return proyectados
 
 
+def _proyectar_aguas(vista: Vista, aguas: list[tuple[str, list[geo.Punto]]],
+                     modelo: ModeloTerreno | None) -> list[dict]:
+    """Cada estero como sus tramos visibles en azimut y elevación.
+
+    Es una línea abierta, no un polígono: se densifica para que siga el terreno y se
+    corta donde se aleja más de lo que el visor muestra, para no tender una recta
+    entre dos tramos lejanos.
+    """
+    proyectadas = []
+    for nombre, puntos in aguas:
+        tramos: list[list[list[float]]] = []
+        actual: list[list[float]] = []
+        for punto in _densificar(puntos, PASO_AGUA_M):
+            cota = modelo(punto) if modelo else None
+            azimut, elevacion, distancia = proyectar_punto(vista, punto, cota)
+            if distancia > config.DISTANCIA_MAXIMA_M:
+                if len(actual) >= 2:
+                    tramos.append(actual)
+                actual = []
+                continue
+            actual.append([round(azimut, config.DECIMALES_ANGULO), round(elevacion, config.DECIMALES_ANGULO)])
+        if len(actual) >= 2:
+            tramos.append(actual)
+        if tramos:
+            proyectadas.append({"nombre": nombre, "tramos": tramos})
+    return proyectadas
+
+
+def _densificar(puntos: list[geo.Punto], paso_m: float) -> list[geo.Punto]:
+    """La línea con un punto cada `paso_m` metros como mucho: en la foto una recta
+    del suelo es una curva, y así sube y baja con el terreno."""
+    densos = [puntos[0]]
+    for inicio, fin in zip(puntos, puntos[1:]):
+        pasos = max(1, math.ceil(geo.distancia(inicio, fin) / paso_m))
+        densos += [(inicio[0] + (fin[0] - inicio[0]) * k / pasos, inicio[1] + (fin[1] - inicio[1]) * k / pasos)
+                   for k in range(1, pasos + 1)]
+    return densos
+
+
+def _proyectar_puntos(vista: Vista, todas: list[Vista],
+                      modelo: ModeloTerreno | None) -> list[dict]:
+    """Dónde cae en esta vista el suelo bajo cada otro punto de vuelo, uno por punto.
+
+    Se marca el suelo y no el dron: el dron del otro punto queda casi en el
+    horizonte y no se ve dónde está; el suelo bajo él sí, y es lo que se reconoce.
+    """
+    puntos = []
+    for posicion in sorted({v.posicion for v in todas} - {vista.posicion}):
+        otra = next(v for v in todas if v.posicion == posicion)
+        suelo = otra.origen
+        if geo.distancia(suelo, vista.origen) < DISTANCIA_MINIMA_ENTRE_PUNTOS_M:
+            continue   # el mismo lugar: no hay hacia dónde apuntar
+        cota = modelo(suelo) if modelo else None
+        azimut, elevacion, distancia = proyectar_punto(vista, suelo, cota)
+        puntos.append({"posicion": posicion, "az": round(azimut, 2), "el": round(elevacion, 2),
+                       "distancia_m": round(distancia)})
+    return puntos
+
+
 def _nivelar(panorama: Panorama, vista: Vista, cota_despegue: float,
              avisos: Avisos) -> dict[float, horizonte.Nivelacion]:
     """La nivelación de una vista para cada desnivel que la calibración va a probar.
@@ -362,12 +438,17 @@ def _resolver_referencias(proyecto: config.Proyecto, geometrias: list[ParcelaGeo
     except (OSError, ValueError, KeyError) as error:
         avisos.añadir(f"no pude ubicar los puntos de referencia ({error}); se omiten")
         return []
+    pedidos = [r if isinstance(r, dict) else referencias.leer_entrada(r) for r in proyecto.referencias]
+    faltan = [str(r.get("nombre")) for r in pedidos if str(r.get("nombre"))
+              and str(r.get("nombre")) not in {h.nombre for h in hitos}]
+    if faltan:
+        avisos.añadir(f"no encontré {', '.join(faltan)} en el mapa: escribe sus coordenadas de "
+                      f"Google Maps entre paréntesis en las referencias, como «Ruta 5 (-36.74, -72.33)»")
     completos = []
     for hito in hitos:
         if hito.cota is None:
             try:
-                hito = referencias.Referencia(hito.nombre, hito.lon, hito.lat,
-                                              terreno.cota_en((hito.lon, hito.lat), config.CACHE_TERRENO))
+                hito = replace(hito, cota=terreno.cota_en((hito.lon, hito.lat), config.CACHE_TERRENO))
             except (OSError, ValueError):
                 pass
         completos.append(hito)
@@ -488,7 +569,8 @@ def _armar_parcelas(fichas: dict[str, FichaComercial],
 # que `pipeline.inventario` reescribe sin reconstruir.
 CAMPOS_COMERCIALES = ("estado", "superficie_m2", "servidumbre_m", "servidumbre_m2",
                       "precio", "moneda", "link_pago", "en_planilla",
-                      "rol", "topografia", "pie", "cuotas", "valor_cuota", "reserva")
+                      "rol", "topografia", "pie", "cuotas", "valor_cuota", "reserva",
+                      "sin_numero")
 
 
 def comerciales(ficha: FichaComercial | None, *, en_venta: bool = True,
@@ -511,6 +593,9 @@ def comerciales(ficha: FichaComercial | None, *, en_venta: bool = True,
         "cuotas": ficha.cuotas if ficha else None,
         "valor_cuota": ficha.valor_cuota if ficha else None,
         "reserva": ficha.reserva if ficha else None,
+        # None y no False: así un sitio construido antes de esta columna no cuenta
+        # como cambiado al subir de nuevo la misma planilla.
+        "sin_numero": True if ficha and not ficha.mostrar_numero else None,
     }
 
 

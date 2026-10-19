@@ -348,3 +348,23 @@ def test_por_descarte_no_adivina_entre_dos_etapas_que_calzan_igual():
     fichas = _fichas((1, "1"), (1, "2"), (2, "1"), (2, "2"))
 
     assert alinear_con(fichas, {"1", "2"}) == fichas
+
+
+def test_la_planilla_puede_apagar_el_numero_de_una_parcela(tmp_path):
+    """Una laguna dentro de un lote: el número tapaba justo lo que se quería mostrar."""
+    ruta = planilla(tmp_path, [
+        ["Parcela", "Estado", "Mostrar número"],
+        ["24", "Disponible", ""],
+        ["25", "Disponible", "No"],
+        ["26", "Disponible", "Sí"],
+    ])
+
+    fichas = leer_excel(ruta)
+
+    assert [fichas[i].mostrar_numero for i in ("24", "25", "26")] == [True, False, True]
+
+
+def test_sin_la_columna_todas_las_parcelas_llevan_numero(tmp_path):
+    ruta = planilla(tmp_path, [["Parcela", "Estado"], ["1", "Disponible"]])
+
+    assert leer_excel(ruta)["1"].mostrar_numero is True

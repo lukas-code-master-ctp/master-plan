@@ -60,6 +60,8 @@ INSTRUCCIONES = (
     ("Reserva", "Opcional. El monto para reservar, en pesos. El botón de pago lo dice."),
     (None, None),
     ("Las parcelas que no estén en la planilla quedan como No disponible.", None),
+    ("Para que una parcela no lleve su número sobre la foto (una laguna, un área común), agrega "
+     "una columna \"Mostrar número\" y pon No en su fila.", None),
 )
 
 

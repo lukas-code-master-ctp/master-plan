@@ -44,14 +44,18 @@ class Resultado:
 
 
 # Lo que del loteo entero (no de cada parcela) se edita en la consola y el visor
-# muestra: el nombre, la etapa, el WhatsApp y la reserva. La construcción lo
-# escribe; esto lo pone al día sin reconstruir, igual que los estados y precios.
-DATOS_DEL_LOTEO = ("proyecto", "etapa", "whatsapp", "link_reserva", "monto_reserva")
+# muestra: el nombre, la etapa, el WhatsApp, la reserva y si los números van fijos.
+# La construcción lo escribe; esto lo pone al día sin reconstruir, igual que los
+# estados y precios.
+DATOS_DEL_LOTEO = ("proyecto", "etapa", "whatsapp", "link_reserva", "monto_reserva", "numeros_fijos")
+
+SIN_CAMPO = {"numeros_fijos": False}
 
 
 def datos_del_loteo(proyecto: config.Proyecto) -> dict:
     return dict(zip(DATOS_DEL_LOTEO, (proyecto.nombre, proyecto.etapa, proyecto.whatsapp,
-                                      proyecto.link_reserva, proyecto.monto_reserva)))
+                                      proyecto.link_reserva, proyecto.monto_reserva,
+                                      proyecto.numeros_fijos)))
 
 
 def poner_datos_del_loteo(proyecto: config.Proyecto, salida: config.Salida,
@@ -68,7 +72,8 @@ def poner_datos_del_loteo(proyecto: config.Proyecto, salida: config.Salida,
         nuevos.update(loteo=proyecto.slug, consola=consola)
         if consola:
             visor.permitir_conexion(salida.web, consola)
-    if all(datos.get(campo) == valor for campo, valor in nuevos.items()):
+    # Un sitio construido antes de los números fijos no trae el campo: es que no van fijos.
+    if all(datos.get(campo, SIN_CAMPO.get(campo)) == valor for campo, valor in nuevos.items()):
         return False
     _escribir(archivo, {**datos, **nuevos})
     return True
@@ -106,7 +111,7 @@ def actualizar(fuentes: config.Fuentes, proyecto: config.Proyecto,
     # Los datos del loteo viajan con los estados: si se cambiaron en la consola,
     # la próxima publicación ya los lleva.
     nuevos = datos_del_loteo(proyecto)
-    cambia_el_loteo = any(datos.get(campo) != valor for campo, valor in nuevos.items())
+    cambia_el_loteo = any(datos.get(campo, SIN_CAMPO.get(campo)) != valor for campo, valor in nuevos.items())
     if cambiadas or cambia_el_loteo:
         datos.update(nuevos)
         datos["resumen"] = _resumen(parcelas)

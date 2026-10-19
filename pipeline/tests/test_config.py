@@ -461,3 +461,9 @@ def test_sin_reserva_el_proyecto_no_la_inventa(tmp_path):
     proyecto = cargar_proyecto(tmp_path)
 
     assert (proyecto.link_reserva, proyecto.monto_reserva) == ("", None)
+
+
+def test_los_numeros_fijos_vienen_apagados_salvo_que_proyecto_json_diga_otra_cosa(tmp_path):
+    assert cargar_proyecto(tmp_path).numeros_fijos is False
+    (tmp_path / "proyecto.json").write_text('{"nombre": "Lomas", "numeros_fijos": true}', encoding="utf-8")
+    assert cargar_proyecto(tmp_path).numeros_fijos is True

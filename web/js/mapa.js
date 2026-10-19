@@ -37,6 +37,7 @@ export class Mapa {
     L.tileLayer(TESELAS, { maxZoom: 19, attribution: ATRIBUCION }).addTo(this.mapa);
 
     this._dibujarOtrosPoligonos();
+    this._dibujarAguas();
     this._dibujarParcelas();
     this._dibujarPuntosDeVuelo();
     this._crearCono();
@@ -49,6 +50,15 @@ export class Mapa {
         color: '#6b6559', weight: 0.8, opacity: 0.5,
         fillColor: '#6b6559', fillOpacity: 0.1, interactive: false,
       }).addTo(this.mapa);
+    }
+  }
+
+  // Los esteros que la loteadora marcó en el KMZ, en azul y con su nombre al pasar.
+  _dibujarAguas() {
+    for (const agua of this.catalogo.meta.aguas ?? []) {
+      L.polyline(aLatLng(agua.linea), {
+        className: 'agua-mapa', color: '#3b9cff', weight: 4, opacity: 0.9, interactive: CON_CURSOR.matches,
+      }).bindTooltip(escaparHtml(agua.nombre), { sticky: true }).addTo(this.mapa);
     }
   }
 
@@ -139,7 +149,10 @@ export class Mapa {
 
     const candidatas = [];
     for (const grupo of this.grupos) {
-      const ids = grupo.ids.filter((id) => !this.estiloParcela(id).atenuada && id !== this.seleccionada);
+      const ids = grupo.ids.filter((id) => {
+        const estilo = this.estiloParcela(id);
+        return !estilo.atenuada && !estilo.sinNumero && id !== this.seleccionada;
+      });
       if (!ids.length) continue;
       const [[oeste, sur], [este, norte]] = grupo.caja;
       const a = this.mapa.latLngToContainerPoint([sur, oeste]);

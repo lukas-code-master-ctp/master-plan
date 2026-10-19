@@ -1302,6 +1302,7 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "whatsapp": proyecto.whatsapp,
         "link_reserva": proyecto.link_reserva,
         "monto_reserva": proyecto.monto_reserva,
+        "numeros_fijos": proyecto.numeros_fijos,
         "parcelacion": proyecto.parcelacion,
         "despegue": list(proyecto.despegue) if proyecto.despegue else None,
         "referencias": list(proyecto.referencias),

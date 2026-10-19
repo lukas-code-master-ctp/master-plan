@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { Camara, anguloEntre, direccion, recortarCerca, rumboCardinal, rumboCorto } from './camara.js';
+import {
+  Camara, FRENADO_MS, VELOCIDAD_MAXIMA, VELOCIDAD_MINIMA, anguloEntre, direccion, escalaDeRotulo, frenar,
+  giroMasCorto, recortarCerca, rumboCardinal, rumboCorto, suavizar, velocidadAlSoltar,
+} from './camara.js';
 
 const ANCHO = 1200;
 const ALTO = 800;
@@ -198,4 +201,59 @@ test('cerca de 360° el rumbo vuelve a ser norte', () => {
 
 test('el rumbo abreviado cabe en un botón redondo', () => {
   assert.deepEqual([0, 42, 90, 135, 211, 270, 300].map(rumboCorto), ['N', 'NE', 'E', 'SE', 'SO', 'O', 'NO']);
+});
+
+test('la inercia toma la velocidad de los últimos movimientos antes de soltar', () => {
+  const muestras = [
+    { t: 0, azimut: 9, elevacion: 0 },      // viejo: solo marca desde cuándo se mide
+    { t: 900, azimut: 1, elevacion: 0 },
+    { t: 916, azimut: 1, elevacion: 0.5 },
+    { t: 932, azimut: 1, elevacion: 0.5 },
+  ];
+  const v = velocidadAlSoltar(muestras, 948);
+  assert.ok(Math.abs(v.azimut - 2 / 32) < 1e-9);
+  assert.ok(Math.abs(v.elevacion - 1 / 32) < 1e-9);
+});
+
+test('con pocos eventos (un teléfono lento) igual hay impulso', () => {
+  const muestras = [{ t: 0, azimut: 2, elevacion: 0 }, { t: 80, azimut: 2, elevacion: 0 }];
+  const v = velocidadAlSoltar(muestras, 120);
+  assert.ok(Math.abs(v.azimut - 2 / 80) < 1e-9);
+});
+
+test('un dedo que se quedó quieto antes de soltar no lanza la cámara', () => {
+  const muestras = [{ t: 0, azimut: 3, elevacion: 0 }, { t: 16, azimut: 3, elevacion: 0 }];
+  assert.deepEqual(velocidadAlSoltar(muestras, 400), { azimut: 0, elevacion: 0 });
+});
+
+test('un tirón se acota para que la vista no salga disparada', () => {
+  const muestras = [{ t: 0, azimut: 0, elevacion: 0 }, { t: 16, azimut: 200, elevacion: 0 }];
+  assert.equal(velocidadAlSoltar(muestras, 20).azimut, VELOCIDAD_MAXIMA);
+});
+
+test('la inercia se frena de a poco y llega a cero', () => {
+  const v = frenar({ azimut: 1, elevacion: -1 }, FRENADO_MS);
+  assert.ok(Math.abs(v.azimut - Math.exp(-1)) < 1e-9);
+  assert.ok(Math.abs(v.elevacion + Math.exp(-1)) < 1e-9);
+  assert.ok(Math.abs(frenar({ azimut: 1, elevacion: 0 }, 5000).azimut) < VELOCIDAD_MINIMA);
+});
+
+test('el vuelo entre encuadres gira por el camino corto', () => {
+  assert.equal(giroMasCorto(350, 10), 20);
+  assert.equal(giroMasCorto(10, 350), -20);
+  assert.equal(giroMasCorto(90, 90), 0);
+});
+
+test('el vuelo arranca y llega despacio', () => {
+  assert.equal(suavizar(0), 0);
+  assert.equal(suavizar(1), 1);
+  assert.equal(suavizar(0.5), 0.5);
+  assert.ok(suavizar(0.1) < 0.1 && suavizar(0.9) > 0.9);
+});
+
+test('con los números fijos la pastilla se achica con la parcela, hasta un mínimo', () => {
+  assert.equal(escalaDeRotulo(200), 1);
+  assert.equal(escalaDeRotulo(32), 0.5);
+  assert.equal(escalaDeRotulo(5), 0.5);
+  assert.ok(Math.abs(escalaDeRotulo(48) - 0.75) < 1e-9);
 });

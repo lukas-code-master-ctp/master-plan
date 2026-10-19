@@ -183,3 +183,22 @@ def test_al_publicar_el_sitio_puede_conectarse_solo_con_su_consola(tmp_path):
     escrita = json.loads((salida.web / "vercel.json").read_text())["headers"][0]["headers"][0]["value"]
     assert escrita == ("default-src 'self'; connect-src 'self' https://consola.tumasterplan.cl; "
                        "worker-src 'self' blob:")
+
+
+def test_los_numeros_fijos_llegan_al_sitio_sin_reconstruir(tmp_path):
+    salida = sitio(tmp_path, [parcela("1")])
+    fijos = config.Proyecto(nombre="Loteo", numeros_fijos=True)
+
+    assert poner_datos_del_loteo(fijos, salida) is True
+    assert leer(salida)["numeros_fijos"] is True
+
+
+def test_la_planilla_apaga_el_numero_sin_reconstruir(tmp_path):
+    salida = sitio(tmp_path, [parcela("1"), parcela("2")])
+    fuentes = fuentes_con(tmp_path, "Parcela,Estado,Mostrar número\n1,Disponible,\n2,Disponible,No\n")
+
+    actualizar(fuentes, proyecto(tmp_path), salida)
+
+    por_id = {p["id"]: p for p in leer(salida)["parcelas"]}
+    assert por_id["1"]["sin_numero"] is None
+    assert por_id["2"]["sin_numero"] is True

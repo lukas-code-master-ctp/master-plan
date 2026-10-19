@@ -6,7 +6,11 @@
  * de esfera, no hay costuras, y el overlay SVG usa exactamente la misma cámara,
  * así que imagen y polígonos no pueden desincronizarse.
  */
-import { Camara, acotar } from './camara.js';
+import {
+  Camara, FOV_MAXIMO, FOV_MINIMO, VELOCIDAD_MINIMA, acotar, escalaDeRotulo, frenar, giroMasCorto,
+  suavizar, velocidadAlSoltar,
+} from './camara.js';
+import { romano, textoReferencia } from './datos.js';
 import { Gesto } from './gesto.js';
 import { debeColapsar } from './grupos.js';
 import { estaInsertado, ruedaAcerca } from './insertado.js';
@@ -52,10 +56,19 @@ const ALTO_BURBUJA = 30;
 // Por sobre las pastillas sueltas (que van hasta ~1e7) y bajo la elegida (1e9).
 const PRIORIDAD_BURBUJA = 5e8;
 const SVG_NS = 'http://www.w3.org/2000/svg';
+// Lo que dura el vuelo de un encuadre a otro (al elegir una parcela, una burbuja o
+// con las flechas). Más largo se siente lento; sin vuelo, se pierde dónde se estaba.
+const VUELO_MS = 550;
+const VUELO_TECLA_MS = 180;
+// Cuánto tarda el zoom de la rueda en llegar a donde se pidió.
+const ZOOM_SUAVE_MS = 90;
+const SIN_MOVIMIENTO = typeof window !== 'undefined'
+  && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 export class Visor {
   constructor(elemento, {
-    alElegirParcela, alPasarSobreParcela, alMoverCamara, rotuloDe, rotuloSeleccionadoDe,
+    alElegirParcela, alPasarSobreParcela, alMoverCamara, alElegirPunto, rotuloDe, rotuloSeleccionadoDe,
+    numerosFijos = false,
   } = {}) {
     this.elemento = elemento;
     this.lienzo = elemento.querySelector('canvas');
@@ -63,6 +76,9 @@ export class Visor {
     this.alElegirParcela = alElegirParcela ?? (() => {});
     this.alPasarSobreParcela = alPasarSobreParcela ?? (() => {});
     this.alMoverCamara = alMoverCamara ?? (() => {});
+    this.alElegirPunto = alElegirPunto ?? (() => {});
+    // Todos los números a la vista, achicándose, sin burbujas (proyecto.json).
+    this.numerosFijos = numerosFijos;
 
     this.camara = new Camara();
     this.vista = null;
@@ -73,6 +89,20 @@ export class Visor {
     this.caminos = [];
     this.nodosCamino = [];
     this.capaCaminos = null;
+    // Los otros puntos de vuelo, para saltar a su 360 tocándolos en la foto. Son
+    // botones de HTML sobre el SVG: quedan encima de las parcelas y se pueden
+    // alcanzar con el teclado.
+    this.puntos = [];
+    // Los esteros: una línea azul con su nombre, bajo las parcelas.
+    this.aguas = [];
+    this.nodosAgua = [];
+    this.capaAguas = null;
+    this.capaPuntos = document.createElement('div');
+    this.capaPuntos.className = 'puntos-360';
+    elemento.append(this.capaPuntos);
+    // La animación en curso (inercia, zoom suave o vuelo) y lo que la mueve.
+    this.animacion = null;
+    this.fovObjetivo = null;
     this.halo = null;
     this.nodos = new Map();
     // Grupos de parcelas vecinas (grupos.js): cuáles se ven como burbuja y cuál
@@ -170,7 +200,9 @@ export class Visor {
    * nueva se dibujaban un momento sobre la foto anterior. Devuelve false si
    * mientras tanto se pidió otra vista.
    */
-  async mostrarVista(vista, overlay, { avisar, referencias = [], caminos = [] } = {}) {
+  async mostrarVista(vista, overlay, {
+    avisar, referencias = [], caminos = [], puntos = [], aguas = [],
+  } = {}) {
     const token = ++this.cargaEnCurso;
     const niveles = this._nivelesUtiles(vista.imagenes);
     avisar?.('Cargando vista…');
@@ -187,7 +219,11 @@ export class Visor {
     this.overlay = overlay;
     this.referencias = referencias;
     this.caminos = caminos;
+    this.puntos = puntos;
+    this.aguas = aguas;
+    this._detener();
     this._limpiarNodos();
+    this._crearPuntos();
     this._subirTextura(primera);
     this._pintar();
     avisar?.(null);
@@ -218,16 +254,102 @@ export class Visor {
 
   // --- Cámara ----------------------------------------------------------------
 
-  apuntarA(azimut, elevacion = this.camara.elevacion, fov = this.camara.fov) {
-    this.camara.apuntar(azimut, elevacion);
-    this.camara.fov = acotar(fov, 22, 100);
-    this._pintar();
+  /**
+   * Lleva la cámara a ese encuadre. Con `animar` vuela hasta ahí, girando por el
+   * camino corto: un salto en seco hace perder de vista dónde se estaba.
+   */
+  apuntarA(azimut, elevacion = this.camara.elevacion, fov = this.camara.fov, { animar = false, duracion = VUELO_MS } = {}) {
+    this._detener();
+    const destino = { azimut, elevacion, fov: acotar(fov, FOV_MINIMO, FOV_MAXIMO) };
+    if (!animar || SIN_MOVIMIENTO) {
+      this.camara.apuntar(destino.azimut, destino.elevacion);
+      this.camara.fov = destino.fov;
+      this._pintar();
+      return;
+    }
+    const origen = { azimut: this.camara.azimut, elevacion: this.camara.elevacion, fov: this.camara.fov };
+    const giro = giroMasCorto(origen.azimut, destino.azimut);
+    let transcurrido = 0;
+    this._animar((dt) => {
+      transcurrido += dt;
+      const t = suavizar(transcurrido / duracion);
+      this.camara.apuntar(origen.azimut + giro * t, origen.elevacion + (destino.elevacion - origen.elevacion) * t);
+      this.camara.fov = origen.fov + (destino.fov - origen.fov) * t;
+      return transcurrido < duracion;
+    });
   }
 
-  /** Factor menor que 1 acerca; mayor que 1 aleja. */
+  /** Factor menor que 1 acerca; mayor que 1 aleja. Llega suave, como la rueda. */
   acercar(factor) {
-    this.camara.acercar(factor);
-    this._pintar();
+    this._acercarSuave(factor);
+  }
+
+  // --- Animación -------------------------------------------------------------
+
+  /**
+   * Corre `paso(dt)` en cada cuadro hasta que devuelva false. Una sola animación a
+   * la vez: la nueva reemplaza a la anterior.
+   */
+  _animar(paso) {
+    this._detener();
+    const animacion = { paso, previo: null, id: 0 };
+    const cuadro = (ahora) => {
+      if (this.animacion !== animacion) return;
+      // El primer cuadro no sabe cuánto pasó; los demás, a lo más 50 ms, para que
+      // una pestaña que vuelve del fondo no haga saltar la cámara.
+      const dt = animacion.previo == null ? 16 : Math.min(ahora - animacion.previo, 50);
+      animacion.previo = ahora;
+      const sigue = paso(dt);
+      this._pintar();
+      if (sigue) animacion.id = requestAnimationFrame(cuadro);
+      else this.animacion = null;
+    };
+    this.animacion = animacion;
+    animacion.id = requestAnimationFrame(cuadro);
+  }
+
+  _detener() {
+    if (this.animacion) cancelAnimationFrame(this.animacion.id);
+    this.animacion = null;
+    this.fovObjetivo = null;
+  }
+
+  /** Al soltar un arrastre con impulso, la vista sigue girando y se frena sola. */
+  _lanzar(velocidad) {
+    if (SIN_MOVIMIENTO) return;
+    if (Math.hypot(velocidad.azimut, velocidad.elevacion) < VELOCIDAD_MINIMA) return;
+    let actual = velocidad;
+    this._animar((dt) => {
+      this.camara.girar(actual.azimut * dt, actual.elevacion * dt);
+      actual = frenar(actual, dt);
+      return Math.hypot(actual.azimut, actual.elevacion) >= VELOCIDAD_MINIMA;
+    });
+  }
+
+  /**
+   * El zoom de la rueda y de los botones: se acumula en un objetivo y la cámara
+   * llega a él en unos cuadros. Varios golpes de rueda seguidos suman, sin saltos.
+   */
+  _acercarSuave(factor) {
+    const objetivo = acotar((this.fovObjetivo ?? this.camara.fov) * factor, FOV_MINIMO, FOV_MAXIMO);
+    if (SIN_MOVIMIENTO) {
+      this.camara.fov = objetivo;
+      this._pintar();
+      return;
+    }
+    if (this.fovObjetivo === null) {
+      this._animar((dt) => {
+        const k = 1 - Math.exp(-dt / ZOOM_SUAVE_MS);
+        this.camara.fov += (this.fovObjetivo - this.camara.fov) * k;
+        if (Math.abs(this.fovObjetivo - this.camara.fov) < 0.02) {
+          this.camara.fov = this.fovObjetivo;
+          this.fovObjetivo = null;
+          return false;
+        }
+        return true;
+      });
+    }
+    this.fovObjetivo = objetivo;
   }
 
   /**
@@ -275,7 +397,7 @@ export class Visor {
     const diametro = 2 * Math.sqrt(Math.max(parcela.area_angular, 0.5) / Math.PI);
     const fov = acotar(diametro * 3.2, 25, 90);
     // Mirar más abajo sube lo mirado en el cuadro; fov es el ángulo vertical.
-    this.apuntarA(azimut, elevacion - subir * fov, fov);
+    this.apuntarA(azimut, elevacion - subir * fov, fov, { animar: true });
     return true;
   }
 
@@ -328,6 +450,8 @@ export class Visor {
     if (!ancho) return;
     this._dibujarReferencias(ancho, alto);
     this._dibujarCaminos(ancho, alto);
+    this._dibujarAguas(ancho, alto);
+    this._dibujarPuntos(ancho, alto);
 
     const candidatas = [];
     const enPantalla = [];
@@ -359,17 +483,24 @@ export class Visor {
       // elegida se muestra aunque la parcela se vea chica: es la que se busca.
       const anchoEnPantalla = extension(pixeles, 0);
       nodo.pastilla.style.display = 'none';
-      if (!estilo.atenuada && !elegida) {
+      // Sin número (la planilla lo apagó) solo se rotula si la eligen: ahí el
+      // globo dice su precio y es lo que se está mirando.
+      const conNumero = elegida || !estilo.sinNumero;
+      if (!estilo.atenuada && !elegida && conNumero) {
         const [x, y] = centro(pixeles);
         enPantalla.push({ id, x, y });
       }
-      if ((elegida || anchoEnPantalla >= ANCHO_MINIMO_ETIQUETA_PX) && !estilo.atenuada) {
+      const cabe = this.numerosFijos || anchoEnPantalla >= ANCHO_MINIMO_ETIQUETA_PX;
+      if ((elegida || cabe) && conNumero && !estilo.atenuada) {
         const [cx, cy] = centro(pixeles);
         const y = elegida ? this._ponerGlobo(nodo, pixeles) : cy;
-        nodo.pastilla.setAttribute('transform', `translate(${cx.toFixed(1)} ${y.toFixed(1)})`);
+        // Con los números fijos se achican con la parcela en vez de esconderse.
+        const achique = this.numerosFijos && !elegida ? escalaDeRotulo(anchoEnPantalla) : 1;
+        nodo.pastilla.setAttribute('transform', `translate(${cx.toFixed(1)} ${y.toFixed(1)})`
+          + (achique < 1 ? ` scale(${achique.toFixed(3)})` : ''));
         nodo.disco.style.fill = estilo.color;
         nodo.numero.style.fill = estilo.texto;
-        const escala = elegida ? ESCALA_ELEGIDA : 1;
+        const escala = elegida ? ESCALA_ELEGIDA : achique;
         candidatas.push({
           id, x: cx, y,
           ancho: Number(nodo.disco.getAttribute('width')) * escala,
@@ -383,8 +514,11 @@ export class Visor {
 
     // Solo las pastillas que caben sin encimarse: de lejos, las del fondo se
     // apilaban y no se leía ninguna.
-    let mostradas = rotulosSinChoques(candidatas, SEPARACION_PASTILLAS);
-    mostradas = this._agruparRotulos(candidatas, mostradas, enPantalla);
+    // Con los números fijos se muestran todos: se achican en vez de esconderse.
+    let mostradas = this.numerosFijos
+      ? new Set(candidatas.map((c) => c.id))
+      : rotulosSinChoques(candidatas, SEPARACION_PASTILLAS);
+    if (!this.numerosFijos) mostradas = this._agruparRotulos(candidatas, mostradas, enPantalla);
     for (const id of mostradas) {
       this.nodos.get(id).pastilla.style.display = '';
     }
@@ -513,7 +647,7 @@ export class Visor {
     const aspecto = this.ancho / Math.max(this.alto, 1) || 1;
     const fov = Math.max(extensionDe(elevaciones), extensionDe(azimutes) / aspecto) * 1.8;
     this.grupoAbierto = grupoId;
-    this.apuntarA(promedioDe(azimutes), promedioDe(elevaciones), acotar(fov, 22, 90));
+    this.apuntarA(promedioDe(azimutes), promedioDe(elevaciones), acotar(fov, 22, 90), { animar: true });
   }
 
   /**
@@ -594,6 +728,8 @@ export class Visor {
     this.capaReferencias = null;
     this.nodosCamino = [];
     this.capaCaminos = null;
+    this.nodosAgua = [];
+    this.capaAguas = null;
   }
 
   // Los accesos del KMZ: una franja amarilla bajo las parcelas, sin interacción.
@@ -629,6 +765,111 @@ export class Visor {
     return nodo;
   }
 
+  /**
+   * Los esteros: líneas abiertas, así que no se recortan como un polígono sino que
+   * se cortan donde pasan detrás de la cámara. El nombre va en el tramo visible más
+   * cerca del centro de la pantalla, que es donde se está mirando.
+   */
+  _dibujarAguas(ancho, alto) {
+    this.aguas.forEach((agua, indice) => {
+      const nodo = this._nodoAgua(indice, agua.nombre);
+      const corridas = [];
+      for (const tramo of agua.tramos) {
+        let actual = [];
+        for (const [az, el] of tramo) {
+          const enCamara = this.camara.aCamara(az, el);
+          if (enCamara[2] > 0.05) {
+            actual.push(this.camara.aPantalla(enCamara, ancho, alto));
+          } else if (actual.length) {
+            corridas.push(actual);
+            actual = [];
+          }
+        }
+        if (actual.length >= 2) corridas.push(actual);
+      }
+      const visibles = corridas.filter((c) => c.length >= 2 && !fueraDePantalla(c, ancho, alto));
+      if (!visibles.length) {
+        nodo.grupo.style.display = 'none';
+        return;
+      }
+      nodo.grupo.style.display = '';
+      const d = visibles.map((c) => `M${c.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join('L')}`).join('');
+      nodo.linea.setAttribute('d', d);
+      nodo.borde.setAttribute('d', d);
+      let mejor = null;
+      for (const corrida of visibles) {
+        for (const [x, y] of corrida) {
+          if (x < 0 || x > ancho || y < 0 || y > alto) continue;
+          const lejania = Math.hypot(x - ancho / 2, y - alto / 2);
+          if (!mejor || lejania < mejor.lejania) mejor = { x, y, lejania };
+        }
+      }
+      nodo.nombre.style.display = mejor ? '' : 'none';
+      if (mejor) nodo.nombre.setAttribute('transform', `translate(${mejor.x.toFixed(1)} ${(mejor.y - 8).toFixed(1)})`);
+    });
+  }
+
+  _nodoAgua(indice, nombre) {
+    let nodo = this.nodosAgua[indice];
+    if (nodo) return nodo;
+    const grupo = document.createElementNS(SVG_NS, 'g');
+    grupo.setAttribute('class', 'agua');
+    const borde = document.createElementNS(SVG_NS, 'path');
+    borde.setAttribute('class', 'agua__borde');
+    const linea = document.createElementNS(SVG_NS, 'path');
+    linea.setAttribute('class', 'agua__linea');
+    const texto = document.createElementNS(SVG_NS, 'text');
+    texto.setAttribute('class', 'agua__nombre');
+    texto.textContent = nombre;
+    grupo.append(borde, linea, texto);
+    // Sobre los caminos y bajo las parcelas, como los hitos: nadie que recorra el
+    // overlay buscando parcelas se lo encuentra.
+    if (!this.capaAguas) {
+      this.capaAguas = document.createElementNS(SVG_NS, 'g');
+      this.capaAguas.setAttribute('class', 'aguas');
+      this.svg.prepend(this.capaAguas);
+    }
+    this.capaAguas.append(grupo);
+    nodo = { grupo, borde, linea, nombre: texto };
+    this.nodosAgua[indice] = nodo;
+    return nodo;
+  }
+
+  /**
+   * Un botón por cada otro punto de vuelo, parado en el suelo bajo el dron: "estoy
+   * en el I y el III queda allá". Tocarlo lleva a la 360 de ese punto.
+   */
+  _crearPuntos() {
+    this.capaPuntos.replaceChildren(...this.puntos.map((punto) => {
+      const boton = document.createElement('button');
+      boton.type = 'button';
+      boton.className = 'punto-360';
+      boton.dataset.posicion = String(punto.posicion);
+      boton.setAttribute('aria-label', `Ver la vista 360 del punto ${romano(punto.posicion)}`);
+      boton.innerHTML = '<span class="punto-360__icono" aria-hidden="true">360°</span>'
+        + `<span class="punto-360__nombre">Punto ${romano(punto.posicion)}</span>`;
+      // El toque lo resuelve _clic, como el de una parcela; esto es para el teclado.
+      boton.addEventListener('click', (evento) => {
+        if (evento.detail === 0) this.alElegirPunto(punto.posicion);
+      });
+      return boton;
+    }));
+  }
+
+  _dibujarPuntos(ancho, alto) {
+    [...this.capaPuntos.children].forEach((boton, indice) => {
+      const punto = this.puntos[indice];
+      const [x, y, z] = this.camara.aCamara(punto.az, punto.el);
+      if (z <= 0.05 || !this.camara.puedeVerse([punto.az, punto.el], ancho, alto, 1.0)) {
+        boton.hidden = true;
+        return;
+      }
+      const [px, py] = this.camara.aPantalla([x, y, z], ancho, alto);
+      boton.hidden = px < -40 || px > ancho + 40 || py < -40 || py > alto + 40;
+      boton.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px)`;
+    });
+  }
+
   // Hitos del horizonte ("CAUQUENES · 12 KM"): un tick y un rótulo, sin interacción.
   _dibujarReferencias(ancho, alto) {
     this.referencias.forEach((referencia, indice) => {
@@ -656,7 +897,7 @@ export class Visor {
     const texto = document.createElementNS(SVG_NS, 'text');
     texto.setAttribute('class', 'referencia__texto');
     texto.setAttribute('y', '-28');
-    texto.textContent = `${referencia.nombre} · ${Math.round(referencia.distancia_km)} km`.toUpperCase();
+    texto.textContent = textoReferencia(referencia);
     nodo.append(tick, texto);
     // Van en su propia capa, antes que las parcelas: quedan debajo y nadie que
     // recorra los hijos del overlay buscando parcelas se los encuentra.
@@ -687,6 +928,8 @@ export class Visor {
   _conectarEntradas() {
     const gesto = new Gesto(ARRASTRE_MINIMO_PX);
     const elemento = this.elemento;
+    // Los últimos giros del arrastre, para saber con qué impulso se soltó.
+    let muestras = [];
 
     elemento.addEventListener('pointerdown', (evento) => {
       try {
@@ -696,6 +939,9 @@ export class Visor {
         // visor. No es motivo para abortar el resto del manejador.
       }
       gesto.bajar(evento.pointerId, evento.clientX, evento.clientY);
+      // Tocar la vista la detiene: es lo que se espera de algo que se mueve solo.
+      this._detener();
+      muestras = [];
     });
 
     elemento.addEventListener('pointermove', (evento) => {
@@ -703,50 +949,73 @@ export class Visor {
       if (!paso) return;
       if (paso.tipo === 'pellizco') {
         this.camara.acercar(paso.factor);
+        muestras = [];
       } else {
         const gradosPorPixel = this.camara.fov / Math.max(this.alto, 1);
-        this.camara.girar(-paso.dx * gradosPorPixel, paso.dy * gradosPorPixel);
+        const azimut = -paso.dx * gradosPorPixel;
+        const elevacion = paso.dy * gradosPorPixel;
+        this.camara.girar(azimut, elevacion);
+        muestras.push({ t: evento.timeStamp, azimut, elevacion });
+        if (muestras.length > 12) muestras.shift();
       }
       this._pintar();
     });
 
     elemento.addEventListener('pointerup', (evento) => {
-      if (gesto.soltar(evento.pointerId)) this._clic(evento);
+      const quedan = gesto.punteros.size - 1;
+      if (gesto.soltar(evento.pointerId)) {
+        this._clic(evento);
+      } else if (quedan === 0) {
+        this._lanzar(velocidadAlSoltar(muestras, evento.timeStamp));
+      }
+      muestras = [];
     });
     elemento.addEventListener('pointercancel', (evento) => {
       gesto.soltar(evento.pointerId, { cancelado: true });
+      muestras = [];
     });
 
     elemento.addEventListener('wheel', (evento) => {
       // Dentro de un iframe, sin Ctrl/⌘ la rueda sigue bajando por la página.
       if (!ruedaAcerca(evento, this.insertado)) return;
       evento.preventDefault();
-      this.camara.acercar(Math.exp(evento.deltaY * 0.0012));
-      this._pintar();
+      // Un mouse con ruedita da golpes de ~100; un trackpad, muchos chicos. Los dos
+      // llegan suave porque se suman a un objetivo (_acercarSuave).
+      const delta = evento.deltaMode === 1 ? evento.deltaY * 33 : evento.deltaY;
+      this._acercarSuave(Math.exp(acotar(delta, -300, 300) * 0.0012));
     }, { passive: false });
 
     elemento.tabIndex = 0;
     elemento.addEventListener('keydown', (evento) => {
+      // Un botón de punto 360 con el foco usa Enter y espacio para sí.
+      if (evento.target !== elemento) return;
       const paso = evento.shiftKey ? 15 : 5;
+      const { azimut, elevacion, fov } = this.camara;
+      const girar = (dAz, dEl) => () => this.apuntarA(azimut + dAz, elevacion + dEl, fov,
+                                                       { animar: true, duracion: VUELO_TECLA_MS });
       const acciones = {
-        ArrowLeft: () => this.camara.girar(-paso, 0),
-        ArrowRight: () => this.camara.girar(paso, 0),
-        ArrowUp: () => this.camara.girar(0, paso),
-        ArrowDown: () => this.camara.girar(0, -paso),
-        '+': () => this.camara.acercar(0.85),
-        '=': () => this.camara.acercar(0.85),
-        '-': () => this.camara.acercar(1.18),
+        ArrowLeft: girar(-paso, 0),
+        ArrowRight: girar(paso, 0),
+        ArrowUp: girar(0, paso),
+        ArrowDown: girar(0, -paso),
+        '+': () => this._acercarSuave(0.85),
+        '=': () => this._acercarSuave(0.85),
+        '-': () => this._acercarSuave(1.18),
       };
       const accion = acciones[evento.key];
       if (!accion) return;
       evento.preventDefault();
       accion();
-      this._pintar();
     });
   }
 
   _clic(evento) {
     const objetivo = document.elementFromPoint(evento.clientX, evento.clientY);
+    const punto = objetivo?.closest?.('.punto-360');
+    if (punto) {
+      this.alElegirPunto(Number(punto.dataset.posicion));
+      return;
+    }
     const burbuja = objetivo?.closest?.('.burbuja');
     if (burbuja) {
       for (const [grupoId, nodo] of this.nodosGrupo) {

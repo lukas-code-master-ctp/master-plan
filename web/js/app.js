@@ -69,6 +69,8 @@ async function arrancar() {
 
   estado.visor = new Visor($('#visor'), {
     rotuloDe: (id) => catalogo.rotulo(id),
+    numerosFijos: Boolean(catalogo.meta.numeros_fijos),
+    alElegirPunto: (posicion) => irAPosicion(posicion),
     alElegirParcela: (id) => seleccionar(id),
     alPasarSobreParcela: (id) => destacar(id),
     alMoverCamara: (camara) => {
@@ -90,14 +92,16 @@ async function arrancar() {
   });
 
   // De lejos, los grupos de parcelas vecinas cuyos números no caben se muestran
-  // como una burbuja con su rango y sus disponibles (grupos.js).
-  const grupos = agruparParcelas(catalogo.parcelas);
+  // como una burbuja con su rango y sus disponibles (grupos.js). Con los números
+  // fijos no hay burbujas: en el 360 se achican y en el plano cada parcela es su
+  // propio grupo.
+  const grupos = agruparParcelas(catalogo.parcelas, catalogo.meta.numeros_fijos ? { tamano: 1 } : {});
   const resumenDe = (grupo) => resumenDeGrupo(grupo, {
     parcela: (id) => catalogo.porId.get(id),
     esDisponible: (parcela) => Boolean(catalogo.estados[parcela.estado]?.vendible) && !parcela.apartada,
     visible: (id) => estado.visibles.has(id),
   });
-  estado.visor.ponerGrupos(grupos, resumenDe);
+  if (!catalogo.meta.numeros_fijos) estado.visor.ponerGrupos(grupos, resumenDe);
   estado.mapa.ponerGrupos(grupos, resumenDe);
 
   construirLeyenda();
@@ -136,6 +140,8 @@ async function cambiarVista(vista) {
     avisar: mostrarCarga,
     referencias: estado.catalogo.referenciasDe(vista.id),
     caminos: estado.catalogo.caminosDe(vista.id),
+    puntos: estado.catalogo.puntosDe(vista.id),
+    aguas: estado.catalogo.aguasDe(vista.id),
   });
   // Mientras cargaba eligieron otra vista: esa se encarga del resto.
   if (!mostrada) return;
@@ -256,6 +262,8 @@ function estiloDe(id) {
     atenuada: !estado.visibles.has(id),
     // Cuando no caben todos los números, primero los de lo que se vende.
     prioridad: estado.catalogo.estados[parcela?.estado]?.vendible ? 1 : 0,
+    // La planilla puede apagar el número de una parcela (una laguna, un área común).
+    sinNumero: Boolean(parcela?.sin_numero),
   };
 }
 

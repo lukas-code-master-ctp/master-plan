@@ -5,7 +5,7 @@ import math
 import pytest
 
 from pipeline.proyeccion import Vista
-from pipeline.referencias import RADIO_TIERRA_EFECTIVO_M, Referencia, proyectar, resolver
+from pipeline.referencias import RADIO_TIERRA_EFECTIVO_M, Referencia, leer_entrada, proyectar, resolver
 
 LOTEO = (-72.273, -35.863)
 
@@ -78,3 +78,56 @@ def test_proyecta_al_horizonte_con_la_curvatura_de_la_tierra():
     assert punto["az"] == pytest.approx(0.0, abs=0.01)
     assert punto["el"] == pytest.approx(esperado, abs=0.01)
     assert punto["distancia_km"] == pytest.approx(10.0, abs=0.05)
+
+
+# --- Tiempos de viaje y coordenadas escritas en la consola -----------------------
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("Quillón 10 minutos", {"nombre": "Quillón", "tiempo": "10 min"}),
+    ("Playa Laguna Avendaño 14 minutos", {"nombre": "Playa Laguna Avendaño", "tiempo": "14 min"}),
+    ("Los Ángeles 1 hora 20 minutos", {"nombre": "Los Ángeles", "tiempo": "1 h 20 min"}),
+    ("Los Ángeles 1 h y 20 min", {"nombre": "Los Ángeles", "tiempo": "1 h 20 min"}),
+    ("Concepción 90 min", {"nombre": "Concepción", "tiempo": "1 h 30 min"}),
+    ("Chillán 2 horas", {"nombre": "Chillán", "tiempo": "2 h"}),
+    ("Ruta 5 20 minutos", {"nombre": "Ruta 5", "tiempo": "20 min"}),
+    ("Ruta 5", {"nombre": "Ruta 5"}),
+    ("Cauquenes", {"nombre": "Cauquenes"}),
+    ("Ruta 5 (-36.7465, -72.3378) 20 min",
+     {"nombre": "Ruta 5", "tiempo": "20 min", "lat": -36.7465, "lon": -72.3378}),
+    ("Parque Acuático Antu 22 minutos (-36.80, -72.40)",
+     {"nombre": "Parque Acuático Antu", "tiempo": "22 min", "lat": -36.80, "lon": -72.40}),
+])
+def test_lee_el_tiempo_y_las_coordenadas_del_texto(texto, esperado):
+    assert leer_entrada(texto) == esperado
+
+
+def test_el_tiempo_se_rotula_y_no_queda_en_el_cache(tmp_path):
+    cache = tmp_path / "ref.json"
+    con_tiempo = resolver(["Cauquenes 15 minutos"], LOTEO, cache, geocodificar=geocodificador_falso)
+
+    assert con_tiempo[0].nombre == "Cauquenes"
+    assert con_tiempo[0].tiempo == "15 min"
+    assert "tiempo" not in json.loads(cache.read_text(encoding="utf-8"))["CL|cauquenes"] or \
+        json.loads(cache.read_text(encoding="utf-8"))["CL|cauquenes"]["tiempo"] is None
+    # Otro loteo que pide el mismo pueblo sin tiempo no hereda el del primero.
+    sin_tiempo = resolver(["Cauquenes"], LOTEO, cache, geocodificar=geocodificador_falso)
+    assert sin_tiempo[0].tiempo is None
+
+
+def test_con_coordenadas_no_se_pregunta_al_geocodificador(tmp_path):
+    def sin_red(nombre, pais):
+        raise AssertionError("no debería preguntar")
+
+    referencias = resolver(["Ruta 5 (-36.7465, -72.3378) 20 min"], LOTEO, tmp_path / "ref.json",
+                           geocodificar=sin_red)
+
+    assert referencias == [Referencia(nombre="Ruta 5", lon=-72.3378, lat=-36.7465, tiempo="20 min")]
+
+
+def test_la_proyeccion_lleva_el_tiempo_si_lo_hay():
+    vista = Vista(id="p01-200", posicion=1, lon=-72.0, lat=-35.0,
+                  altura_relativa=200.0, altura_absoluta=480.0, rumbo0=0.0)
+    hito = Referencia(nombre="Quillón", lon=-72.0, lat=-34.95, tiempo="10 min")
+
+    assert proyectar(vista, hito, vista.terreno_plano())["tiempo"] == "10 min"
+    assert "tiempo" not in proyectar(vista, Referencia("Norte", -72.0, -34.95), vista.terreno_plano())

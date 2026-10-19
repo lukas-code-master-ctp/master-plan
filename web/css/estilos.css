@@ -1923,3 +1923,75 @@ button { cursor: pointer; }
   .ver-plano__miniatura { border-radius: 50%; }
   .zoom button { border-radius: 50%; }
 }
+
+/* Los otros puntos de vuelo, parados en el suelo bajo el dron (visor.js,
+   _dibujarPuntos). La punta del pin cae justo en el punto: por eso el
+   translate(-50%, -100%) va dentro, en el botón, y el visor solo lo mueve. */
+.puntos-360 { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.punto-360 {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #fff;
+  cursor: pointer;
+  pointer-events: auto;
+  translate: -50% -100%;
+  -webkit-tap-highlight-color: transparent;
+}
+.punto-360[hidden] { display: none; }
+.punto-360__icono {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgb(20 20 20 / 0.6);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.45);
+  font: 700 0.6875rem var(--sans);
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(4px);
+  transition: transform 160ms var(--curva), background-color 160ms ease;
+}
+.punto-360__nombre {
+  font: 600 0.625rem var(--sans);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.8);
+}
+/* La patita hasta el suelo. */
+.punto-360::after {
+  content: '';
+  width: 2px;
+  height: 14px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+}
+.punto-360:hover .punto-360__icono,
+.punto-360:focus-visible .punto-360__icono { transform: scale(1.1); background: var(--marca-700, #15803d); }
+.punto-360:focus-visible { outline: none; }
+/* Con una parcela elegida, los puntos dan un paso atrás como las demás parcelas. */
+.visor:has(.overlay--con-seleccion) .punto-360 { opacity: 0.35; }
+
+/* Los esteros del KMZ (visor.js, _dibujarAguas): azul, con un borde oscuro que lo
+   despega del bosque, y su nombre en cursiva como en un mapa. */
+.agua { pointer-events: none; }
+.agua__borde, .agua__linea { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.agua__borde { stroke: rgb(0 30 60 / 0.45); stroke-width: 6.5; }
+.agua__linea { stroke: #3fa9ff; stroke-width: 4; }
+.agua__nombre {
+  font: italic 600 0.6875rem var(--sans);
+  letter-spacing: 0.04em;
+  fill: #d6eeff;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgb(0 30 60 / 0.7);
+  stroke-width: 3px;
+}
