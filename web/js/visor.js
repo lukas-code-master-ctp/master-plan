@@ -846,7 +846,8 @@ export class Visor {
       boton.className = 'punto-360';
       boton.dataset.posicion = String(punto.posicion);
       boton.setAttribute('aria-label', `Ver la vista 360 del punto ${romano(punto.posicion)}`);
-      boton.innerHTML = '<span class="punto-360__icono" aria-hidden="true">360°</span>'
+      boton.innerHTML = '<span class="punto-360__icono" aria-hidden="true">'
+        + '<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg></span>'
         + `<span class="punto-360__nombre">Punto ${romano(punto.posicion)}</span>`;
       // El toque lo resuelve _clic, como el de una parcela; esto es para el teclado.
       boton.addEventListener('click', (evento) => {

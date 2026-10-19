@@ -556,8 +556,15 @@ vista las trae en `aguas` y el visor las dibuja en azul con su nombre, también 
 plano.
 
 **Los otros puntos.** Cada vista trae también dónde cae el suelo bajo los demás puntos
-de vuelo (`puntos`, uno por punto), y el visor pone ahí un botón "360° · Punto III"
-que salta a esa vista. Igual que los caminos, aparecen al volver a construir.
+de vuelo (`puntos`, uno por punto), y el visor pone ahí una lupa con "Punto III" que
+salta a esa vista. Igual que los caminos, aparecen al volver a construir.
+
+**Puntos solo foto.** Un punto volado bajo ve las parcelas tan de cerca y de lado que
+las líneas confunden. En `puntos_solo_foto` de `proyecto.json` (en la consola, "Puntos
+solo foto": `3, 4, 5`) van los puntos que se muestran sin parcelas, caminos ni esteros:
+solo la foto, las referencias y las lupas a los demás puntos. No se calibran, no
+cuentan como la vista de ninguna parcela ("Ver en 360°" lleva a un punto con líneas) y
+el sitio no abre en ellos. Se aplica al reconstruir.
 
 ## Crea tu KMZ
 

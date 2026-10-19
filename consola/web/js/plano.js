@@ -211,6 +211,7 @@ function rellenarAjustes(proyecto) {
   form.elements.despegue.value = proyecto.despegue ? proyecto.despegue.join(', ') : '';
   form.elements.referencias.value = textoDeReferencias(proyecto.referencias);
   form.elements.numeros_fijos.checked = Boolean(proyecto.numeros_fijos);
+  form.elements.puntos_solo_foto.value = (proyecto.puntos_solo_foto ?? []).join(', ');
   opcionesDeDiseno(form.elements.diseno, proyecto.diseno_id);
   $('#plano-ajustes').classList.remove('ajustes--sucio');
 }
@@ -232,6 +233,8 @@ async function guardar(proyecto) {
     despegue: numeros.length === 2 ? numeros : null,
     referencias: leerReferencias(form.elements.referencias.value),
     numeros_fijos: form.elements.numeros_fijos.checked,
+    // El servidor lo deja en números ("3, 4 y 5" → [3, 4, 5]).
+    puntos_solo_foto: form.elements.puntos_solo_foto.value,
     diseno_id: form.elements.diseno.value || null,
   }, 'PATCH'));
   await refrescar();
@@ -239,10 +242,12 @@ async function guardar(proyecto) {
   const despues = proyectoActual();
   rellenarAjustes(despues);
   // El diseño, el nombre, la etapa, el WhatsApp y la reserva se aplican al publicar. La
-  // parcelación, el despegue y los hitos cambian el cálculo: esos piden reconstruir.
+  // parcelación, el despegue, los hitos y los puntos solo foto cambian el cálculo:
+  // esos piden reconstruir.
   const igual = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   const pideReconstruir = !igual(proyecto.parcelacion, despues.parcelacion)
-    || !igual(proyecto.despegue, despues.despegue) || !igual(proyecto.referencias, despues.referencias);
+    || !igual(proyecto.despegue, despues.despegue) || !igual(proyecto.referencias, despues.referencias)
+    || !igual(proyecto.puntos_solo_foto, despues.puntos_solo_foto);
   const alPublicar = !igual(antes, despues.diseno_id)
     || ['nombre', 'etapa', 'whatsapp', 'link_reserva', 'monto_reserva', 'numeros_fijos']
       .some((campo) => !igual(proyecto[campo], despues[campo]));

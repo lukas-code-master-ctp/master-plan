@@ -20,6 +20,8 @@ const SUBIDA_CON_FICHA = 0.2;
 // Cuánto esperar, con la primera vista ya en pantalla, antes de dejar bajando las
 // demás: la foto en alta de la vista que se mira va primero.
 const PRECARGA_MS = 2500;
+// Grados bajo el horizonte al llegar a un punto solo foto: se ve el campo y el horizonte.
+const ELEVACION_SOLO_FOTO = -12;
 
 /** Centro del loteo en grados y minutos, para el rótulo de la marca. */
 function coordenadasDelLoteo(vistas) {
@@ -145,7 +147,11 @@ async function cambiarVista(vista) {
   });
   // Mientras cargaba eligieron otra vista: esa se encarga del resto.
   if (!mostrada) return;
-  if (reencuadrar) estado.visor.encuadrarParcelas();
+  // Un punto solo foto no trae parcelas que encuadrar: se mira al frente, con el
+  // horizonte a la vista, en la misma dirección en que se venía mirando.
+  if (reencuadrar && !estado.visor.encuadrarParcelas()) {
+    estado.visor.apuntarA(estado.visor.camara.azimut, ELEVACION_SOLO_FOTO, 75);
+  }
   estado.visor.aplicarEstilos(estiloDe);
   estado.visor.marcarSeleccionada(estado.seleccionada);
   estado.mapa.marcarVista(vista);

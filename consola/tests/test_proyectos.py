@@ -554,3 +554,15 @@ def test_ajustar_guarda_los_numeros_fijos_y_las_referencias_con_tiempo(ana, tmp_
     assert actualizado.numeros_fijos is True
     # Apagarlo también se guarda: False no es "no vino".
     assert ana.ajustar(proyecto.slug, {"numeros_fijos": False}).numeros_fijos is False
+
+
+def test_ajustar_guarda_los_puntos_solo_foto_como_numeros(ana, tmp_path):
+    proyecto = ana.vincular(carpeta_de_loteo(tmp_path))
+
+    actualizado = ana.ajustar(proyecto.slug, {"puntos_solo_foto": "5, 3 y 4"})
+
+    guardado = json.loads((proyecto.fuentes / "proyecto.json").read_text(encoding="utf-8"))
+    assert guardado["puntos_solo_foto"] == [3, 4, 5]
+    assert actualizado.puntos_solo_foto == (3, 4, 5)
+    # Vaciar el campo los vuelve a dibujar todos.
+    assert ana.ajustar(proyecto.slug, {"puntos_solo_foto": ""}).puntos_solo_foto == ()
