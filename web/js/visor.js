@@ -10,7 +10,7 @@ import {
   Camara, FOV_MAXIMO, FOV_MINIMO, VELOCIDAD_MINIMA, acotar, escalaDeRotulo, frenar, giroMasCorto,
   suavizar, velocidadAlSoltar,
 } from './camara.js';
-import { romano, textoReferencia } from './datos.js';
+import { romano, textoReferencia, lejaniaReferencia } from './datos.js';
 import { Gesto } from './gesto.js';
 import { debeColapsar } from './grupos.js';
 import { estaInsertado, ruedaAcerca } from './insertado.js';
@@ -54,6 +54,10 @@ const ANCHO_MINIMO_ETIQUETA_PX = 42;
 // Lo que ocupa en pantalla un botón de punto 360 (la lupa, su nombre y la patita),
 // medido en estilos.css. Ningún número de parcela se dibuja dentro.
 const ANCHO_ZONA_PUNTO = 76;
+// El alfiler de los rótulos del horizonte y cuánto sube uno que chocaría con otro
+// (el alto de la píldora más un respiro).
+const ALFILER_REFERENCIA = 22;
+const ALTO_ESCALON_REFERENCIA = 32;
 const ALTO_ZONA_PUNTO = 92;
 // La burbuja de un grupo: más alta que una pastilla, porque dice más.
 const ALTO_BURBUJA = 30;
@@ -89,7 +93,6 @@ export class Visor {
     this.overlay = new Map();
     this.referencias = [];
     this.nodosReferencia = [];
-    this.capaReferencias = null;
     this.caminos = [];
     this.nodosCamino = [];
     this.capaCaminos = null;
@@ -104,6 +107,11 @@ export class Visor {
     this.capaPuntos = document.createElement('div');
     this.capaPuntos.className = 'puntos-360';
     elemento.append(this.capaPuntos);
+    // Los hitos del horizonte, en HTML para que cada rótulo sea una píldora del
+    // ancho de su texto: sobre cielo con nubes un texto suelto se perdía.
+    this.capaReferencias = document.createElement('div');
+    this.capaReferencias.className = 'referencias';
+    elemento.append(this.capaReferencias);
     // La animación en curso (inercia, zoom suave o vuelo) y lo que la mueve.
     this.animacion = null;
     this.fovObjetivo = null;
@@ -734,7 +742,7 @@ export class Visor {
     this.grupoAbierto = null;
     this.nodos.clear();
     this.nodosReferencia = [];
-    this.capaReferencias = null;
+    this.capaReferencias.replaceChildren();
     this.nodosCamino = [];
     this.capaCaminos = null;
     this.nodosAgua = [];
@@ -896,40 +904,50 @@ export class Visor {
 
   // Hitos del horizonte ("CAUQUENES · 12 KM"): un tick y un rótulo, sin interacción.
   _dibujarReferencias(ancho, alto) {
+    const visibles = [];
     this.referencias.forEach((referencia, indice) => {
       const nodo = this._nodoReferencia(indice, referencia);
       const [x, y, z] = this.camara.aCamara(referencia.az, referencia.el);
       if (z <= 0.05 || !this.camara.puedeVerse([referencia.az, referencia.el], ancho, alto, 1.0)) {
-        nodo.style.display = 'none';
+        nodo.hidden = true;
         return;
       }
       const [px, py] = this.camara.aPantalla([x, y, z], ancho, alto);
-      nodo.style.display = '';
-      nodo.setAttribute('transform', `translate(${px.toFixed(1)} ${py.toFixed(1)})`);
+      nodo.hidden = false;
+      nodo.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px)`;
+      // El ancho se mide una vez: leerlo en cada cuadro forzaría a recalcular la página.
+      if (!nodo.anchoMedido) nodo.anchoMedido = nodo.offsetWidth;
+      visibles.push({ nodo, x: px, y: py, ancho: nodo.anchoMedido });
     });
+    // Dos lugares en la misma dirección (Bulnes y Los Ángeles) se pisaban: el más
+    // lejano sube un escalón, con un alfiler más largo, hasta que no choque.
+    const puestos = [];
+    for (const rotulo of visibles.sort((a, b) => b.y - a.y)) {
+      let escalon = 0;
+      const choca = (otro) => otro.escalon === escalon
+        && Math.abs(otro.x - rotulo.x) < (otro.ancho + rotulo.ancho) / 2 + 6
+        && Math.abs(otro.y - rotulo.y) < ALTO_ESCALON_REFERENCIA;
+      while (escalon < 4 && puestos.some(choca)) escalon += 1;
+      puestos.push({ ...rotulo, escalon });
+      rotulo.nodo.style.setProperty('--alfiler', `${ALFILER_REFERENCIA + escalon * ALTO_ESCALON_REFERENCIA}px`);
+    }
   }
 
   _nodoReferencia(indice, referencia) {
     let nodo = this.nodosReferencia[indice];
     if (nodo) return nodo;
-    nodo = document.createElementNS(SVG_NS, 'g');
-    nodo.setAttribute('class', 'referencia');
-    const tick = document.createElementNS(SVG_NS, 'line');
-    tick.setAttribute('class', 'referencia__tick');
-    tick.setAttribute('y1', '-3');
-    tick.setAttribute('y2', '-22');
-    const texto = document.createElementNS(SVG_NS, 'text');
-    texto.setAttribute('class', 'referencia__texto');
-    texto.setAttribute('y', '-28');
-    texto.textContent = textoReferencia(referencia);
-    nodo.append(tick, texto);
-    // Van en su propia capa, antes que las parcelas: quedan debajo y nadie que
-    // recorra los hijos del overlay buscando parcelas se los encuentra.
-    if (!this.capaReferencias) {
-      this.capaReferencias = document.createElementNS(SVG_NS, 'g');
-      this.capaReferencias.setAttribute('class', 'referencias');
-      this.svg.prepend(this.capaReferencias);
-    }
+    nodo = document.createElement('div');
+    nodo.className = 'referencia';
+    nodo.setAttribute('aria-label', textoReferencia(referencia));
+    const pildora = document.createElement('span');
+    pildora.className = 'referencia__pildora';
+    const nombre = document.createElement('b');
+    nombre.textContent = referencia.nombre;
+    const lejania = document.createElement('span');
+    lejania.className = 'referencia__lejania';
+    lejania.textContent = lejaniaReferencia(referencia);
+    pildora.append(nombre, lejania);
+    nodo.append(pildora);
     this.capaReferencias.append(nodo);
     this.nodosReferencia[indice] = nodo;
     return nodo;
