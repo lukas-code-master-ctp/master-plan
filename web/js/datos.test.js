@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Catalogo, conteoPorEstado, romano } from './datos.js';
+import { Catalogo, conteoPorEstado, romano, textoReferencia } from './datos.js';
 
 const vista = (id, posicion, altura_m) => ({ id, posicion, altura_m, lat: -35, lon: -72 });
 
@@ -67,4 +67,29 @@ test('los caminos de una vista llegan con su overlay, y un sitio viejo no trae n
 
   assert.deepEqual(catalogo.caminosDe('p01-500'), [camino]);
   assert.deepEqual(catalogo.caminosDe('p02-500'), []);
+});
+
+test('los otros puntos de vuelo llegan con el overlay, y un sitio viejo no trae ninguno', async () => {
+  const catalogo = catalogoCon([vista('p01-500', 1, 500), vista('p03-500', 3, 500)]);
+  const punto = { posicion: 3, az: 120.5, el: -14.2, distancia_m: 640 };
+  const respuestas = {
+    'datos/vistas/p01-500.json': { parcelas: [], puntos: [punto] },
+    'datos/vistas/p03-500.json': { parcelas: [] },
+  };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (ruta) => ({ ok: true, json: async () => respuestas[ruta] });
+  try {
+    await catalogo.overlayDe('p01-500');
+    await catalogo.overlayDe('p03-500');
+  } finally {
+    globalThis.fetch = original;
+  }
+
+  assert.deepEqual(catalogo.puntosDe('p01-500'), [punto]);
+  assert.deepEqual(catalogo.puntosDe('p03-500'), []);
+});
+
+test('un hito con tiempo de viaje dice el tiempo; sin él, los kilómetros', () => {
+  assert.equal(textoReferencia({ nombre: 'Quillón', distancia_km: 6.4, tiempo: '10 min' }), 'QUILLÓN · 10 MIN');
+  assert.equal(textoReferencia({ nombre: 'Cauquenes', distancia_km: 12.4 }), 'CAUQUENES · 12 KM');
 });

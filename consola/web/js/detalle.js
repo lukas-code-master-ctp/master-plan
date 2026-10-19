@@ -235,3 +235,40 @@ export function notaDePublicar(proyecto) {
   if (proyecto.publicado) return 'Lo que cambies aquí llega al sitio cuando lo publicas de nuevo.';
   return `Va a quedar en ${proyecto.url}`;
 }
+
+/**
+ * Las referencias del horizonte como se escriben en el campo: separadas por coma,
+ * salvo las comas de unas coordenadas entre paréntesis ("Ruta 5 (-36.74, -72.33)
+ * 20 min"), que son de Google Maps y van juntas. El tiempo y las coordenadas los
+ * interpreta el pipeline (referencias.py): acá cada una viaja como texto.
+ */
+export function leerReferencias(texto) {
+  const partes = [];
+  let actual = '';
+  let profundidad = 0;
+  for (const letra of String(texto ?? '')) {
+    if (letra === '(') profundidad += 1;
+    if (letra === ')') profundidad = Math.max(0, profundidad - 1);
+    if (letra === ',' && profundidad === 0) {
+      partes.push(actual);
+      actual = '';
+    } else {
+      actual += letra;
+    }
+  }
+  partes.push(actual);
+  return partes.map((p) => p.trim().replace(/\s+/g, ' ')).filter(Boolean);
+}
+
+/**
+ * Lo inverso, para mostrarlas en el campo. Las que quedaron guardadas como
+ * {nombre, lon, lat} se escriben con sus coordenadas: si no, guardar cualquier otro
+ * dato las dejaba solo con el nombre y se perdía dónde estaban.
+ */
+export function textoDeReferencias(referencias) {
+  return (referencias ?? []).map((r) => {
+    if (typeof r === 'string') return r;
+    const coordenadas = r.lat != null && r.lon != null ? ` (${r.lat}, ${r.lon})` : '';
+    return `${r.nombre}${coordenadas}${r.tiempo ? ` ${r.tiempo}` : ''}`;
+  }).join(', ');
+}

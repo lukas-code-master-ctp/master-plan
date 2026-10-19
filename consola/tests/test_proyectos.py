@@ -540,3 +540,17 @@ def test_un_loteo_nuevo_no_hereda_las_carpetas_de_uno_borrado(base, registro, an
 
 def test_sin_carpetas_viejas_el_slug_sigue_siendo_el_del_nombre(luis):
     assert luis.crear("Los Robles").slug == "los-robles"
+
+
+def test_ajustar_guarda_los_numeros_fijos_y_las_referencias_con_tiempo(ana, tmp_path):
+    proyecto = ana.vincular(carpeta_de_loteo(tmp_path))
+
+    actualizado = ana.ajustar(proyecto.slug, {
+        "numeros_fijos": True, "referencias": ["Quillón 10 min", "Ruta 5 (-36.74, -72.33) 20 min"]})
+
+    guardado = json.loads((proyecto.fuentes / "proyecto.json").read_text(encoding="utf-8"))
+    assert guardado["numeros_fijos"] is True
+    assert guardado["referencias"] == ["Quillón 10 min", "Ruta 5 (-36.74, -72.33) 20 min"]
+    assert actualizado.numeros_fijos is True
+    # Apagarlo también se guarda: False no es "no vino".
+    assert ana.ajustar(proyecto.slug, {"numeros_fijos": False}).numeros_fijos is False

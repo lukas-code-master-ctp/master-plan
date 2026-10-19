@@ -139,7 +139,10 @@ export class Mapa {
 
     const candidatas = [];
     for (const grupo of this.grupos) {
-      const ids = grupo.ids.filter((id) => !this.estiloParcela(id).atenuada && id !== this.seleccionada);
+      const ids = grupo.ids.filter((id) => {
+        const estilo = this.estiloParcela(id);
+        return !estilo.atenuada && !estilo.sinNumero && id !== this.seleccionada;
+      });
       if (!ids.length) continue;
       const [[oeste, sur], [este, norte]] = grupo.caja;
       const a = this.mapa.latLngToContainerPoint([sur, oeste]);

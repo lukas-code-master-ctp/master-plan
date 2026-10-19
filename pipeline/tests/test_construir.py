@@ -198,3 +198,27 @@ def test_sin_panoramicas_validas_corta_con_un_mensaje_claro(tmp_path, capsys):
 
     assert "DJI_0001.JPG" in str(error.value)
     assert "XMP" in str(error.value)
+
+
+# --- los otros puntos de vuelo, para saltar entre 360 -------------------------------
+
+def test_marca_el_suelo_bajo_cada_otro_punto_una_vez_por_punto():
+    from pipeline.construir import _proyectar_puntos
+    from pipeline.proyeccion import Vista
+
+    def vista(id_, posicion, lat, relativa=100.0):
+        return Vista(id=id_, posicion=posicion, lon=-72.0, lat=lat, altura_relativa=relativa,
+                     altura_absoluta=300.0 + relativa, rumbo0=0.0)
+
+    aqui = vista("p01-100", 1, -35.0)
+    todas = [aqui, vista("p01-300", 1, -35.0, 300.0),               # el mismo punto, más alto
+             vista("p02-100", 2, -35.0 + 500 / 111320.0),           # 500 m al norte
+             vista("p02-300", 2, -35.0 + 500 / 111320.0, 300.0)]
+
+    puntos = _proyectar_puntos(aqui, todas, None)
+
+    assert [p["posicion"] for p in puntos] == [2]
+    assert puntos[0]["az"] == pytest.approx(0.0, abs=0.05)
+    # 100 m más abajo y a 500 m: unos 11° bajo el horizonte.
+    assert puntos[0]["el"] == pytest.approx(-11.3, abs=0.1)
+    assert puntos[0]["distancia_m"] == pytest.approx(500, abs=1)

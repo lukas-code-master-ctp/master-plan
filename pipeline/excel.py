@@ -42,6 +42,9 @@ ALIAS_COLUMNAS = {
     "cuotas": ("cuotas", "n cuotas", "numero de cuotas", "cantidad de cuotas", "nro cuotas"),
     "valor_cuota": ("valor cuota", "valor de la cuota", "monto cuota", "cuota"),
     "reserva": ("reserva", "monto reserva", "monto de reserva", "valor reserva"),
+    # "No" deja la parcela sin su número sobre la foto: una laguna o un área común
+    # que es parte de un lote, donde el número tapa lo que se quiere mostrar.
+    "mostrar_numero": ("mostrar numero", "numero visible", "con numero"),
 }
 
 ALIAS_ESTADOS = {
@@ -89,6 +92,7 @@ class FichaComercial:
     cuotas: int | None = None
     valor_cuota: float | None = None
     reserva: float | None = None
+    mostrar_numero: bool = True
 
 
 def alinear_con(fichas: dict[str, FichaComercial], ids: set[str] | dict,
@@ -255,6 +259,7 @@ def fichas_desde_filas(filas: list, parcelacion: str | None = None,
             cuotas=_entero(_valor(fila, indices.get("cuotas"))) or None,
             valor_cuota=_numero(_valor(fila, indices.get("valor_cuota"))) or None,
             reserva=_numero(_valor(fila, indices.get("reserva"))) or None,
+            mostrar_numero=not _es_no(_valor(fila, indices.get("mostrar_numero"))),
         )
     # Una parcela dos veces es casi siempre dos etapas que numeran desde 1 sin decir
     # cuál es cuál. Quedarse con la última publicaría el precio de otra parcela.
@@ -328,6 +333,13 @@ def _sin_tildes(valor) -> str:
         return ""
     texto = unicodedata.normalize("NFKD", str(valor)).encode("ascii", "ignore").decode()
     return re.sub(r"\s+", " ", texto).strip().lower().rstrip(".")
+
+
+def _es_no(valor) -> bool:
+    """Solo un "no" explícito apaga algo: una celda vacía deja todo como siempre."""
+    if valor is False:
+        return True
+    return _sin_tildes(valor) in ("no", "n", "0", "falso", "false", "ocultar")
 
 
 def _valor(fila, indice):

@@ -38,7 +38,7 @@ EXTENSIONES_FOTO = (".jpg", ".jpeg")
 # Lo que se guarda en `proyecto.json`, que es lo que lee el pipeline. El resto
 # —de quién es, dónde quedó publicado— vive en la base y no se duplica acá.
 CAMPOS_DEL_PIPELINE = ("nombre", "etapa", "whatsapp", "parcelacion", "despegue", "referencias",
-                       "link_reserva", "monto_reserva")
+                       "link_reserva", "monto_reserva", "numeros_fijos")
 
 
 MEGA = 1024 * 1024
@@ -184,6 +184,8 @@ class Proyecto:
     # El link para reservar cualquier parcela del loteo, y cuánto se paga.
     link_reserva: str = ""
     monto_reserva: float | None = None
+    # Los números de las parcelas siempre a la vista, sin agruparse (config.Proyecto).
+    numeros_fijos: bool = False
     # Subido desde el navegador (sus archivos son nuestros) o carpeta vinculada
     # del disco (no lo son).
     subido: bool = False
@@ -345,6 +347,7 @@ class Registro:
             whatsapp=datos.whatsapp,
             link_reserva=datos.link_reserva,
             monto_reserva=datos.monto_reserva,
+            numeros_fijos=datos.numeros_fijos,
             parcelacion=str(_leer_json(carpeta / "proyecto.json").get("parcelacion") or ""),
             despegue=datos.despegue,
             referencias=datos.referencias,

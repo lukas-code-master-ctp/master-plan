@@ -10,6 +10,15 @@ export function romano(posicion) {
   return ROMANOS[posicion] ?? String(posicion);
 }
 
+/**
+ * El rótulo de un hito del horizonte: "QUILLÓN · 10 MIN" si la loteadora dio el
+ * tiempo de viaje, que es lo que pregunta un comprador; si no, "CAUQUENES · 12 KM".
+ */
+export function textoReferencia(referencia) {
+  const lejania = referencia.tiempo ?? `${Math.round(referencia.distancia_km)} km`;
+  return `${referencia.nombre} · ${lejania}`.toUpperCase();
+}
+
 export class Catalogo {
   constructor(parcelas, vistas, diseno = null) {
     this.meta = parcelas;
@@ -27,6 +36,7 @@ export class Catalogo {
     this.overlays = new Map();
     this.referencias = new Map();
     this.caminos = new Map();
+    this.puntos = new Map();
   }
 
   static async cargar() {
@@ -53,6 +63,7 @@ export class Catalogo {
       this.referencias.set(idVista, datos.referencias ?? []);
       // Los sitios construidos antes de los caminos no los traen.
       this.caminos.set(idVista, datos.caminos ?? []);
+      this.puntos.set(idVista, datos.puntos ?? []);
     }
     return this.overlays.get(idVista);
   }
@@ -65,6 +76,11 @@ export class Catalogo {
   /** Los accesos del KMZ en una vista, cada uno como sus anillos. Pide antes overlayDe. */
   caminosDe(idVista) {
     return this.caminos.get(idVista) ?? [];
+  }
+
+  /** Dónde caen en esta vista los otros puntos de vuelo. Pide antes overlayDe. */
+  puntosDe(idVista) {
+    return this.puntos.get(idVista) ?? [];
   }
 
   posiciones() {

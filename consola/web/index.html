@@ -347,6 +347,8 @@
               <label class="campo"><span>Nombre</span><input name="nombre" type="text" autocomplete="off"></label>
               <label class="campo"><span>Etapa</span><input name="etapa" type="text" placeholder="Ej.: Etapas 1 a 4" autocomplete="off"></label>
               <label class="campo campo--ancho"><span>Diseño</span><select name="diseno"></select></label>
+              <label class="casilla-ajuste campo--ancho"><input name="numeros_fijos" type="checkbox">
+                <span><b>Números siempre a la vista</b> Se achican de lejos en vez de juntarse en burbujas. Para loteos chicos, donde caben todos.</span></label>
             </div>
           </fieldset>
           <fieldset class="grupo">
@@ -368,7 +370,7 @@
             <div class="grupo__campos">
               <label class="campo"><span>Nombre en el CRM</span><input name="parcelacion" type="text" autocomplete="off"></label>
               <label class="campo"><span>Despegue del dron <i>lon, lat</i></span><input name="despegue" type="text" placeholder="Ej.: -72.27591, -35.86774" autocomplete="off"></label>
-              <label class="campo campo--ancho"><span>Referencias en el horizonte</span><input name="referencias" type="text" placeholder="Ej.: Cauquenes, Pelluhue, Chanco" autocomplete="off"></label>
+              <label class="campo campo--ancho"><span>Referencias en el horizonte <i>con el tiempo de viaje si quieres; lo que no esté en el mapa, con sus coordenadas</i></span><input name="referencias" type="text" placeholder="Ej.: Cauquenes 15 min, Pelluhue 40 min, Ruta 5 (-36.74, -72.33) 20 min" autocomplete="off"></label>
             </div>
           </fieldset>
           <!-- Aparece flotando abajo apenas se cambia algo (plano.js marca el formulario). -->

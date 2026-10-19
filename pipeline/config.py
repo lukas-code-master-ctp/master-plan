@@ -206,6 +206,10 @@ class Proyecto:
     # la planilla usan ese.
     link_reserva: str = ""
     monto_reserva: float | None = None
+    # Los números de todas las parcelas siempre a la vista, achicándose con la
+    # distancia, en vez de agruparse en burbujas cuando no caben. Le sirve a un
+    # loteo chico, donde caben todos; en uno de cientos se taparían entre ellos.
+    numeros_fijos: bool = False
 
     # El slug se ASIGNA, no se deriva. Es la identidad del loteo: su carpeta de
     # salida, su proyecto en el hosting y su URL. Dos clientes pueden llamar igual
@@ -270,6 +274,7 @@ def cargar_proyecto(carpeta: Path, **valores) -> Proyecto:
         referencias=tuple(datos.get("referencias") or ()),
         link_reserva=str(datos.get("link_reserva") or "").strip(),
         monto_reserva=leer_monto(datos.get("monto_reserva")),
+        numeros_fijos=bool(datos.get("numeros_fijos")),
         slug_guardado=str(datos.get("slug") or ""),
     )
 
