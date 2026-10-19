@@ -137,6 +137,9 @@ async function cambiarVista(vista) {
   // reencuadra, porque la orientación anterior ya no significa nada.
   const reencuadrar = estado.vista?.posicion !== vista.posicion;
   estado.vista = vista;
+  // A dónde lleva "Volver al masterplan": el último punto con el loteo dibujado.
+  if (!vista.solo_foto) estado.ultimaConDibujo = vista;
+  $('#volver-masterplan').hidden = !vista.solo_foto;
   const overlay = await estado.catalogo.overlayDe(vista.id);
   const mostrada = await estado.visor.mostrarVista(vista, overlay, {
     avisar: mostrarCarga,
@@ -387,6 +390,13 @@ function construirControles() {
 }
 
 function conectarAccionesRapidas() {
+  $('#volver-masterplan').addEventListener('click', () => {
+    // Si se entró directo a un punto solo foto (un enlace compartido), al de inicio.
+    const { vistaInicial, vistas } = estado.catalogo;
+    const destino = estado.ultimaConDibujo
+      ?? (vistaInicial?.solo_foto ? vistas.find((v) => !v.solo_foto) : vistaInicial);
+    if (destino) cambiarVista(destino);
+  });
   const compartir = $('#accion-compartir');
   compartir.addEventListener('click', async () => {
     const etiqueta = compartir.querySelector('.accion__texto');
