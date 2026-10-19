@@ -241,3 +241,12 @@ def test_un_estero_se_proyecta_como_linea_y_se_corta_lejos():
     assert len(tramo) > 20                      # densificado para seguir el terreno
     assert all(az == pytest.approx(0.0, abs=0.05) for az, _ in tramo)
     assert tramo[0][1] == pytest.approx(-45.0, abs=0.1) and tramo[-1][1] == pytest.approx(-18.43, abs=0.1)
+
+
+def test_el_sitio_abre_en_un_punto_con_el_loteo_dibujado():
+    from pipeline.construir import _vista_inicial
+    vistas = [{"id": "p01", "puntaje_encuadre": 10.0},
+              {"id": "p03", "puntaje_encuadre": 0.0, "solo_foto": True}]
+    assert _vista_inicial(vistas) == "p01"
+    # Si todos son solo foto, igual abre en alguno.
+    assert _vista_inicial([vistas[1]]) == "p03"

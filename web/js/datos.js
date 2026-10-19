@@ -15,8 +15,12 @@ export function romano(posicion) {
  * tiempo de viaje, que es lo que pregunta un comprador; si no, "CAUQUENES · 12 KM".
  */
 export function textoReferencia(referencia) {
-  const lejania = referencia.tiempo ?? `${Math.round(referencia.distancia_km)} km`;
-  return `${referencia.nombre} · ${lejania}`.toUpperCase();
+  return `${referencia.nombre} · ${lejaniaReferencia(referencia)}`.toUpperCase();
+}
+
+/** Lo que va después del nombre: el tiempo de viaje si lo hay, si no los km. */
+export function lejaniaReferencia(referencia) {
+  return referencia.tiempo ?? `${Math.round(referencia.distancia_km)} km`;
 }
 
 export class Catalogo {

@@ -613,17 +613,63 @@ button { cursor: pointer; }
   stroke-opacity: 0.9;
 }
 
-.referencia { pointer-events: none; }
-.referencia__tick { stroke: rgb(255 255 255 / 0.85); stroke-width: 1.5; }
-.referencia__texto {
-  font: 600 0.625rem var(--sans);
-  letter-spacing: 0.1em;
-  fill: #fff;
-  text-anchor: middle;
-  /* El borde oscuro es lo que hace legible el rótulo contra cielo, bosque o tierra. */
-  paint-order: stroke;
-  stroke: rgb(0 0 0 / 0.55);
-  stroke-width: 3px;
+/* Los hitos del horizonte (visor.js, _dibujarReferencias): una píldora oscura con
+   el nombre y el tiempo, parada sobre un alfiler que baja al lugar. Sobre nubes o
+   cielo claro un texto suelto con borde se perdía. */
+.referencias { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
+.referencia {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  translate: -50% -100%;
+}
+.referencia[hidden] { display: none; }
+.referencia__pildora {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgb(15 15 15 / 0.72);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  white-space: nowrap;
+  font: 700 0.8125rem var(--sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.referencia__lejania {
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #ffd166;
+}
+/* El alfiler: una línea hasta el horizonte y un punto donde queda el lugar. */
+.referencia::after {
+  content: '';
+  width: 2px;
+  height: var(--alfiler, 22px);
+  background: linear-gradient(#fff, rgb(255 255 255 / 0.6));
+  box-shadow: 0 0 2px rgb(0 0 0 / 0.5);
+}
+.referencia::before {
+  content: '';
+  order: 2;
+  width: 7px;
+  height: 7px;
+  margin-top: -1px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.35);
+}
+@media (max-width: 40rem) {
+  .referencia__pildora { padding: 4px 9px; font-size: 0.6875rem; }
+  .referencia__lejania { font-size: 0.6875rem; }
 }
 
 /* --- Columna de instrumentos ------------------------------------------------ */
@@ -1927,7 +1973,8 @@ button { cursor: pointer; }
 /* Los otros puntos de vuelo, parados en el suelo bajo el dron (visor.js,
    _dibujarPuntos). La punta del pin cae justo en el punto: por eso el
    translate(-50%, -100%) va dentro, en el botón, y el visor solo lo mueve. */
-.puntos-360 { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+/* Sobre el overlay de las parcelas: un número no puede tapar el botón de otro punto. */
+.puntos-360 { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 3; }
 .punto-360 {
   position: absolute;
   top: 0;
@@ -1935,7 +1982,7 @@ button { cursor: pointer; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   padding: 0;
   border: 0;
   background: none;
@@ -1946,25 +1993,59 @@ button { cursor: pointer; }
   -webkit-tap-highlight-color: transparent;
 }
 .punto-360[hidden] { display: none; }
+/* Una lupa blanca y llena, distinta de los números de las parcelas (píldoras de
+   color) para que se lea como "acá hay otra foto", no como un lote más. */
 .punto-360__icono {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
-  background: rgb(20 20 20 / 0.6);
+  background: #fff;
+  color: var(--marca-800, #18181b);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 0.5);
+  animation: punto-360-flota 2.4s ease-in-out infinite;
+  transition: transform 160ms var(--curva), background-color 160ms ease, color 160ms ease;
+}
+.punto-360__icono svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+/* Dos ondas que salen de la lupa, desfasadas: llaman la atención sin tapar la foto. */
+.punto-360__icono::before,
+.punto-360__icono::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
   border: 2px solid #fff;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.45);
-  font: 700 0.6875rem var(--sans);
-  letter-spacing: 0.02em;
-  backdrop-filter: blur(4px);
-  transition: transform 160ms var(--curva), background-color 160ms ease;
+  opacity: 0;
+  animation: punto-360-onda 2.4s ease-out infinite;
+  pointer-events: none;
+}
+.punto-360__icono::after { animation-delay: 1.2s; }
+@keyframes punto-360-onda {
+  0% { transform: scale(1); opacity: 0.85; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+@keyframes punto-360-flota {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -4px; }
 }
 .punto-360__nombre {
-  font: 600 0.625rem var(--sans);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(20 20 20 / 0.7);
+  font: 700 0.625rem var(--sans);
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  text-shadow: 0 1px 3px rgb(0 0 0 / 0.8);
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
 }
 /* La patita hasta el suelo. */
 .punto-360::after {
@@ -1975,8 +2056,15 @@ button { cursor: pointer; }
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
 }
 .punto-360:hover .punto-360__icono,
-.punto-360:focus-visible .punto-360__icono { transform: scale(1.1); background: var(--marca-700, #15803d); }
+.punto-360:focus-visible .punto-360__icono {
+  transform: scale(1.12);
+  background: var(--marca-700, #27272a);
+  color: #fff;
+}
 .punto-360:focus-visible { outline: none; }
+@media (prefers-reduced-motion: reduce) {
+  .punto-360__icono, .punto-360__icono::before, .punto-360__icono::after { animation: none; }
+}
 /* Con una parcela elegida, los puntos dan un paso atrás como las demás parcelas. */
 .visor:has(.overlay--con-seleccion) .punto-360 { opacity: 0.35; }
 

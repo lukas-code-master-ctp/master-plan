@@ -467,3 +467,16 @@ def test_los_numeros_fijos_vienen_apagados_salvo_que_proyecto_json_diga_otra_cos
     assert cargar_proyecto(tmp_path).numeros_fijos is False
     (tmp_path / "proyecto.json").write_text('{"nombre": "Lomas", "numeros_fijos": true}', encoding="utf-8")
     assert cargar_proyecto(tmp_path).numeros_fijos is True
+
+
+def test_los_puntos_solo_foto_se_leen_como_vengan(tmp_path):
+    from pipeline.config import leer_puntos
+    assert leer_puntos("3, 4 y 5") == (3, 4, 5)
+    assert leer_puntos("III, iv") == (3, 4)
+    assert leer_puntos([5, "3", 3]) == (3, 5)
+    assert leer_puntos("") == ()
+    assert leer_puntos("punto 3") == (3,)
+    assert cargar_proyecto(tmp_path).puntos_solo_foto == ()
+    (tmp_path / "proyecto.json").write_text('{"nombre": "Lomas", "puntos_solo_foto": [3, 4, 5]}',
+                                            encoding="utf-8")
+    assert cargar_proyecto(tmp_path).puntos_solo_foto == (3, 4, 5)

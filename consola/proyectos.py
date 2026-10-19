@@ -38,7 +38,7 @@ EXTENSIONES_FOTO = (".jpg", ".jpeg")
 # Lo que se guarda en `proyecto.json`, que es lo que lee el pipeline. El resto
 # —de quién es, dónde quedó publicado— vive en la base y no se duplica acá.
 CAMPOS_DEL_PIPELINE = ("nombre", "etapa", "whatsapp", "parcelacion", "despegue", "referencias",
-                       "link_reserva", "monto_reserva", "numeros_fijos")
+                       "link_reserva", "monto_reserva", "numeros_fijos", "puntos_solo_foto")
 
 
 MEGA = 1024 * 1024
@@ -186,6 +186,8 @@ class Proyecto:
     monto_reserva: float | None = None
     # Los números de las parcelas siempre a la vista, sin agruparse (config.Proyecto).
     numeros_fijos: bool = False
+    # Los puntos de vuelo sin nada dibujado encima (config.Proyecto).
+    puntos_solo_foto: tuple[int, ...] = ()
     # Subido desde el navegador (sus archivos son nuestros) o carpeta vinculada
     # del disco (no lo son).
     subido: bool = False
@@ -348,6 +350,7 @@ class Registro:
             link_reserva=datos.link_reserva,
             monto_reserva=datos.monto_reserva,
             numeros_fijos=datos.numeros_fijos,
+            puntos_solo_foto=datos.puntos_solo_foto,
             parcelacion=str(_leer_json(carpeta / "proyecto.json").get("parcelacion") or ""),
             despegue=datos.despegue,
             referencias=datos.referencias,
@@ -507,6 +510,9 @@ class Vista:
         proyecto = self.ver(slug)
         limpios = {c: v for c, v in campos.items() if v is not None and c in CAMPOS_DEL_PIPELINE}
         _revisar_reserva(limpios)
+        if "puntos_solo_foto" in limpios:
+            # Se guarda limpio ("3, 4 y 5" → [3, 4, 5]) para que la consola lo muestre igual.
+            limpios["puntos_solo_foto"] = list(config.leer_puntos(limpios["puntos_solo_foto"]))
         if "nombre" in limpios:
             self.registro.base.renombrar_proyecto(slug, str(limpios["nombre"]))
         self.registro._escribir_json(proyecto.fuentes, slug, limpios)

@@ -174,6 +174,12 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         lineas = leer_lineas(fuentes.kmz)
         calibradas = []
         for panorama, rumbo, vista in vistas:
+            if vista.posicion in proyecto.puntos_solo_foto:
+                # No dibuja parcelas: no hay calce que afinar, y un tope acá solo
+                # daría un aviso sobre líneas que nadie va a ver.
+                print(f"  {vista.id}: solo foto, sin calibrar")
+                calibradas.append((panorama, rumbo, vista))
+                continue
             modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
             mapa = mapa_de_caminos(panorama.ruta)
             if vista.id in inclinaciones:
@@ -203,10 +209,18 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
     apariciones: dict[str, list[tuple[str, float]]] = {}
     resumen_vistas = []
 
+    solo_foto = set(proyecto.puntos_solo_foto)
+    sin_punto = sorted(solo_foto - {v.posicion for _, _, v in vistas})
+    if sin_punto:
+        avisos.añadir(f"los puntos solo foto {', '.join(map(str, sin_punto))} no están entre "
+                      f"los puntos de vuelo; se ignoran")
     for panorama, rumbo, vista in vistas:
         modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
+        # Un punto solo foto no dibuja nada del loteo y tampoco cuenta como la vista
+        # de ninguna parcela: "ver desde el aire" la lleva a un punto con líneas.
+        dibuja = vista.posicion not in solo_foto
         proyectadas = proyectar_vista(vista, [(g.id, g.anillo) for g in con_id.values()],
-                                      terreno=modelo)
+                                      terreno=modelo) if dibuja else []
         for parcela in proyectadas:
             puntaje = parcela.area_angular
             if parcela.centro[1] < DEPRESION_INCOMODA:
@@ -220,9 +234,9 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
                 for hito in hitos
             ],
             # Los accesos del KMZ, para que se vea por dónde se llega a cada lote.
-            "caminos": _proyectar_caminos(vista, caminos, modelo),
+            "caminos": _proyectar_caminos(vista, caminos, modelo) if dibuja else [],
             # Los esteros y canales que la loteadora marcó en el KMZ.
-            "aguas": _proyectar_aguas(vista, aguas, modelo),
+            "aguas": _proyectar_aguas(vista, aguas, modelo) if dibuja else [],
             # Los otros puntos de vuelo, para saltar a su 360 tocándolos en la foto.
             "puntos": _proyectar_puntos(vista, [v for _, _, v in vistas], modelo),
             "parcelas": [
@@ -236,11 +250,14 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
                 for p in proyectadas
             ],
         })
-        resumen_vistas.append(_resumen_vista(panorama, rumbo, vista, proyectadas,
-                                             "dem" if relieve else "plano", despegue,
-                                             ajustes.get(vista.id, Ajuste()),
-                                             niveles.get(vista.id, horizonte.SIN_NIVELAR)))
-        print(f"  {vista.id}: {len(proyectadas)} parcelas visibles")
+        resumen = _resumen_vista(panorama, rumbo, vista, proyectadas,
+                                 "dem" if relieve else "plano", despegue,
+                                 ajustes.get(vista.id, Ajuste()),
+                                 niveles.get(vista.id, horizonte.SIN_NIVELAR))
+        if not dibuja:
+            resumen["solo_foto"] = True
+        resumen_vistas.append(resumen)
+        print(f"  {vista.id}: {len(proyectadas)} parcelas visibles" if dibuja else f"  {vista.id}: solo foto")
 
     if not sin_imagenes:
         print("Generando niveles de imagen...")
@@ -689,7 +706,9 @@ def _vista_inicial(resumen_vistas: list[dict]) -> str | None:
     """Con cuál abrir el sitio: la que mejor muestra el loteo."""
     if not resumen_vistas:
         return None
-    return max(resumen_vistas, key=lambda v: v["puntaje_encuadre"])["id"]
+    # Se abre en un punto con el loteo dibujado, salvo que todos sean solo foto.
+    con_dibujo = [v for v in resumen_vistas if not v.get("solo_foto")] or resumen_vistas
+    return max(con_dibujo, key=lambda v: v["puntaje_encuadre"])["id"]
 
 
 def _resumen(parcelas: list[dict]) -> dict:

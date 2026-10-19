@@ -210,6 +210,10 @@ class Proyecto:
     # distancia, en vez de agruparse en burbujas cuando no caben. Le sirve a un
     # loteo chico, donde caben todos; en uno de cientos se taparían entre ellos.
     numeros_fijos: bool = False
+    # Los puntos de vuelo que se muestran solo como foto, sin parcelas, caminos ni
+    # esteros dibujados. Un punto volado bajo ve las parcelas tan de cerca y de lado
+    # que las líneas confunden más de lo que ubican; ahí sirve la foto sola.
+    puntos_solo_foto: tuple[int, ...] = ()
 
     # El slug se ASIGNA, no se deriva. Es la identidad del loteo: su carpeta de
     # salida, su proyecto en el hosting y su URL. Dos clientes pueden llamar igual
@@ -253,6 +257,26 @@ def leer_monto(valor) -> float | None:
         return None
 
 
+_ROMANOS = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10}
+
+
+def leer_puntos(valor) -> tuple[int, ...]:
+    """Puntos de vuelo escritos a mano: [3, 4, 5], "3, 4 y 5" o "III, IV", como
+    los nombra el visor. Lo que no se entiende se ignora."""
+    if isinstance(valor, (list, tuple)):
+        piezas = [str(v) for v in valor]
+    else:
+        piezas = re.split(r"[\s,;]+|\by\b", str(valor or ""))
+    puntos = set()
+    for pieza in piezas:
+        pieza = pieza.strip().upper()
+        if pieza.isdigit() and int(pieza) > 0:
+            puntos.add(int(pieza))
+        elif pieza in _ROMANOS:
+            puntos.add(_ROMANOS[pieza])
+    return tuple(sorted(puntos))
+
+
 def cargar_proyecto(carpeta: Path, **valores) -> Proyecto:
     """Los datos del proyecto: `proyecto.json` en la carpeta, pisado por lo que
     venga por línea de comandos. Sin nada, el nombre es el de la carpeta."""
@@ -275,6 +299,7 @@ def cargar_proyecto(carpeta: Path, **valores) -> Proyecto:
         link_reserva=str(datos.get("link_reserva") or "").strip(),
         monto_reserva=leer_monto(datos.get("monto_reserva")),
         numeros_fijos=bool(datos.get("numeros_fijos")),
+        puntos_solo_foto=leer_puntos(datos.get("puntos_solo_foto")),
         slug_guardado=str(datos.get("slug") or ""),
     )
 

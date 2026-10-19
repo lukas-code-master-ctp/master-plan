@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Catalogo, conteoPorEstado, romano, textoReferencia } from './datos.js';
+import { Catalogo, conteoPorEstado, romano, textoReferencia, lejaniaReferencia } from './datos.js';
 
 const vista = (id, posicion, altura_m) => ({ id, posicion, altura_m, lat: -35, lon: -72 });
 
@@ -92,6 +92,8 @@ test('los otros puntos de vuelo llegan con el overlay, y un sitio viejo no trae 
 test('un hito con tiempo de viaje dice el tiempo; sin él, los kilómetros', () => {
   assert.equal(textoReferencia({ nombre: 'Quillón', distancia_km: 6.4, tiempo: '10 min' }), 'QUILLÓN · 10 MIN');
   assert.equal(textoReferencia({ nombre: 'Cauquenes', distancia_km: 12.4 }), 'CAUQUENES · 12 KM');
+  assert.equal(lejaniaReferencia({ nombre: 'Chillán', distancia_km: 36.5, tiempo: '49 min' }), '49 min');
+  assert.equal(lejaniaReferencia({ nombre: 'Cauquenes', distancia_km: 12.4 }), '12 km');
 });
 
 test('los esteros de una vista llegan con su overlay, y un sitio viejo no trae ninguno', async () => {
