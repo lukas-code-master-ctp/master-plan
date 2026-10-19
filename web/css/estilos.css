@@ -1927,7 +1927,8 @@ button { cursor: pointer; }
 /* Los otros puntos de vuelo, parados en el suelo bajo el dron (visor.js,
    _dibujarPuntos). La punta del pin cae justo en el punto: por eso el
    translate(-50%, -100%) va dentro, en el botón, y el visor solo lo mueve. */
-.puntos-360 { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+/* Sobre el overlay de las parcelas: un número no puede tapar el botón de otro punto. */
+.puntos-360 { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 3; }
 .punto-360 {
   position: absolute;
   top: 0;

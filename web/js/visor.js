@@ -51,6 +51,10 @@ const PATITA_PX = 16;
 const SEPARACION_PASTILLAS = 3;
 // Por debajo de esto las pastillas se amontonan y tapan el terreno.
 const ANCHO_MINIMO_ETIQUETA_PX = 42;
+// Lo que ocupa en pantalla un botón de punto 360 (la lupa, su nombre y la patita),
+// medido en estilos.css. Ningún número de parcela se dibuja dentro.
+const ANCHO_ZONA_PUNTO = 76;
+const ALTO_ZONA_PUNTO = 92;
 // La burbuja de un grupo: más alta que una pastilla, porque dice más.
 const ALTO_BURBUJA = 30;
 // Por sobre las pastillas sueltas (que van hasta ~1e7) y bajo la elegida (1e9).
@@ -519,6 +523,11 @@ export class Visor {
       ? new Set(candidatas.map((c) => c.id))
       : rotulosSinChoques(candidatas, SEPARACION_PASTILLAS);
     if (!this.numerosFijos) mostradas = this._agruparRotulos(candidatas, mostradas, enPantalla);
+    // Los botones de los otros puntos van primero: un número encima los escondía,
+    // y la parcela se sigue leyendo por su forma y por sus vecinas. La elegida no cede.
+    for (const candidata of candidatas) {
+      if (candidata.id !== this.seleccionada && this._tapaUnPunto(candidata)) mostradas.delete(candidata.id);
+    }
     for (const id of mostradas) {
       this.nodos.get(id).pastilla.style.display = '';
     }
@@ -858,6 +867,8 @@ export class Visor {
   }
 
   _dibujarPuntos(ancho, alto) {
+    // Dónde quedó cada botón, para que ningún número de parcela se le ponga encima.
+    this.zonasPuntos = [];
     [...this.capaPuntos.children].forEach((boton, indice) => {
       const punto = this.puntos[indice];
       const [x, y, z] = this.camara.aCamara(punto.az, punto.el);
@@ -868,7 +879,19 @@ export class Visor {
       const [px, py] = this.camara.aPantalla([x, y, z], ancho, alto);
       boton.hidden = px < -40 || px > ancho + 40 || py < -40 || py > alto + 40;
       boton.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px)`;
+      if (!boton.hidden) {
+        // El botón se para sobre el suelo: crece hacia arriba desde (px, py).
+        this.zonasPuntos.push({
+          x0: px - ANCHO_ZONA_PUNTO / 2, x1: px + ANCHO_ZONA_PUNTO / 2, y0: py - ALTO_ZONA_PUNTO, y1: py,
+        });
+      }
     });
+  }
+
+  /** Si la pastilla (centrada en x, y) pisa algún botón de punto 360. */
+  _tapaUnPunto({ x, y, ancho, alto }) {
+    return (this.zonasPuntos ?? []).some((zona) =>
+      x + ancho / 2 > zona.x0 && x - ancho / 2 < zona.x1 && y + alto / 2 > zona.y0 && y - alto / 2 < zona.y1);
   }
 
   // Hitos del horizonte ("CAUQUENES · 12 KM"): un tick y un rótulo, sin interacción.
