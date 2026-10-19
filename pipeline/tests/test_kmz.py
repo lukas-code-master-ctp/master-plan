@@ -406,3 +406,43 @@ def test_leer_lineas_deja_afuera_el_achurado(tmp_path):
         archivo.writestr("doc.kml", kml(estilo("rojo", "FF0000FF") + rejilla_de_dos() + achurado()))
 
     assert len(leer_lineas(ruta)) == 5
+
+
+def franja_achurada(norte_sur=-8.0, norte_norte=-2.0, largo=140.0, paso=3.0):
+    """Un acceso como lo dibuja el CAD: los dos bordes y rayas cruzadas entre ellos."""
+    bordes = (linea([desplazar(0, norte_sur), desplazar(largo, norte_sur)])
+              + linea([desplazar(0, norte_norte), desplazar(largo, norte_norte)]))
+    rayas = "".join(linea([desplazar(x, norte_sur), desplazar(x + 4, norte_norte)])
+                    for x in range(0, int(largo) - 4, int(paso)))
+    return bordes + rayas
+
+
+def guardar_kmz(tmp_path, contenido):
+    ruta = tmp_path / "loteo.kmz"
+    with zipfile.ZipFile(ruta, "w") as archivo:
+        archivo.writestr("doc.kml", contenido)
+    return ruta
+
+
+def test_leer_caminos_arma_la_franja_del_acceso(tmp_path):
+    """Lomas de Quillón: los accesos son franjas achuradas en amarillo, no polígonos,
+    y en el 360 no se veían."""
+    from pipeline.kmz import leer_caminos
+    ruta = guardar_kmz(tmp_path, kml(rejilla_de_dos() + punto("LOTE 1", desplazar(35, 35))
+                                     + punto("LOTE 2", desplazar(105, 35)) + franja_achurada()))
+
+    caminos = leer_caminos(ruta)
+
+    assert len(caminos) == 1
+    contorno = caminos[0][0]
+    assert geo.contiene(contorno, desplazar(70, -5))
+    assert not geo.contiene(contorno, desplazar(70, 35))
+    assert 140 * 6 <= geo.area_m2(contorno) <= 140 * 12
+
+
+def test_leer_caminos_no_toma_los_deslindes(tmp_path):
+    from pipeline.kmz import leer_caminos
+    ruta = guardar_kmz(tmp_path, kml(rejilla_de_dos() + punto("LOTE 1", desplazar(35, 35))
+                                     + punto("LOTE 2", desplazar(105, 35))))
+
+    assert leer_caminos(ruta) == []

@@ -135,6 +135,7 @@ async function cambiarVista(vista) {
   const mostrada = await estado.visor.mostrarVista(vista, overlay, {
     avisar: mostrarCarga,
     referencias: estado.catalogo.referenciasDe(vista.id),
+    caminos: estado.catalogo.caminosDe(vista.id),
   });
   // Mientras cargaba eligieron otra vista: esa se encarga del resto.
   if (!mostrada) return;

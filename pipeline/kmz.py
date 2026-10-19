@@ -55,6 +55,17 @@ ACHURADO_FRACCION_PARALELA = 0.9
 ACHURADO_TOLERANCIA_GRADOS = 2.0
 ACHURADO_SEPARACION_MAX_M = 8.0
 
+# Los caminos (accesos, servidumbres) no son polígonos en el KMZ: son los bordes de la
+# franja y, casi siempre, un achurado que la rellena (Lomas de Quillón). Lo que queda
+# del dibujo al sacar los deslindes de los lotes se engorda y se une: el achurado
+# cierra la franja y un eje suelto queda como una franja angosta. Lo que suma menos
+# que CAMINO_AREA_MINIMA_M2 son cotas y restos, no caminos.
+CAMINO_RADIO_M = 2.0
+CAMINO_CIERRE_M = 1.5
+CAMINO_AREA_MINIMA_M2 = 200.0
+CAMINO_FRACCION_EN_DESLINDE = 0.8
+CAMINO_SIMPLIFICAR_M = 0.5
+
 
 @dataclass
 class ParcelaGeometrica:
@@ -147,6 +158,50 @@ def leer_lineas(ruta: Path) -> list[geo.Anillo]:
         if len(poligono.anillo) >= 3:
             lineas.append(poligono.anillo + poligono.anillo[:1])
     return lineas
+
+
+def leer_caminos(ruta: Path) -> list[list[geo.Anillo]]:
+    """Las franjas de los caminos del dibujo, cada una como [contorno, *huecos].
+
+    Un camino que da la vuelta encierra lotes: esos van como huecos, para no
+    pintarlos encima.
+    """
+    with zipfile.ZipFile(ruta) as archivo:
+        nombres = [n for n in archivo.namelist() if n.lower().endswith(".kml")]
+        if not nombres:
+            raise ValueError(f"{ruta.name} no contiene ningún .kml")
+        kml = archivo.read(nombres[0]).decode("utf-8", "ignore")
+    raiz = ET.fromstring(kml)
+    dibujo = _leer_dibujo(raiz, _colores_de_estilo(raiz))
+    lotes = [p for p in _parsear(kml) if p.id]
+    if not dibujo.lineas or not lotes:
+        return []
+    origen = _origen(dibujo)
+
+    def en_metros(puntos):
+        return [geo.a_metros(p, origen) for p in puntos]
+
+    deslindes = unary_union([Polygon(en_metros(p.anillo)).exterior for p in lotes]).buffer(TOLERANCIA_RED_M)
+    prepare(deslindes)
+    trazos = [LineString(en_metros(puntos)) for puntos, _ in dibujo.lineas if len(puntos) >= 2]
+    sueltos = [t for t in trazos
+               if t.length > 0 and t.intersection(deslindes).length < CAMINO_FRACCION_EN_DESLINDE * t.length]
+    if not sueltos:
+        return []
+    zona = unary_union([t.buffer(CAMINO_RADIO_M, cap_style="flat") for t in sueltos])
+    zona = zona.buffer(CAMINO_CIERRE_M).buffer(-CAMINO_CIERRE_M)
+
+    def en_grados(anillo):
+        return [geo.desde_metros(xy, origen) for xy in list(anillo.coords)[:-1]]
+
+    caminos = []
+    for pieza in getattr(zona, "geoms", [zona]):
+        if pieza.area < CAMINO_AREA_MINIMA_M2:
+            continue
+        pieza = pieza.simplify(CAMINO_SIMPLIFICAR_M)
+        caminos.append([en_grados(pieza.exterior)]
+                       + [en_grados(h) for h in pieza.interiors if Polygon(h).area >= CAMINO_AREA_MINIMA_M2])
+    return caminos
 
 
 def _parsear(kml: str) -> list[ParcelaGeometrica]:

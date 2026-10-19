@@ -602,6 +602,17 @@ button { cursor: pointer; }
   .parcela-halo, .parcela-mapa--elegida { animation: none !important; opacity: 0.85; }
 }
 
+/* Los accesos del KMZ, en el amarillo con que los dibuja la loteadora. */
+.camino {
+  pointer-events: none;
+  fill: #f2c230;
+  fill-opacity: 0.3;
+  fill-rule: evenodd;
+  stroke: #f2c230;
+  stroke-width: 1.25;
+  stroke-opacity: 0.9;
+}
+
 .referencia { pointer-events: none; }
 .referencia__tick { stroke: rgb(255 255 255 / 0.85); stroke-width: 1.5; }
 .referencia__texto {

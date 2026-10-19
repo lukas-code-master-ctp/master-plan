@@ -20,10 +20,10 @@ from .crm import leer_crm
 from .excel import FichaComercial, alinear_con, leer_planilla
 from .calibracion import DESNIVELES_PROBADOS, Ajuste, aplicar, calibrar, calibrar_altura, mapa_de_caminos
 from .imagenes import generar_niveles
-from .kmz import ParcelaGeometrica, leer_kmz, leer_lineas
+from .kmz import ParcelaGeometrica, leer_caminos, leer_kmz, leer_lineas
 from .panoramas import (Panorama, RumboResuelto, a_vista, buscar_panoramas, por_que_no_sirven,
                         resolver_rumbo)
-from .proyeccion import Vista, proyectar_vista
+from .proyeccion import ModeloTerreno, Vista, proyectar_parcela, proyectar_vista
 
 # Dos fotos son del mismo vuelo si el dron dice que despegaron a menos de esto. Entre
 # vuelos del mismo día la diferencia es de metros (Vichuquén: 76,5 y 84,9 m); dentro
@@ -83,6 +83,9 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
     etapas = sorted({g.etapa for g in geometrias if g.etapa is not None})
     print(f"  {len(con_id)} parcelas con nombre, {len(sin_id)} polígonos sin identificar"
           f"{f', {len(etapas)} etapas' if etapas else ''}")
+    caminos = leer_caminos(fuentes.kmz)
+    if caminos:
+        print(f"  {len(caminos)} caminos dibujados")
 
     fichas = _leer_fichas(fuentes, proyecto, avisos)
     cruces: list[str] = []
@@ -208,6 +211,8 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
                 referencias.proyectar(vista, hito, _cota_en_datum_dron(vista, hito, cota_despegue))
                 for hito in hitos
             ],
+            # Los accesos del KMZ, para que se vea por dónde se llega a cada lote.
+            "caminos": _proyectar_caminos(vista, caminos, modelo),
             "parcelas": [
                 {
                     "id": p.id,
@@ -297,6 +302,18 @@ def _leer_fichas(fuentes: config.Fuentes, proyecto: config.Proyecto,
         return {}
     print(f"  {len(fichas)} parcelas con datos comerciales")
     return fichas
+
+
+def _proyectar_caminos(vista: Vista, caminos: list[list[geo.Anillo]],
+                       modelo: ModeloTerreno | None) -> list[list[list[list[float]]]]:
+    """Cada camino como sus anillos (contorno y huecos) en azimut y elevación."""
+    proyectados = []
+    for anillos in caminos:
+        if not proyectar_vista(vista, [("camino", anillos[0])], terreno=modelo):
+            continue   # lejos, al ras del horizonte o fuera de vista, como una parcela
+        partes = [proyectar_parcela(vista, "camino", anillo, modelo) for anillo in anillos]
+        proyectados.append([[list(v) for v in parte.anillo] for parte in partes if parte])
+    return proyectados
 
 
 def _nivelar(panorama: Panorama, vista: Vista, cota_despegue: float,

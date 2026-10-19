@@ -531,6 +531,14 @@ Hay KMZ que separan las etapas en el rótulo y no por color, cada una a su maner
 con la única etapa que contiene sus números, por descarte, y la construcción dice qué
 cruzó con qué. Si dos etapas calzan igual con un grupo, no se adivina.
 
+**Caminos.** Los accesos y servidumbres no vienen como polígonos sino como líneas: los
+bordes de la franja y, casi siempre, un achurado que la rellena. El pipeline toma las
+líneas del dibujo que no son deslindes de un lote, las engorda 2 m y las une; el
+achurado cierra la franja y un eje suelto queda como una franja angosta. Lo que suma
+menos de 200 m² (cotas, restos) se descarta. Cada vista los trae en
+`datos/vistas/<id>.json` (`caminos`) y el visor los pinta en amarillo bajo las
+parcelas. Un sitio construido antes no los tiene hasta que se vuelve a construir.
+
 ## Crea tu KMZ
 
 Muchas loteadoras no tienen el KMZ de la subdivisión, y pedirle el DWG al topógrafo no
