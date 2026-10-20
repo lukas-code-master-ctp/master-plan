@@ -850,12 +850,13 @@ export class Visor {
   /** La línea que encierra las parcelas de cada etapa, como en el plano. */
   _dibujarContornosEtapa(ancho, alto) {
     let indice = 0;
-    for (const { anillos } of this.contornosEtapa) {
+    for (const { etapa, anillos } of this.contornosEtapa) {
       for (const anillo of anillos) {
         let nodo = this.nodosContorno[indice];
         if (!nodo) {
           nodo = document.createElementNS(SVG_NS, 'path');
           nodo.setAttribute('class', 'etapa__contorno');
+          nodo.style.color = colorDeEtapa(etapa);
           this._capaEtapas().prepend(nodo);
           this.nodosContorno[indice] = nodo;
         }
@@ -888,6 +889,7 @@ export class Visor {
     if (nodo) return nodo;
     const grupo = document.createElementNS(SVG_NS, 'g');
     grupo.setAttribute('class', 'etapa');
+    grupo.style.color = colorDeEtapa(etapa);
     const fondo = document.createElementNS(SVG_NS, 'rect');
     fondo.setAttribute('class', 'etapa__fondo');
     const texto = document.createElementNS(SVG_NS, 'text');
@@ -1361,6 +1363,18 @@ function extensionDe(valores) {
 
 function promedioDe(valores) {
   return valores.reduce((suma, v) => suma + v, 0) / valores.length;
+}
+
+/**
+ * El color de una etapa: su borde y su rótulo. Claros, para leerse sobre bosque, y
+ * lejos del amarillo de los caminos, del azul de los esteros y de los colores de
+ * estado de las pastillas. Va por número: la etapa 2 es del mismo color en todas
+ * las vistas.
+ */
+const COLORES_ETAPA = ['#ff8a65', '#c4a1ff', '#5eead4', '#f9a8d4', '#fdba74', '#a5b4fc'];
+export function colorDeEtapa(etapa) {
+  const indice = (Math.abs(Math.trunc(Number(etapa) || 1)) - 1 + COLORES_ETAPA.length) % COLORES_ETAPA.length;
+  return COLORES_ETAPA[indice];
 }
 
 function aRuta(pixeles) {
