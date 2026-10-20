@@ -4,8 +4,8 @@
 
 Imprime una línea por etapa: la consola muestra la salida en vivo.
 
-`<carpeta>/entradas.json` (lo que aporta la loteadora; `anclas`, `ubicacion` y `ajuste` son de
-`georreferenciar` y aquí solo se revisan):
+`<carpeta>/entradas.json` (lo que aporta la loteadora; `anclas`, `ubicacion`, `metodo`,
+`escala` y `ajuste` son de `georreferenciar` y aquí solo se revisan):
 
     {
       "pdf": "plano.pdf",              ruta relativa a la carpeta
@@ -57,6 +57,16 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
       "escala_cuadro": true,           con 2 o más anclas: el tamaño sale del cuadro de
                                        superficies y de los puntos solo la posición y el
                                        giro ("Ajustar el tamaño con el cuadro")
+      "metodo": "punto",               cómo se ubica: "puntos" (las anclas), "punto"
+                                       (`ubicacion`) o "cuadricula". Con valor se usa solo
+                                       ese método; null o sin la clave, la precedencia de
+                                       siempre (cuadrícula > 2 anclas > ubicación)
+      "escala": {"p": [x, y], "q": [x, y], "metros": 200},   la escala marcada en el
+                                       plano: los extremos de su barra de escala (px de
+                                       página, a 10 px o más uno del otro) y cuánto mide;
+                                       o {"impresa": 1000} para 1:1.000. Con un punto manda
+                                       sobre el cuadro de superficies y sobre
+                                       `ubicacion.escala_impresa`. No cambia los lotes
       "ajuste": {"de": 0.0, "dn": 0.0}, traslación fina en metros (este, norte)
       "fuera": [[x, y]]                partes sin número que ella dejó fuera del KMZ (el
                                        resto de la propiedad): un punto dentro de cada una.
@@ -629,6 +639,13 @@ def leer_entradas(carpeta: Path) -> dict:
     if "ubicacion" in e:
         # Sin la clave no se agrega: unas entradas de antes quedan iguales (y su huella).
         salida["ubicacion"] = _ubicacion(e["ubicacion"])
+    if "metodo" in e:
+        # Como `ubicacion`: sin la clave no se agrega, y la huella de lo de antes no cambia.
+        if e["metodo"] not in (None,) + METODOS:
+            raise ValueError(f"«metodo» es {', '.join(METODOS)} o null, no {e['metodo']!r}")
+        salida["metodo"] = e["metodo"]
+    if "escala" in e:
+        salida["escala"] = _escala(e["escala"])
     if e.get("escala_cuadro") is not None:
         # Sin la clave (o null) no se agrega: las entradas de antes quedan iguales, y su huella.
         if not isinstance(e["escala_cuadro"], bool):
@@ -649,6 +666,41 @@ def leer_entradas(carpeta: Path) -> dict:
 # La escala impresa de un plano de loteo va de 1:500 a 1:50.000; con holgura, lo que
 # está fuera de esto es un error de tipeo (p. ej. 5 por 5.000).
 ESCALA_IMPRESA_MIN, ESCALA_IMPRESA_MAX = 100, 1_000_000
+
+
+METODOS = ("puntos", "punto", "cuadricula")
+# Los extremos de la barra de escala, más cerca que esto, son un doble clic: el largo
+# medido tendría un error relativo enorme.
+ESCALA_LARGO_MIN_PX = 10
+
+
+def _escala(escala) -> dict | None:
+    """`escala` revisada: la línea marcada sobre la barra de escala o la 1:N escrita."""
+    if escala is None:
+        return None
+    numero = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    if not isinstance(escala, dict):
+        raise ValueError(f"«escala» es {{\"p\", \"q\", \"metros\"}} o {{\"impresa\"}}, no {escala!r}")
+    if "impresa" in escala:
+        n = escala["impresa"]
+        if not numero(n) or n != int(n):
+            raise ValueError(f"la escala del plano es un número entero (1:5.000 → 5000), no {n!r}")
+        if not ESCALA_IMPRESA_MIN <= n <= ESCALA_IMPRESA_MAX:
+            raise ValueError(f"la escala del plano 1:{int(n)} no parece real: revísala (por ejemplo 1:5.000)")
+        return dict(impresa=int(n))
+    extremos = []
+    for clave in ("p", "q"):
+        punto = escala.get(clave)
+        if not isinstance(punto, (list, tuple)) or len(punto) != 2 or not all(numero(v) for v in punto):
+            raise ValueError(f"«escala.{clave}» es un punto [x, y] del plano, no {punto!r}")
+        extremos.append([float(v) for v in punto])
+    metros = escala.get("metros")
+    if not numero(metros) or metros <= 0:
+        raise ValueError(f"cuántos metros mide la escala marcada: un número mayor que 0, no {metros!r}")
+    (px, py), (qx, qy) = extremos
+    if math.hypot(qx - px, qy - py) < ESCALA_LARGO_MIN_PX:
+        raise ValueError("los extremos de la escala están casi en el mismo lugar: márcala de punta a punta")
+    return dict(p=extremos[0], q=extremos[1], metros=float(metros))
 
 
 def _ubicacion(u) -> dict | None:

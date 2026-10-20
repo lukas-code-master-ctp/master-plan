@@ -599,7 +599,7 @@ def test_sin_cuadro_el_estado_no_trae_escala_y_ubicar_la_pide(ana):
     assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["escala_m_px"] is None
     respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
     assert respuesta.status_code == 400
-    assert "escala del plano (por ejemplo 1:5.000)" in respuesta.json()["detail"]
+    assert "márcala en el paso Marcar" in respuesta.json()["detail"]
 
 
 def test_la_huella_de_ubicar_cambia_con_la_coordenada_solo_cuando_ubica_con_ella(ana):
@@ -681,6 +681,111 @@ def test_ubicar_con_puntos_ajustados_al_cuadro(ana):
     assert p["ajustada_al_cuadro"] is True and p["escala_ajustada_m_px"] == pytest.approx(M_PX)
     assert p["escala_puntos_m_px"] == pytest.approx(0.95 * M_PX)
     assert p["escala_cuadro"]["area_pct"] == pytest.approx(0, abs=0.05)
+
+
+def test_sin_metodo_ni_escala_la_huella_de_ubicar_es_la_de_antes(ana):
+    from consola.plano import _huella, huella_ubicar
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    entradas = web.get(f"/api/kmz/{slug}").json()["entradas"]
+    assert "metodo" not in entradas and "escala" not in entradas
+    a = ancla("a", 0, 0)
+    completa = dict(x=0.0, y=0.0, lon=a["lon"], lat=a["lat"], giro=0.0, escala_impresa=None)
+    # La huella como se sacaba antes de `metodo` y `escala`: lo ya ubicado sigue al día.
+    for e, antes in [
+            (entradas, dict(anclas=entradas["anclas"], ajuste=entradas["ajuste"], cuadricula=None)),
+            (dict(entradas, anclas=[], ubicacion=completa),
+             dict(anclas=[], ajuste=entradas["ajuste"], cuadricula=None, ubicacion=completa)),
+            (dict(entradas, escala_cuadro=True),
+             dict(anclas=entradas["anclas"], ajuste=entradas["ajuste"], cuadricula=None, escala_cuadro=True))]:
+        assert huella_ubicar(e, "d") == _huella(dict(antes, digitalizado="d"))
+        # Que vengan en null es lo mismo que no vengan.
+        assert huella_ubicar(dict(e, metodo=None, escala=None), "d") == huella_ubicar(e, "d")
+
+
+def test_la_huella_de_ubicar_cuenta_lo_que_usa_el_metodo(ana):
+    from consola.plano import huella_ubicar
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    entradas = web.get(f"/api/kmz/{slug}").json()["entradas"]
+    a = ancla("a", 0, 0)
+    completa = dict(x=0.0, y=0.0, lon=a["lon"], lat=a["lat"], giro=0.0, escala_impresa=None)
+    escala = dict(p=[0.0, 0.0], q=[100.0, 0.0], metros=50.0)
+    otra_escala = dict(escala, metros=60.0)
+    girada = dict(completa, giro=10.0)
+
+    # Elegir el método cambia la ubicación (puede ser otro camino que el de la precedencia).
+    con = dict(entradas, ubicacion=completa)
+    assert huella_ubicar(dict(con, metodo="puntos"), "d") != huella_ubicar(con, "d")
+    # Con varios puntos, la coordenada y la escala marcada no cuentan.
+    puntos = dict(con, metodo="puntos")
+    for cambio in (dict(ubicacion=girada), dict(escala=escala)):
+        assert huella_ubicar(dict(puntos, **cambio), "d") == huella_ubicar(puntos, "d")
+    # Con un punto cuentan, aunque haya 4 puntos marcados, y el ajuste al cuadro no.
+    punto = dict(con, metodo="punto", escala=escala)
+    assert huella_ubicar(dict(punto, ubicacion=girada), "d") != huella_ubicar(punto, "d")
+    assert huella_ubicar(dict(punto, escala=otra_escala), "d") != huella_ubicar(punto, "d")
+    assert huella_ubicar(dict(punto, escala_cuadro=True), "d") == huella_ubicar(punto, "d")
+    # Sin método y sin 2 puntos, la escala marcada cuenta como la coordenada.
+    sin = dict(con, anclas=[], escala=escala)
+    assert huella_ubicar(dict(sin, escala=otra_escala), "d") != huella_ubicar(sin, "d")
+    # Con la cuadrícula, la escala marcada no se usa.
+    cuadricula = dict(con, anclas=[], metodo="cuadricula", escala=escala)
+    assert huella_ubicar(dict(cuadricula, escala=otra_escala), "d") == huella_ubicar(cuadricula, "d")
+
+
+def test_el_metodo_y_la_escala_se_guardan_sin_atrasar_lo_digitalizado(ana):
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    assert web.post(f"/api/kmz/{slug}/georreferenciar").status_code == 200
+    escala = dict(p=[0, 0], q=[100, 0], metros=50)
+
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, metodo="puntos", escala=escala))
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["metodo"] == "puntos"
+    assert respuesta.json()["escala"] == dict(p=[0.0, 0.0], q=[100.0, 0.0], metros=50.0)
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["entradas"]["metodo"] == "puntos" and estado["digitalizado"]["vigente"] is True
+    assert estado["paso"] == "ubicar" and estado["georreferencia"]["vigente"] is False
+    respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
+    assert respuesta.status_code == 200 and respuesta.json()["metodo"] == "anclas"
+    # Con varios puntos, cambiar la escala marcada no deja atrasada la ubicación.
+    web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, metodo="puntos", escala=dict(escala, metros=70)))
+    assert web.get(f"/api/kmz/{slug}").json()["georreferencia"]["vigente"] is True
+
+
+def test_ubicar_con_un_punto_y_la_escala_marcada(ana):
+    web, slug, raiz, _ = ana
+    a = ancla("a", 0, 0)
+    ubicacion = dict(x=0, y=0, lon=a["lon"], lat=a["lat"], giro=0)
+    # 4 puntos marcados de antes: con el método "punto" no mandan.
+    listo_para_ubicar(web, slug, raiz, dict(ENTRADAS, metodo="punto", ubicacion=ubicacion,
+                                            escala=dict(p=[100, 900], q=[900, 900], metros=400)))
+
+    respuesta = web.post(f"/api/kmz/{slug}/georreferenciar")
+
+    assert respuesta.status_code == 200, respuesta.text
+    g = respuesta.json()
+    assert g["metodo"] == "punto" and g["vigente"] is True
+    assert g["parametros"]["origen_escala"] == "marcada"
+    assert g["parametros"]["escala_m_px"] == pytest.approx(M_PX)
+    assert "el tamaño sale de la escala que marcaste (400 m)" in g["avisos"][0]
+
+
+@pytest.mark.parametrize("cambio, mensaje", [
+    (dict(metodo="los dos"), "«metodo»"),
+    (dict(escala=dict(p=[0, 0], q=[100, 0], metros=0)), "mayor que 0"),
+    (dict(escala=dict(impresa=10)), "no parece real"),
+])
+def test_el_metodo_o_la_escala_malos_dicen_que_estan_mal(ana, cambio, mensaje):
+    web, slug, _, _ = ana
+    subir(web, slug)
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, **cambio))
+    assert respuesta.status_code == 400
+    assert mensaje in respuesta.json()["detail"]
 
 
 @pytest.mark.parametrize("ubicacion, mensaje", [
