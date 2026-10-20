@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Catalogo, conteoPorEstado, romano, textoReferencia, lejaniaReferencia } from './datos.js';
+import { Catalogo, conteoPorEstado, filtrar, romano, textoReferencia, lejaniaReferencia } from './datos.js';
 
 const vista = (id, posicion, altura_m) => ({ id, posicion, altura_m, lat: -35, lon: -72 });
 
@@ -114,4 +114,16 @@ test('los esteros de una vista llegan con su overlay, y un sitio viejo no trae n
 
   assert.deepEqual(catalogo.aguasDe('p01-500'), [estero]);
   assert.deepEqual(catalogo.aguasDe('p02-500'), []);
+});
+
+test('elegir una etapa deja solo sus parcelas, y sin etapa pasan todas', () => {
+  const parcelas = [
+    { id: '1-1', etapa: 1, estado: 'disponible' },
+    { id: '1-2', etapa: 1, estado: 'vendido' },
+    { id: '2-1', etapa: 2, estado: 'disponible' },
+  ];
+  const base = { estados: new Set(), supMin: null, supMax: null, soloConVista: false };
+  assert.deepEqual([...filtrar(parcelas, { ...base, etapa: 1 })], ['1-1', '1-2']);
+  assert.deepEqual([...filtrar(parcelas, { ...base, etapa: 1, estados: new Set(['disponible']) })], ['1-1']);
+  assert.equal(filtrar(parcelas, base).size, 3);
 });

@@ -554,7 +554,8 @@ button { cursor: pointer; }
 
 /* "ETAPA 3" sobre su sector (visor.js, _dibujarEtapas): del color de su borde y
    en mayúsculas, para que no se lea como una parcela más. */
-.etapa { pointer-events: none; }
+.etapa { pointer-events: auto; cursor: pointer; }
+.etapa:hover .etapa__fondo { stroke: #fff; stroke-width: 2; }
 /* El borde de la etapa: del color de la etapa (visor.js, colorDeEtapa) y más
    grueso que el de una parcela, con un filo oscuro para que se lea sobre pasto
    claro. Encierra; no se toca. */
@@ -576,6 +577,11 @@ button { cursor: pointer; }
   text-anchor: middle;
 }
 .overlay--con-seleccion .etapas { display: none; }
+/* Etapa elegida: su borde se engruesa y el rótulo se marca; las demás quedan atrás. */
+.etapa__contorno.etapa--resaltada { stroke-width: 5.5; fill: currentColor; fill-opacity: 0.16; filter: drop-shadow(0 0 2.5px rgb(0 0 0 / 0.8)); }
+.etapa.etapa--resaltada .etapa__fondo { stroke: #fff; stroke-width: 2.5; }
+.etapa__contorno.etapa--apagada { opacity: 0.3; }
+.etapa.etapa--apagada { opacity: 0.6; }
 
 .parcela--atenuada { opacity: 0.18; pointer-events: none; }
 .parcela--atenuada .parcela__pastilla { display: none; }

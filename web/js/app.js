@@ -10,7 +10,7 @@ import { Mapa } from './mapa.js';
 import {
   construirPerspectivas, marcarPerspectiva, pintarMiniPlano, pintarMiniatura,
 } from './perspectivas.js';
-import { Visor } from './visor.js';
+import { Visor, colorDeEtapa } from './visor.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -50,7 +50,9 @@ const estado = {
   seleccionada: null,
   destacada: null,
   visibles: null,
-  filtros: { estados: new Set(), supMin: null, supMax: null, soloConVista: false },
+  filtros: { estados: new Set(), supMin: null, supMax: null, soloConVista: false, etapa: null },
+  // Etapas del loteo cuando se rotula por etapas (se pueden elegir); si no, vacío.
+  etapas: [],
 };
 
 arrancar().catch(mostrarErrorFatal);
@@ -76,11 +78,13 @@ async function arrancar() {
   const etapasDistintas = new Set(catalogo.parcelas.map((p) => p.etapa).filter((e) => e != null));
   const porEtapas = Boolean(catalogo.meta.numeros_fijos) && etapasDistintas.size > 1
     && catalogo.parcelas.every((p) => p.etapa == null || Number.isFinite(p.numero));
+  estado.etapas = porEtapas ? [...etapasDistintas].sort((a, b) => a - b) : [];
 
   estado.visor = new Visor($('#visor'), {
     rotuloDe: (id) => (porEtapas ? String(catalogo.porId.get(id).numero) : catalogo.rotulo(id)),
     etapaDe: porEtapas ? (id) => catalogo.porId.get(id)?.etapa ?? null : null,
     numerosFijos: Boolean(catalogo.meta.numeros_fijos),
+    alElegirEtapa: (etapa) => elegirEtapa(etapa),
     alElegirPunto: (posicion) => irAPosicion(posicion),
     alElegirParcela: (id) => seleccionar(id),
     alPasarSobreParcela: (id) => destacar(id),
@@ -533,6 +537,22 @@ function construirFiltros() {
     return chip;
   }));
 
+  $('#grupo-etapas').hidden = estado.etapas.length === 0;
+  $('#filtro-etapas').replaceChildren(...estado.etapas.map((etapa) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.dataset.etapa = String(etapa);
+    chip.setAttribute('aria-pressed', 'false');
+    const punto = document.createElement('i');
+    punto.style.background = colorDeEtapa(etapa);
+    chip.append(punto, `Etapa ${etapa}`);
+    chip.addEventListener('click', () => {
+      elegirEtapa(chip.getAttribute('aria-pressed') === 'true' ? null : etapa);
+    });
+    return chip;
+  }));
+
   $('#sup-min').addEventListener('input', leerRangos);
   $('#sup-max').addEventListener('input', leerRangos);
   $('#solo-con-vista').addEventListener('change', (evento) => {
@@ -547,13 +567,28 @@ function construirFiltros() {
   });
 
   $('#limpiar-filtros').addEventListener('click', () => {
-    estado.filtros = { estados: new Set(), supMin: null, supMax: null, soloConVista: false };
+    estado.filtros = { estados: new Set(), supMin: null, supMax: null, soloConVista: false, etapa: null };
     for (const chip of $('#filtro-estados').children) chip.setAttribute('aria-pressed', 'false');
+    for (const chip of $('#filtro-etapas').children) chip.setAttribute('aria-pressed', 'false');
+    estado.visor?.resaltarEtapa(null);
     $('#sup-min').value = '';
     $('#sup-max').value = '';
     $('#solo-con-vista').checked = false;
     aplicarFiltros();
   });
+}
+
+/**
+ * Una etapa a la vez (null la suelta): sus parcelas quedan y las demás se
+ * atenúan, en el 360 y en el plano. Se elige tocando su rótulo o en los filtros.
+ */
+function elegirEtapa(etapa) {
+  estado.filtros.etapa = etapa ?? null;
+  for (const chip of $('#filtro-etapas').children) {
+    chip.setAttribute('aria-pressed', String(chip.dataset.etapa === String(etapa)));
+  }
+  estado.visor?.resaltarEtapa(etapa);
+  aplicarFiltros();
 }
 
 function leerRangos() {
@@ -573,7 +608,8 @@ function aplicarFiltros() {
   const activos = estado.filtros.estados.size
     + (estado.filtros.supMin != null ? 1 : 0)
     + (estado.filtros.supMax != null ? 1 : 0)
-    + (estado.filtros.soloConVista ? 1 : 0);
+    + (estado.filtros.soloConVista ? 1 : 0)
+    + (estado.filtros.etapa != null ? 1 : 0);
   const pastilla = $('#filtros-activos');
   pastilla.textContent = activos;
   pastilla.hidden = activos === 0;

@@ -192,7 +192,7 @@ export function conteoPorEstado(parcelas) {
 
 /** Filtro sobre el catálogo. Devuelve el conjunto de ids que pasan. */
 export function filtrar(parcelas, filtros) {
-  const { estados, supMin, supMax, soloConVista } = filtros;
+  const { estados, supMin, supMax, soloConVista, etapa = null } = filtros;
   return new Set(
     parcelas
       .filter((p) => {
@@ -200,6 +200,7 @@ export function filtrar(parcelas, filtros) {
         if (supMin != null && (p.superficie_m2 ?? 0) < supMin) return false;
         if (supMax != null && (p.superficie_m2 ?? Infinity) > supMax) return false;
         if (soloConVista && !p.mejor_vista) return false;
+        if (etapa != null && String(p.etapa) !== String(etapa)) return false;
         return true;
       })
       .map((p) => p.id),
