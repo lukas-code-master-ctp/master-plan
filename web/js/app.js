@@ -71,8 +71,15 @@ async function arrancar() {
 
   estado.visibles = new Set(catalogo.parcelas.map((p) => p.id));
 
+  // Con varias etapas y los números fijos, cada pastilla dice solo su número ("28"
+  // y no "3-28") y la etapa se rotula una vez sobre su sector, como en el plano.
+  const etapasDistintas = new Set(catalogo.parcelas.map((p) => p.etapa).filter((e) => e != null));
+  const porEtapas = Boolean(catalogo.meta.numeros_fijos) && etapasDistintas.size > 1
+    && catalogo.parcelas.every((p) => p.etapa == null || Number.isFinite(p.numero));
+
   estado.visor = new Visor($('#visor'), {
-    rotuloDe: (id) => catalogo.rotulo(id),
+    rotuloDe: (id) => (porEtapas ? String(catalogo.porId.get(id).numero) : catalogo.rotulo(id)),
+    etapaDe: porEtapas ? (id) => catalogo.porId.get(id)?.etapa ?? null : null,
     numerosFijos: Boolean(catalogo.meta.numeros_fijos),
     alElegirPunto: (posicion) => irAPosicion(posicion),
     alElegirParcela: (id) => seleccionar(id),
@@ -149,6 +156,7 @@ async function cambiarVista(vista, { llegandoHacia = null } = {}) {
     caminos: estado.catalogo.caminosDe(vista.id),
     puntos: estado.catalogo.puntosDe(vista.id),
     aguas: estado.catalogo.aguasDe(vista.id),
+    etapas: estado.catalogo.etapasDe(vista.id),
   });
   // Mientras cargaba eligieron otra vista: esa se encarga del resto.
   if (!mostrada) return;
