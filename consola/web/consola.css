@@ -1716,12 +1716,6 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .pastilla--boton { border: 0; cursor: pointer; }
 .pastilla--boton:hover { box-shadow: inset 0 0 0 1px var(--zinc-400); }
 
-.kmz-tabla { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
-.kmz-tabla caption { text-align: left; padding-bottom: 0.25rem; }
-.kmz-tabla th { text-align: left; font: 600 0.625rem/1 var(--sans); letter-spacing: 0.05em; text-transform: uppercase; color: var(--zinc-500); padding: 0.375rem 0.25rem; border-bottom: 1px solid var(--zinc-200); }
-.kmz-tabla td { padding: 0.25rem; border-bottom: 1px solid var(--zinc-100); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.kmz-tabla td:last-child { text-align: right; white-space: nowrap; }
-.kmz-tabla .kmz-atipica td { background: var(--rojo-50); color: var(--rojo-700); font-weight: 600; }
 .kmz-resto { display: grid; gap: 0.5rem; padding: 0.75rem; border-radius: var(--radio-md); background: var(--ambar-50); border: 1px solid var(--ambar-200); }
 .kmz-resto p { margin: 0; }
 .kmz-resto__pregunta { font-weight: 600; color: var(--zinc-800); font-size: 0.875rem; }
@@ -1808,11 +1802,51 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-metodo-panel { display: grid; gap: 0.75rem; }
 .kmz-metodo-panel[hidden] { display: none; }
 .kmz-metodo-panel .kmz-escala { justify-items: start; }
-.kmz-metodo-panel .kmz-cuadricula, .kmz-metodo-panel .kmz-tabla { justify-self: stretch; }
+.kmz-metodo-panel .kmz-cuadricula { justify-self: stretch; }
 .kmz-metodo-panel > .boton { justify-self: start; }
+/* Varios puntos: una fila por punto, con su letra en un círculo. La activa lleva el anillo
+   de "lo que toca"; la que no calza, en rojo. */
+/* Vacía no ocupa alto, pero sigue a la vista: una región viva oculta no se anuncia. */
+#kmz-ancla-estado:empty { min-height: 0; margin-bottom: -0.75rem; }
+.kmz-puntos__titulo { margin: 0; font-size: 0.875rem; color: var(--zinc-900); }
+.kmz-puntos { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+/* Una fila hecha va en dos líneas: la coordenada arriba, y abajo cuánto se aleja, si calza y
+   los botones. En una sola no cabe en el panel (~330 px): la coordenada se montaba encima de
+   "Rehacer". */
+.kmz-fila-punto {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.125rem 0.625rem;
+  padding: 0.5rem 0.625rem; border: 1px solid var(--zinc-200); border-radius: var(--radio-md); font-size: 0.8125rem;
+}
+.kmz-fila-punto[hidden] { display: none; }
+.kmz-fila-punto__letra {
+  display: inline-grid; place-items: center; min-width: 1.75rem; height: 1.75rem; padding: 0 0.35rem; box-sizing: border-box;
+  border-radius: 999px; background: #2563eb; color: #fff; font: 700 0.8125rem/1 var(--sans);
+  /* Los KMZ de antes traen puntos con otros nombres ("Esquina norte"): se corta, el nombre
+     entero queda en el título y para el lector de pantalla. */
+  max-width: 5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.kmz-fila-punto--hecha .kmz-fila-punto__letra { grid-row: 1 / span 2; }
+.kmz-fila-punto__coord { grid-column: 2 / -1; color: var(--zinc-700); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kmz-fila-punto__datos { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.625rem; min-width: 0; font-variant-numeric: tabular-nums; }
+.kmz-fila-punto__dist { color: var(--zinc-600); white-space: nowrap; }
+.kmz-fila-punto__estado { font-weight: 600; color: var(--verde-800); }
+.kmz-fila-punto__acciones { display: flex; gap: 0.25rem; margin-right: -0.375rem; }
+.kmz-fila-punto.kmz-atipica { border-color: var(--rojo-200); background: var(--rojo-50); }
+.kmz-fila-punto.kmz-atipica .kmz-fila-punto__letra { background: #dc2626; }
+.kmz-fila-punto.kmz-atipica .kmz-fila-punto__estado { color: var(--rojo-700); }
+.kmz-fila-punto--activa { grid-template-columns: auto 1fr; align-items: start; border-color: var(--zinc-400); box-shadow: 0 0 0 2px var(--marca-anillo); }
+.kmz-fila-punto--activa .kmz-fila-punto__letra { background: #ea580c; }
+.kmz-fila-punto__cuerpo { display: grid; gap: 0.4rem; justify-items: start; min-width: 0; }
+.kmz-fila-punto__etiqueta { font-size: 0.875rem; font-weight: 600; color: var(--zinc-900); line-height: 1.75rem; }
+.kmz-fila-punto__paso { margin: 0; color: var(--zinc-700); }
+.kmz-fila-punto--activa[data-espera="plano"] .kmz-fila-punto__paso { font-weight: 600; color: var(--zinc-900); }
+.kmz-ancla-coordenada { display: flex; gap: 0.5rem; width: 100%; }
 .kmz-ancla-coordenada input { flex: 1 1 10rem; min-width: 0; }
+.kmz-metodo-panel > [data-accion="kmz-anadir-punto"] { justify-self: start; }
 @media (max-width: 40rem) {
   .kmz-metodo-elegido .boton--texto { height: 2.75rem; }
+  .kmz-fila-punto .boton--chico, .kmz-metodo-panel > [data-accion="kmz-anadir-punto"] { height: 2.75rem; }
+  .kmz-fila-punto--activa .boton--chico { height: 2.75rem; }
 }
 .kmz-avisos { margin: 0.35rem 0 0; padding-left: 1.1rem; color: var(--ambar-800); font-size: 0.8125rem; }
 .kmz-ajuste { display: grid; gap: 0.5rem; margin: 0; padding: 0.75rem; border: 1px solid var(--zinc-200); border-radius: var(--radio-md); }
@@ -1898,6 +1932,7 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 #kmz-mapa { position: absolute; inset: 0; }
 .kmz-etiqueta { padding: 0 0.35rem; font: 700 0.75rem/1.4 var(--sans); color: #1d4ed8; }
 .kmz-etiqueta--mala { color: var(--rojo-700); }
+.kmz-etiqueta--activa { color: #c2410c; }
 .kmz-corregir { display: grid; gap: 0.5rem; margin-top: 0.75rem; }
 /* El vértice que se arrastra: se toca en 32 px, se ve de 16, con borde para verse sobre el satélite. */
 .kmz-vertice { cursor: grab; }

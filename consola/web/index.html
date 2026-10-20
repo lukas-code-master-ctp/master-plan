@@ -803,26 +803,35 @@
           <p id="kmz-origen-escala" class="nota" hidden></p>
         </div>
 
-        <!-- Varios puntos, y los de comprobar la cuadrícula -->
+        <!-- Varios puntos, y los de comprobar la cuadrícula: una fila por punto (A..D). La
+             activa pide la coordenada (pegada o con un clic en el mapa) y después el clic en
+             el plano; las hechas dicen si calzan, con Rehacer y Quitar. La fila activa es
+             siempre este mismo <li> (kmz.js lo mueve entre las hechas): así el campo no
+             pierde lo escrito ni el foco al repintar, y su región viva se anuncia. -->
         <div id="kmz-con-puntos" class="kmz-metodo-panel" hidden>
           <div id="kmz-cuadricula" class="kmz-cuadricula" hidden>
             <p id="kmz-cuadricula-texto" class="nota"></p>
             <button class="boton boton--contorno boton--chico" data-accion="kmz-usar-cuadricula" type="button">Usar la cuadrícula impresa</button>
             <button class="boton boton--texto boton--chico" data-accion="kmz-quitar-cuadricula" type="button">Dejar de usarla</button>
           </div>
+          <h3 id="kmz-puntos-titulo" class="kmz-puntos__titulo" hidden>Comprobar con puntos (opcional)</h3>
           <p id="kmz-ancla-estado" class="kmz-estado" role="status" aria-live="polite"></p>
-          <button class="boton boton--texto boton--chico" data-accion="kmz-cancelar-ancla" type="button" hidden>Cancelar este punto (Esc)</button>
-          <div class="fila fila--envuelve kmz-ancla-coordenada">
-            <input id="kmz-ancla-coord" type="text" placeholder="-34.98, -71.24"
-                   autocomplete="off" spellcheck="false" aria-label="Coordenada del punto (latitud y longitud)">
-            <button class="boton boton--contorno" data-accion="kmz-ancla-ir" type="button">Ir</button>
-            <button class="boton" data-accion="kmz-usar-coordenadas" type="button" hidden>Usar como punto A</button>
-          </div>
-          <table id="kmz-anclas" class="kmz-tabla" hidden>
-            <caption class="nota">Distancia: cuánto se aleja cada punto de donde lo dejan los demás.</caption>
-            <thead><tr><th scope="col">Punto</th><th scope="col">Distancia</th><th scope="col">Estado</th><th scope="col"><span class="oculto">Acciones</span></th></tr></thead>
-            <tbody></tbody>
-          </table>
+          <ol id="kmz-puntos" class="kmz-puntos" aria-label="Puntos">
+            <li id="kmz-punto-activo" class="kmz-fila-punto kmz-fila-punto--activa" hidden>
+              <span class="kmz-fila-punto__letra" aria-hidden="true"></span>
+              <div class="kmz-fila-punto__cuerpo">
+                <label id="kmz-ancla-etiqueta" for="kmz-ancla-coord" class="kmz-fila-punto__etiqueta"></label>
+                <div class="kmz-ancla-coordenada">
+                  <input id="kmz-ancla-coord" type="text" placeholder="-34.98, -71.24"
+                         autocomplete="off" spellcheck="false" aria-describedby="kmz-ancla-paso">
+                  <button class="boton boton--contorno" data-accion="kmz-ancla-ir" type="button">Ir</button>
+                </div>
+                <p id="kmz-ancla-paso" class="kmz-fila-punto__paso" role="status" aria-live="polite"></p>
+                <button class="boton boton--texto boton--chico" data-accion="kmz-cancelar-ancla" type="button" aria-keyshortcuts="Escape" title="Cancelar (Esc)">Cancelar</button>
+              </div>
+            </li>
+          </ol>
+          <button class="boton boton--contorno boton--chico" data-accion="kmz-anadir-punto" type="button" hidden></button>
         </div>
 
         <div id="kmz-ubicacion" class="kmz-ubicacion" hidden>

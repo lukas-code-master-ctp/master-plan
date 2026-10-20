@@ -937,18 +937,27 @@ export function metodosOfrecidos({ propuesta = false, elegida = false } = {}) {
 
 /**
  * A qué va un clic en el plano de Ubicar: `punto` (el de la coordenada, con "un punto" y
- * esperándolo), `ancla` (con varios puntos o la cuadrícula, un punto para ubicar o
- * comprobar) o `nada` (sin método en pantalla, o con un punto sin esperar el clic: un
- * toque para desplazar en el celular no mueve lo ya puesto).
+ * esperándolo), `ancla` (con varios puntos o la cuadrícula, la fila activa ya con su
+ * coordenada: el clic la completa) o `nada` (sin método en pantalla, o sin esperar el
+ * clic: un toque para desplazar en el celular no mueve lo ya puesto).
  */
-export function destinoDelClic(metodo, { marcandoPunto = false } = {}) {
+export function destinoDelClic(metodo, { marcandoPunto = false, esperaPlano = false } = {}) {
   if (metodo === 'punto') return marcandoPunto ? 'punto' : 'nada';
-  if (metodo === 'puntos' || metodo === 'cuadricula') return 'ancla';
+  if (metodo === 'puntos' || metodo === 'cuadricula') return esperaPlano ? 'ancla' : 'nada';
   return 'nada';
 }
 
-/** Lo que se dice tras un clic en el plano que no marca nada (`destinoDelClic` = nada). */
-export function textoClicSuelto(metodo, ubicacion = null) {
+/**
+ * Lo que se dice tras un clic en el plano que no marca nada (`destinoDelClic` = nada).
+ * `puntos`: el `estadoDePuntos` vigente, con varios puntos o la cuadrícula.
+ */
+export function textoClicSuelto(metodo, ubicacion = null, puntos = null) {
+  if (metodo === 'puntos' || metodo === 'cuadricula') {
+    const activa = puntos?.activa;
+    if (activa) return `Primero pega la coordenada de ${activa.nombre} y aprieta "Ir", o haz clic en ese punto del mapa.`;
+    if (puntos?.anadir) return `Para marcar otro punto, aprieta "Añadir ${puntos.anadir}".`;
+    return 'Para cambiar un punto, aprieta "Rehacer" en su fila.';
+  }
   if (metodo !== 'punto') return 'Primero elige cómo ubicar el plano.';
   if (!(Number.isFinite(ubicacion?.lon) && Number.isFinite(ubicacion?.lat))) return 'Primero pega tu coordenada y aprieta "Ir".';
   if (Number.isFinite(ubicacion?.x) && Number.isFinite(ubicacion?.y)) return 'Para cambiar tu punto, aprieta "Mover el punto".';
@@ -1088,7 +1097,13 @@ export function porQueNoSigue(paso, e, local = {}) {
 function faltaParaUbicar(entradas) {
   switch (entradas?.metodo) {
     case 'cuadricula': return 'Para ubicar con la cuadrícula, elige la que encontramos en el plano.';
-    case 'puntos': return 'Para ubicar con varios puntos hacen falta al menos 2: marca otro en el plano y en el mapa.';
+    case 'puntos': {
+      // Cuenta lo guardado: un punto que se rehace sigue valiendo hasta que se reemplaza.
+      const n = entradas.anclas?.length ?? 0;
+      const como = 'pega su coordenada, aprieta "Ir" y haz clic en ese punto del plano.';
+      return n ? `Falta otro punto para ubicar con varios puntos: ${como}`
+        : `Para ubicar con varios puntos hacen falta al menos 2. Parte por A: ${como}`;
+    }
     case 'punto': return 'Pega tu coordenada, aprieta Ir y haz clic en ese punto del plano.';
     // Sin método ni con qué deducirlo, Ubicar muestra las tarjetas.
     default: return 'Elige cómo ubicar el plano.';
@@ -1416,26 +1431,53 @@ export function escalaDeUbicacion(digitalizado, ubicacion, escala = null) {
 }
 
 /**
- * La línea de estado de los puntos (método "varios puntos" o para comprobar la
- * cuadrícula): qué toca ahora. `coordenada` dice si ella ya ubicó con su coordenada en un
- * KMZ sin método elegido (ahí 2 puntos dejan de usar su coordenada y el giro).
+ * Las filas de "varios puntos" (y las de comprobar la cuadrícula): una por ancla, en su
+ * orden, y la activa, la que se está marcando. `pendiente` es la fila a medias de kmz.js:
+ * `{nombre}` espera su coordenada y `{nombre, lat, lon}` espera el clic en el plano. Sin
+ * puntos la fila A ya está activa (se parte por ahí). Con una fila activa no se ofrece
+ * otra: "Añadir X" vuelve cuando se termina o se cancela, hasta D (`siguienteLetra`).
  */
-export function textoPuntos({ n = 0, pendiente = null, rehacer = null, coordenada = false, cuadricula = false } = {}) {
-  if (pendiente) {
-    return `Punto ${pendiente} marcado en el plano. Ahora haz clic en el mismo punto del mapa, `
-      + `o pega sus coordenadas y aprieta "Usar como punto ${pendiente}" (Esc cancela).`;
-  }
-  if (rehacer) return `Marca de nuevo el punto ${rehacer}: primero en el plano, después en el mapa.`;
-  const como = 'Haz clic en un punto del plano (acerca bien) y después en el mismo punto del mapa.';
-  if (cuadricula) {
-    return n ? `${n} ${n === 1 ? 'punto' : 'puntos'} para comprobar la cuadrícula. ${como}`
-      : `Puedes marcar puntos para comprobar que la cuadrícula calza. ${como}`;
-  }
-  const mandan = coordenada ? 'Con 2 o más puntos, ellos mandan sobre tu coordenada.' : 'Con 2 puntos ya se ubica el plano.';
-  if (n === 0) return `${como} ${mandan}`;
-  if (n === 1) return `1 punto. Marca otro: ${mandan.charAt(0).toLowerCase()}${mandan.slice(1)}`;
-  const control = n < 4 ? ' Con 4 se nota si alguno quedó mal marcado.' : '';
-  return `${n} puntos.${coordenada ? ' Con 2 o más puntos, ellos mandan sobre tu coordenada.' : ''}${control}`;
+export function estadoDePuntos(anclas, pendiente = null) {
+  const lista = anclas ?? [];
+  const activa = pendiente ?? (lista.length ? null : { nombre: siguienteLetra(lista) });
+  const rehace = Boolean(activa) && lista.some((a) => a.nombre === activa.nombre);
+  const filas = lista.map((a) => ({ nombre: a.nombre, ancla: a, activa: a.nombre === activa?.nombre }));
+  if (activa && !rehace) filas.push({ nombre: activa.nombre, ancla: null, activa: true });
+  const espera = activa && Number.isFinite(activa.lat) && Number.isFinite(activa.lon) ? 'plano' : 'coordenada';
+  return {
+    filas,
+    activa: activa ? { nombre: activa.nombre, espera, rehace } : null,
+    // La fila A de partida no se cancela: no hay nada a medias que deshacer.
+    cancelable: Boolean(pendiente),
+    anadir: activa ? null : siguienteLetra(lista),
+    hechas: lista.length,
+  };
+}
+
+/** El texto guía sobre las filas: con 0 o 1 punto, cuántos hacen falta; con 2, nada. */
+export function guiaDePuntos(n, { cuadricula = false } = {}) {
+  if (cuadricula) return n ? '' : 'Pega la coordenada de un punto que veas en el plano para comprobar que la cuadrícula calza.';
+  return n < 2 ? 'Marca al menos 2 puntos: A y B. C y D sirven para afinar.' : '';
+}
+
+/** Qué pide la fila activa (lo dice también al lector de pantalla). */
+export function textoFilaActiva(activa) {
+  if (!activa) return '';
+  const { nombre, espera, rehace } = activa;
+  if (espera === 'plano') return `Ahora haz clic en el plano donde está ${nombre} (acerca bien).`;
+  if (rehace) return `Corrige la coordenada de ${nombre} si hace falta y aprieta "Ir", o haz clic en ese punto del mapa.`;
+  return `Pega la coordenada de ${nombre} (un punto que veas en el plano: una esquina, un cruce) y aprieta "Ir",`
+    + ' o haz clic en ese punto del mapa.';
+}
+
+/** La coordenada de un punto hecho, abreviada a 5 decimales (~1 m): lo justo para reconocerla. */
+export function coordenadaCorta(lat, lon) {
+  return Number.isFinite(lat) && Number.isFinite(lon) ? `${lat.toFixed(5)}, ${lon.toFixed(5)}` : '';
+}
+
+/** La coordenada de un ancla tal como se precarga en su campo al rehacerla. */
+export function coordenadaDelCampo(lat, lon) {
+  return Number.isFinite(lat) && Number.isFinite(lon) ? `${Number(lat.toFixed(7))}, ${Number(lon.toFixed(7))}` : '';
 }
 
 /**

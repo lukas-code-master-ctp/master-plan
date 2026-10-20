@@ -110,33 +110,44 @@ export class MapaKmz {
     return final.isValid();
   }
 
-  /** Las anclas marcadas: un punto con su nombre; las atípicas, en rojo. */
-  ponerAnclas(anclas, atipicas = []) {
+  /**
+   * Las anclas marcadas: un punto con su nombre; las atípicas, en rojo. `activa`: la que se
+   * está rehaciendo, en naranja y más grande (es la de la fila activa).
+   */
+  ponerAnclas(anclas, atipicas = [], activa = null) {
     this.anclas.clearLayers();
     for (const a of anclas) {
       const mala = atipicas.includes(a.nombre);
+      const esActiva = a.nombre === activa;
       // Leaflet pone un texto como HTML: el nombre va como nodo de texto (viene de
       // entradas.json, que escribe la loteadora y puede abrir la plataforma).
       const nombre = document.createElement('span');
       nombre.textContent = a.nombre;
+      const clase = esActiva ? ' kmz-etiqueta--activa' : mala ? ' kmz-etiqueta--mala' : '';
       this.L.circleMarker([a.lat, a.lon], {
-        radius: 6, weight: 2, color: '#fff', fillColor: mala ? COLORES.rojo : '#2563eb', fillOpacity: 1,
+        radius: esActiva ? 8 : 6, weight: 2, color: '#fff', fillColor: esActiva ? '#ea580c' : mala ? COLORES.rojo : '#2563eb', fillOpacity: 1,
       }).bindTooltip(nombre, {
-        permanent: true, direction: 'right', offset: [6, 0], className: `kmz-etiqueta${mala ? ' kmz-etiqueta--mala' : ''}`,
+        permanent: true, direction: 'right', offset: [6, 0], className: `kmz-etiqueta${clase}`,
       }).addTo(this.anclas);
     }
   }
 
   /**
-   * El alfiler en la coordenada que pegó la loteadora (sin lat/lon, se quita). No toma
-   * clics: debajo puede haber un lote que arrastrar o un punto que marcar.
+   * El alfiler en la coordenada que pegó la loteadora (sin lat/lon, se quita), con la letra
+   * del punto si es de una fila de puntos. No toma clics: debajo puede haber un lote que
+   * arrastrar o un punto que marcar.
    */
-  ponerAlfiler(lat, lon) {
+  ponerAlfiler(lat, lon, nombre = '') {
     this.alfiler.clearLayers();
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
     const icono = this.L.divIcon({ className: 'kmz-alfiler', iconSize: [28, 40], iconAnchor: [14, 40], html: '<span></span>' });
-    this.L.marker([lat, lon], { icon: icono, interactive: false, keyboard: false, zIndexOffset: 1000 })
-      .addTo(this.alfiler);
+    const marca = this.L.marker([lat, lon], { icon: icono, interactive: false, keyboard: false, zIndexOffset: 1000 });
+    if (nombre) {
+      const texto = document.createElement('span');
+      texto.textContent = nombre;
+      marca.bindTooltip(texto, { permanent: true, direction: 'right', offset: [12, -24], className: 'kmz-etiqueta kmz-etiqueta--activa' });
+    }
+    marca.addTo(this.alfiler);
   }
 
   /**

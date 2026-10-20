@@ -15,9 +15,9 @@ import {
   anclaDesde, aplicarFuera, confirmarSugerencias, calzaLoDigitalizado, aplicarNumero, claveLote, conSemillas, decidirResto, devolverAlKmz, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, detalleUbicacion, filaDelPunto, numerosQueFaltan,
   ordenarEsquinas, PASTILLAS, pastillaDe, pasoDeRuta, pasoSiguiente, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puedeUbicar, puntoDeRotulo,
-  puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, siguienteNombre, sinNumero, sugerencias, tamanoRotado, textoSemaforo, verticesDe,
+  puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, sinNumero, sugerencias, tamanoRotado, textoSemaforo, verticesDe,
   escalaDeUbicacion, escalaDesdeLinea, leerEscala, lotesEnElMapa, textoEscala, textoMetros, ESCALA_LINEA_MIN_PX, normalizarGiro, similitudPorPunto, usaAnclas, usaUbicacion, metodoVigente,
-  similitudPorAnclas, textoPuntos, ubicacionCompleta, ajustaConElCuadro, ofrecerAjusteDelCuadro,
+  similitudPorAnclas, ubicacionCompleta, estadoDePuntos, guiaDePuntos, textoFilaActiva, coordenadaCorta, coordenadaDelCampo, ajustaConElCuadro, ofrecerAjusteDelCuadro,
   destinoDelClic, METODOS, metodoAlEntrar, metodosOfrecidos, NOMBRES_METODO, origenDeEscala, textoClicSuelto,
   cambiaElMetodo, avisosDeUbicacion, notaDeEscalaVisible,
 } from './kmz_geometria.js';
@@ -48,8 +48,10 @@ let rasgos = [];              // lotes en px de página
 let rasgosGeo = null;         // lotes en lon/lat, si está ubicado
 let paso = 'subir';
 let herramienta = 'mover';
-let pendiente = null;         // ancla a medias: {nombre, x, y} en el plano, falta el mapa
-let rehacer = null;           // el nombre del ancla que se está volviendo a marcar
+// La fila de puntos a medias (`estadoDePuntos`): {nombre} espera su coordenada y {nombre,
+// lat, lon} el clic en el plano. Si el nombre ya es un ancla, se está rehaciendo: el ancla
+// sigue valiendo hasta que el clic en el plano la reemplace (cancelar la deja como estaba).
+let pendiente = null;
 let avisoCuadricula = '';     // la cuadrícula elegida no ubicó y se quitó: se dice en Ubicar
 let cuadriculaNoSirve = false; // y no se vuelve a ofrecer mientras se esté en este KMZ
 let numerando = null;         // {x, y, anillos}: el lote al que se le escribe el número
@@ -83,7 +85,7 @@ let falloAlPedir = '';        // por qué no se pudo lanzar la lectura: queda es
 // (`destinoDelClic`):
 // - "un punto": el punto de la coordenada, solo con `marcandoPunto` (tras "Ir", o con
 //   "Marcar el punto en el plano"). Un toque para desplazar en el celular no lo mueve.
-// - "varios puntos" o "cuadrícula": un punto (o el que está a medias, o el que rehace).
+// - "varios puntos" o "cuadrícula": el punto de la fila activa, cuando ya tiene su coordenada.
 // - Si no, no marca nada: se dice cómo (`pistaSuelta`).
 let metodoUbicar = null;
 let marcandoPunto = false;
@@ -272,7 +274,7 @@ export function prepararKmz(opciones) {
     if (e.key === 'Enter') { e.preventDefault(); irA().catch((error) => avisar(error.message)); }
   });
   $('#kmz-ancla-coord').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); (pendiente ? usarCoordenadas : irAncla)().catch((error) => avisar(error.message)); }
+    if (e.key === 'Enter') { e.preventDefault(); irAncla().catch((error) => avisar(error.message)); }
   });
 
   document.addEventListener('keydown', (e) => {
@@ -337,7 +339,7 @@ export function pintarKmz(nuevoSlug, { nuevo = false, paso: pasoPedido = null } 
   rasgos = [];
   rasgosGeo = null;
   pendiente = null;
-  rehacer = null;
+  $('#kmz-ancla-coord').value = '';
   metodoUbicar = null;
   marcandoPunto = false;
   pistaSuelta = '';
@@ -477,8 +479,8 @@ async function manejar(nodo) {
   if (dataset.quitarSemilla) {
     return cambiar({ ...entradas, semillas: entradas.semillas.filter((s) => s.numero !== dataset.quitarSemilla) });
   }
-  if (dataset.anclaQuitar) return quitarAncla(dataset.anclaQuitar, false);
-  if (dataset.anclaRehacer) return quitarAncla(dataset.anclaRehacer, true);
+  if (dataset.anclaQuitar) return quitarAncla(dataset.anclaQuitar);
+  if (dataset.anclaRehacer) return rehacerAncla(dataset.anclaRehacer);
   if (dataset.centrar) {
     const [x, y] = dataset.centrar.split(',').map(Number);
     return lienzo.centrar(x, y, Math.max(lienzo.vista.escala, 0.6));
@@ -515,8 +517,8 @@ async function manejar(nodo) {
   if (accion === 'kmz-resto-incluir') return elegirResto(true);
   if (accion === 'kmz-resto-fuera') return elegirResto(false);
   if (accion === 'kmz-ir') return irA();
-  if (accion === 'kmz-ancla-ir') return pendiente ? usarCoordenadas() : irAncla();
-  if (accion === 'kmz-usar-coordenadas') return usarCoordenadas();
+  if (accion === 'kmz-ancla-ir') return irAncla();
+  if (accion === 'kmz-anadir-punto') return anadirPunto();
   if (accion === 'kmz-cancelar-ancla') return cancelarAncla();
   if (accion === 'kmz-cambiar-metodo') return cambiarDeMetodo();
   if (accion === 'kmz-ir-escala') return irAMarcarEscala();
@@ -556,7 +558,7 @@ async function manejar(nodo) {
 
 async function irAlPaso(destino) {
   if (!destino || !pasosHabilitados(plano)[destino]) return;
-  if (paso === 'ubicar' && destino !== 'ubicar') pendiente = null;
+  if (paso === 'ubicar' && destino !== 'ubicar') soltarFila();
   if (destino !== 'revisar') corrigiendo = false;
   cerrarNumero();
   editorUnion?.cerrar();
@@ -590,8 +592,7 @@ function conMetodo(nuevas) {
 function elegirMetodo(metodo) {
   if (!METODOS.includes(metodo) || paso !== 'ubicar') return;
   metodoUbicar = metodo;
-  pendiente = null;
-  rehacer = null;
+  soltarFila();
   pistaSuelta = '';
   marcandoPunto = metodo === 'punto' && faltaElPunto();
   // El que ya se usaba (también el deducido de un KMZ de antes) no se guarda: lo ubicado sigue al día.
@@ -603,15 +604,15 @@ function elegirMetodo(metodo) {
   // Con otro método lo ubicado quedó atrasado: se ubica con lo que este ya tenía.
   if (otro) programarUbicar();
   // La tarjeta apretada desaparece: el foco va a lo primero del método.
-  const campo = metodo === 'punto' && !Number.isFinite(entradas.ubicacion?.lon) ? $('#kmz-ir-a') : $('#kmz-panel-ubicar h2');
+  const campo = metodo === 'punto' && !Number.isFinite(entradas.ubicacion?.lon) ? $('#kmz-ir-a')
+    : metodo === 'puntos' && !entradas.anclas.length ? $('#kmz-ancla-coord') : $('#kmz-panel-ubicar h2');
   campo.focus();
 }
 
 /** Vuelve a las tarjetas sin borrar nada: `entradas.metodo` cambia al elegir otra. */
 function cambiarDeMetodo() {
   metodoUbicar = null;
-  pendiente = null;
-  rehacer = null;
+  soltarFila();
   marcandoPunto = false;
   pistaSuelta = '';
   if (giroDelPlano() !== lienzo.giro) lienzo.ponerGiro(giroDelPlano(), true);
@@ -838,7 +839,7 @@ function tocarPlano(x, y, evento) {
   if (paso === 'ubicar') {
     // Con el mouse no hay clic sintetizado: un clic rápido en el mapa es de ella.
     if (evento?.pointerType && evento.pointerType !== 'mouse') tocadoEnPlano = performance.now();
-    const destino = destinoDelClic(metodoUbicar, { marcandoPunto });
+    const destino = destinoDelClic(metodoUbicar, { marcandoPunto, esperaPlano: puntosAhora().activa?.espera === 'plano' });
     if (destino === 'punto') return ponerPunto(x, y);
     if (destino === 'ancla') return marcarEnPlano(x, y);
     return clicSuelto();
@@ -1235,55 +1236,137 @@ function siguienteSinNumero() {
 
 // --- 5. ubicar -----------------------------------------------------------------------------
 
+/** Las filas de puntos como están ahora (cuál está hecha, cuál activa, qué se puede añadir). */
+const puntosAhora = () => estadoDePuntos(entradas.anclas, pendiente);
+
+/** Olvida la fila a medias y lo escrito en su campo (al cambiar de método, de paso o de KMZ). */
+function soltarFila() {
+  pendiente = null;
+  $('#kmz-ancla-coord').value = '';
+}
+
+/** El clic en el plano de la fila que ya tiene su coordenada: el punto queda hecho. */
 function marcarEnPlano(x, y) {
-  const nombre = pendiente?.nombre ?? rehacer ?? siguienteNombre(entradas.anclas.map((a) => a.nombre));
-  pendiente = { nombre, x: round(x), y: round(y) };
-  lienzo.redibujar();
-  pintarPanel();
-  // En pantalla angosta el mapa queda debajo del plano: se trae a la vista para el clic que falta.
-  const caja = $('#kmz-mapa-caja');
-  const { top, bottom } = caja.getBoundingClientRect();
-  if (!caja.hidden && (top < 0 || bottom > window.innerHeight)) caja.scrollIntoView({ block: 'nearest' });
+  if (!Number.isFinite(pendiente?.lat)) return;
+  const ancla = anclaDesde({ nombre: pendiente.nombre, x: round(x), y: round(y) }, pendiente.lat, pendiente.lon);
+  const viejo = entradas.anclas.find((a) => a.nombre === ancla.nombre);
+  if (viejo && ['x', 'y', 'lat', 'lon'].every((k) => viejo[k] === ancla[k])) {
+    // Rehecho igual que estaba: no es un cambio. Guardarlo dejaría `metodo` en un KMZ de
+    // antes y lo ubicado atrasado sin que nada cambie (como "Ir" con la misma coordenada).
+    cancelarAncla();
+    return;
+  }
+  pendiente = null;
+  $('#kmz-ancla-coord').value = '';
+  avisoCuadricula = '';
+  // Al rehacer, el punto queda en su lugar de la lista (no se va al final).
+  const ya = Boolean(viejo);
+  const anclas = ya ? entradas.anclas.map((a) => (a.nombre === ancla.nombre ? ancla : a)) : [...entradas.anclas, ancla];
+  cambiar(conMetodo({ ...entradas, anclas }));
+  // Desde el segundo punto los lotes ya se ven (vista previa); el servidor llega después.
+  pintarMapa(anclas.length === 2 && !ya);
+  if (puedeUbicar(entradas)) ubicar().catch((e) => avisar(e.message));
+  // Con el punto hecho, lo que sigue es "Añadir" (o nada, con 4): el foco no se pierde en el aire.
+  const anadir = $('[data-accion="kmz-anadir-punto"]');
+  if (document.activeElement === document.body || !document.activeElement) (anadir.hidden ? $('#kmz-panel-ubicar h2') : anadir).focus({ preventScroll: true });
 }
 
 /** Un clic en el plano de Ubicar sin nada que marcar: se dice cómo, sin marcar nada. */
 function clicSuelto() {
-  pistaSuelta = textoClicSuelto(metodoUbicar, entradas.ubicacion);
+  pistaSuelta = textoClicSuelto(metodoUbicar, entradas.ubicacion, puntosAhora());
   pintarPanel();
 }
 
+/**
+ * Un clic en el mapa con varios puntos o la cuadrícula: mientras la fila activa espera su
+ * coordenada (o el clic en el plano, para corregirla) el clic es esa coordenada. Con "un
+ * punto" o en las tarjetas es mirar, no marcar.
+ */
 function marcarEnMapa(lat, lon) {
-  if (paso !== 'ubicar') return;
-  if (!pendiente) {
-    // Con "un punto" (o en las tarjetas) un clic en el mapa es mirar, no marcar: no se dice nada.
-    if (destinoDelClic(metodoUbicar) === 'ancla') {
-      $('#kmz-ancla-estado').textContent = 'Primero haz clic en el punto del plano; después, en el mismo punto del mapa.';
-    }
+  if (paso !== 'ubicar' || destinoDelClic(metodoUbicar, { esperaPlano: true }) !== 'ancla') return;
+  const { activa } = puntosAhora();
+  if (!activa) {
+    pistaSuelta = textoClicSuelto(metodoUbicar, entradas.ubicacion, puntosAhora());
+    pintarPanel();
     return;
   }
-  const ancla = anclaDesde(pendiente, lat, lon);
-  pendiente = null;
-  rehacer = null;
-  avisoCuadricula = '';
-  cambiar(conMetodo({ ...entradas, anclas: [...entradas.anclas.filter((a) => a.nombre !== ancla.nombre), ancla] }));
-  // Desde el segundo punto los lotes ya se ven (vista previa); el servidor llega después.
-  pintarMapa(entradas.anclas.length === 2);
-  if (puedeUbicar(entradas)) ubicar().catch((e) => avisar(e.message));
+  ponerCoordenada(activa.nombre, lat, lon);
+  $('#kmz-ancla-coord').value = coordenadaDelCampo(pendiente.lat, pendiente.lon);
 }
 
-function cancelarAncla() {
-  pendiente = null;
-  rehacer = null;
+/** La fila activa ya tiene su coordenada: el alfiler en el mapa y a esperar el clic en el plano. */
+function ponerCoordenada(nombre, lat, lon) {
+  pendiente = { nombre, lat: Number(lat.toFixed(7)), lon: Number(lon.toFixed(7)) };
+  pistaSuelta = '';
   lienzo.redibujar();
   pintarPanel();
+  pintarMapa();
 }
 
-function quitarAncla(nombre, otraVez) {
-  pendiente = null;
-  rehacer = otraVez ? nombre : null;
+/** "Añadir B": abre la fila de la letra que sigue, vacía y esperando su coordenada. */
+function anadirPunto() {
+  const { anadir } = puntosAhora();
+  if (!anadir || paso !== 'ubicar') return;
+  pendiente = { nombre: anadir };
+  pistaSuelta = '';
+  $('#kmz-ancla-coord').value = '';
+  pintarPanel();
+  enfocarFilaActiva();
+}
+
+/** El foco al campo de la fila activa, con la fila entera a la vista dentro del panel. */
+function enfocarFilaActiva({ seleccionar = false } = {}) {
+  const campo = $('#kmz-ancla-coord');
+  campo.focus({ preventScroll: true });
+  if (seleccionar) campo.select();
+  $('#kmz-punto-activo').scrollIntoView({ block: 'nearest' });
+}
+
+/** "Rehacer": la fila vuelve a pedir coordenada (la que tenía, ya escrita) y el clic en el plano. */
+function rehacerAncla(nombre) {
+  const ancla = entradas.anclas.find((a) => a.nombre === nombre);
+  if (!ancla || (pendiente && pendiente.nombre !== nombre)) return;
+  pendiente = { nombre };
+  pistaSuelta = '';
+  $('#kmz-ancla-coord').value = coordenadaDelCampo(ancla.lat, ancla.lon);
+  lienzo.redibujar();
+  pintarPanel();
+  pintarMapa();
+  enfocarFilaActiva({ seleccionar: true });
+}
+
+/** Esc o "Cancelar": se deshace lo a medias; un punto que se rehacía queda como estaba. */
+function cancelarAncla() {
+  const nombre = pendiente?.nombre;
+  const enCampo = $('#kmz-punto-activo').contains(document.activeElement);
+  soltarFila();
+  lienzo.redibujar();
+  pintarPanel();
+  pintarMapa();
+  // La fila activa se fue (o volvió a ser A vacía) con el foco adentro: no se pierde en el aire.
+  if (enCampo || document.activeElement === document.body) enfocarTrasFila(nombre);
+}
+
+/**
+ * El foco cuando la fila en que estaba desaparece: al Rehacer de ese punto (si sigue), a la
+ * fila A vacía, a "Añadir" o, sin nada de eso, al título del panel.
+ */
+function enfocarTrasFila(nombre) {
+  const rehacer = nombre && [...document.querySelectorAll('[data-ancla-rehacer]')].find((b) => b.dataset.anclaRehacer === nombre);
+  if (rehacer) return rehacer.focus();
+  if (!$('#kmz-punto-activo').hidden) return enfocarFilaActiva();
+  const anadir = $('[data-accion="kmz-anadir-punto"]');
+  return (anadir.hidden ? $('#kmz-panel-ubicar h2') : anadir).focus();
+}
+
+function quitarAncla(nombre) {
+  if (!entradas.anclas.some((a) => a.nombre === nombre)) return;
+  if (pendiente?.nombre === nombre) soltarFila();
   cambiar(conMetodo({ ...entradas, anclas: entradas.anclas.filter((a) => a.nombre !== nombre) }));
   pintarMapa();
-  if (!otraVez && puedeUbicar(entradas)) ubicar().catch((e) => avisar(e.message));
+  if (puedeUbicar(entradas)) ubicar().catch((e) => avisar(e.message));
+  // Su botón se fue con la fila. No se pasa al Quitar de al lado: otro Enter borraría otro punto.
+  if (document.activeElement === document.body || !document.activeElement) enfocarTrasFila(null);
 }
 
 const NO_UBICO_CUADRICULA = 'No se pudo ubicar con la cuadrícula del plano. Marca los puntos a mano.';
@@ -1520,7 +1603,11 @@ const NO_ENTENDI = `No entendí esas coordenadas. Escríbelas como -34.98, -71.2
 async function irA() {
   const punto = leerCoordenadas($('#kmz-ir-a').value);
   if (!punto) throw new Error(NO_ENTENDI);
+  const mio = slug;
   await prepararMapa();
+  // La primera vez el mapa tarda en cargar: si entretanto se cambió de KMZ, de paso o de
+  // método, la coordenada ya no es de lo que está en pantalla.
+  if (mio !== slug || paso !== 'ubicar' || metodoUbicar !== 'punto') return;
   mapa.ir(punto.lat, punto.lon, 17);
   const lon = Number(punto.lon.toFixed(7));
   const lat = Number(punto.lat.toFixed(7));
@@ -1533,29 +1620,51 @@ async function irA() {
     if (!Number.isFinite(u.x)) marcandoPunto = true;
     lienzo.redibujar();
     pintarPanel();
+    if (marcandoPunto) llevarAlPlano();
     return;
   }
   marcandoPunto = true;
   cambiarUbicacion({ lon, lat });
   lienzo.redibujar();
+  llevarAlPlano(Number.isFinite(u.x) ? [u.x, u.y] : null);
 }
 
-/** "Ir" de los puntos sin uno a medias: solo lleva el mapa allá, para buscar el lugar. */
+/**
+ * Tras "Ir" toca el clic en el plano (con un punto y con varios). En pantalla angosta el
+ * plano queda bajo el panel, fuera de la vista: se baja hasta él. `centro` (px de página):
+ * dónde estaba el punto que se corrige, para que se vea al llegar.
+ */
+function llevarAlPlano(centro = null) {
+  if (centro && Number.isFinite(centro[0]) && Number.isFinite(centro[1])) lienzo.centrar(centro[0], centro[1]);
+  if (!window.matchMedia('(max-width: 70rem)').matches) return;
+  const caja = $('#kmz-plano');
+  const { top, bottom } = caja.getBoundingClientRect();
+  // La barra de arriba está fija: lo que queda debajo de ella tampoco se ve.
+  const arriba = document.querySelector('.barra')?.getBoundingClientRect().bottom ?? 0;
+  if (top >= arriba && bottom <= window.innerHeight) return;
+  const quieto = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  caja.scrollIntoView({ block: 'center', behavior: quieto ? 'auto' : 'smooth' });
+}
+
+/**
+ * "Ir" de la fila activa: el mapa va a la coordenada escrita, con su alfiler, y el próximo
+ * clic en el plano completa el punto. Otra coordenada estando ya en el plano la corrige.
+ */
 async function irAncla() {
+  const { activa } = puntosAhora();
+  if (!activa) return;
   const punto = leerCoordenadas($('#kmz-ancla-coord').value);
   if (!punto) throw new Error(NO_ENTENDI);
+  const [mio, metodo] = [slug, metodoUbicar];
   await prepararMapa();
+  // Si mientras cargaba el mapa se cambió de KMZ, de paso, de método o de fila, esta
+  // coordenada ya no es de la fila que está en pantalla.
+  if (mio !== slug || paso !== 'ubicar' || metodo !== metodoUbicar || puntosAhora().activa?.nombre !== activa.nombre) return;
   mapa.ir(punto.lat, punto.lon, 17);
-}
-
-/** Con un punto marcado en el plano, las coordenadas escritas son su lugar en el mapa. */
-async function usarCoordenadas() {
-  if (!pendiente) return irAncla();
-  const punto = leerCoordenadas($('#kmz-ancla-coord').value);
-  if (!punto) throw new Error(NO_ENTENDI);
-  await prepararMapa();
-  mapa.ir(punto.lat, punto.lon, 16);
-  marcarEnMapa(punto.lat, punto.lon);
+  ponerCoordenada(activa.nombre, punto.lat, punto.lon);
+  // Al rehacer, el plano se centra donde estaba el punto: ahí se corrige.
+  const antes = entradas.anclas.find((a) => a.nombre === activa.nombre);
+  llevarAlPlano(antes ? [antes.x, antes.y] : null);
 }
 
 // --- 7. crear ----------------------------------------------------------------------------
@@ -2053,57 +2162,14 @@ function pintarUbicar() {
   pista.textContent = pistaSuelta;
   pista.hidden = !pista.textContent;
 
-  $('#kmz-ancla-estado').textContent = avisoCuadricula && !pendiente && !rehacer ? avisoCuadricula : textoPuntos({
-    n: entradas.anclas.length, pendiente: pendiente?.nombre, rehacer, cuadricula: metodo === 'cuadricula',
-  });
-  $('[data-accion="kmz-cancelar-ancla"]').hidden = !pendiente && !rehacer;
-  const usar = $('[data-accion="kmz-usar-coordenadas"]');
-  usar.hidden = !pendiente;
-  if (pendiente) usar.textContent = `Usar como punto ${pendiente.nombre}`;
-  // Con un punto a medias, "Ir" lo completa con la coordenada escrita: "Usar como punto A" lo dice.
-  $('[data-accion="kmz-ancla-ir"]').hidden = Boolean(pendiente);
-
   $('#kmz-cuadricula').hidden = metodo !== 'cuadricula';
   $('[data-accion="kmz-usar-cuadricula"]').hidden = Boolean(entradas.cuadricula) || !propuesta;
   $('[data-accion="kmz-quitar-cuadricula"]').hidden = !entradas.cuadricula;
   $('#kmz-cuadricula-texto').textContent = entradas.cuadricula
     ? 'Se está usando la cuadrícula impresa en el plano. Puedes sumar puntos para comprobar que calza.'
     : 'El plano trae una cuadrícula con coordenadas impresas: es lo más preciso para ubicarlo.';
-
-  // Los puntos con su distancia: cuánto se aleja cada uno de donde lo dejan los demás.
-  const porNombre = new Map((g?.anclas ?? []).map((a) => [a.nombre, a]));
-  const cuerpo = $('#kmz-anclas tbody');
-  cuerpo.replaceChildren(...entradas.anclas.map((a) => {
-    const r = porNombre.get(a.nombre);
-    const tr = document.createElement('tr');
-    const { distancia, estado, detalle } = filaDelPunto(r, g, vigente);
-    if (detalle) tr.className = 'kmz-atipica';
-    const celda = (texto) => { const td = document.createElement('td'); td.textContent = texto; return td; };
-    const celdaEstado = celda(estado);
-    // En el celular la tabla no da para la frase entera: "No calza" se ve, y lo que hay que
-    // hacer va en el título y para el lector de pantalla (la lista de avisos lo repite).
-    if (detalle) {
-      celdaEstado.title = `${estado}: ${detalle}`;
-      const oculto = document.createElement('span');
-      oculto.className = 'oculto';
-      oculto.textContent = `: ${detalle}`;
-      celdaEstado.append(oculto);
-    }
-    tr.append(celda(a.nombre), celda(distancia), celdaEstado);
-    const acciones = document.createElement('td');
-    for (const [texto, clave] of [['Rehacer', 'anclaRehacer'], ['Quitar', 'anclaQuitar']]) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'boton boton--texto boton--chico';
-      b.textContent = texto;
-      b.dataset[clave] = a.nombre;
-      b.setAttribute('aria-label', `${texto} el punto ${a.nombre}`);
-      acciones.append(b);
-    }
-    tr.append(acciones);
-    return tr;
-  }));
-  $('#kmz-anclas').hidden = !entradas.anclas.length;
+  $('#kmz-puntos-titulo').hidden = metodo !== 'cuadricula';
+  if (conPuntos) pintarPuntos(g, vigente, metodo === 'cuadricula');
 
   // Lo ubicado y el ajuste fino van con un método a la vista (en las tarjetas, solo elegir).
   const resumen = $('#kmz-ubicacion');
@@ -2132,6 +2198,97 @@ function pintarUbicar() {
   for (const b of $$('#kmz-ajuste-fino button')) b.disabled = !hayLotes;
   $('[data-accion="kmz-georreferenciar"]').disabled = !plano.digitalizado?.vigente
     || !puedeUbicar(entradas);
+}
+
+/**
+ * Las filas A..D de "varios puntos" (y las de comprobar la cuadrícula). Las hechas se
+ * rehacen en cada repintado; la activa es siempre el mismo <li> de index.html, que se deja
+ * en su lugar entre ellas (al final, o donde está el punto que se rehace).
+ */
+function pintarPuntos(g, vigente, cuadricula) {
+  const estadoPuntos = puntosAhora();
+  const { activa, anadir } = estadoPuntos;
+  const enCurso = Boolean(pendiente);
+  $('#kmz-ancla-estado').textContent = avisoCuadricula && !enCurso ? avisoCuadricula
+    : guiaDePuntos(estadoPuntos.hechas, { cuadricula });
+
+  const lista = $('#kmz-puntos');
+  const filaActiva = $('#kmz-punto-activo');
+  for (const li of lista.querySelectorAll('.kmz-fila-punto--hecha')) li.remove();
+  filaActiva.hidden = !activa;
+  if (activa) {
+    filaActiva.querySelector('.kmz-fila-punto__letra').textContent = activa.nombre;
+    filaActiva.dataset.espera = activa.espera;
+    $('#kmz-ancla-etiqueta').textContent = activa.rehace ? `Punto ${activa.nombre}: de nuevo` : `Punto ${activa.nombre}`;
+    const paso1 = $('#kmz-ancla-paso');
+    const texto = textoFilaActiva(activa);
+    if (paso1.textContent !== texto) paso1.textContent = texto;
+    filaActiva.querySelector('[data-accion="kmz-cancelar-ancla"]').hidden = !estadoPuntos.cancelable;
+  }
+
+  // Los puntos con su distancia: cuánto se aleja cada uno de donde lo dejan los demás.
+  const porNombre = new Map((g?.anclas ?? []).map((a) => [a.nombre, a]));
+  let antes = true;
+  for (const fila of estadoPuntos.filas) {
+    if (fila.activa) { antes = false; continue; }
+    const li = filaHecha(fila.ancla, porNombre.get(fila.nombre), g, vigente, enCurso);
+    if (antes && activa) lista.insertBefore(li, filaActiva); else lista.append(li);
+  }
+
+  const boton = $('[data-accion="kmz-anadir-punto"]');
+  boton.hidden = !anadir;
+  if (anadir) boton.textContent = `Añadir ${anadir}`;
+}
+
+/** Una fila de un punto hecho: su letra, la coordenada, cuánto se aleja, si calza, y qué hacer. */
+function filaHecha(a, r, g, vigente, enCurso) {
+  const li = document.createElement('li');
+  li.className = 'kmz-fila-punto kmz-fila-punto--hecha';
+  const { distancia, estado: estadoFila, detalle } = filaDelPunto(r, g, vigente);
+  if (detalle) li.classList.add('kmz-atipica');
+  const span = (clase, texto = '') => {
+    const s = document.createElement('span');
+    s.className = clase;
+    s.textContent = texto;
+    return s;
+  };
+  const letra = span('kmz-fila-punto__letra', a.nombre);
+  letra.title = a.nombre;
+  letra.setAttribute('aria-hidden', 'true');
+  // La coordenada en su línea y lo demás abajo, junto a los botones (ver .kmz-fila-punto).
+  const coord = span('kmz-fila-punto__coord');
+  coord.append(span('oculto', `Punto ${a.nombre}: `), document.createTextNode(coordenadaCorta(a.lat, a.lon)));
+  const datos = span('kmz-fila-punto__datos');
+  if (distancia !== '—') {
+    const dist = span('kmz-fila-punto__dist');
+    dist.title = 'Cuánto se aleja de donde lo dejan los demás puntos';
+    dist.append(span('oculto', 'a '), document.createTextNode(distancia));
+    datos.append(dist);
+  }
+  if (estadoFila) {
+    const celda = span('kmz-fila-punto__estado', estadoFila);
+    // En el celular no da para la frase entera: "No calza" se ve, y lo que hay que hacer va
+    // en el título y para el lector de pantalla (la lista de avisos lo repite).
+    if (detalle) {
+      celda.title = `${estadoFila}: ${detalle}`;
+      celda.append(span('oculto', `: ${detalle}`));
+    }
+    datos.append(celda);
+  }
+  const acciones = span('kmz-fila-punto__acciones');
+  for (const [texto, clave] of [['Rehacer', 'anclaRehacer'], ['Quitar', 'anclaQuitar']]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'boton boton--texto boton--chico';
+    b.textContent = texto;
+    b.dataset[clave] = a.nombre;
+    b.setAttribute('aria-label', `${texto} el punto ${a.nombre}`);
+    // Con otra fila a medias no se abre una segunda: primero se termina o se cancela.
+    if (clave === 'anclaRehacer' && enCurso) continue;
+    acciones.append(b);
+  }
+  li.append(letra, coord, datos, acciones);
+  return li;
 }
 
 const grados = (g) => `${new Intl.NumberFormat('es-CL', { maximumFractionDigits: 1 }).format(g)}°`;
@@ -2378,9 +2535,12 @@ function pintarMapa(encuadrar = false) {
   const g = plano?.georreferencia;
   // Como en el plano: lo del método a la vista (en las tarjetas, el que usa).
   const metodo = metodoUbicar ?? metodoVigente(entradas);
-  mapa.ponerAnclas(paso === 'ubicar' && metodo !== 'punto' ? entradas.anclas : [], g?.vigente ? g.atipicas ?? [] : []);
-  const u = paso === 'ubicar' && metodo === 'punto' ? entradas.ubicacion : null;
-  mapa.ponerAlfiler(u?.lat, u?.lon);
+  const conAnclas = paso === 'ubicar' && metodo !== 'punto';
+  mapa.ponerAnclas(conAnclas ? entradas.anclas : [], g?.vigente ? g.atipicas ?? [] : [], conAnclas ? pendiente?.nombre : null);
+  // El alfiler: la coordenada de "un punto", o la de la fila de puntos que espera el plano.
+  const u = paso === 'ubicar' && metodo === 'punto' ? entradas.ubicacion
+    : conAnclas && Number.isFinite(pendiente?.lat) ? pendiente : null;
+  mapa.ponerAlfiler(u?.lat, u?.lon, u && u === pendiente ? pendiente.nombre : '');
   const revisando = paso === 'revisar';
   // En Ubicar, con la coordenada, los lotes son los de la vista previa: siguen al giro y al
   // arrastre sin esperar al servidor (que da lo mismo al terminar).
@@ -2540,20 +2700,18 @@ function dibujar(ctx, P) {
     const anclas = metodo === 'punto' ? [] : entradas.anclas;
     for (const a of anclas) {
       const mala = g?.vigente && g.atipicas?.includes(a.nombre);
+      // El que se rehace, en naranja: es el de la fila activa.
+      const activa = pendiente?.nombre === a.nombre;
+      const color = activa ? '#ea580c' : mala ? '#dc2626' : '#2563eb';
       const q = P(a.x, a.y);
-      mira(ctx, q, mala ? '#dc2626' : '#2563eb');
-      etiqueta(ctx, a.nombre, q[0] + 10, q[1] - 10, mala ? '#dc2626' : '#1d4ed8', 'left');
+      mira(ctx, q, color);
+      etiqueta(ctx, a.nombre, q[0] + 10, q[1] - 10, activa ? '#c2410c' : mala ? '#dc2626' : '#1d4ed8', 'left');
     }
     const u = metodo === 'punto' ? entradas.ubicacion : null;
     if (Number.isFinite(u?.x) && Number.isFinite(u?.y)) {
       const q = P(u.x, u.y);
       mira(ctx, q, '#ea580c');
       etiqueta(ctx, 'Tu coordenada', q[0] + 10, q[1] + 6, '#c2410c', 'left');
-    }
-    if (pendiente) {
-      const q = P(pendiente.x, pendiente.y);
-      mira(ctx, q, '#f59e0b');
-      etiqueta(ctx, `${pendiente.nombre} → mapa`, q[0] + 10, q[1] - 10, '#b45309', 'left');
     }
   }
 }
