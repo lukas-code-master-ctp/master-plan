@@ -876,9 +876,10 @@ export class Visor {
     if (!this.capaEtapas) {
       this.capaEtapas = document.createElementNS(SVG_NS, 'g');
       this.capaEtapas.setAttribute('class', 'etapas');
-      // Sobre los caminos y los esteros, bajo las parcelas.
-      const ancla = this.capaAguas ?? this.capaCaminos;
-      if (ancla) ancla.after(this.capaEtapas);
+      // Sobre los caminos y bajo los esteros: un borde de etapa que corre junto al
+      // agua la tapaba y el estero dejaba de verse.
+      if (this.capaAguas) this.capaAguas.before(this.capaEtapas);
+      else if (this.capaCaminos) this.capaCaminos.after(this.capaEtapas);
       else this.svg.prepend(this.capaEtapas);
     }
     return this.capaEtapas;
@@ -1371,9 +1372,10 @@ function promedioDe(valores) {
  * esteros ni los colores de estado de las pastillas. Va por número: la etapa 2 es del mismo color en todas
  * las vistas.
  */
-// Neutros (arena, gris azulado, salvia, piedra, malva gris, gris cálido): distinguen
-// una etapa de otra sin competir con la foto ni con las pastillas.
-const COLORES_ETAPA = ['#dcc89f', '#a3b6cc', '#afc49c', '#cbbfb2', '#bfaec2', '#b3ab9c'];
+// Neutros (arena, salvia, malva gris, piedra, gris cálido, tierra): distinguen una
+// etapa de otra sin competir con la foto ni con las pastillas. Sin azules: un borde
+// gris azulado junto a un estero se confundía con el agua.
+const COLORES_ETAPA = ['#dcc89f', '#afc49c', '#bfaec2', '#cbbfb2', '#b3ab9c', '#c9b8a6'];
 export function colorDeEtapa(etapa) {
   const indice = (Math.abs(Math.trunc(Number(etapa) || 1)) - 1 + COLORES_ETAPA.length) % COLORES_ETAPA.length;
   return COLORES_ETAPA[indice];

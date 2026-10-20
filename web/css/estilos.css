@@ -2127,16 +2127,17 @@ button { cursor: pointer; }
    despega del bosque, y su nombre en cursiva como en un mapa. */
 .agua { pointer-events: none; }
 .agua__borde, .agua__linea { fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.agua__borde { stroke: rgb(0 30 60 / 0.45); stroke-width: 6.5; }
-.agua__linea { stroke: #3fa9ff; stroke-width: 4; }
+.agua__borde { stroke: rgb(0 30 60 / 0.6); stroke-width: 8; }
+/* Más gruesa que el borde de una etapa (3.5): el agua es lo que se tiene que ver. */
+.agua__linea { stroke: #38a6ff; stroke-width: 5; }
 .agua__nombre {
-  font: italic 600 0.6875rem var(--sans);
+  font: italic 700 0.75rem var(--sans);
   letter-spacing: 0.04em;
   fill: #d6eeff;
   text-anchor: middle;
   paint-order: stroke;
-  stroke: rgb(0 30 60 / 0.7);
-  stroke-width: 3px;
+  stroke: rgb(0 30 60 / 0.8);
+  stroke-width: 3.5px;
 }
 
 /* "Volver al masterplan": solo en los puntos solo foto (app.js, cambiarVista).
