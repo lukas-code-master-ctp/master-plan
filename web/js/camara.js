@@ -246,19 +246,13 @@ export function suavizar(t) {
 }
 
 /**
- * El tamaño común de las pastillas con los números fijos, como fracción del normal.
+ * El tamaño de las pastillas con los números fijos, como fracción del normal.
  *
- * Todas iguales: cada una a la medida de su parcela daba números enormes adelante e
- * ilegibles atrás. Se mira la parcela chica típica (el cuartil de abajo de los
- * anchos en pantalla): si ellas se aprietan, todas se achican, hasta un mínimo que
- * se lee. En pantallas angostas (el celular) todo va un poco más chico, para que se
- * vea el campo y no solo números.
+ * Todas iguales y siempre del mismo tamaño, como en los masterplan 360 que ya
+ * conocen los compradores: cada una a la medida de su parcela daba números enormes
+ * adelante e ilegibles atrás. En pantallas angostas (el celular) van un poco más
+ * chicas, para que se vea el campo y no solo números.
  */
-export function escalaComunDeRotulos(anchosPx, anchoPantallaPx, { pleno = 56 } = {}) {
-  const angosta = anchoPantallaPx <= 640;
-  const [minima, maxima] = angosta ? [0.7, 0.82] : [0.8, 1];
-  if (!anchosPx.length) return maxima;
-  const ordenados = [...anchosPx].sort((a, b) => a - b);
-  const tipico = ordenados[Math.floor((ordenados.length - 1) * 0.25)];
-  return acotar((tipico / pleno) * maxima, minima, maxima);
+export function escalaComunDeRotulos(anchoPantallaPx) {
+  return anchoPantallaPx <= 640 ? 0.9 : 1;
 }

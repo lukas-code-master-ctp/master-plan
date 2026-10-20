@@ -516,7 +516,7 @@ button { cursor: pointer; }
 }
 
 .parcela__numero {
-  font: 700 0.6875rem var(--sans);
+  font: 700 0.625rem var(--sans);
   font-variant-numeric: tabular-nums;
   text-anchor: middle;
   pointer-events: none;

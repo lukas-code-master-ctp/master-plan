@@ -71,6 +71,24 @@ def test_dos_loteos_que_comparten_el_cache_eligen_cada_uno_su_homonimo(tmp_path)
     assert otro[0].lat == pytest.approx(-36.286)
 
 
+def test_prefiere_la_ciudad_con_ese_nombre_a_un_rio_o_a_otro_lugar_parecido(tmp_path):
+    """Desde Quillón, "Chillán" tiene que ser la ciudad, al oriente, aunque la búsqueda
+    traiga primero un río o un caserío con un nombre que solo empieza igual."""
+    quillon = (-72.48, -36.72)
+
+    def geocodificador(nombre, pais):
+        return [
+            {"name": "Chillán Viejo", "latitude": -36.62, "longitude": -72.13, "feature_code": "PPLA3"},
+            {"name": "Estero Chillán", "latitude": -36.70, "longitude": -72.60, "feature_code": "STM"},
+            {"name": "Chillán", "latitude": -36.71, "longitude": -72.62, "feature_code": "STM"},
+            {"name": "Chillán", "latitude": -36.606, "longitude": -72.103, "feature_code": "PPLA2"},
+        ]
+
+    chillan = resolver(["Chillán 49 minutos"], quillon, tmp_path / "ref.json", geocodificar=geocodificador)
+
+    assert (chillan[0].lat, chillan[0].lon) == pytest.approx((-36.606, -72.103))
+
+
 def test_una_entrada_antigua_del_cache_se_vuelve_a_preguntar(tmp_path):
     cache = tmp_path / "ref.json"
     antigua = {"nombre": "Chanco", "lon": -72.711, "lat": -36.286, "cota": 450.0}

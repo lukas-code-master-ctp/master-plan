@@ -251,12 +251,7 @@ test('el vuelo arranca y llega despacio', () => {
   assert.ok(suavizar(0.1) < 0.1 && suavizar(0.9) > 0.9);
 });
 
-test('con los números fijos todas las pastillas van del mismo tamaño, más chico si se aprietan', () => {
-  // Parcelas grandes en pantalla: tamaño normal en escritorio, algo menor en el celular.
-  assert.equal(escalaComunDeRotulos([200, 150, 120, 300], 1400), 1);
-  assert.equal(escalaComunDeRotulos([200, 150, 120, 300], 390), 0.82);
-  // Muchas parcelas chicas: el mínimo que todavía se lee.
-  assert.equal(escalaComunDeRotulos([10, 12, 15, 200], 1400), 0.8);
-  assert.equal(escalaComunDeRotulos([10, 12, 15, 200], 390), 0.7);
-  assert.equal(escalaComunDeRotulos([], 390), 0.82);
+test('con los números fijos todas las pastillas van del mismo tamaño, algo menor en el celular', () => {
+  assert.equal(escalaComunDeRotulos(1400), 1);
+  assert.equal(escalaComunDeRotulos(390), 0.9);
 });

@@ -41,7 +41,9 @@ void main() {
 }`;
 
 const ARRASTRE_MINIMO_PX = 5;
-const ALTO_PASTILLA = 26;
+// Chica y redonda, como en los masterplan 360 que ya conocen los compradores: la
+// foto es lo que se mira, el número solo marca dónde está cada parcela.
+const ALTO_PASTILLA = 20;
 // La elegida se dibuja agrandada (.parcela--seleccionada en estilos.css): ocupa más.
 const ESCALA_ELEGIDA = 1.22;
 // El globo de la elegida flota sobre la parcela, unido por una patita, para no
@@ -557,11 +559,8 @@ export class Visor {
     }
 
     // Con los números fijos todas las pastillas van del mismo tamaño: cada una a la
-    // medida de su parcela daba números enormes adelante e ilegibles atrás. El tamaño
-    // común se achica cuando la vista se aleja y las parcelas se aprietan.
-    const comun = this.numerosFijos
-      ? escalaComunDeRotulos(candidatas.filter((c) => !c.elegida).map((c) => c.anchoEnPantalla), ancho)
-      : 1;
+    // medida de su parcela daba números enormes adelante e ilegibles atrás.
+    const comun = this.numerosFijos ? escalaComunDeRotulos(ancho) : 1;
     for (const candidata of candidatas) {
       const escala = candidata.elegida ? 1 : comun;
       candidata.nodo.pastilla.setAttribute('transform',
@@ -1186,12 +1185,12 @@ function ponerRotulo(nodo, texto) {
  */
 function dimensionarPastilla(nodo) {
   const ALTO = ALTO_PASTILLA;
-  const RESPIRO = 9;
+  const RESPIRO = 6;
   let ancho = 0;
   try {
     ancho = nodo.numero.getComputedTextLength();
   } catch { /* todavía sin layout */ }
-  if (!ancho) ancho = nodo.numero.textContent.length * 6.5;
+  if (!ancho) ancho = nodo.numero.textContent.length * 6;
 
   const w = Math.max(ALTO, Math.round(ancho) + RESPIRO * 2);
   nodo.disco.setAttribute('x', (-w / 2).toFixed(1));
