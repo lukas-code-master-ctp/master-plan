@@ -56,12 +56,12 @@ const ANCHO_MINIMO_ETIQUETA_PX = 42;
 // Lo que ocupa en pantalla un botón de punto 360 (la lupa, su nombre y la patita)
 // en escritorio, por si el botón todavía no se puede medir. Ningún número de
 // parcela se dibuja dentro.
-const ANCHO_ZONA_PUNTO = 76;
+const ANCHO_ZONA_PUNTO = 28;
 // El alfiler de los rótulos del horizonte y cuánto sube uno que chocaría con otro
 // (el alto de la píldora más un respiro).
 const ALFILER_REFERENCIA = 22;
 const ALTO_ESCALON_REFERENCIA = 32;
-const ALTO_ZONA_PUNTO = 92;
+const ALTO_ZONA_PUNTO = 36;
 // La burbuja de un grupo: más alta que una pastilla, porque dice más.
 const ALTO_BURBUJA = 30;
 // Por sobre las pastillas sueltas (que van hasta ~1e7) y bajo la elegida (1e9).
@@ -1367,11 +1367,13 @@ function promedioDe(valores) {
 
 /**
  * El color de una etapa: su borde y su rótulo. Claros, para leerse sobre bosque, y
- * lejos del amarillo de los caminos, del azul de los esteros y de los colores de
- * estado de las pastillas. Va por número: la etapa 2 es del mismo color en todas
+ * apagados, para no confundirse con el amarillo de los caminos, el azul de los
+ * esteros ni los colores de estado de las pastillas. Va por número: la etapa 2 es del mismo color en todas
  * las vistas.
  */
-const COLORES_ETAPA = ['#ff8a65', '#c4a1ff', '#5eead4', '#f9a8d4', '#fdba74', '#a5b4fc'];
+// Neutros (arena, gris azulado, salvia, piedra, malva gris, gris cálido): distinguen
+// una etapa de otra sin competir con la foto ni con las pastillas.
+const COLORES_ETAPA = ['#dcc89f', '#a3b6cc', '#afc49c', '#cbbfb2', '#bfaec2', '#b3ab9c'];
 export function colorDeEtapa(etapa) {
   const indice = (Math.abs(Math.trunc(Number(etapa) || 1)) - 1 + COLORES_ETAPA.length) % COLORES_ETAPA.length;
   return COLORES_ETAPA[indice];

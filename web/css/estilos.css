@@ -2034,6 +2034,10 @@ button { cursor: pointer; }
    translate(-50%, -100%) va dentro, en el botón, y el visor solo lo mueve. */
 /* Sobre el overlay de las parcelas: un número no puede tapar el botón de otro punto. */
 .puntos-360 { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 3; }
+/* Los otros puntos de vuelo, sobre la foto. Discretos: un botón chico y oscuro con
+   la lupa, sin nombre ni animación, para no tapar parcelas ni competir con ellas.
+   Al pasar el mouse (o con el teclado) crece y dice qué punto es; en el celular la
+   fila de puntos de abajo ya los nombra. */
 .punto-360 {
   position: absolute;
   top: 0;
@@ -2041,7 +2045,6 @@ button { cursor: pointer; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
   padding: 0;
   border: 0;
   background: none;
@@ -2052,94 +2055,70 @@ button { cursor: pointer; }
   -webkit-tap-highlight-color: transparent;
 }
 .punto-360[hidden] { display: none; }
-/* Una lupa blanca y llena, distinta de los números de las parcelas (píldoras de
-   color) para que se lea como "acá hay otra foto", no como un lote más. */
 .punto-360__icono {
   position: relative;
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: #fff;
-  color: var(--marca-800, #18181b);
-  box-shadow: 0 3px 12px rgb(0 0 0 / 0.5);
-  animation: punto-360-flota 2.4s ease-in-out infinite;
+  border: 1.5px solid rgb(255 255 255 / 0.9);
+  background: rgb(20 20 20 / 0.55);
+  color: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(3px);
   transition: transform 160ms var(--curva), background-color 160ms ease, color 160ms ease;
 }
 .punto-360__icono svg {
-  width: 24px;
-  height: 24px;
+  width: 13px;
+  height: 13px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.4;
+  stroke-width: 2.8;
   stroke-linecap: round;
 }
-/* Dos ondas que salen de la lupa, desfasadas: llaman la atención sin tapar la foto. */
-.punto-360__icono::before,
-.punto-360__icono::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  opacity: 0;
-  animation: punto-360-onda 2.4s ease-out infinite;
-  pointer-events: none;
-}
-.punto-360__icono::after { animation-delay: 1.2s; }
-@keyframes punto-360-onda {
-  0% { transform: scale(1); opacity: 0.85; }
-  100% { transform: scale(2.1); opacity: 0; }
-}
-@keyframes punto-360-flota {
-  0%, 100% { translate: 0 0; }
-  50% { translate: 0 -4px; }
-}
+/* El nombre flota sobre la lupa solo al pasar el mouse: fuera del flujo, así no
+   agranda el botón ni esconde los números de alrededor. */
 .punto-360__nombre {
+  position: absolute;
+  bottom: calc(100% + 4px);
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgb(20 20 20 / 0.7);
+  background: rgb(20 20 20 / 0.75);
   font: 700 0.625rem var(--sans);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
   backdrop-filter: blur(4px);
+  opacity: 0;
+  translate: 0 3px;
+  transition: opacity 140ms ease, translate 140ms ease;
+  pointer-events: none;
 }
 /* La patita hasta el suelo. */
 .punto-360::after {
   content: '';
-  width: 2px;
-  height: 14px;
-  background: #fff;
+  width: 1.5px;
+  height: 7px;
+  background: rgb(255 255 255 / 0.9);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
 }
 .punto-360:hover .punto-360__icono,
 .punto-360:focus-visible .punto-360__icono {
-  transform: scale(1.12);
-  background: var(--marca-700, #27272a);
-  color: #fff;
+  transform: scale(1.25);
+  background: #fff;
+  color: var(--marca-800, #18181b);
+}
+.punto-360:hover .punto-360__nombre,
+.punto-360:focus-visible .punto-360__nombre {
+  opacity: 1;
+  translate: 0 0;
 }
 .punto-360:focus-visible { outline: none; }
-@media (prefers-reduced-motion: reduce) {
-  .punto-360__icono, .punto-360__icono::before, .punto-360__icono::after { animation: none; }
-}
-/* En el celular la lupa de escritorio tapaba media pantalla: más chica y con
-   ondas más cortas, sigue siendo un blanco cómodo para el dedo. */
 @media (max-width: 40rem) {
-  .punto-360 { gap: 2px; }
-  .punto-360__icono { width: 26px; height: 26px; box-shadow: 0 1px 6px rgb(0 0 0 / 0.5); }
-  .punto-360__icono svg { width: 13px; height: 13px; stroke-width: 2.8; }
-  .punto-360__icono::before, .punto-360__icono::after {
-    border-width: 1.5px;
-    animation-name: punto-360-onda-corta;
-  }
-  .punto-360__nombre { padding: 1px 5px; font-size: 0.5rem; letter-spacing: 0.06em; }
-  .punto-360::after { height: 6px; }
-}
-@keyframes punto-360-onda-corta {
-  0% { transform: scale(1); opacity: 0.8; }
-  100% { transform: scale(1.6); opacity: 0; }
+  .punto-360__icono { width: 22px; height: 22px; }
+  .punto-360__icono svg { width: 11px; height: 11px; }
+  .punto-360::after { height: 5px; }
 }
 /* Con una parcela elegida, los puntos dan un paso atrás como las demás parcelas. */
 .visor:has(.overlay--con-seleccion) .punto-360 { opacity: 0.35; }
