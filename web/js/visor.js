@@ -1367,11 +1367,13 @@ function promedioDe(valores) {
 
 /**
  * El color de una etapa: su borde y su rótulo. Claros, para leerse sobre bosque, y
- * lejos del amarillo de los caminos, del azul de los esteros y de los colores de
- * estado de las pastillas. Va por número: la etapa 2 es del mismo color en todas
+ * apagados, para no confundirse con el amarillo de los caminos, el azul de los
+ * esteros ni los colores de estado de las pastillas. Va por número: la etapa 2 es del mismo color en todas
  * las vistas.
  */
-const COLORES_ETAPA = ['#ff8a65', '#c4a1ff', '#5eead4', '#f9a8d4', '#fdba74', '#a5b4fc'];
+// Neutros (arena, gris azulado, salvia, piedra, malva gris, gris cálido): distinguen
+// una etapa de otra sin competir con la foto ni con las pastillas.
+const COLORES_ETAPA = ['#dcc89f', '#a3b6cc', '#afc49c', '#cbbfb2', '#bfaec2', '#b3ab9c'];
 export function colorDeEtapa(etapa) {
   const indice = (Math.abs(Math.trunc(Number(etapa) || 1)) - 1 + COLORES_ETAPA.length) % COLORES_ETAPA.length;
   return COLORES_ETAPA[indice];
