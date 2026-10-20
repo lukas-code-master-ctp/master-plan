@@ -16,7 +16,7 @@ import {
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, detalleUbicacion, filaDelPunto, numerosQueFaltan,
   ordenarEsquinas, PASTILLAS, pastillaDe, pasoDeRuta, pasoSiguiente, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puedeUbicar, puntoDeRotulo,
   puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, siguienteNombre, sinNumero, sugerencias, tamanoRotado, textoSemaforo, verticesDe,
-  escalaDeUbicacion, leerEscala, lotesEnElMapa, normalizarGiro, similitudPorPunto, usaUbicacion,
+  escalaDeUbicacion, leerEscala, lotesEnElMapa, normalizarGiro, similitudPorPunto, usaAnclas, usaUbicacion, metodoVigente,
   afinarAbierta, similitudPorAnclas, textoPuntos, ubicacionCompleta, ajustaConElCuadro, ofrecerAjusteDelCuadro,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
@@ -1223,7 +1223,7 @@ function programarUbicar() {
   ubicarLuego = 0;
   if (!puedeUbicar(entradas) || !plano?.digitalizado?.vigente) return;
   // Con la coordenada y sin escala el servidor solo diría lo que ya dice la línea bajo "Seguir".
-  if (usaUbicacion(entradas) && !escalaDeUbicacion(plano.digitalizado, entradas.ubicacion)) return;
+  if (usaUbicacion(entradas) && !escalaDeUbicacion(plano.digitalizado, entradas.ubicacion, entradas.escala)) return;
   ubicarLuego = setTimeout(() => {
     ubicarLuego = 0;
     ubicar().catch((e) => avisar(e.message));
@@ -1238,7 +1238,7 @@ function programarUbicar() {
  */
 function vistaPrevia() {
   const d = plano?.digitalizado;
-  if (!d || !rasgos.length || entradas.cuadricula) return null;
+  if (!d || !rasgos.length || metodoVigente(entradas) === 'cuadricula') return null;
   const hoja = d.pagina;
   if (hoja && (hoja.numero !== entradas.pagina || hoja.rotacion !== entradas.rotacion)) return null;
   // Con 2 o más puntos mandan ellos (`por_anclas`), como en el servidor; si no, la coordenada.
@@ -1246,9 +1246,9 @@ function vistaPrevia() {
   // los lotes saltarían al soltar el último cambio.
   const ajuste = ajustaConElCuadro(entradas) && d.escala_m_px > 0
     ? { escalaMPx: d.escala_m_px, homografiaTrabajo: d.homografia } : {};
-  const t = entradas.anclas.length >= 2
+  const t = usaAnclas(entradas)
     ? similitudPorAnclas(entradas.anclas, d.perspectiva ? d.homografia : null, ajuste)
-    : usaUbicacion(entradas) && similitudPorPunto(entradas.ubicacion, escalaDeUbicacion(d, entradas.ubicacion), d.homografia);
+    : usaUbicacion(entradas) && similitudPorPunto(entradas.ubicacion, escalaDeUbicacion(d, entradas.ubicacion, entradas.escala), d.homografia);
   return t ? lotesEnElMapa(rasgos, t, entradas.ajuste) : null;
 }
 
@@ -1915,10 +1915,12 @@ function pintarGuia() {
   const u = entradas.ubicacion ?? {};
   const coordenada = Number.isFinite(u.lon) && Number.isFinite(u.lat);
   const punto = Number.isFinite(u.x) && Number.isFinite(u.y);
-  const mandanPuntos = entradas.anclas.length >= 2 || Boolean(entradas.cuadricula);
+  // Como el servidor: con "un punto" elegido la coordenada manda aunque haya puntos.
+  const vigente = metodoVigente(entradas);
+  const mandanPuntos = vigente === 'puntos' || vigente === 'cuadricula';
   const d = plano.digitalizado;
   const sinCuadro = Boolean(d) && !(d.escala_m_px > 0);
-  const escala = escalaDeUbicacion(d, u);
+  const escala = escalaDeUbicacion(d, u, entradas.escala);
   const estado = (li, hecho, ahora) => {
     if (hecho) li.dataset.estado = 'hecho'; else if (ahora) li.dataset.estado = 'ahora'; else delete li.dataset.estado;
   };
@@ -1967,7 +1969,7 @@ function pintarGuia() {
 
   const nota = $('#kmz-guia-nota');
   nota.hidden = !mandanPuntos;
-  nota.textContent = entradas.cuadricula
+  nota.textContent = vigente === 'cuadricula'
     ? 'Se está ubicando con la cuadrícula impresa, no con la coordenada.'
     : 'Con 2 o más puntos en "Afinar con puntos", ellos mandan sobre tu coordenada y el giro. Quítalos para ubicar con ella.';
 }

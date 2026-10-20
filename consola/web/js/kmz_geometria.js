@@ -88,6 +88,10 @@ export function girarEntradas(entradas, de, a, ancho, alto) {
     fuera: (entradas.fuera ?? []).map(punto),
   };
   if (entradas.cuadro) salida.cuadro = caja(entradas.cuadro);
+  // La línea de la escala gira con el dibujo; la 1:N no tiene dónde girar.
+  if (entradas.escala?.p && entradas.escala?.q) {
+    salida.escala = { ...entradas.escala, p: punto(entradas.escala.p), q: punto(entradas.escala.q) };
+  }
   if (entradas.ubicacion) {
     // El punto sigue sobre el mismo lugar del dibujo, y el giro que falta para dejar el
     // norte arriba es el de antes menos lo que ya se giró la página (ambos horarios).
@@ -204,6 +208,20 @@ export function siguienteNombre(usados) {
     } while (n >= 0);
     if (!tomados.has(nombre)) return nombre;
   }
+}
+
+// Desde Ubicar se marcan a lo más 4 puntos: con 2 ya se ubica y con 4 se nota el que quedó mal.
+const LETRAS = ['A', 'B', 'C', 'D'];
+
+/**
+ * La letra del punto que se puede añadir desde Ubicar: la primera de A..D libre, o null
+ * con 4 puntos ya puestos (aunque los de un KMZ viejo se llamen de otra forma).
+ */
+export function siguienteLetra(anclas) {
+  const lista = anclas ?? [];
+  if (lista.length >= LETRAS.length) return null;
+  const letra = siguienteNombre(lista.map((a) => a.nombre));
+  return LETRAS.includes(letra) ? letra : null;
 }
 
 const decima = (v) => Math.round(v * 10) / 10;
@@ -904,13 +922,49 @@ export function ubicacionCompleta(u) {
   return Boolean(u) && ['x', 'y', 'lon', 'lat'].every((k) => Number.isFinite(u[k]));
 }
 
+export const METODOS = ['puntos', 'punto', 'cuadricula'];
+
 /**
- * ¿Hay con qué ubicar? La cuadrícula elegida, 2 o más puntos, o la coordenada con su
- * punto en el plano (lo mismo que prueba `georreferenciar` en el servidor).
+ * El método con que se entra a Ubicar: el elegido (`entradas.metodo`) o, en un KMZ de
+ * antes de elegirlo, el que se deduce de lo que ya tiene (cuadrícula elegida, 2 o más
+ * puntos, la coordenada con su punto). null: nada aún, se muestran las tarjetas. La
+ * cuadrícula elegida sin cuadrícula que proponer ni elegida tampoco tiene pantalla: a
+ * las tarjetas también.
+ */
+export function metodoAlEntrar(entradas, hayPropuestaCuadricula = false) {
+  const metodo = entradas?.metodo;
+  if (metodo === 'cuadricula' && !hayPropuestaCuadricula && !entradas?.cuadricula) return null;
+  if (METODOS.includes(metodo)) return metodo;
+  return metodoDeducido(entradas);
+}
+
+/** Lo que usa el servidor sin `metodo`: cuadrícula > 2 puntos > la coordenada con su punto. */
+function metodoDeducido(entradas) {
+  if (entradas?.cuadricula) return 'cuadricula';
+  if ((entradas?.anclas?.length ?? 0) >= 2) return 'puntos';
+  if (ubicacionCompleta(entradas?.ubicacion)) return 'punto';
+  return null;
+}
+
+/**
+ * El método con que ubicaría el servidor ahora: el elegido o, sin elegir, el de la
+ * precedencia de siempre. null si no hay con qué.
+ */
+export function metodoVigente(entradas) {
+  return METODOS.includes(entradas?.metodo) ? entradas.metodo : metodoDeducido(entradas);
+}
+
+/**
+ * ¿Hay con qué ubicar? Con el método elegido, lo que ese método pide (lo mismo que
+ * prueba `georreferenciar` en el servidor); sin él, cualquiera de los tres.
  */
 export function puedeUbicar(entradas) {
-  return Boolean(entradas?.cuadricula) || (entradas?.anclas?.length ?? 0) >= 2
-    || ubicacionCompleta(entradas?.ubicacion);
+  switch (entradas?.metodo) {
+    case 'cuadricula': return Boolean(entradas.cuadricula);
+    case 'puntos': return (entradas.anclas?.length ?? 0) >= 2;
+    case 'punto': return ubicacionCompleta(entradas.ubicacion);
+    default: return metodoDeducido(entradas) != null;
+  }
 }
 
 /**
@@ -953,13 +1007,11 @@ export function porQueNoSigue(paso, e, local = {}) {
       // Mientras se ubica (o está por ubicarse tras girar o mover) lo ubicado ya no es lo que se ve.
       if (e?.georreferencia?.vigente && !local.ubicando) return '';
       if (d && !d.vigente) return 'Cambiaste el plano: abre "Revisar los números" para que se lea de nuevo.';
-      if (!puedeUbicar(local.entradas)) {
-        return 'Pega tu coordenada y haz clic en ese punto del plano, o marca 2 puntos en "Afinar con puntos".';
-      }
-      // Con solo la coordenada, el tamaño sale del cuadro de superficies o de la escala impresa.
-      const soloCoordenada = !local.entradas?.cuadricula && (local.entradas?.anclas?.length ?? 0) < 2;
-      if (soloCoordenada && d?.escala_m_px == null && !local.entradas?.ubicacion?.escala_impresa) {
-        return 'Para ubicar con tu coordenada falta la escala del plano (por ejemplo 1:5.000), o marca puntos.';
+      if (!puedeUbicar(local.entradas)) return faltaParaUbicar(local.entradas);
+      // Con la coordenada, el tamaño sale de la escala marcada, del cuadro de superficies
+      // o de la 1:N vieja: sin ninguna, el servidor no puede ubicar.
+      if (usaUbicacion(local.entradas) && !escalaDeUbicacion(d, local.entradas.ubicacion, local.entradas.escala)) {
+        return 'Falta la escala del plano: márcala en el paso Marcar, o ubica con varios puntos.';
       }
       return local.ubicando ? 'Ubicando el plano…' : 'Aprieta "Ubicar de nuevo" para ubicar los lotes.';
     }
@@ -967,6 +1019,16 @@ export function porQueNoSigue(paso, e, local = {}) {
       return local.duplicados ? 'Hay números repetidos: corrígelos en "Revisar los números".' : '';
     default:
       return '';
+  }
+}
+
+/** Qué le falta al método elegido para ubicar (o a cualquiera, sin método). */
+function faltaParaUbicar(entradas) {
+  switch (entradas?.metodo) {
+    case 'cuadricula': return 'Para ubicar con la cuadrícula, elige la que encontramos en el plano.';
+    case 'puntos': return 'Para ubicar con varios puntos hacen falta al menos 2: marca otro en el plano y en el mapa.';
+    case 'punto': return 'Pega tu coordenada, aprieta Ir y haz clic en ese punto del plano.';
+    default: return 'Pega tu coordenada y haz clic en ese punto del plano, o ubica con varios puntos.';
   }
 }
 
@@ -1259,13 +1321,34 @@ export function paginaALonLat(t, x, y, ajuste = null) {
 }
 
 /**
- * La escala (m por px de trabajo) con que se ubica con un punto: la del cuadro de
- * superficies o, sin cuadro, la impresa (1:N son N/1000/ppmm m por px). null si no hay.
+ * m por px de trabajo de la escala marcada en Marcar (`entradas.escala`), como
+ * `escala_marcada_m_px` del servidor: la línea va en px de página y se mide después de
+ * pasar sus extremos por la homografía página → trabajo (en una foto enderezada un px de
+ * la página no mide lo mismo en todas partes); la 1:N son N/1000/ppmm m por px. null si
+ * no sirve (sin ppmm, o una línea sin largo).
  */
-export function escalaDeUbicacion(digitalizado, ubicacion) {
+export function escalaMarcadaMPx(escala, homografia, ppmm) {
+  if (!escala) return null;
+  if (escala.impresa) return ppmm ? escala.impresa / 1000 / ppmm : null;
+  if (!escala.p || !escala.q || !(escala.metros > 0)) return null;
+  const [px, py] = aplicarHomografia(homografia, ...escala.p);
+  const [qx, qy] = aplicarHomografia(homografia, ...escala.q);
+  const largo = Math.hypot(qx - px, qy - py);
+  return Number.isFinite(largo) && largo > 0 ? escala.metros / largo : null;
+}
+
+/**
+ * La escala (m por px de trabajo) con que se ubica con un punto, con la precedencia del
+ * servidor: la marcada en Marcar (`escala`, la de `entradas`) > la del cuadro de
+ * superficies > la 1:N vieja de `ubicacion.escala_impresa`. null si no hay. La marcada
+ * manda: ella la eligió, y así el cuadro queda para comprobarla.
+ */
+export function escalaDeUbicacion(digitalizado, ubicacion, escala = null) {
+  const ppmm = digitalizado?.ppmm;
+  // Como el servidor: si hay escala marcada se usa esa o ninguna (no cae al cuadro).
+  if (escala) return escalaMarcadaMPx(escala, digitalizado?.homografia, ppmm);
   if (Number.isFinite(digitalizado?.escala_m_px) && digitalizado.escala_m_px > 0) return digitalizado.escala_m_px;
   const n = ubicacion?.escala_impresa;
-  const ppmm = digitalizado?.ppmm;
   return n && ppmm ? n / 1000 / ppmm : null;
 }
 
@@ -1301,9 +1384,18 @@ export function textoPuntos({ n = 0, pendiente = null, rehacer = null, coordenad
   return `${n} puntos.${coordenada ? ' Con 2 o más puntos, ellos mandan sobre tu coordenada.' : ''}${control}`;
 }
 
-/** ¿El servidor ubica con la coordenada? Sin cuadrícula elegida y sin 2 puntos que manden. */
+/**
+ * ¿El servidor ubica con la coordenada? Con "un punto" elegido, siempre que esté completa
+ * (aunque haya puntos); con otro método, nunca; sin método, si no hay cuadrícula elegida
+ * ni 2 puntos que manden.
+ */
 export function usaUbicacion(entradas) {
-  return !entradas?.cuadricula && (entradas?.anclas?.length ?? 0) < 2 && ubicacionCompleta(entradas?.ubicacion);
+  return metodoVigente(entradas) === 'punto' && ubicacionCompleta(entradas?.ubicacion);
+}
+
+/** ¿El servidor ubica con los puntos (2 o más)? Lo mismo que `usaUbicacion` para `por_anclas`. */
+export function usaAnclas(entradas) {
+  return metodoVigente(entradas) === 'puntos' && (entradas?.anclas?.length ?? 0) >= 2;
 }
 
 /**
