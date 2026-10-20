@@ -20,6 +20,7 @@ from pathlib import Path
 from . import config, cruce, geo, horizonte, referencias, terreno, visor
 from .crm import leer_crm
 from .excel import FichaComercial, alinear_con, leer_planilla
+from .etapas import contornos as contornos_de_etapas
 from .calibracion import (DESNIVELES_PROBADOS, Ajuste, ajuste_a_desnivel, aplicar, calibrar,
                           calibrar_altura, mapa_de_caminos)
 from .imagenes import generar_niveles
@@ -216,6 +217,10 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
     if sin_punto:
         avisos.añadir(f"los puntos solo foto {', '.join(map(str, sin_punto))} no están entre "
                       f"los puntos de vuelo; se ignoran")
+    # El contorno de cada etapa, para encerrar sus parcelas en el visor.
+    contornos_etapa = contornos_de_etapas([
+        (g.etapa if g.etapa is not None else getattr(fichas.get(g.id), "etapa", None), g.anillo)
+        for g in con_id.values()])
     for panorama, rumbo, vista in vistas:
         modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
         # Un punto solo foto no dibuja nada del loteo y tampoco cuenta como la vista
@@ -236,6 +241,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             "caminos": _proyectar_caminos(vista, caminos, modelo) if dibuja else [],
             # Los esteros y canales que la loteadora marcó en el KMZ.
             "aguas": _proyectar_aguas(vista, aguas, modelo) if dibuja else [],
+            "etapas": _proyectar_etapas(vista, contornos_etapa, modelo) if dibuja else [],
             # Los otros puntos de vuelo, para saltar a su 360 tocándolos en la foto.
             "puntos": _proyectar_puntos(vista, [v for _, _, v in vistas], modelo),
             "parcelas": [
@@ -347,6 +353,17 @@ def _proyectar_caminos(vista: Vista, caminos: list[list[geo.Anillo]],
         partes = [proyectar_parcela(vista, "camino", anillo, modelo) for anillo in anillos]
         proyectados.append([[list(v) for v in parte.anillo] for parte in partes if parte])
     return proyectados
+
+
+def _proyectar_etapas(vista: Vista, contornos: list[tuple[int, list[geo.Anillo]]],
+                      modelo: ModeloTerreno | None) -> list[dict]:
+    """El contorno de cada etapa en azimut y elevación, como los caminos."""
+    proyectadas = []
+    for etapa, anillos in contornos:
+        visibles = _proyectar_caminos(vista, [[anillo] for anillo in anillos], modelo)
+        if visibles:
+            proyectadas.append({"etapa": etapa, "anillos": [partes[0] for partes in visibles]})
+    return proyectadas
 
 
 def _proyectar_aguas(vista: Vista, aguas: list[tuple[str, list[geo.Punto]]],

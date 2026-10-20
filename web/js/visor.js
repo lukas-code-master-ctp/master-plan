@@ -99,6 +99,8 @@ export class Visor {
     // nombre de la etapa va una vez sobre su sector y las pastillas, solo el número.
     this.etapaDe = etapaDe;
     this.nodosEtapa = new Map();
+    this.contornosEtapa = [];
+    this.nodosContorno = [];
     this.capaEtapas = null;
 
     this.camara = new Camara();
@@ -226,7 +228,7 @@ export class Visor {
    * mientras tanto se pidió otra vista.
    */
   async mostrarVista(vista, overlay, {
-    avisar, referencias = [], caminos = [], puntos = [], aguas = [],
+    avisar, referencias = [], caminos = [], puntos = [], aguas = [], etapas = [],
   } = {}) {
     const token = ++this.cargaEnCurso;
     const niveles = this._nivelesUtiles(vista.imagenes);
@@ -246,6 +248,7 @@ export class Visor {
     this.caminos = caminos;
     this.puntos = puntos;
     this.aguas = aguas;
+    this.contornosEtapa = etapas;
     this._detener();
     this._limpiarNodos();
     this._crearPuntos();
@@ -596,7 +599,10 @@ export class Visor {
     for (const id of mostradas) {
       this.nodos.get(id).pastilla.style.display = '';
     }
-    if (this.etapaDe) this._dibujarEtapas(centrosPorEtapa, ancho);
+    if (this.etapaDe) {
+      this._dibujarContornosEtapa(ancho, alto);
+      this._dibujarEtapas(centrosPorEtapa, ancho);
+    }
     this._dibujarHalo(rutaElegida, this.nodos.get(this.seleccionada));
   }
 
@@ -806,6 +812,7 @@ export class Visor {
     this.nodosAgua = [];
     this.capaAguas = null;
     this.nodosEtapa = new Map();
+    this.nodosContorno = [];
     this.capaEtapas = null;
   }
 
@@ -840,9 +847,31 @@ export class Visor {
     }
   }
 
-  _nodoEtapa(etapa) {
-    let nodo = this.nodosEtapa.get(etapa);
-    if (nodo) return nodo;
+  /** La línea que encierra las parcelas de cada etapa, como en el plano. */
+  _dibujarContornosEtapa(ancho, alto) {
+    let indice = 0;
+    for (const { anillos } of this.contornosEtapa) {
+      for (const anillo of anillos) {
+        let nodo = this.nodosContorno[indice];
+        if (!nodo) {
+          nodo = document.createElementNS(SVG_NS, 'path');
+          nodo.setAttribute('class', 'etapa__contorno');
+          this._capaEtapas().prepend(nodo);
+          this.nodosContorno[indice] = nodo;
+        }
+        indice += 1;
+        const pixeles = this.camara.proyectarAnillo(anillo, ancho, alto);
+        if (!pixeles || fueraDePantalla(pixeles, ancho, alto)) {
+          nodo.style.display = 'none';
+          continue;
+        }
+        nodo.style.display = '';
+        nodo.setAttribute('d', aRuta(pixeles));
+      }
+    }
+  }
+
+  _capaEtapas() {
     if (!this.capaEtapas) {
       this.capaEtapas = document.createElementNS(SVG_NS, 'g');
       this.capaEtapas.setAttribute('class', 'etapas');
@@ -851,6 +880,12 @@ export class Visor {
       if (ancla) ancla.after(this.capaEtapas);
       else this.svg.prepend(this.capaEtapas);
     }
+    return this.capaEtapas;
+  }
+
+  _nodoEtapa(etapa) {
+    let nodo = this.nodosEtapa.get(etapa);
+    if (nodo) return nodo;
     const grupo = document.createElementNS(SVG_NS, 'g');
     grupo.setAttribute('class', 'etapa');
     const fondo = document.createElementNS(SVG_NS, 'rect');
@@ -860,7 +895,7 @@ export class Visor {
     texto.setAttribute('dy', '0.35em');
     texto.textContent = `Etapa ${etapa}`;
     grupo.append(fondo, texto);
-    this.capaEtapas.append(grupo);
+    this._capaEtapas().append(grupo);
     let ancho = 0;
     try {
       ancho = texto.getComputedTextLength();

@@ -555,6 +555,17 @@ button { cursor: pointer; }
 /* "ETAPA 3" sobre su sector (visor.js, _dibujarEtapas): como el nombre de un punto
    360, oscuro y en mayúsculas, para que no se lea como una parcela más. */
 .etapa { pointer-events: none; }
+/* El borde de la etapa: blanco y más grueso que el de una parcela, con un filo
+   oscuro para que se lea sobre pasto claro. Encierra; no se toca. */
+.etapa__contorno {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3.5;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  filter: drop-shadow(0 0 1.5px rgb(0 0 0 / 0.7));
+  pointer-events: none;
+}
 .etapa__fondo { fill: rgb(20 20 20 / 0.62); stroke: rgb(255 255 255 / 0.55); stroke-width: 1; }
 .etapa__nombre {
   fill: #fff;
