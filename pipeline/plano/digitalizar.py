@@ -51,8 +51,8 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
                     "lon": -71.5483, "lat": -34.1771,   página), su coordenada WGS84, el giro
                     "giro": 89.3,                   en grados (horario, como gira ella el plano
                     "escala_impresa": null},        en pantalla: 0 = el arriba es el norte) y la
-                                       escala 1:N del plano, que se usa si no hay cuadro de
-                                       superficies. Puede venir a medias (solo la coordenada)
+                                       escala 1:N de antes de `escala`, que se usa si no hay
+                                       escala marcada ni cuadro de superficies. Puede venir a medias (solo la coordenada)
                                        mientras la arma: entonces no ubica
       "escala_cuadro": true,           con 2 o más anclas: el tamaño sale del cuadro de
                                        superficies y de los puntos solo la posición y el
