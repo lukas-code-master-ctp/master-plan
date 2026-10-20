@@ -504,16 +504,23 @@ foto, el pipeline ajusta la pose por vista hasta que las líneas del KMZ caen so
 los píxeles de camino.
 
 Si la foto se niveló con el horizonte, lo que se busca es la altura: se prueba el
-dron entre 150 m más abajo y 150 m más arriba de lo que dice, cada altura con la
+dron entre 80 m más abajo y 80 m más arriba de lo que dice, cada altura con la
 inclinación que el horizonte da para ella, y los caminos eligen la altura y el giro.
-En Lomas de Quillón el dibujo pedía el dron ~60 m más abajo en el punto I y ~100 m
-en el punto II: con la altura del dron
+En Lomas de Quillón el dibujo pedía el dron ~60 m más abajo: con la altura del dron
 todo quedaba estirado hacia afuera (la casa de la 2-7 caía en la 2-8 y el camino
 Caimaco dentro de las parcelas), y contra Google Earth el error mediano bajó de 24 m
 a 6 m. Sin nivelar se ajustan, como antes, un giro, dos inclinaciones y un desnivel
 chico. El ajuste queda en `vistas.json` (`diagnostico.calibracion`, y la pose final
 en `diagnostico.pose`); si no mejora el calce al menos un 3 %, o queda en el borde
 de lo probado, se descarta, y `--sin-calibrar` apaga los dos pasos.
+
+Cuando en una vista los caminos no alcanzan (la búsqueda queda en el borde: pasa con
+fotos donde los techos o los invernaderos brillan más que los caminos), esa vista se
+calibra contra la que mejor calibró (`pipeline/cruce.py`): las dos fotos se proyectan
+sobre el suelo, se buscan en una los trozos de la otra y de ahí salen la altura y el
+giro. En el punto II de Quillón los caminos lo dejaban 60 m corrido respecto de Google
+Earth y el cruce con el punto I lo deja a ~9 m. Si el cruce tampoco resulta, la vista
+toma el desnivel de las que sí calibraron.
 
 ## El KMZ
 

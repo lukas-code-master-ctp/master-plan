@@ -55,11 +55,11 @@ MEJORA_MINIMA = 0.03
 
 # La búsqueda de la altura (ver calibrar_altura): de gruesa a fina, en (desnivel m, giro °).
 PASOS_ALTURA = ((5.0, 0.1), (1.0, 0.02))
-# Los desniveles donde se nivela con el horizonte; entre ellos se interpola. En
-# Quillón el punto I pide ~64 m y el punto II ~100 m: con ±80 m el II quedaba en el
-# borde, se descartaba y el dibujo se veía corrido. Más allá de 150 m (30 % de 500)
-# ya sería otra cosa que la altura.
-DESNIVELES_PROBADOS = tuple(float(d) for d in range(-150, 151, 10))
+# Los desniveles donde se nivela con el horizonte; entre ellos se interpola. Quillón
+# pedía ~55 m, y más allá de 80 m (16 % de 500) ya sería otra cosa que la altura:
+# en el punto II de Quillón, con ±150 m los caminos elegían +101 m y contra Google
+# Earth el dibujo quedaba 60 m corrido (lo que pedía era ~50 m).
+DESNIVELES_PROBADOS = tuple(float(d) for d in range(-80, 81, 10))
 
 
 @dataclass(frozen=True)
@@ -223,6 +223,25 @@ def calibrar_altura(vista: Vista, lineas: list[geo.Anillo], cota: ModeloTerreno 
     if ajuste.mejora < MEJORA_MINIMA:
         return replace(SIN_AJUSTE, puntaje_antes=antes, puntaje_despues=mejor)
     return ajuste
+
+
+def ajuste_a_desnivel(vista: Vista, inclinaciones: Mapping[float, tuple[float, float]],
+                      desnivel: float) -> Ajuste:
+    """Lo que hay que sumarle a la vista para dejarla en `desnivel`, sin giro y con la
+    inclinación que el horizonte da para ese desnivel.
+
+    Es para la vista cuya búsqueda no sirvió (quedó en el tope): el desnivel sale casi
+    todo de la cota del despegue, que comparten las vistas del loteo, así que el de
+    las vistas que sí calibraron es mejor apuesta que dejarla sin ajustar. En el punto
+    II de Quillón, contra Google Earth: 60 m de error sin ajuste, ~20 m con el
+    desnivel del punto I.
+    """
+    tabla = np.array([(d, *inclinaciones[d]) for d in sorted(inclinaciones)])
+    este = float(np.interp(desnivel, tabla[:, 0], tabla[:, 1]))
+    norte = float(np.interp(desnivel, tabla[:, 0], tabla[:, 2]))
+    return Ajuste(inclinacion_este=round(este - vista.inclinacion_este, 3),
+                  inclinacion_norte=round(norte - vista.inclinacion_norte, 3),
+                  desnivel=round(desnivel - vista.desnivel, 1))
 
 
 def aplicar(vista: Vista, ajuste: Ajuste) -> Vista:

@@ -11,15 +11,17 @@ import argparse
 import json
 import math
 import re
+import statistics
 import sys
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
-from . import config, geo, horizonte, referencias, terreno, visor
+from . import config, cruce, geo, horizonte, referencias, terreno, visor
 from .crm import leer_crm
 from .excel import FichaComercial, alinear_con, leer_planilla
-from .calibracion import DESNIVELES_PROBADOS, Ajuste, aplicar, calibrar, calibrar_altura, mapa_de_caminos
+from .calibracion import (DESNIVELES_PROBADOS, Ajuste, ajuste_a_desnivel, aplicar, calibrar,
+                          calibrar_altura, mapa_de_caminos)
 from .imagenes import generar_niveles
 from .kmz import ParcelaGeometrica, leer_aguas, leer_caminos, leer_kmz, leer_lineas
 from .panoramas import (Panorama, RumboResuelto, a_vista, buscar_panoramas, por_que_no_sirven,
@@ -192,11 +194,11 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             print(f"  {vista.id}: giro {ajuste.giro:+.2f}°, inclinación E {ajuste.inclinacion_este:+.2f}° "
                   f"/ N {ajuste.inclinacion_norte:+.2f}°, desnivel {ajuste.desnivel:+.1f} m  "
                   f"(calce {100 * ajuste.mejora:+.0f}%){'' if ajuste.aplicado else '  <-- sin cambio'}")
-            if ajuste.tope:
+            if ajuste.tope and vista.id not in inclinaciones:
                 avisos.añadir(f"{vista.id}: el ajuste fino se fue al tope ({ajuste.tope}) y se "
                               f"descartó; la vista queda con la pose de antes. Revisa su calce.")
             calibradas.append((panorama, rumbo, aplicar(vista, ajuste)))
-        vistas = calibradas
+        vistas = _cruzar_vistas(calibradas, ajustes, inclinaciones, relieve, despegue, lineas, avisos)
         # Lo que queda en la vista es la suma de los dos pasos.
         for _, _, vista in vistas:
             print(f"  {vista.id} queda con giro {vista.giro:+.2f}°, inclinación E "
@@ -718,6 +720,56 @@ def _puntaje_encuadre(proyectadas: list) -> float:
     vista donde el resto del loteo no se distingue.
     """
     return sum(min(p.area_angular, TOPE_AREA_POR_PARCELA) for p in proyectadas)
+
+
+def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
+                   inclinaciones: dict[str, dict[float, tuple[float, float]]],
+                   relieve, despegue, lineas, avisos: Avisos) -> list:
+    """Las vistas niveladas cuya búsqueda con los caminos quedó en el tope se calibran
+    contra la vista que mejor calibró (ver cruce.py). Si eso tampoco resulta, toman
+    el desnivel de las que calibraron: sale casi todo de la cota del despegue, que
+    comparten (ver `calibracion.ajuste_a_desnivel`)."""
+    pendientes = [v.id for _, _, v in vistas
+                  if v.id in inclinaciones and ajustes.get(v.id, Ajuste()).tope]
+    buenas = [(ajustes[v.id].mejora, p, v) for p, _, v in vistas
+              if v.id in inclinaciones and ajustes.get(v.id, Ajuste()).aplicado]
+    if not pendientes:
+        return vistas
+    if not buenas:
+        for vista_id in pendientes:
+            avisos.añadir(f"{vista_id}: el ajuste fino se fue al tope ({ajustes[vista_id].tope}) y "
+                          f"se descartó; la vista queda con la pose de antes. Revisa su calce.")
+        return vistas
+    _, panorama_ref, referencia = max(buenas, key=lambda b: b[0])
+    imagen_ref = cruce.cargar_panorama(panorama_ref.ruta)
+    modelo_ref = terreno.modelo_para_vista(relieve, referencia, despegue) if relieve else None
+    puntos = [p for linea in lineas for p in linea]
+    zona = (min(p[0] for p in puntos), min(p[1] for p in puntos),
+            max(p[0] for p in puntos), max(p[1] for p in puntos))
+    comun = statistics.median(v.desnivel for _, _, v in buenas)
+    salida = []
+    for panorama, rumbo, vista in vistas:
+        if vista.id in pendientes:
+            tope = ajustes[vista.id].tope
+            modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
+            resultado = cruce.calibrar_contra(vista, cruce.cargar_panorama(panorama.ruta), modelo,
+                                              referencia, imagen_ref, modelo_ref, zona,
+                                              inclinaciones[vista.id])
+            if resultado.ajuste:
+                ajuste = resultado.ajuste
+                print(f"  {vista.id}: con los caminos se fue al tope ({tope}); contra "
+                      f"{referencia.id}: giro {ajuste.giro:+.2f}°, desnivel {ajuste.desnivel:+.1f} m "
+                      f"({resultado.coincidencias} coincidencias, de {resultado.error_antes_m:.0f} m "
+                      f"a {resultado.error_despues_m:.0f} m)")
+            else:
+                ajuste = ajuste_a_desnivel(vista, inclinaciones[vista.id], comun)
+                avisos.añadir(f"{vista.id}: el ajuste fino se fue al tope ({tope}) y no calzó contra "
+                              f"{referencia.id} ({resultado.motivo}); toma el desnivel de las otras "
+                              f"vistas ({comun:+.1f} m), sin giro. Revisa su calce.")
+            ajustes[vista.id] = ajuste
+            vista = aplicar(vista, ajuste)
+        salida.append((panorama, rumbo, vista))
+    return salida
 
 
 def _vista_inicial(resumen_vistas: list[dict]) -> str | None:
