@@ -280,6 +280,9 @@ def test_las_entradas_tienen_tope(ana):
     assert not (carpeta_del_plano(raiz, slug) / "entradas.json").exists()
     respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, fuera=[[1, 1]] * 51))
     assert respuesta.status_code == 400 and "fuera" in respuesta.json()["detail"]
+    uniones = [dict(numero="1", x=1, y=1)] * 201
+    respuesta = web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, uniones=uniones))
+    assert respuesta.status_code == 400 and "uniones" in respuesta.json()["detail"]
 
 
 def test_sin_plano_no_hay_entradas(ana):
@@ -519,6 +522,39 @@ def test_un_kmz_que_digitalizo_con_la_propuesta_antes_del_cambio_sigue_al_dia(an
     assert estado["digitalizado"]["vigente"] is True and estado["paso"] == "ubicar"
 
 
+def test_sin_uniones_la_huella_de_digitalizar_es_la_de_antes(ana):
+    """`uniones` llega vacía a todas las entradas normalizadas: si contara, todos los KMZ
+    ya digitalizados quedarían atrasados."""
+    from consola.plano import CLAVES_DIGITALIZAR, _huella, _posiciones, huella_digitalizar
+    from pipeline.plano.digitalizar import leer_entradas
+
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    entradas = leer_entradas(carpeta_del_plano(raiz, slug))
+    assert entradas["uniones"] == []
+    # Como se calculaba antes de que existiera la clave.
+    antes = {k: entradas.get(k) for k in CLAVES_DIGITALIZAR if k not in ("union", "uniones")}
+
+    assert huella_digitalizar(entradas) == _huella(dict(antes, cuadricula=_posiciones(None)))
+
+
+def test_unir_una_parte_deja_atrasados_los_lotes(ana):
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    esperar_trabajo(web, web.post(f"/api/kmz/{slug}/digitalizar").json()["id"])
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["vigente"] is True
+
+    uniones = [dict(numero="1", x=450, y=50)]
+    assert web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, uniones=uniones)).status_code == 200
+    estado = web.get(f"/api/kmz/{slug}").json()
+    assert estado["entradas"]["uniones"] == [dict(numero="1", x=450.0, y=50.0)]
+    assert estado["digitalizado"]["vigente"] is False and estado["paso"] == "digitalizar"
+
+    # Separarlas vuelve a lo digitalizado.
+    web.put(f"/api/kmz/{slug}/entradas", json=dict(ENTRADAS, uniones=[]))
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["vigente"] is True
+
+
 def test_la_cuadricula_se_ofrece_solo_si_alcanza_para_ubicar(ana):
     web, slug, raiz, _ = ana
     listo_para_ubicar(web, slug, raiz)
@@ -742,6 +778,33 @@ def test_lotes_dicen_de_donde_salio_su_numero(ana):
     assert (uno["origen"], uno["confianza"], uno["apoyo"], uno["semilla"]) == ("lector", 0.82, 3, [200, 150])
     assert (dos["origen"], dos["confianza"], dos["semilla"]) == ("usuario", None, [600, 150])
     assert tres["origen"] == "usuario" and tres["semilla"] is None
+
+
+def test_lotes_dicen_cuantas_partes_se_les_unieron(ana):
+    """Numerar ofrece separar las partes de un lote que las tiene, y avisa de las
+    uniones que el digitalizador no pudo aplicar."""
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+    carpeta = carpeta_del_plano(raiz, slug)
+    lotes = [dict(numero="1", poligono=_cuadro(0, 0, 400, 300), huecos=[], partes=[[350, 50], [380, 60]]),
+             dict(numero="2", poligono=_cuadro(400, 0, 800, 300), huecos=[], partes=[]),
+             dict(numero="3", poligono=_cuadro(0, 300, 800, 700), huecos=[])]
+    digitalizado_a_mano(carpeta, lotes)
+    ruta = carpeta / "digitalizado.json"
+    ruta.write_text(json.dumps(dict(json.loads(ruta.read_text(encoding="utf-8")),
+                                    uniones_descartadas=["17"])), encoding="utf-8")
+
+    uno, dos, tres, _ = (r["properties"] for r in web.get(f"/api/kmz/{slug}/lotes").json()["features"])
+
+    assert (uno["unidas"], dos["unidas"], tres["unidas"]) == (2, 0, 0)
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["uniones_descartadas"] == ["17"]
+
+
+def test_un_digitalizado_de_antes_no_trae_uniones_descartadas(ana):
+    web, slug, raiz, _ = ana
+    listo_para_ubicar(web, slug, raiz)
+
+    assert web.get(f"/api/kmz/{slug}").json()["digitalizado"]["uniones_descartadas"] == []
 
 
 def test_lotes_ubicados_con_area_y_error_contra_el_cuadro(ana):

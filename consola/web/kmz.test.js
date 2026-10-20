@@ -12,6 +12,7 @@ import {
   aplicarHomografia, cajaGirada, escalaDeUbicacion, girarEnPantalla, husoDe, leerEscala, lonLatAUtm, lotesEnElMapa, paginaALonLat,
   similitudPorPunto, usaUbicacion, utmALonLat, similitudPorAnclas, afinarAbierta, textoPuntos,
   ajustaConElCuadro, escalaEnElAjuste, ofrecerAjusteDelCuadro,
+  aplicarUnion, duplicados, loteConNumero, renumerarUniones, separarPartes, seTocan, unirParte,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
 
@@ -646,6 +647,100 @@ test('el número va tal cual y se compara normalizado', () => {
   assert.deepEqual(semillas, [{ numero: '8-1', x: 15, y: 5 }]);
 });
 
+// --- unir las partes de un lote ---------------------------------------------------------
+
+test('dos partes se tocan si comparten un borde, no una esquina', () => {
+  const a = [cuadro(0, 0, 10, 10)];
+  assert.ok(seTocan(a, [cuadro(10, 0, 20, 10)], 0.5));
+  // Casi pegadas (la línea del medio tiene grosor): dentro de la tolerancia.
+  assert.ok(seTocan(a, [cuadro(10.4, 2, 20, 8)], 0.5));
+  assert.ok(!seTocan(a, [cuadro(11, 0, 20, 10)], 0.5));
+  // Solo una esquina en común.
+  assert.ok(!seTocan(a, [cuadro(10, 10, 20, 20)], 0.5));
+  // Una parte chica pegada al medio del borde: sus vértices tocan el borde de la grande.
+  assert.ok(seTocan([cuadro(0, 0, 100, 10)], [cuadro(40, 10, 60, 20)], 0.5));
+});
+
+test('el lote con un número, sin contar la parte donde se escribe', () => {
+  const diecisiete = lote('17', [cuadro(0, 0, 10, 10)]);
+  const parte = lote('017', [cuadro(10, 0, 20, 10)], { parte_de: '017' });
+  const aqui = lote(null, [cuadro(20, 0, 30, 10)]);
+  assert.equal(loteConNumero([parte, diecisiete, aqui], '17', aqui), diecisiete);   // el lote, no su parte
+  assert.equal(loteConNumero([diecisiete, aqui], '17', diecisiete), null);
+  assert.equal(loteConNumero([parte, aqui], 'LOTE 17'), parte);
+  assert.equal(loteConNumero([aqui], '17'), null);
+});
+
+test('unir una parte guarda la unión y le quita su número propio', () => {
+  const parte = [cuadro(10, 0, 20, 10)];
+  const entradas = {
+    semillas: [{ numero: '17', x: 5, y: 5 }, { numero: '18', x: 15, y: 5 }],
+    uniones: [{ numero: '9', x: 12, y: 2 }, { numero: '17', x: 25, y: 5 }],
+  };
+  const copia = structuredClone(entradas);
+  const unidas = unirParte(entradas, ' 17 ', [14.567, 5.001], parte);
+  assert.deepEqual(unidas.semillas, [{ numero: '17', x: 5, y: 5 }]);
+  assert.deepEqual(unidas.uniones, [{ numero: '17', x: 25, y: 5 }, { numero: '17', x: 14.57, y: 5 }]);
+  assert.deepEqual(entradas, copia);
+  // Sin uniones todavía.
+  assert.deepEqual(unirParte({ semillas: [] }, '3', [1, 1], [cuadro(0, 0, 2, 2)]).uniones, [{ numero: '3', x: 1, y: 1 }]);
+});
+
+test('separar las partes quita las uniones de ese lote', () => {
+  const entradas = { semillas: [{ numero: '17', x: 5, y: 5 }],
+    uniones: [{ numero: '17', x: 15, y: 5 }, { numero: '8', x: 1, y: 1 }, { numero: '017', x: 25, y: 5 }] };
+  const separadas = separarPartes(entradas, '17');
+  assert.deepEqual(separadas.uniones, [{ numero: '8', x: 1, y: 1 }]);
+  assert.deepEqual(separadas.semillas, entradas.semillas);
+  assert.equal(entradas.uniones.length, 3);
+  assert.deepEqual(separarPartes({}, '17').uniones, []);
+});
+
+test('la parte unida se ve verde con el número y no cuenta como repetido', () => {
+  const diecisiete = lote('17', [cuadro(0, 0, 10, 10)], { origen: 'usuario' });
+  // El lector leyó un 18 en la mitad del 17, y el 18 está también en otro lado.
+  const mitad = lote('18', [cuadro(10, 0, 20, 10)], { origen: 'lector', apoyo: 2, confianza: 0.4,
+    banderas: ['duplicado'], sugerencia: { numero: '18' } });
+  const dieciocho = lote('18', [cuadro(30, 0, 40, 10)], { banderas: ['duplicado'] });
+  const rasgos = [diecisiete, mitad, dieciocho];
+  const salida = aplicarUnion(rasgos, '17', [15, 5]);
+
+  const p = salida[1].properties;
+  assert.equal(p.numero, '17');
+  assert.equal(p.parte_de, '17');
+  assert.equal(p.origen, 'usuario');
+  assert.deepEqual(p.banderas, []);
+  assert.equal(p.sugerencia, undefined);
+  assert.deepEqual(salida[1].rotulo, [15, 5]);
+  assert.equal(salida[0], diecisiete);                       // el lote no queda repetido
+  assert.deepEqual(salida[2].properties.banderas, []);       // el 18 ya no está repetido
+  assert.deepEqual(duplicados(salida), []);
+  assert.equal(rasgos[1].properties.numero, '18');           // no toca lo que recibe
+  // Fuera de toda parte, o sin número: nada cambia.
+  assert.equal(aplicarUnion(rasgos, '17', [100, 100]), rasgos);
+  assert.equal(aplicarUnion(rasgos, ' ', [15, 5]), rasgos);
+});
+
+test('una parte unida que recibe otro número deja de ser parte', () => {
+  const rasgos = aplicarUnion([lote('17', [cuadro(0, 0, 10, 10)]), lote(null, [cuadro(10, 0, 20, 10)])], '17', [15, 5]);
+  const otra = aplicarNumero(rasgos, '17', [15, 5]);
+  // "Pasar el 17 a esta parte": el lote de antes lo pierde y la parte ya no es parte.
+  assert.equal(otra[0].properties.numero, null);
+  assert.equal(otra[1].properties.parte_de, undefined);
+  const nueva = aplicarNumero(rasgos, '20', [15, 5]);
+  assert.equal(nueva[1].properties.numero, '20');
+  assert.equal(nueva[1].properties.parte_de, undefined);
+  assert.equal(nueva[0].properties.numero, '17');
+});
+
+test('girar la página lleva las uniones como las semillas', () => {
+  const girada = girarEntradas({ semillas: [], uniones: [{ numero: '17', x: 20, y: 10 }] }, 0, 90, 100, 60);
+  assert.deepEqual(girada.uniones, [{ numero: '17', x: 49, y: 20 }]);
+  assert.deepEqual(girarEntradas(girada, 90, 0, 100, 60).uniones, [{ numero: '17', x: 20, y: 10 }]);
+  // Sin uniones, las entradas no ganan la clave (su huella no cambia).
+  assert.ok(!('uniones' in girarEntradas({ semillas: [] }, 0, 90, 100, 60)));
+});
+
 test('el lote bajo el clic', () => {
   const rasgos = [lote('1', [cuadro(0, 0, 10, 10)]), lote('2', [cuadro(10, 0, 20, 10)])];
   assert.equal(loteEn(rasgos, 15, 5).properties.numero, '2');
@@ -816,6 +911,17 @@ test('las semillas que el digitalizado no tiene todavía se ponen encima al reca
   assert.deepEqual(nuevos.map((r) => r.properties.numero), ['1', '2']);
   assert.equal(nuevos[1], rasgos[1]);
   assert.equal(conSemillas(rasgos, []), rasgos);
+});
+
+test('al recargar mientras se relee, la parte unida sigue verde', () => {
+  const rasgos = [lote('17', [cuadro(0, 0, 10, 10)]), lote(null, [cuadro(10, 0, 20, 10)], { banderas: ['sin_numero', 'de_lote'], de_lote: true })];
+  const nuevos = conSemillas(rasgos, [], [{ numero: '17', x: 15, y: 5 }]);
+  assert.equal(nuevos[1].properties.numero, '17');
+  assert.equal(nuevos[1].properties.parte_de, '17');
+  assert.deepEqual(duplicados(nuevos), []);
+  // Ya fundida por la relectura: el lote que contiene el punto tiene el número.
+  const fundido = [lote('17', [cuadro(0, 0, 20, 10)])];
+  assert.equal(conSemillas(fundido, [], [{ numero: '17', x: 15, y: 5 }]), fundido);
 });
 
 test('lo escrito se guarda como lo dice el cuadro de superficies', () => {
@@ -1303,4 +1409,16 @@ test('semáforo en ámbar si casi todos se desvían parejo, aunque menos de la m
   assert.equal(textoSemaforo(luz, { ajustable: true }), 'Casi todos los lotes salen cerca de un 4,9 % más chicos'
     + ' que en el cuadro de superficies. Suele ser la escala de los puntos de Ubicar: ajusta el tamaño con el'
     + ' cuadro de superficies o vuelve a Ubicar y marca los puntos de nuevo.');
+});
+
+test('al renumerar un lote, sus uniones lo siguen al número nuevo (o se quitan sin número)', () => {
+  const anillos = [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]];
+  const entradas = { uniones: [{ numero: '17', x: 5, y: 5 }, { numero: '17', x: 50, y: 5 }] };
+  const antes = structuredClone(entradas);
+  assert.deepEqual(renumerarUniones(entradas, '20', anillos).uniones,
+    [{ numero: '20', x: 5, y: 5 }, { numero: '17', x: 50, y: 5 }]);
+  assert.deepEqual(renumerarUniones(entradas, '', anillos).uniones, [{ numero: '17', x: 50, y: 5 }]);
+  assert.deepEqual(entradas, antes);
+  // Sin uniones, las entradas no ganan la clave.
+  assert.equal(renumerarUniones({ semillas: [] }, '20', anillos).uniones, undefined);
 });

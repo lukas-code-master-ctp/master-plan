@@ -88,12 +88,12 @@ CALIDAD = 90
 # Lo que cambia los lotes en píxeles. De la cuadrícula, solo dónde están las
 # líneas: su valor impreso se puede corregir sin volver a digitalizar.
 CLAVES_DIGITALIZAR = ("pdf", "pagina", "rotacion", "rectangulo", "mascaras", "esquinas", "marco_mm",
-                      "semillas", "lector", "lector_apoyo_min", "cuadro", "union")
+                      "semillas", "lector", "lector_apoyo_min", "cuadro", "union", "uniones")
 CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula", "ubicacion", "escala_cuadro")
 
 # Topes de lo que se marca a mano: muy por sobre un loteo real, y lejos de lo que
 # atora la revisión (las semillas repetidas se buscan de a pares).
-TOPES = dict(semillas=2000, mascaras=200, anclas=50, fuera=50)
+TOPES = dict(semillas=2000, mascaras=200, anclas=50, fuera=50, uniones=200)
 TOPE_CUADRICULA = 200
 
 # Corrección a mano de los vértices en Revisar: cuántas versiones se guardan para
@@ -692,6 +692,8 @@ class Plano:
             digitalizado = dict(
                 lotes=len(fuera_lotes) - sum(fuera_lotes), faltantes=d.get("faltantes") or [],
                 sin_numero=len(caras), fuera=sum(fuera) + sum(fuera_lotes), pagina=d.get("pagina"),
+                # Las uniones que no se aplicaron: Numerar le avisa cuáles.
+                uniones_descartadas=d.get("uniones_descartadas") or [],
                 # Caras del tamaño de un lote sin número (y cuántas traen una lectura que
                 # confirmar), y los números que faltan en la numeración.
                 sin_numero_lote=sum(bool(c.get("de_lote")) for c in caras) - (
@@ -778,7 +780,9 @@ class Plano:
                                # De dónde salió el número: la pantalla pinta distinto lo
                                # que leyó el lector (y cuán seguro) de lo que marcó ella.
                                origen=lote.get("origen") or "usuario", confianza=lote.get("confianza"),
-                               apoyo=lote.get("apoyo"), semilla=lote.get("semilla"))
+                               apoyo=lote.get("apoyo"), semilla=lote.get("semilla"),
+                               # Cuántas partes se le unieron: Numerar ofrece separarlas.
+                               unidas=len(lote.get("partes") or []))
             if resto["lote"] == i:
                 propiedades["resto"] = True
             if fuera_lotes[i]:
@@ -1058,9 +1062,10 @@ def huella_digitalizar(entradas: dict, propuesta: dict | None = None) -> str:
     Atrasar todo por eso hacía que "Usar la cuadrícula impresa" dejara los lotes
     desactualizados y "Seguir" trabado. La ubicación sí queda atrasada (`huella_ubicar`
     lleva la cuadrícula entera), que es lo que cambia."""
-    # Sin unión de hojas la clave no entra: así la huella de los KMZ que ya existen no
-    # cambia y lo que digitalizaron no queda atrasado.
-    datos = {k: entradas.get(k) for k in CLAVES_DIGITALIZAR if k != "union" or entradas.get(k)}
+    # Sin unión de hojas ni uniones de partes, sus claves no entran: así la huella de los
+    # KMZ que ya existen no cambia y lo que digitalizaron no queda atrasado.
+    datos = {k: entradas.get(k) for k in CLAVES_DIGITALIZAR
+             if k not in ("union", "uniones") or entradas.get(k)}
     posiciones = _posiciones(entradas.get("cuadricula"))
     if propuesta and _misma_posicion(posiciones, _posiciones(propuesta)):
         posiciones = _posiciones(None)
