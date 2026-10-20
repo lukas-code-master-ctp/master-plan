@@ -555,6 +555,11 @@ rutas no cuentan como deslindes ni como caminos: se leen aparte (`leer_aguas`), 
 vista las trae en `aguas` y el visor las dibuja en azul con su nombre, también en el
 plano.
 
+**Referencias tras un cerro.** Si el relieve entre el dron y el pueblo lo tapa
+(`referencias.cresta`, con el mismo DEM del horizonte), la vista lo marca `tapada` con
+la elevación de la cumbre (`el_cumbre`). El visor pone el rótulo sobre esa cumbre, con
+alfiler punteado y un ícono de cerro, en vez de clavarlo en la ladera.
+
 **Los otros puntos.** Cada vista trae también dónde cae el suelo bajo los demás puntos
 de vuelo (`puntos`, uno por punto), y el visor pone ahí una lupa con "Punto III" que
 salta a esa vista. Igual que los caminos, aparecen al volver a construir.

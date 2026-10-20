@@ -229,10 +229,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
 
         _escribir_json(salida.vistas / f"{vista.id}.json", {
             "id": vista.id,
-            "referencias": [
-                referencias.proyectar(vista, hito, _cota_en_datum_dron(vista, hito, cota_despegue))
-                for hito in hitos
-            ],
+            "referencias": _proyectar_referencias(vista, hitos, cota_despegue),
             # Los accesos del KMZ, para que se vea por dónde se llega a cada lote.
             "caminos": _proyectar_caminos(vista, caminos, modelo) if dibuja else [],
             # Los esteros y canales que la loteadora marcó en el KMZ.
@@ -472,6 +469,27 @@ def _resolver_referencias(proyecto: config.Proyecto, geometrias: list[ParcelaGeo
         print(f"  {hito.nombre}: {geo.distancia(centro, (hito.lon, hito.lat)) / 1000:.1f} km"
               f"{f', cota {hito.cota:.0f} m' if hito.cota is not None else ''}")
     return completos
+
+
+def _proyectar_referencias(vista: Vista, hitos: list[referencias.Referencia],
+                           cota_despegue: float | None) -> list[dict]:
+    """Dónde cae cada hito en la vista y, si un cerro lo tapa, dónde está la cumbre
+    de ese cerro: el visor pone ahí el rótulo, diciendo que el pueblo está detrás."""
+    proyectados = []
+    for hito in hitos:
+        proyectado = referencias.proyectar(vista, hito, _cota_en_datum_dron(vista, hito, cota_despegue))
+        if cota_despegue is not None:
+            try:
+                cumbre = referencias.cresta((vista.lon, vista.lat), cota_despegue + vista.altura_relativa,
+                                            hito, config.CACHE_TERRENO)
+            except (OSError, ValueError):
+                cumbre = None   # sin el relieve lejano, el rótulo va donde está el pueblo
+            if cumbre is not None:
+                sobre_cumbre = referencias.proyectar(
+                    vista, cumbre, _cota_en_datum_dron(vista, cumbre, cota_despegue))
+                proyectado.update(tapada=True, el_cumbre=sobre_cumbre["el"])
+        proyectados.append(proyectado)
+    return proyectados
 
 
 def _cota_en_datum_dron(vista: Vista, hito: referencias.Referencia,

@@ -23,7 +23,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import geo
+import numpy as np
+
+from . import geo, terreno
 from .proyeccion import Vista, proyectar_punto
 
 URL_GEOCODING = "https://geocoding-api.open-meteo.com/v1/search?"
@@ -34,6 +36,16 @@ PAIS_POR_DEFECTO = "CL"
 RADIO_TIERRA_EFECTIVO_M = 6371000.0 * 1.17
 
 Geocodificador = Callable[[str, str], list[dict]]
+
+# Para decidir si un cerro tapa el hito. Como en horizonte.perfil: cerca hace falta
+# detalle, a decenas de km basta un DEM grueso. (zoom, desde m, hasta m, paso m)
+TRAMOS_CRESTA = ((12, 150.0, 15000.0, 30.0), (10, 15000.0, 60000.0, 150.0),
+                 (8, 60000.0, 250000.0, 500.0))
+REFRACCION = 0.13
+# Un pueblo no es un punto en el suelo: sus techos y árboles asoman unos metros.
+ALTO_VISIBLE_M = 20.0
+# Cuánto tiene que sobresalir el cerro para darlo por tapado: menos es ruido del DEM.
+MARGEN_TAPADO_GRADOS = 0.1
 
 
 @dataclass(frozen=True)
@@ -145,6 +157,46 @@ def proyectar(vista: Vista, referencia: Referencia, cota_datum_dron: float) -> d
     if referencia.tiempo:
         proyectada["tiempo"] = referencia.tiempo
     return proyectada
+
+
+def cresta(desde: geo.Punto, altura: float, hito: Referencia, cache: Path,
+           descarga: terreno.Descarga = None) -> Referencia | None:
+    """El punto del relieve que tapa el hito visto desde `desde` a `altura` metros
+    (las dos cotas en el datum del DEM), o None si el hito se ve.
+
+    Desde un punto bajo, Chillán o Concepción quedan detrás de los cerros y su
+    alfiler caía sobre la ladera, como si el pueblo estuviera en el cerro. Sabiendo
+    qué cerro lo tapa, el visor pone el rótulo sobre su cumbre y dice que está detrás.
+    """
+    if hito.cota is None:
+        return None
+    total = geo.distancia(desde, (hito.lon, hito.lat))
+    hasta = total - max(300.0, 0.02 * total)   # el terreno del propio pueblo no lo tapa
+    if hasta <= 0:
+        return None
+
+    def angulo(cota, distancia):
+        caida = distancia ** 2 / (2 * 6371000.0) * (1 - REFRACCION)
+        return np.degrees(np.arctan2(cota - caida - altura, distancia))
+
+    mejor = None
+    for zoom, inicio, fin, paso in TRAMOS_CRESTA:
+        distancias = np.arange(inicio, min(fin, hasta), paso)
+        if not len(distancias):
+            continue
+        fraccion = distancias / total
+        lons = desde[0] + (hito.lon - desde[0]) * fraccion
+        lats = desde[1] + (hito.lat - desde[1]) * fraccion
+        modelo = terreno.cargar((min(lons), min(lats), max(lons), max(lats)), cache,
+                                margen_m=2 * paso, zoom=zoom, descarga=descarga)
+        cotas = modelo.cotas_en(lons, lats)
+        angulos = angulo(cotas, distancias)
+        i = int(angulos.argmax())
+        if mejor is None or angulos[i] > mejor[0]:
+            mejor = (float(angulos[i]), float(lons[i]), float(lats[i]), float(cotas[i]))
+    if mejor is None or mejor[0] <= angulo(hito.cota + ALTO_VISIBLE_M, total) + MARGEN_TAPADO_GRADOS:
+        return None
+    return Referencia(nombre=hito.nombre, lon=mejor[1], lat=mejor[2], cota=mejor[3])
 
 
 def _geocodificar(nombre: str, pais: str) -> list[dict]:
