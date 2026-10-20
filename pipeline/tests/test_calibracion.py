@@ -6,7 +6,8 @@ import pytest
 from PIL import Image, ImageDraw, ImageFilter
 
 from pipeline import geo
-from pipeline.calibracion import Ajuste, aplicar, calibrar, calibrar_altura, mapa_de_caminos
+from pipeline.calibracion import (Ajuste, ajuste_a_desnivel, aplicar, calibrar, calibrar_altura,
+                                  mapa_de_caminos)
 from pipeline.proyeccion import Vista, proyectar_punto
 
 VISTA = Vista(id="p01-100", posicion=1, lon=-72.0, lat=-35.0,
@@ -186,3 +187,15 @@ def test_calibrar_altura_descarta_un_desnivel_en_el_borde_de_lo_probado():
 
     assert not ajuste.aplicado
     assert "desnivel" in ajuste.tope
+
+
+def test_ajuste_a_desnivel_deja_la_vista_en_ese_desnivel_con_la_inclinacion_del_horizonte():
+    """La vista que no calibró toma el desnivel de las otras: el del despegue es común."""
+    nivelada = vista_con_desnivel(0.0)
+
+    corregida = aplicar(nivelada, ajuste_a_desnivel(nivelada, INCLINACIONES, 35.0))
+
+    assert corregida.desnivel == pytest.approx(35.0)
+    assert corregida.giro == nivelada.giro
+    assert (corregida.inclinacion_este, corregida.inclinacion_norte) == pytest.approx(
+        inclinacion_por_desnivel(35.0), abs=0.001)
