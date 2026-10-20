@@ -67,6 +67,11 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 // Lo que dura el vuelo de un encuadre a otro (al elegir una parcela, una burbuja o
 // con las flechas). Más largo se siente lento; sin vuelo, se pierde dónde se estaba.
 const VUELO_MS = 550;
+// El paso de un punto a otro: sale acercándose y fundiéndose, entra de cerca y se
+// abre. La llegada es más lenta: es cuando se mira dónde se está.
+const SALIDA_MS = 520;
+const LLEGADA_MS = 1100;
+const ACERCAMIENTO_VIAJE = 0.5;
 const VUELO_TECLA_MS = 180;
 // Cuánto tarda el zoom de la rueda en llegar a donde se pidió.
 const ZOOM_SUAVE_MS = 90;
@@ -371,7 +376,15 @@ export class Visor {
    * eso es un cerro vacío: las parcelas quedan todas hacia otro lado.
    */
   encuadrarParcelas() {
-    if (!this.overlay.size) return false;
+    const encuadre = this.encuadreDeParcelas();
+    if (!encuadre) return false;
+    this.apuntarA(...encuadre);
+    return true;
+  }
+
+  /** [azimut, elevación, fov] que muestra las parcelas de la vista, o null si no hay. */
+  encuadreDeParcelas() {
+    if (!this.overlay.size) return null;
 
     let x = 0;
     let y = 0;
@@ -391,8 +404,33 @@ export class Visor {
     const azimut = (Math.atan2(y, x) * 180) / Math.PI;
     // Se acota para dejar el horizonte dentro del cuadro: es lo que da la
     // sensación de estar volando y no de mirar el suelo.
-    this.apuntarA(azimut, acotar(elevacion / peso, -42, -9), 75);
-    return true;
+    return [azimut, acotar(elevacion / peso, -42, -9), 75];
+  }
+
+  /**
+   * Primera mitad del paso a otro punto: la cámara se acerca hacia donde está ese
+   * punto y la foto se funde, como si el dron saliera volando hacia allá. Resuelve
+   * cuando terminó; sin movimiento (o con el sistema pidiendo menos), al tiro.
+   */
+  salirHacia(azimut, elevacion) {
+    if (SIN_MOVIMIENTO) return Promise.resolve();
+    this.elemento.classList.add('viajando');
+    this.apuntarA(azimut, elevacion, this.camara.fov * ACERCAMIENTO_VIAJE, { animar: true, duracion: SALIDA_MS });
+    return new Promise((listo) => setTimeout(listo, SALIDA_MS));
+  }
+
+  /**
+   * Segunda mitad: la vista nueva entra de cerca mirando en la dirección del viaje
+   * y se abre hasta su encuadre. Sin `azimut` (no hubo viaje) solo se asegura de
+   * que la foto quede visible.
+   */
+  llegar(azimut, encuadre) {
+    const viajando = this.elemento.classList.contains('viajando');
+    this.elemento.classList.remove('viajando');
+    if (azimut == null || !viajando || SIN_MOVIMIENTO) return;
+    const [destino, elevacion, fov] = encuadre;
+    this.apuntarA(azimut, elevacion, fov * ACERCAMIENTO_VIAJE);
+    this.apuntarA(destino, elevacion, fov, { animar: true, duracion: LLEGADA_MS });
   }
 
   /**
@@ -907,8 +945,11 @@ export class Visor {
     const visibles = [];
     this.referencias.forEach((referencia, indice) => {
       const nodo = this._nodoReferencia(indice, referencia);
-      const [x, y, z] = this.camara.aCamara(referencia.az, referencia.el);
-      if (z <= 0.05 || !this.camara.puedeVerse([referencia.az, referencia.el], ancho, alto, 1.0)) {
+      // Tapada por un cerro, el rótulo se para sobre la cumbre: si no, su alfiler
+      // caía en la ladera y el pueblo parecía estar en el cerro.
+      const elevacion = referencia.tapada ? referencia.el_cumbre : referencia.el;
+      const [x, y, z] = this.camara.aCamara(referencia.az, elevacion);
+      if (z <= 0.05 || !this.camara.puedeVerse([referencia.az, elevacion], ancho, alto, 1.0)) {
         nodo.hidden = true;
         return;
       }
@@ -937,10 +978,15 @@ export class Visor {
     let nodo = this.nodosReferencia[indice];
     if (nodo) return nodo;
     nodo = document.createElement('div');
-    nodo.className = 'referencia';
-    nodo.setAttribute('aria-label', textoReferencia(referencia));
+    nodo.className = referencia.tapada ? 'referencia referencia--detras' : 'referencia';
+    nodo.setAttribute('aria-label', textoReferencia(referencia) + (referencia.tapada ? ', detrás del cerro' : ''));
     const pildora = document.createElement('span');
     pildora.className = 'referencia__pildora';
+    if (referencia.tapada) {
+      // Un cerro con una flecha que lo cruza: "está más allá de esto".
+      pildora.insertAdjacentHTML('beforeend', '<svg class="referencia__detras" viewBox="0 0 20 14" aria-hidden="true">'
+        + '<path d="M1 13 7 4l3 4 2-2 7 7Z"/><path class="referencia__flecha" d="M9 2h9m-3-2 3 2-3 2"/></svg>');
+    }
     const nombre = document.createElement('b');
     nombre.textContent = referencia.nombre;
     const lejania = document.createElement('span');

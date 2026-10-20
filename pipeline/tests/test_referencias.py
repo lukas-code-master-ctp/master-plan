@@ -131,3 +131,32 @@ def test_la_proyeccion_lleva_el_tiempo_si_lo_hay():
 
     assert proyectar(vista, hito, vista.terreno_plano())["tiempo"] == "10 min"
     assert "tiempo" not in proyectar(vista, Referencia("Norte", -72.0, -34.95), vista.terreno_plano())
+
+
+def _plano(cota):
+    from pipeline.tests.test_terreno import png_terrarium
+    tesela = png_terrarium(cota)
+    return lambda url: tesela
+
+
+def test_un_pueblo_en_el_llano_se_ve_desde_el_dron(tmp_path):
+    from pipeline.referencias import cresta
+    pueblo = Referencia(nombre="Quillón", lon=-72.40, lat=-36.74, cota=100.0)
+    assert cresta((-72.47, -36.73), 600.0, pueblo, tmp_path, descarga=_plano(100.0)) is None
+
+
+def test_un_pueblo_detras_de_los_cerros_da_la_cumbre_que_lo_tapa(tmp_path):
+    from pipeline.referencias import cresta
+    # El dron vuela a 600 m sobre un terreno de 900 m: todo lo que está más allá queda tapado.
+    pueblo = Referencia(nombre="Chillán", lon=-72.10, lat=-36.61, cota=120.0)
+    cumbre = cresta((-72.47, -36.73), 600.0, pueblo, tmp_path, descarga=_plano(900.0))
+    assert cumbre is not None and cumbre.nombre == "Chillán"
+    assert cumbre.cota == pytest.approx(900.0, abs=1.0)
+    # La cumbre está en el camino hacia el pueblo, no más allá.
+    assert -72.47 < cumbre.lon < -72.10
+
+
+def test_sin_cota_no_se_puede_saber_y_se_da_por_visible(tmp_path):
+    from pipeline.referencias import cresta
+    pueblo = Referencia(nombre="Bulnes", lon=-72.30, lat=-36.74)
+    assert cresta((-72.47, -36.73), 600.0, pueblo, tmp_path, descarga=_plano(900.0)) is None

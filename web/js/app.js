@@ -22,6 +22,8 @@ const SUBIDA_CON_FICHA = 0.2;
 const PRECARGA_MS = 2500;
 // Grados bajo el horizonte al llegar a un punto solo foto: se ve el campo y el horizonte.
 const ELEVACION_SOLO_FOTO = -12;
+// Al salir hacia otro punto se mira, como mucho, así de abajo.
+const ELEVACION_SALIDA_MINIMA = -30;
 
 /** Centro del loteo en grados y minutos, para el rótulo de la marca. */
 function coordenadasDelLoteo(vistas) {
@@ -131,7 +133,7 @@ async function arrancar() {
 
 // --- Vistas -------------------------------------------------------------------
 
-async function cambiarVista(vista) {
+async function cambiarVista(vista, { llegandoHacia = null } = {}) {
   if (!vista) return;
   // Cambiar de altura mantiene hacia dónde estabas mirando; cambiar de posición
   // reencuadra, porque la orientación anterior ya no significa nada.
@@ -150,11 +152,15 @@ async function cambiarVista(vista) {
   });
   // Mientras cargaba eligieron otra vista: esa se encarga del resto.
   if (!mostrada) return;
-  // Un punto solo foto no trae parcelas que encuadrar: se mira al frente, con el
-  // horizonte a la vista, en la misma dirección en que se venía mirando.
-  if (reencuadrar && !estado.visor.encuadrarParcelas()) {
-    estado.visor.apuntarA(estado.visor.camara.azimut, ELEVACION_SOLO_FOTO, 75);
+  if (reencuadrar) {
+    // Un punto solo foto no trae parcelas que encuadrar: se mira al frente, con el
+    // horizonte a la vista, en la dirección en que se venía (o se venía mirando).
+    const encuadre = estado.visor.encuadreDeParcelas()
+      ?? [llegandoHacia ?? estado.visor.camara.azimut, ELEVACION_SOLO_FOTO, 75];
+    if (llegandoHacia != null) estado.visor.llegar(llegandoHacia, encuadre);
+    else estado.visor.apuntarA(...encuadre);
   }
+  estado.visor.llegar(null);
   estado.visor.aplicarEstilos(estiloDe);
   estado.visor.marcarSeleccionada(estado.seleccionada);
   estado.mapa.marcarVista(vista);
@@ -196,8 +202,26 @@ function precargarImagen(ruta) {
 
 function irAPosicion(posicion) {
   const destino = estado.catalogo.vistaCercana(posicion, estado.vista?.altura_m ?? 100);
-  if (destino) cambiarVista(destino);
   mostrarPanel('visor');
+  viajarA(destino);
+}
+
+/**
+ * Pasar a otro punto de vuelo con una transición: la cámara se acerca hacia donde
+ * está ese punto en la foto actual, se funde, y la vista nueva entra mirando en esa
+ * misma dirección y se abre. Si el punto no se ve desde acá, el cambio es directo.
+ */
+async function viajarA(destino) {
+  if (!destino || destino.id === estado.vista?.id) return;
+  const punto = estado.vista && estado.catalogo.puntosDe(estado.vista.id)
+    .find((p) => p.posicion === destino.posicion);
+  if (!punto || document.body.dataset.panel === 'mapa') {
+    await cambiarVista(destino);
+    return;
+  }
+  // Hacia el punto, pero sin clavar la vista en el suelo: el dron sale de frente.
+  await estado.visor.salirHacia(punto.az, Math.max(punto.el, ELEVACION_SALIDA_MINIMA));
+  await cambiarVista(destino, { llegandoHacia: punto.az });
 }
 
 function irAAltura(altura) {
@@ -395,7 +419,7 @@ function conectarAccionesRapidas() {
     const { vistaInicial, vistas } = estado.catalogo;
     const destino = estado.ultimaConDibujo
       ?? (vistaInicial?.solo_foto ? vistas.find((v) => !v.solo_foto) : vistaInicial);
-    if (destino) cambiarVista(destino);
+    viajarA(destino);
   });
   const compartir = $('#accion-compartir');
   compartir.addEventListener('click', async () => {

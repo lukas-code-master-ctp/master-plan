@@ -468,6 +468,18 @@ button { cursor: pointer; }
 .visor canvas { transition: opacity 220ms ease-out; }
 .visor canvas.cambiando { opacity: 0.55; }
 @media (prefers-reduced-motion: reduce) { .visor canvas { transition: none; } }
+/* El paso entre puntos (visor.js, salirHacia y llegar): mientras la cámara se
+   acerca la foto se funde y se desenfoca, y la nueva aparece igual de a poco. */
+.visor > canvas, .visor > .overlay, .visor > .puntos-360, .visor > .referencias {
+  transition: opacity 420ms ease-out, filter 420ms ease-out;
+}
+.visor.viajando > canvas, .visor.viajando > .overlay,
+.visor.viajando > .puntos-360, .visor.viajando > .referencias {
+  opacity: 0;
+  filter: blur(6px);
+  transition-duration: 480ms;
+  transition-timing-function: ease-in;
+}
 .overlay { pointer-events: none; z-index: 2; }
 .visor:focus-visible { outline: 2px solid var(--marca-700); outline-offset: -4px; }
 /* Dentro de un iframe (insertado.js) el dedo que baja sigue bajando por la página;
@@ -666,6 +678,28 @@ button { cursor: pointer; }
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 0 0 2px rgb(0 0 0 / 0.35);
+}
+/* Detrás de un cerro: el rótulo se para en la cumbre, el alfiler es punteado y no
+   tiene punto en el suelo, y un cerro con una flecha dice que el pueblo está más allá. */
+.referencia--detras .referencia__pildora { background: rgb(15 15 15 / 0.55); }
+.referencia--detras::after {
+  background: repeating-linear-gradient(#fff 0 3px, transparent 3px 6px);
+  box-shadow: none;
+}
+.referencia--detras::before { display: none; }
+.referencia__detras {
+  align-self: center;
+  width: 18px;
+  height: 13px;
+  fill: rgb(255 255 255 / 0.85);
+  stroke: none;
+}
+.referencia__detras .referencia__flecha {
+  fill: none;
+  stroke: #ffd166;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 @media (max-width: 40rem) {
   .referencia__pildora { padding: 4px 9px; font-size: 0.6875rem; }
