@@ -528,8 +528,27 @@
           <li>Si el plano trae un <b>cuadro de superficies</b> (los lotes y sus áreas), enciérralo con
             esa herramienta, aunque esté fuera del dibujo: así se sabe qué lotes faltan y cuánto
             debe medir cada uno.</li>
+          <li>Si el plano trae una <b>barra de escala</b>, márcala con <b>Escala</b>: un clic en cada
+            extremo y cuántos metros mide. Sirve para ubicarlo con un solo punto.</li>
           <li>Si es una foto del papel, marca las 4 esquinas del marco impreso.</li>
         </ol>
+        <!-- La herramienta Escala: los metros de la línea marcada o, sin barra, la escala 1:N. -->
+        <div id="kmz-escala-marcar" class="kmz-escala" hidden>
+          <p id="kmz-escala-pista" class="kmz-escala__pista" role="status"></p>
+          <form id="kmz-escala-metros" class="kmz-escala__campo" hidden>
+            <label for="kmz-escala-metros-valor">¿Cuántos metros mide?</label>
+            <span class="kmz-escala__valor">
+              <input id="kmz-escala-metros-valor" type="text" inputmode="decimal" autocomplete="off" placeholder="200">
+              <span aria-hidden="true">m</span>
+            </span>
+            <button class="boton boton--chico" type="submit">Usar</button>
+          </form>
+          <form id="kmz-escala-numero" class="kmz-escala__campo">
+            <label for="kmz-escala-numero-valor">o escribe la escala del plano <span aria-hidden="true">1:</span></label>
+            <input id="kmz-escala-numero-valor" type="text" inputmode="numeric" autocomplete="off" placeholder="1.000">
+            <button class="boton boton--contorno boton--chico" type="submit">Usar</button>
+          </form>
+        </div>
         <p id="kmz-sin-lector" class="kmz-nota-fuerte" hidden>Este servidor no lee los números del
           plano solo. Con <b>Marcar un número</b>, haz clic en al menos un lote y escribe su número; los
           demás los numeras después de leer el plano.</p>
@@ -876,6 +895,8 @@
             <button type="button" data-herramienta="mascara" aria-pressed="false">Tapar</button>
             <button type="button" data-herramienta="cuadro" aria-pressed="false"
                     title="Encierra el cuadro de superficies (los lotes y sus áreas), aunque esté fuera del dibujo">Cuadro de superficies</button>
+            <button type="button" data-herramienta="escala" aria-pressed="false"
+                    title="Marca la barra de escala del plano: un clic en cada extremo y cuántos metros mide">Escala</button>
             <button type="button" data-herramienta="numero" aria-pressed="false">Marcar un número</button>
             <button type="button" data-herramienta="esquinas" aria-pressed="false" hidden>Esquinas del marco</button>
           </div>

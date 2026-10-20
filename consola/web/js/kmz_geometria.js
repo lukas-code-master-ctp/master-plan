@@ -1449,3 +1449,49 @@ export function cajaGirada(ancho, alto, grados) {
   const [c, s] = [Math.abs(Math.cos(r)), Math.abs(Math.sin(r))];
   return [ancho * c + alto * s, ancho * s + alto * c];
 }
+
+// --- la escala marcada en Marcar ---------------------------------------------------------------
+
+// El largo mínimo de la línea, el mismo de `digitalizar` en el servidor: más corta, un px de
+// error ya es un porcentaje grande de la escala.
+export const ESCALA_LINEA_MIN_PX = 10;
+
+/**
+ * Metros escritos como se escriben aquí: "200", "12,5", "1.000" (punto de miles) o "1.000,5".
+ * Un punto que no separa miles se toma como decimal ("12.5"). null si vacío, NaN si no es un
+ * número mayor que 0.
+ */
+export function leerMetros(texto) {
+  let limpio = String(texto ?? '').replace(/\s/g, '').replace(/m$/i, '');
+  if (!limpio) return null;
+  if (limpio.includes(',')) limpio = limpio.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(limpio)) limpio = limpio.replace(/\./g, '');
+  if (!/^\d+(\.\d+)?$|^\.\d+$/.test(limpio)) return Number.NaN;
+  const n = Number(limpio);
+  return n > 0 ? n : Number.NaN;
+}
+
+/**
+ * La escala de la línea marcada (dos puntos en px de página) y el texto de cuántos metros
+ * mide: `{escala: {p, q, metros}}` o `{error}` con lo que hay que decirle.
+ */
+export function escalaDesdeLinea(p, q, textoMetros) {
+  if (!p || !q || Math.hypot(q[0] - p[0], q[1] - p[1]) < ESCALA_LINEA_MIN_PX) {
+    return { error: 'La línea es muy corta: haz clic en los dos extremos de la barra de escala.' };
+  }
+  const metros = leerMetros(textoMetros);
+  if (metros === null) return { error: 'Escribe cuántos metros mide la barra de escala.' };
+  if (Number.isNaN(metros)) return { error: 'Escribe los metros como un número, por ejemplo 200 o 12,5.' };
+  const r = (v) => Math.round(v * 10) / 10;
+  return { escala: { p: [r(p[0]), r(p[1])], q: [r(q[0]), r(q[1])], metros } };
+}
+
+/** "200 m", "1.500 m", "12,5 m": los metros de la línea, como se leen aquí. */
+export const textoMetros = (m) => `${new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 }).format(m)} m`;
+
+/** La fila de lo marcado: "Escala: 200 m" o "Escala 1:1.000"; null sin escala. */
+export function textoEscala(escala) {
+  if (escala?.impresa) return `Escala 1:${new Intl.NumberFormat('es-CL').format(escala.impresa)}`;
+  if (escala?.p && escala?.q && escala.metros > 0) return `Escala: ${textoMetros(escala.metros)}`;
+  return null;
+}

@@ -12,6 +12,7 @@ import {
   aplicarHomografia, cajaGirada, escalaDeUbicacion, girarEnPantalla, husoDe, leerEscala, lonLatAUtm, lotesEnElMapa, paginaALonLat,
   similitudPorPunto, usaUbicacion, usaAnclas, metodoAlEntrar, metodoVigente, escalaMarcadaMPx, siguienteLetra, utmALonLat, similitudPorAnclas, afinarAbierta, textoPuntos,
   ajustaConElCuadro, escalaEnElAjuste, ofrecerAjusteDelCuadro,
+  escalaDesdeLinea, leerMetros, textoEscala, textoMetros,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
 
@@ -1384,4 +1385,40 @@ test('semáforo en ámbar si casi todos se desvían parejo, aunque menos de la m
   assert.equal(textoSemaforo(luz, { ajustable: true }), 'Casi todos los lotes salen cerca de un 4,9 % más chicos'
     + ' que en el cuadro de superficies. Suele ser la escala de los puntos de Ubicar: ajusta el tamaño con el'
     + ' cuadro de superficies o vuelve a Ubicar y marca los puntos de nuevo.');
+});
+
+// --- la escala marcada en Marcar -------------------------------------------------------------
+
+test('los metros de la barra se leen como se escriben aquí', () => {
+  assert.equal(leerMetros('200'), 200);
+  assert.equal(leerMetros(' 12,5 '), 12.5);
+  assert.equal(leerMetros('12.5'), 12.5);
+  assert.equal(leerMetros('1.000'), 1000);
+  assert.equal(leerMetros('1.000,5'), 1000.5);
+  assert.equal(leerMetros('200 m'), 200);
+  assert.equal(leerMetros(''), null);
+  assert.ok(Number.isNaN(leerMetros('0')));
+  assert.ok(Number.isNaN(leerMetros('-5')));
+  assert.ok(Number.isNaN(leerMetros('doscientos')));
+});
+
+test('la escala de la línea pide extremos a 10 px o más y metros válidos', () => {
+  assert.deepEqual(escalaDesdeLinea([10.04, 20], [210.26, 20], '200'),
+    { escala: { p: [10, 20], q: [210.3, 20], metros: 200 } });
+  assert.deepEqual(escalaDesdeLinea([0, 0], [6, 8], '1,5').escala, { p: [0, 0], q: [6, 8], metros: 1.5 });
+  assert.match(escalaDesdeLinea([0, 0], [5, 5], '200').error, /corta/);
+  assert.match(escalaDesdeLinea([0, 0], null, '200').error, /corta/);
+  assert.match(escalaDesdeLinea([0, 0], [100, 0], '').error, /cuántos metros/);
+  assert.match(escalaDesdeLinea([0, 0], [100, 0], '0').error, /número/);
+  assert.match(escalaDesdeLinea([0, 0], [100, 0], 'abc').error, /número/);
+});
+
+test('la fila de la escala dice los metros o la 1:N', () => {
+  assert.equal(textoMetros(200), '200 m');
+  assert.equal(textoMetros(1500), '1.500 m');
+  assert.equal(textoMetros(12.5), '12,5 m');
+  assert.equal(textoEscala({ p: [0, 0], q: [100, 0], metros: 200 }), 'Escala: 200 m');
+  assert.equal(textoEscala({ impresa: 1000 }), 'Escala 1:1.000');
+  assert.equal(textoEscala(null), null);
+  assert.equal(textoEscala(undefined), null);
 });

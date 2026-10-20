@@ -1769,6 +1769,12 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-escala { display: grid; gap: 0.35rem; padding: 0.75rem; border-radius: var(--radio-md); background: var(--ambar-50); border: 1px solid var(--ambar-200); }
 .kmz-escala__campo { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; font-size: 0.875rem; font-weight: 600; color: var(--zinc-800); }
 .kmz-escala__campo input { width: 7rem; height: 2rem; padding: 0 0.5rem; border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); font: 600 0.9375rem var(--sans); }
+.kmz-escala__pista { margin: 0; font-size: 0.875rem; color: var(--zinc-800); }
+.kmz-escala__valor { display: inline-flex; align-items: center; gap: 0.25rem; }
+/* El de la línea va en metros, no en 1:N: más angosto. */
+#kmz-escala-metros-valor { width: 5.5rem; }
+/* La pregunta en su línea y el campo con "Usar" debajo: así no se parte distinto en cada ancho. */
+#kmz-escala-marcar label { flex-basis: 100%; }
 .kmz-escala__campo input:focus { border-color: var(--marca-700); box-shadow: 0 0 0 3px var(--marca-anillo); outline: none; }
 /* El alfiler de la coordenada: una gota naranja con la punta en el lugar exacto. */
 .kmz-alfiler { pointer-events: none; }
@@ -1832,7 +1838,7 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .visor-plano canvas:active { cursor: grabbing; }
 .visor-plano canvas:focus-visible { outline: 2px solid var(--marca-700); outline-offset: -3px; }
 .visor-plano[data-herramienta="dibujo"] canvas, .visor-plano[data-herramienta="mascara"] canvas,
-.visor-plano[data-herramienta="cuadro"] canvas,
+.visor-plano[data-herramienta="cuadro"] canvas, .visor-plano[data-herramienta="escala"] canvas,
 .visor-plano[data-herramienta="numero"] canvas, .visor-plano[data-herramienta="esquinas"] canvas,
 .visor-plano[data-modo="numerar"] canvas, .visor-plano[data-modo="ubicar"] canvas { cursor: crosshair; }
 .visor-plano__herramientas, .visor-plano__zoom {

@@ -16,7 +16,7 @@ import {
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, detalleUbicacion, filaDelPunto, numerosQueFaltan,
   ordenarEsquinas, PASTILLAS, pastillaDe, pasoDeRuta, pasoSiguiente, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puedeUbicar, puntoDeRotulo,
   puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, siguienteNombre, sinNumero, sugerencias, tamanoRotado, textoSemaforo, verticesDe,
-  escalaDeUbicacion, leerEscala, lotesEnElMapa, normalizarGiro, similitudPorPunto, usaAnclas, usaUbicacion, metodoVigente,
+  escalaDeUbicacion, escalaDesdeLinea, leerEscala, lotesEnElMapa, textoEscala, textoMetros, ESCALA_LINEA_MIN_PX, normalizarGiro, similitudPorPunto, usaAnclas, usaUbicacion, metodoVigente,
   afinarAbierta, similitudPorAnclas, textoPuntos, ubicacionCompleta, ajustaConElCuadro, ofrecerAjusteDelCuadro,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
@@ -58,6 +58,10 @@ let arrastrar = false;
 let corrigiendo = false;      // Revisar: los vértices se arrastran o se borran a mano
 let corrigiendoYa = false;    // una corrección sin respuesta: los vértices del mapa están viejos
 let esquinasMarcando = [];    // las esquinas del marco mientras faltan: el servidor pide 4 o ninguna
+// La línea de la escala mientras se marca (0, 1 o 2 extremos en px de página): se guarda
+// recién con los metros, así que dos clics sueltos no dejan una escala a medias.
+let escalaMarcando = [];
+let cursorEscala = null;      // dónde está el mouse, para que la línea lo siga tras el primer clic
 let editorUnion = null;       // el editor de "Une las hojas" (paso 1), creado la primera vez que se abre
 const uniendo = () => Boolean(editorUnion?.abierto);
 // Marcar con la unión: el cuadro de superficies se lee de su hoja original, así que se
@@ -204,7 +208,7 @@ export function prepararKmz(opciones) {
     // `button[...]`: el visor también lleva `data-herramienta` (para el cursor), y un clic en
     // el plano no es elegir herramienta.
     const nodo = evento.target.closest('[data-accion], [data-paso], [data-pagina], button[data-herramienta],'
-      + ' [data-quitar-mascara], [data-quitar-cuadro], [data-quitar-semilla], [data-ancla-quitar], [data-ancla-rehacer],'
+      + ' [data-quitar-mascara], [data-quitar-cuadro], [data-quitar-escala], [data-quitar-semilla], [data-ancla-quitar], [data-ancla-rehacer],'
       + ' [data-centrar], [data-giro], [data-cuadro-hoja],'
       + ' [data-confirmar]');
     if (!nodo || nodo.disabled) return;
@@ -274,6 +278,14 @@ export function prepararKmz(opciones) {
     avisar(null);
     cambiarUbicacion({ escala_impresa: n });
   });
+  $('#kmz-escala-metros').addEventListener('submit', (e) => {
+    e.preventDefault();
+    usarEscalaLinea();
+  });
+  $('#kmz-escala-numero').addEventListener('submit', (e) => {
+    e.preventDefault();
+    usarEscalaImpresa();
+  });
   $('#kmz-ir-a').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); (pendiente ? usarCoordenadas : irA)().catch((error) => avisar(error.message)); }
   });
@@ -282,6 +294,7 @@ export function prepararKmz(opciones) {
     if (e.key !== 'Escape' || pantalla.hidden || document.querySelector('dialog[open]')) return;
     if (pendiente) { cancelarAncla(); e.preventDefault(); }
     else if (marcandoPunto && paso === 'ubicar') { marcandoPunto = false; pintarPanel(); e.preventDefault(); }
+    else if (escalaMarcando.length) { cancelarEscala(); e.preventDefault(); }
     else if (numerando) { cerrarNumero(); e.preventDefault(); }
     else if (cuadroHoja !== null || (herramienta === 'cuadro' && conUnion())) { elegirHerramienta('mover'); e.preventDefault(); }
   });
@@ -302,6 +315,7 @@ export function prepararKmz(opciones) {
   lienzo.alDibujar = dibujar;
   lienzo.alTocar = tocarPlano;
   lienzo.alRectangulo = rectangulo;
+  lienzo.alPasar = pasarPorPlano;
 }
 
 /**
@@ -348,6 +362,8 @@ export function pintarKmz(nuevoSlug, { nuevo = false, paso: pasoPedido = null } 
   cuadriculaNoSirve = false;
   sucio = false;
   esquinasMarcando = [];
+  escalaMarcando = [];
+  cursorEscala = null;
   cuadroHoja = null;
   // Otro KMZ parte moviendo: una herramienta del anterior (el cuadro de una página suelta)
   // dejaría el lienzo dibujando rectángulos sobre una unión sin hoja elegida.
@@ -471,6 +487,7 @@ async function manejar(nodo) {
   if (dataset.quitarCuadro) {
     return cambiar(conUnion() ? { ...entradas, union: { ...entradas.union, cuadro: null } } : { ...entradas, cuadro: null });
   }
+  if (dataset.quitarEscala) return cambiar({ ...entradas, escala: null });
   if (dataset.cuadroHoja) return verHojaDelCuadro(Number(dataset.cuadroHoja));
   if (dataset.quitarSemilla) {
     return cambiar({ ...entradas, semillas: entradas.semillas.filter((s) => s.numero !== dataset.quitarSemilla) });
@@ -611,7 +628,7 @@ function subirPdf(archivo) {
 }
 
 const hayMarcas = () => Boolean(entradas.rectangulo || entradas.mascaras.length || entradas.cuadro || entradas.union?.cuadro || entradas.esquinas
-  || entradas.semillas.length || entradas.anclas.length || hayUbicacion(entradas.ubicacion));
+  || entradas.escala || entradas.semillas.length || entradas.anclas.length || hayUbicacion(entradas.ubicacion));
 
 /** ¿Ya puso algo de la ubicación con un punto (la coordenada, el punto o la escala)? */
 const hayUbicacion = (u) => Boolean(u) && ['x', 'lon', 'escala_impresa'].some((k) => u[k] != null);
@@ -625,6 +642,7 @@ async function elegirPagina(n) {
     && !confirm('Elegir una página suelta quita la unión de las hojas. ¿Seguir?')) return;
   const limpio = n !== entradas.pagina;
   cuadroHoja = null;
+  olvidarEscalaAMedias();
   cambiar({ ...(limpio ? VACIAS() : entradas), pagina: n, rotacion: limpio ? 0 : entradas.rotacion });
   await mostrarPagina();
   pintarPaso();
@@ -636,6 +654,8 @@ async function girar(grados) {
   if (!hoja || entradas.pagina === 0) return;
   const de = entradas.rotacion ?? 0;
   const a = (((de + grados) % 360) + 360) % 360;
+  // Los extremos a medias están en px de la página sin girar: se marcan de nuevo.
+  olvidarEscalaAMedias();
   cambiar(girarEntradas(entradas, de, a, hoja.ancho, hoja.alto));
   await mostrarPagina();
 }
@@ -676,6 +696,7 @@ async function usarUnion(union) {
     && !confirm(textoBorraLoMarcado(entradas.pagina, 0))) return;
   const antes = entradas;
   cuadroHoja = null;
+  if (cambia) olvidarEscalaAMedias();
   cambiar(cambia ? { ...VACIAS(), pagina: 0, rotacion: 0, union } : { ...entradas, union });
   try {
     await guardar();
@@ -699,6 +720,7 @@ async function volverAUnaPagina() {
   if (hayMarcas() && !confirm(textoBorraLoMarcado(0, 1))) return undefined;
   editorUnion.cerrar();
   cuadroHoja = null;
+  olvidarEscalaAMedias();
   cambiar({ ...VACIAS(), pagina: 1 });
   await mostrarPagina();
   return pintarPaso();
@@ -715,6 +737,7 @@ function elegirHerramienta(nombre) {
     boton.setAttribute('aria-pressed', String(boton.dataset.herramienta === nombre));
   }
   $('#kmz-plano').dataset.herramienta = sinHoja ? 'mover' : nombre;
+  if (nombre !== 'escala') olvidarEscalaAMedias();
   if (nombre !== 'cuadro' && cuadroHoja !== null) {
     cuadroHoja = null;
     mostrarPagina().catch((error) => avisar(error.message));
@@ -762,6 +785,7 @@ function tocarPlano(x, y, evento) {
     esquinasMarcando = [];
     return cambiar({ ...entradas, esquinas });
   }
+  if (paso === 'marcar' && herramienta === 'escala') return marcarEscala(x, y, evento);
   if ((paso === 'marcar' && herramienta === 'numero') || paso === 'numerar') return abrirNumero(x, y);
   if (paso === 'ubicar') {
     // Con el mouse no hay clic sintetizado: un clic rápido en el mapa es de ella.
@@ -774,6 +798,108 @@ function tocarPlano(x, y, evento) {
 }
 
 const round = (v) => Math.round(v * 10) / 10;
+
+/**
+ * Un extremo de la barra de escala. El tercer clic empieza otra línea: marcar de nuevo
+ * reemplaza la escala al confirmar los metros. Uno pegado al primero no cuenta (el servidor
+ * pide 10 px), así un doble clic no deja una línea de nada.
+ */
+function marcarEscala(x, y, evento) {
+  const punto = [round(x), round(y)];
+  if (escalaMarcando.length === 1) {
+    const [p] = escalaMarcando;
+    if (Math.hypot(punto[0] - p[0], punto[1] - p[1]) < ESCALA_LINEA_MIN_PX) return;
+    escalaMarcando = [p, punto];
+  } else {
+    escalaMarcando = [punto];
+  }
+  cursorEscala = null;
+  lienzo.redibujar();
+  pintarPanel();
+  if (escalaMarcando.length !== 2) return;
+  if (!evento?.pointerType || evento.pointerType === 'mouse') {
+    enfocarMetros();
+    return;
+  }
+  // Al toque le sigue su clic. Si el foco desplaza la página antes, ese clic cae en lo que
+  // quedó bajo el dedo (el campo 1:N). Se enfoca con el clic, que además es un gesto: así
+  // el celular sí abre el teclado.
+  let hecho = false;
+  const una = () => { if (!hecho) { hecho = true; enfocarMetros(); } };
+  window.addEventListener('click', una, { once: true });
+  setTimeout(una, 500);
+}
+
+function enfocarMetros() {
+  if (escalaMarcando.length !== 2 || paso !== 'marcar') return;
+  const campo = $('#kmz-escala-metros-valor');
+  campo.focus();
+  campo.select();
+  verEntero($('#kmz-escala-metros'));
+}
+
+/**
+ * El foco deja ver el campo, pero no lo que sigue: en el panel con scroll "Usar" quedaba
+ * cortado bajo el pie fijo. Se desplaza solo el panel, no la página (el plano no se mueve).
+ */
+function verEntero(nodo) {
+  const panel = nodo.closest('.kmz-panel');
+  if (!panel) return;
+  const pie = panel.querySelector('.kmz-panel__pie');
+  const limite = (pie && !pie.hidden ? pie.getBoundingClientRect().top : panel.getBoundingClientRect().bottom) - 8;
+  const sobra = nodo.getBoundingClientRect().bottom - limite;
+  if (sobra > 0) panel.scrollTop += sobra;
+}
+
+/** Los extremos sin confirmar son de la página que se veía: con otra página o giro no sirven. */
+function olvidarEscalaAMedias() {
+  escalaMarcando = [];
+  cursorEscala = null;
+}
+
+/** El campo de los metros se esconde al guardar o cancelar: el foco no se pierde con él. */
+function devolverFocoEscala() {
+  if ($('#kmz-escala-metros').contains(document.activeElement)) $('button[data-herramienta="escala"]').focus();
+}
+
+function cancelarEscala() {
+  devolverFocoEscala();
+  olvidarEscalaAMedias();
+  lienzo.redibujar();
+  pintarPanel();
+}
+
+/** Con el mouse, la línea sigue al cursor mientras falta el segundo extremo. */
+function pasarPorPlano(x, y) {
+  if (paso !== 'marcar' || herramienta !== 'escala' || escalaMarcando.length !== 1) {
+    if (cursorEscala) { cursorEscala = null; lienzo.redibujar(); }
+    return;
+  }
+  cursorEscala = x == null ? null : [x, y];
+  lienzo.redibujar();
+}
+
+// La escala no es de leer el plano (solo de ubicar): se guarda sin releerlo.
+function usarEscalaLinea() {
+  const [p, q] = escalaMarcando;
+  const { escala, error } = escalaDesdeLinea(p, q, $('#kmz-escala-metros-valor').value);
+  if (error) return avisar(error);
+  avisar(null);
+  devolverFocoEscala();
+  olvidarEscalaAMedias();
+  $('#kmz-escala-metros-valor').value = '';
+  return cambiar({ ...entradas, escala });
+}
+
+function usarEscalaImpresa() {
+  const n = leerEscala($('#kmz-escala-numero-valor').value);
+  if (n === null || Number.isNaN(n)) {
+    return avisar('Escribe la escala como dice el plano, por ejemplo 1:5.000 (entre 1:100 y 1:1.000.000).');
+  }
+  avisar(null);
+  olvidarEscalaAMedias();
+  return cambiar({ ...entradas, escala: { impresa: n } });
+}
 
 // --- 3. digitalizar ----------------------------------------------------------------------
 
@@ -1628,14 +1754,38 @@ function pintarMarcar() {
     entradas.rectangulo ? 'ok' : 'falta'));
   entradas.mascaras.forEach((_, i) => filas.push(fila(`Tapado ${i + 1}`, { quitarMascara: String(i) })));
   if (entradas.cuadro) filas.push(fila('Cuadro de superficies', { quitarCuadro: '1' }));
+  const escala = textoEscala(entradas.escala);
+  if (escala) filas.push(fila(escala, { quitarEscala: '1' }));
   const cuadroUnion = conUnion() ? entradas.union.cuadro : null;
   if (cuadroUnion) filas.push(fila(`Cuadro de superficies (hoja ${cuadroUnion.hoja})`, { quitarCuadro: '1' }));
   for (const s of entradas.semillas) filas.push(fila(`Lote ${s.numero}`, { quitarSemilla: s.numero }));
   lista.replaceChildren(...filas);
+  pintarEscalaMarcar();
   const listo = Boolean(entradas.rectangulo) && (!sinLector || entradas.semillas.length > 0);
   $('#kmz-marcar-nota').textContent = listo ? '' : !entradas.rectangulo
     ? 'Encierra el dibujo del loteo con la herramienta "Encerrar el dibujo".'
     : 'Marca el número de al menos un lote antes de leer el plano.';
+}
+
+/** El bloque de la herramienta Escala: la pista, los metros de la línea o la escala 1:N. */
+function pintarEscalaMarcar() {
+  const caja = $('#kmz-escala-marcar');
+  caja.hidden = herramienta !== 'escala';
+  if (caja.hidden) return;
+  const marcados = escalaMarcando.length;
+  $('#kmz-escala-metros').hidden = marcados < 2;
+  const actual = textoEscala(entradas.escala);
+  // En celular no hay Esc: tocar otra herramienta es lo que cancela.
+  const conTeclado = window.matchMedia?.('(hover: hover)').matches;
+  $('#kmz-escala-pista').textContent = marcados === 1 ? `Ahora haz clic en el otro extremo de la barra${conTeclado ? ' (Esc cancela)' : ''}.`
+    : marcados === 2 ? 'Escribe cuánto mide la línea, como dice la barra del plano.'
+      : actual ? `${actual}. Para cambiarla, haz clic en los dos extremos de la barra de escala del plano.`
+        : 'Haz clic en los dos extremos de la barra de escala del plano.';
+  const campo = $('#kmz-escala-numero-valor');
+  if (document.activeElement !== campo) {
+    const n = entradas.escala?.impresa;
+    campo.value = n ? new Intl.NumberFormat('es-CL').format(n) : '';
+  }
 }
 
 /** Con la unión y la herramienta del cuadro: la pregunta por la hoja, o la hoja que se ve. */
@@ -2248,6 +2398,16 @@ function dibujar(ctx, P) {
     }
   }
 
+  // La escala: la que se está marcando reemplaza a la guardada.
+  if (paso === 'marcar') {
+    const [p, q] = escalaMarcando;
+    if (p && (q || cursorEscala)) pintarEscala(ctx, P, p, q ?? cursorEscala, null, true);
+    if (p) punto(ctx, P(...p), COLOR_ESCALA);
+    if (q) punto(ctx, P(...q), COLOR_ESCALA);
+    const e = entradas.escala;
+    if (!p && e?.p && e?.q) pintarEscala(ctx, P, e.p, e.q, textoMetros(e.metros), false);
+  }
+
   // Los lotes digitalizados, si son de esta página y esta rotación.
   const calzan = calzaLoDigitalizado(plano.digitalizado?.pagina, entradas, plano.union?.huella);
   if (rasgos.length && paso !== 'subir' && calzan) {
@@ -2322,6 +2482,35 @@ function dibujar(ctx, P) {
       etiqueta(ctx, `${pendiente.nombre} → mapa`, q[0] + 10, q[1] - 10, '#b45309', 'left');
     }
   }
+}
+
+const COLOR_ESCALA = '#0e7490';
+
+/** La barra de escala: la línea con una marca en cada extremo y, encima, cuánto mide. */
+function pintarEscala(ctx, P, p, q, texto, provisional) {
+  const [a, b] = P(...p);
+  const [c, d] = P(...q);
+  const largo = Math.hypot(c - a, d - b) || 1;
+  // La normal que apunta hacia arriba en pantalla: ahí van las marcas y la etiqueta.
+  let [nx, ny] = [(b - d) / largo, (c - a) / largo];
+  if (ny > 0) [nx, ny] = [-nx, -ny];
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.setLineDash(provisional ? [6, 4] : []);
+  for (const [ancho, color] of [[5, 'rgb(255 255 255 / 0.9)'], [2, COLOR_ESCALA]]) {
+    ctx.lineWidth = ancho;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(a, b);
+    ctx.lineTo(c, d);
+    for (const [x, y] of [[a, b], [c, d]]) {
+      ctx.moveTo(x + nx * 9, y + ny * 9);
+      ctx.lineTo(x - nx * 9, y - ny * 9);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+  if (texto) etiqueta(ctx, texto, (a + c) / 2 + nx * 16, (b + d) / 2 + ny * 16, COLOR_ESCALA, 'center');
 }
 
 function pintarCuadro(ctx, P, [x0, y0, x1, y1], texto) {
