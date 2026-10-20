@@ -525,7 +525,7 @@ h1 {
 }
 @media (min-width: 52rem) { .planes { grid-template-columns: repeat(3, 1fr); } }
 .plan {
-  display: grid; grid-template-rows: auto auto 1fr auto; gap: 14px;
+  display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 14px;
   padding: 28px 26px 26px;
   border: 1px solid rgb(255 255 255 / 0.18); border-radius: var(--radio-bloque);
   background: rgb(9 9 11 / 0.55);
@@ -537,12 +537,17 @@ h1 {
   font: 800 clamp(3.4rem, 2.4rem + 3vw, 4.8rem)/0.9 var(--sans); letter-spacing: -0.05em;
   color: #fff; font-variant-numeric: tabular-nums;
 }
+/* El precio va bajo la cantidad y más chico: lo que distingue a los planes sigue
+   siendo cuántos loteos, y el precio se lee como su consecuencia. */
+.plan__precio { margin: 0; display: flex; align-items: baseline; gap: 6px; font-size: 15px; color: rgb(255 255 255 / 0.75); }
+.plan__precio b { font: 700 24px/1 var(--sans); letter-spacing: -0.02em; color: #fff; font-variant-numeric: tabular-nums; }
 .plan__para { margin: 0; color: rgb(255 255 255 / 0.75); font-size: 15px; text-wrap: pretty; }
 .plan .boton { margin-top: 8px; }
 /* Pro, el del medio, en papel: el ojo se detiene ahí antes de comparar. */
 .plan--medio { background: var(--papel); color: var(--tinta); border-color: var(--papel); }
 .plan--medio .plan__cantidad, .plan--medio .plan__cantidad b { color: var(--tinta); }
-.plan--medio .plan__para { color: var(--zinc-600); }
+.plan--medio .plan__para, .plan--medio .plan__precio { color: var(--zinc-600); }
+.plan--medio .plan__precio b { color: var(--tinta); }
 .plan--medio .boton--tinta { background: var(--tinta); color: #fff; }
 .plan--medio .boton--tinta:hover { transform: translateY(-2px); }
 .plan--medio .boton--tinta:focus-visible { outline-color: var(--tinta); }
@@ -855,7 +860,7 @@ h1 {
     <div class="precio__cabeza">
       <span class="rotulo">Planes</span>
       <h2 id="precio-titulo">Una suscripción, según cuántos loteos publiques.</h2>
-      <p>Los planes solo cambian en la cantidad de loteos en línea; todo lo demás viene en todos. Cuéntanos cuál te interesa en el formulario de abajo y te mandamos el precio.</p>
+      <p>Los planes solo cambian en la cantidad de loteos en línea; todo lo demás viene en todos. Precios en pesos chilenos.</p>
       <p>¿Prefieres probar primero? <a href="https://consola.tumasterplan.cl/registro">Crea tu cuenta gratis</a>, sube tu vuelo y construye
         tu master antes de elegir un plan.</p>
     </div>
@@ -864,18 +869,21 @@ h1 {
       <li class="plan">
         <h3>Fly</h3>
         <p class="plan__cantidad"><b>1</b> loteo</p>
+        <p class="plan__precio"><b>$30.000</b> al mes</p>
         <p class="plan__para">Para la loteadora con su primer proyecto en venta.</p>
         <a class="boton boton--fantasma" href="#formulario">Elegir Fly</a>
       </li>
       <li class="plan plan--medio">
         <h3>Pro</h3>
         <p class="plan__cantidad"><b>3</b> loteos</p>
+        <p class="plan__precio"><b>$80.000</b> al mes</p>
         <p class="plan__para">Para vender varias etapas o proyectos a la vez.</p>
         <a class="boton boton--tinta" href="#formulario">Elegir Pro</a>
       </li>
       <li class="plan">
         <h3>Master</h3>
         <p class="plan__cantidad"><b>6</b> loteos</p>
+        <p class="plan__precio"><b>$150.000</b> al mes</p>
         <p class="plan__para">Para una cartera de proyectos en venta al mismo tiempo.</p>
         <a class="boton boton--fantasma" href="#formulario">Elegir Master</a>
       </li>
@@ -905,7 +913,7 @@ h1 {
     <div class="contacto" id="formulario">
       <div class="contacto__texto">
         <h3>Hablemos</h3>
-        <p>Cuéntanos de tu loteo y te escribimos con el precio del plan. Si prefieres, escríbenos a
+        <p>Cuéntanos de tu loteo y te ayudamos a elegir el plan. Si prefieres, escríbenos a
           <a href="mailto:eduardo@impulseai.cl">eduardo@impulseai.cl</a>.</p>
       </div>
 
