@@ -7,7 +7,7 @@
  * así que imagen y polígonos no pueden desincronizarse.
  */
 import {
-  Camara, FOV_MAXIMO, FOV_MINIMO, VELOCIDAD_MINIMA, acotar, escalaDeRotulo, frenar, giroMasCorto,
+  Camara, FOV_MAXIMO, FOV_MINIMO, VELOCIDAD_MINIMA, acotar, escalaComunDeRotulos, frenar, giroMasCorto,
   suavizar, velocidadAlSoltar,
 } from './camara.js';
 import { romano, textoReferencia, lejaniaReferencia } from './datos.js';
@@ -41,7 +41,9 @@ void main() {
 }`;
 
 const ARRASTRE_MINIMO_PX = 5;
-const ALTO_PASTILLA = 26;
+// Chica y redonda, como en los masterplan 360 que ya conocen los compradores: la
+// foto es lo que se mira, el número solo marca dónde está cada parcela.
+const ALTO_PASTILLA = 20;
 // La elegida se dibuja agrandada (.parcela--seleccionada en estilos.css): ocupa más.
 const ESCALA_ELEGIDA = 1.22;
 // El globo de la elegida flota sobre la parcela, unido por una patita, para no
@@ -545,22 +547,28 @@ export class Visor {
       if ((elegida || cabe) && conNumero && !estilo.atenuada) {
         const [cx, cy] = centro(pixeles);
         const y = elegida ? this._ponerGlobo(nodo, pixeles) : cy;
-        // Con los números fijos se achican con la parcela en vez de esconderse.
-        const achique = this.numerosFijos && !elegida ? escalaDeRotulo(anchoEnPantalla) : 1;
-        nodo.pastilla.setAttribute('transform', `translate(${cx.toFixed(1)} ${y.toFixed(1)})`
-          + (achique < 1 ? ` scale(${achique.toFixed(3)})` : ''));
         nodo.disco.style.fill = estilo.color;
         nodo.numero.style.fill = estilo.texto;
-        const escala = elegida ? ESCALA_ELEGIDA : achique;
         candidatas.push({
-          id, x: cx, y,
-          ancho: Number(nodo.disco.getAttribute('width')) * escala,
-          alto: ALTO_PASTILLA * escala,
+          id, x: cx, y, nodo, elegida, anchoEnPantalla,
           // Primero la elegida; después lo que se vende; después lo más cercano,
           // que es lo que se ve más grande.
           prioridad: (elegida ? 1e9 : 0) + (estilo.prioridad ?? 0) * 1e6 + anchoEnPantalla,
         });
       }
+    }
+
+    // Con los números fijos todas las pastillas van del mismo tamaño: cada una a la
+    // medida de su parcela daba números enormes adelante e ilegibles atrás.
+    const comun = this.numerosFijos ? escalaComunDeRotulos(ancho) : 1;
+    for (const candidata of candidatas) {
+      const escala = candidata.elegida ? 1 : comun;
+      candidata.nodo.pastilla.setAttribute('transform',
+        `translate(${candidata.x.toFixed(1)} ${candidata.y.toFixed(1)})`
+        + (escala !== 1 ? ` scale(${escala.toFixed(3)})` : ''));
+      const ocupa = candidata.elegida ? ESCALA_ELEGIDA : escala;
+      candidata.ancho = Number(candidata.nodo.disco.getAttribute('width')) * ocupa;
+      candidata.alto = ALTO_PASTILLA * ocupa;
     }
 
     // Solo las pastillas que caben sin encimarse: de lejos, las del fondo se
@@ -1177,12 +1185,12 @@ function ponerRotulo(nodo, texto) {
  */
 function dimensionarPastilla(nodo) {
   const ALTO = ALTO_PASTILLA;
-  const RESPIRO = 9;
+  const RESPIRO = 6;
   let ancho = 0;
   try {
     ancho = nodo.numero.getComputedTextLength();
   } catch { /* todavía sin layout */ }
-  if (!ancho) ancho = nodo.numero.textContent.length * 6.5;
+  if (!ancho) ancho = nodo.numero.textContent.length * 6;
 
   const w = Math.max(ALTO, Math.round(ancho) + RESPIRO * 2);
   nodo.disco.setAttribute('x', (-w / 2).toFixed(1));

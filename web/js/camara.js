@@ -246,10 +246,13 @@ export function suavizar(t) {
 }
 
 /**
- * Cuánto escala la pastilla de una parcela con los números fijos: del todo
- * cuando la parcela se ve grande, y achicándose con ella hasta un mínimo que
- * todavía se lee. Así de lejos no tapan el terreno y ninguna desaparece.
+ * El tamaño de las pastillas con los números fijos, como fracción del normal.
+ *
+ * Todas iguales y siempre del mismo tamaño, como en los masterplan 360 que ya
+ * conocen los compradores: cada una a la medida de su parcela daba números enormes
+ * adelante e ilegibles atrás. En pantallas angostas (el celular) van un poco más
+ * chicas, para que se vea el campo y no solo números.
  */
-export function escalaDeRotulo(anchoParcelaPx, { pleno = 64, minima = 0.5 } = {}) {
-  return acotar(anchoParcelaPx / pleno, minima, 1);
+export function escalaComunDeRotulos(anchoPantallaPx) {
+  return anchoPantallaPx <= 640 ? 0.9 : 1;
 }

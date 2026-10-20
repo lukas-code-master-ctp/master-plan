@@ -2,8 +2,9 @@
 
 Un visitante que mira el loteo desde el aire no sabe hacia dónde queda el pueblo, la
 costa o la carretera. Un rótulo "Cauquenes · 12 km" en el horizonte lo ubica. Los
-nombres se geocodifican una vez (Open-Meteo, sin llave) eligiendo, entre los
-homónimos, el más cercano al loteo; el resultado queda en caché. También se aceptan
+nombres se geocodifican solos (Open-Meteo, sin llave): entre lo que devuelve la
+búsqueda se prefiere el pueblo que se llama exactamente así y, entre homónimos, el
+más cercano al loteo. Los candidatos quedan en caché. También se aceptan
 coordenadas explícitas.
 
 Desde la consola llegan como texto, y el texto puede traer dos cosas más: el tiempo
@@ -17,6 +18,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import unicodedata
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -122,20 +124,34 @@ def resolver(entradas: list, cerca_de: geo.Punto, cache: Path, pais: str = PAIS_
         if not nombre:
             continue
         clave = f"{pais}|{nombre.lower()}"
-        if clave not in guardadas:
-            candidatos = geocodificar(nombre, pais)
+        candidatos = _candidatos(guardadas.get(clave))
+        if candidatos is None:
+            try:
+                encontrados = geocodificar(nombre, pais)
+            except OSError as error:
+                encontrados = None
+                print(f"  aviso: el geocodificador no respondió para '{nombre}' ({error})")
+            if encontrados:
+                candidatos = [{"lon": float(c["longitude"]), "lat": float(c["latitude"]),
+                               "cota": float(c["elevation"]) if c.get("elevation") is not None else None,
+                               "nombre": c.get("name"), "tipo": c.get("feature_code")}
+                              for c in encontrados]
+                guardadas[clave] = {"candidatos": candidatos}
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                cache.write_text(json.dumps(guardadas, ensure_ascii=False, indent=1), encoding="utf-8")
+            elif clave in guardadas and "lon" in guardadas[clave]:
+                # Sin red, mejor el lugar de antes que ninguno.
+                candidatos = [guardadas[clave]]
             if not candidatos:
                 print(f"  aviso: no encontré '{nombre}' en el geocodificador; se omite")
                 continue
-            elegido = min(candidatos, key=lambda c: geo.distancia((c["longitude"], c["latitude"]), cerca_de))
-            guardadas[clave] = asdict(Referencia(
-                nombre=nombre, lon=float(elegido["longitude"]), lat=float(elegido["latitude"]),
-                cota=float(elegido["elevation"]) if elegido.get("elevation") is not None else None))
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            cache.write_text(json.dumps(guardadas, ensure_ascii=False, indent=1), encoding="utf-8")
-        # El caché guarda el lugar, no el tiempo: ese lo pone cada loteo.
-        guardada = {c: v for c, v in guardadas[clave].items() if c != "tiempo"}
-        referencias.append(Referencia(**guardada, tiempo=tiempo))
+        # Se elige en cada loteo y no al guardar: el caché lo comparten todos, y el
+        # homónimo más cercano a un loteo puede quedar en la otra punta del país para
+        # el siguiente (un "Chillán" mal elegido aparecía al poniente de Quillón).
+        elegido = _elegir(nombre, candidatos, cerca_de)
+        # El tiempo no viene del caché: ese lo pone cada loteo.
+        referencias.append(Referencia(nombre=nombre, lon=elegido["lon"], lat=elegido["lat"],
+                                      cota=elegido.get("cota"), tiempo=tiempo))
     return referencias
 
 
@@ -199,7 +215,33 @@ def cresta(desde: geo.Punto, altura: float, hito: Referencia, cache: Path,
     return Referencia(nombre=hito.nombre, lon=mejor[1], lat=mejor[2], cota=mejor[3])
 
 
+def _elegir(nombre: str, candidatos: list[dict], cerca_de: geo.Punto) -> dict:
+    """El lugar que la loteadora quiso decir. La búsqueda trae también lo que solo
+    empieza parecido ("Chillán Viejo", "Nevados de Chillán") y lugares que no son
+    pueblos (un río, un cerro, un fundo con el mismo nombre): primero los que se
+    llaman exactamente así, de esos los que son pueblos o ciudades, y entre los que
+    quedan, el más cercano al loteo (hay dos Chanco en el Maule)."""
+    def preferencia(c):
+        mismo_nombre = _normalizar(c.get("nombre") or nombre) == _normalizar(nombre)
+        poblado = str(c.get("tipo") or "PPL").startswith("PPL")
+        return (not mismo_nombre, not poblado, geo.distancia((c["lon"], c["lat"]), cerca_de))
+    return min(candidatos, key=preferencia)
+
+
+def _normalizar(texto: str) -> str:
+    sin_tildes = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    return " ".join(sin_tildes.lower().split())
+
+
+def _candidatos(guardada: dict | None) -> list[dict] | None:
+    """Los homónimos guardados, o None si hay que preguntar. Las entradas antiguas
+    guardaban un solo lugar, ya elegido para otro loteo: esas se vuelven a preguntar."""
+    if guardada and guardada.get("candidatos"):
+        return guardada["candidatos"]
+    return None
+
+
 def _geocodificar(nombre: str, pais: str) -> list[dict]:
-    consulta = urllib.parse.urlencode({"name": nombre, "count": 5, "language": "es", "countryCode": pais})
+    consulta = urllib.parse.urlencode({"name": nombre, "count": 10, "language": "es", "countryCode": pais})
     with urllib.request.urlopen(URL_GEOCODING + consulta, timeout=30) as respuesta:
         return json.load(respuesta).get("results", []) or []
