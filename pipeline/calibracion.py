@@ -55,9 +55,11 @@ MEJORA_MINIMA = 0.03
 
 # La búsqueda de la altura (ver calibrar_altura): de gruesa a fina, en (desnivel m, giro °).
 PASOS_ALTURA = ((5.0, 0.1), (1.0, 0.02))
-# Los desniveles donde se nivela con el horizonte; entre ellos se interpola. Quillón
-# pedía ~55 m, y más allá de 80 m (16 % de 500) ya sería otra cosa que la altura.
-DESNIVELES_PROBADOS = tuple(float(d) for d in range(-80, 81, 10))
+# Los desniveles donde se nivela con el horizonte; entre ellos se interpola. En
+# Quillón el punto I pide ~64 m y el punto II ~100 m: con ±80 m el II quedaba en el
+# borde, se descartaba y el dibujo se veía corrido. Más allá de 150 m (30 % de 500)
+# ya sería otra cosa que la altura.
+DESNIVELES_PROBADOS = tuple(float(d) for d in range(-150, 151, 10))
 
 
 @dataclass(frozen=True)

@@ -51,8 +51,9 @@ const PATITA_PX = 16;
 const SEPARACION_PASTILLAS = 3;
 // Por debajo de esto las pastillas se amontonan y tapan el terreno.
 const ANCHO_MINIMO_ETIQUETA_PX = 42;
-// Lo que ocupa en pantalla un botón de punto 360 (la lupa, su nombre y la patita),
-// medido en estilos.css. Ningún número de parcela se dibuja dentro.
+// Lo que ocupa en pantalla un botón de punto 360 (la lupa, su nombre y la patita)
+// en escritorio, por si el botón todavía no se puede medir. Ningún número de
+// parcela se dibuja dentro.
 const ANCHO_ZONA_PUNTO = 76;
 // El alfiler de los rótulos del horizonte y cuánto sube uno que chocaría con otro
 // (el alto de la píldora más un respiro).
@@ -926,9 +927,12 @@ export class Visor {
       boton.hidden = px < -40 || px > ancho + 40 || py < -40 || py > alto + 40;
       boton.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px)`;
       if (!boton.hidden) {
-        // El botón se para sobre el suelo: crece hacia arriba desde (px, py).
+        // El botón se para sobre el suelo: crece hacia arriba desde (px, py). Se mide
+        // porque en el celular es más chico y no debe esconder números de más.
+        const anchoZona = boton.offsetWidth || ANCHO_ZONA_PUNTO;
+        const altoZona = boton.offsetHeight || ALTO_ZONA_PUNTO;
         this.zonasPuntos.push({
-          x0: px - ANCHO_ZONA_PUNTO / 2, x1: px + ANCHO_ZONA_PUNTO / 2, y0: py - ALTO_ZONA_PUNTO, y1: py,
+          x0: px - anchoZona / 2, x1: px + anchoZona / 2, y0: py - altoZona, y1: py,
         });
       }
     });

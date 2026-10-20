@@ -504,9 +504,10 @@ foto, el pipeline ajusta la pose por vista hasta que las líneas del KMZ caen so
 los píxeles de camino.
 
 Si la foto se niveló con el horizonte, lo que se busca es la altura: se prueba el
-dron entre 80 m más abajo y 80 m más arriba de lo que dice, cada altura con la
+dron entre 150 m más abajo y 150 m más arriba de lo que dice, cada altura con la
 inclinación que el horizonte da para ella, y los caminos eligen la altura y el giro.
-En Lomas de Quillón el dibujo pedía el dron ~60 m más abajo: con la altura del dron
+En Lomas de Quillón el dibujo pedía el dron ~60 m más abajo en el punto I y ~100 m
+en el punto II: con la altura del dron
 todo quedaba estirado hacia afuera (la casa de la 2-7 caía en la 2-8 y el camino
 Caimaco dentro de las parcelas), y contra Google Earth el error mediano bajó de 24 m
 a 6 m. Sin nivelar se ajustan, como antes, un giro, dos inclinaciones y un desnivel
