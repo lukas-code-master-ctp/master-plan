@@ -552,6 +552,19 @@ button { cursor: pointer; }
   stroke-width: 1.5;
 }
 
+/* "ETAPA 3" sobre su sector (visor.js, _dibujarEtapas): como el nombre de un punto
+   360, oscuro y en mayúsculas, para que no se lea como una parcela más. */
+.etapa { pointer-events: none; }
+.etapa__fondo { fill: rgb(20 20 20 / 0.62); stroke: rgb(255 255 255 / 0.55); stroke-width: 1; }
+.etapa__nombre {
+  fill: #fff;
+  font: 700 0.625rem var(--sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-anchor: middle;
+}
+.overlay--con-seleccion .etapas { display: none; }
+
 .parcela--atenuada { opacity: 0.18; pointer-events: none; }
 .parcela--atenuada .parcela__pastilla { display: none; }
 

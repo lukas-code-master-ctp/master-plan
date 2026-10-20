@@ -84,7 +84,7 @@ const SIN_MOVIMIENTO = typeof window !== 'undefined'
 export class Visor {
   constructor(elemento, {
     alElegirParcela, alPasarSobreParcela, alMoverCamara, alElegirPunto, rotuloDe, rotuloSeleccionadoDe,
-    numerosFijos = false,
+    numerosFijos = false, etapaDe = null,
   } = {}) {
     this.elemento = elemento;
     this.lienzo = elemento.querySelector('canvas');
@@ -95,6 +95,11 @@ export class Visor {
     this.alElegirPunto = alElegirPunto ?? (() => {});
     // Todos los números a la vista, achicándose, sin burbujas (proyecto.json).
     this.numerosFijos = numerosFijos;
+    // De qué etapa es cada parcela, cuando el loteo se rotula por etapas: el
+    // nombre de la etapa va una vez sobre su sector y las pastillas, solo el número.
+    this.etapaDe = etapaDe;
+    this.nodosEtapa = new Map();
+    this.capaEtapas = null;
 
     this.camara = new Camara();
     this.vista = null;
@@ -508,6 +513,7 @@ export class Visor {
 
     const candidatas = [];
     const enPantalla = [];
+    const centrosPorEtapa = [];
     let rutaElegida = null;
     for (const [id, parcela] of this.overlay) {
       const nodo = this._nodoDe(id);
@@ -542,6 +548,10 @@ export class Visor {
       if (!estilo.atenuada && !elegida && conNumero) {
         const [x, y] = centro(pixeles);
         enPantalla.push({ id, x, y });
+      }
+      if (this.etapaDe && !estilo.atenuada) {
+        const [x, y] = centro(pixeles);
+        centrosPorEtapa.push({ etapa: this.etapaDe(id), x, y });
       }
       const cabe = this.numerosFijos || anchoEnPantalla >= ANCHO_MINIMO_ETIQUETA_PX;
       if ((elegida || cabe) && conNumero && !estilo.atenuada) {
@@ -586,6 +596,7 @@ export class Visor {
     for (const id of mostradas) {
       this.nodos.get(id).pastilla.style.display = '';
     }
+    if (this.etapaDe) this._dibujarEtapas(centrosPorEtapa, ancho);
     this._dibujarHalo(rutaElegida, this.nodos.get(this.seleccionada));
   }
 
@@ -794,6 +805,77 @@ export class Visor {
     this.capaCaminos = null;
     this.nodosAgua = [];
     this.capaAguas = null;
+    this.nodosEtapa = new Map();
+    this.capaEtapas = null;
+  }
+
+  /**
+   * "ETAPA 3" sobre cada sector, como lo rotula el plano: centrado sobre sus
+   * parcelas y un poco más arriba de la de más arriba, para no tapar números.
+   * Va bajo las parcelas: si choca con una pastilla, se lee la pastilla.
+   */
+  _dibujarEtapas(centros, ancho) {
+    const porEtapa = new Map();
+    for (const { etapa, x, y } of centros) {
+      if (etapa == null) continue;
+      if (!porEtapa.has(etapa)) porEtapa.set(etapa, []);
+      porEtapa.get(etapa).push([x, y]);
+    }
+    for (const [etapa, nodo] of this.nodosEtapa) {
+      if (!porEtapa.has(etapa)) nodo.grupo.style.display = 'none';
+    }
+    for (const [etapa, puntos] of porEtapa) {
+      const nodo = this._nodoEtapa(etapa);
+      // Con una sola parcela a la vista el sector no se ve: el rótulo sobra.
+      if (puntos.length < 2) {
+        nodo.grupo.style.display = 'none';
+        continue;
+      }
+      // Un sector que sale por el costado deja su rótulo pegado al borde, a la vista.
+      const medio = nodo.ancho / 2 + 6;
+      const x = acotar(puntos.reduce((suma, [px]) => suma + px, 0) / puntos.length, medio, ancho - medio);
+      const y = Math.min(...puntos.map(([, py]) => py)) - ALTO_PASTILLA - 6;
+      nodo.grupo.style.display = '';
+      nodo.grupo.setAttribute('transform', `translate(${x.toFixed(1)} ${Math.max(y, 14).toFixed(1)})`);
+    }
+  }
+
+  _nodoEtapa(etapa) {
+    let nodo = this.nodosEtapa.get(etapa);
+    if (nodo) return nodo;
+    if (!this.capaEtapas) {
+      this.capaEtapas = document.createElementNS(SVG_NS, 'g');
+      this.capaEtapas.setAttribute('class', 'etapas');
+      // Sobre los caminos y los esteros, bajo las parcelas.
+      const ancla = this.capaAguas ?? this.capaCaminos;
+      if (ancla) ancla.after(this.capaEtapas);
+      else this.svg.prepend(this.capaEtapas);
+    }
+    const grupo = document.createElementNS(SVG_NS, 'g');
+    grupo.setAttribute('class', 'etapa');
+    const fondo = document.createElementNS(SVG_NS, 'rect');
+    fondo.setAttribute('class', 'etapa__fondo');
+    const texto = document.createElementNS(SVG_NS, 'text');
+    texto.setAttribute('class', 'etapa__nombre');
+    texto.setAttribute('dy', '0.35em');
+    texto.textContent = `Etapa ${etapa}`;
+    grupo.append(fondo, texto);
+    this.capaEtapas.append(grupo);
+    let ancho = 0;
+    try {
+      ancho = texto.getComputedTextLength();
+    } catch { /* todavía sin layout */ }
+    // En mayúsculas y espaciado (estilos.css): unos 7.5 px por letra.
+    if (!ancho) ancho = texto.textContent.length * 7.5;
+    const w = Math.round(ancho) + 20;
+    fondo.setAttribute('x', (-w / 2).toFixed(1));
+    fondo.setAttribute('y', '-10');
+    fondo.setAttribute('width', w);
+    fondo.setAttribute('height', 20);
+    fondo.setAttribute('rx', 10);
+    nodo = { grupo, ancho: w };
+    this.nodosEtapa.set(etapa, nodo);
+    return nodo;
   }
 
   // Los accesos del KMZ: una franja amarilla bajo las parcelas, sin interacción.
