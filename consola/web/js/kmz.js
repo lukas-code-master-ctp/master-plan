@@ -29,7 +29,7 @@ import { soltadero } from './subida.js';
 import { pintarEscaner } from './vuelo.js';
 
 const VACIAS = () => ({
-  pagina: 1, rotacion: 0, rectangulo: null, mascaras: [], cuadro: null, esquinas: null, semillas: [], anclas: [],
+  pagina: 1, rotacion: 0, rectangulo: null, mascaras: [], cuadro: null, esquinas: null, semillas: [], anclas: [], uniones: [],
   ajuste: { de: 0, dn: 0 },
 });
 
@@ -426,7 +426,7 @@ async function cargarLotes() {
     // También con un número escrito que aún no llega al servidor (`sucio` o guardándose):
     // para el servidor los lotes siguen al día, pero no tienen ese número.
     const alDia = plano.digitalizado.vigente && !sucio && !enVuelo;
-    rasgos = alDia ? px.features : conSemillas(px.features, entradas.semillas);
+    rasgos = alDia ? px.features : conSemillas(px.features, entradas.semillas, entradas.uniones);
   }
   if (plano?.georreferencia) {
     rasgosGeo = await pedir(`${api(mio)}/lotes?en=lonlat`);
@@ -611,7 +611,7 @@ function subirPdf(archivo) {
 }
 
 const hayMarcas = () => Boolean(entradas.rectangulo || entradas.mascaras.length || entradas.cuadro || entradas.union?.cuadro || entradas.esquinas
-  || entradas.semillas.length || entradas.anclas.length || hayUbicacion(entradas.ubicacion));
+  || entradas.semillas.length || entradas.anclas.length || entradas.uniones?.length || hayUbicacion(entradas.ubicacion));
 
 /** ¿Ya puso algo de la ubicación con un punto (la coordenada, el punto o la escala)? */
 const hayUbicacion = (u) => Boolean(u) && ['x', 'lon', 'escala_impresa'].some((k) => u[k] != null);
