@@ -9,8 +9,9 @@ Las vistas del mismo loteo ven el mismo suelo. Así que se proyecta cada foto so
 el suelo como una ortofoto (la de referencia con su pose ya calibrada, la otra con
 la pose que se está probando) y se buscan en una los trozos de la otra. Cada trozo
 que coincide dice en qué dirección la vista ve un punto del suelo que la referencia
-ya ubicó, y de eso sale la altura del dron y el giro. En el punto II de Quillón
-encuentra lo mismo que una comparación a mano contra Google Earth (+48 m, +0,7°).
+ya ubicó, y de eso salen la altura del dron, el giro y el error de su GPS. En el
+punto II de Quillón deja el dibujo a 3-4 m de Google Earth, que es lo que da la
+comparación misma.
 """
 from __future__ import annotations
 
@@ -22,9 +23,10 @@ from typing import Mapping
 import cv2
 import numpy as np
 from PIL import Image
+from scipy.optimize import least_squares
 
 from . import geo
-from .calibracion import DISTANCIA_MINIMA_M, Ajuste, _proyectar
+from .calibracion import DISTANCIA_MINIMA_M, Ajuste, _proyectar, aplicar
 from .proyeccion import ModeloTerreno, Vista
 
 ANCHO_PANORAMA = 7200
@@ -45,7 +47,9 @@ VENTAJA_MINIMA = 0.05
 COINCIDENCIAS_MINIMAS = 40
 # Con más error mediano que esto el cruce no se cree: mejor el otro camino.
 ERROR_MAXIMO_M = 15.0
-PASADAS = 2
+PASADAS = 3
+# El GPS del dron se equivoca unos metros; más que esto sería otra cosa.
+CORRIMIENTO_MAXIMO_M = 40.0
 GIROS = np.round(np.arange(-3.0, 3.0001, 0.1), 3)
 
 
@@ -56,6 +60,13 @@ class Cruce:
     error_antes_m: float = math.nan
     error_despues_m: float = math.nan
     motivo: str = ""
+    # Cuánto se corre la posición del dron, en metros al este y al norte.
+    corrimiento: tuple[float, float] = (0.0, 0.0)
+
+    def aplicar(self, vista: Vista) -> Vista:
+        """La vista con el ajuste y el corrimiento."""
+        lon, lat = geo.desde_metros(self.corrimiento, vista.origen)
+        return replace(aplicar(vista, self.ajuste), lon=round(lon, 7), lat=round(lat, 7))
 
 
 def cargar_panorama(ruta: Path, ancho: int = ANCHO_PANORAMA) -> np.ndarray:
@@ -68,7 +79,13 @@ def calibrar_contra(vista: Vista, panorama: np.ndarray, cota: ModeloTerreno | No
                     referencia: Vista, panorama_ref: np.ndarray, cota_ref: ModeloTerreno | None,
                     zona: tuple[float, float, float, float],
                     inclinaciones: Mapping[float, tuple[float, float]]) -> Cruce:
-    """El giro y el desnivel de `vista` que la hacen ver el suelo donde lo ve `referencia`.
+    """El giro, el desnivel y el corrimiento de `vista` que la hacen ver el suelo donde
+    lo ve `referencia`.
+
+    El corrimiento es el error del GPS del dron: unos metros que ni el giro ni la
+    altura arreglan, porque descalzan más lo cercano que lo lejano. En el punto II de
+    Quillón eran ~20 m; sin corregirlos, el mejor ajuste quedaba a 11 m y con ellos
+    queda a 2 m.
 
     `zona` es (oeste, sur, este, norte) en grados: dónde está el loteo. Las
     inclinaciones van atadas al desnivel como en `calibracion.calibrar_altura`.
@@ -78,57 +95,68 @@ def calibrar_contra(vista: Vista, panorama: np.ndarray, cota: ModeloTerreno | No
         return Cruce(None, motivo="la zona queda fuera de alcance")
     c_vista = _cotas(este, norte, vista, cota)
     desfase = geo.a_metros(vista.origen, referencia.origen)
-    e_ref, n_ref = este + desfase[0], norte + desfase[1]
     c_ref = _cotas(este, norte, vista, cota_ref, referencia)
-
-    orto_ref = _orto(panorama_ref, referencia, e_ref, n_ref, c_ref)
+    orto_ref = _orto(panorama_ref, referencia, este + desfase[0], norte + desfase[1], c_ref)
     tabla = np.array([(d, *inclinaciones[d]) for d in sorted(inclinaciones)])
+    minimo, maximo = float(tabla[0, 0]), float(tabla[-1, 0])
 
     def con_pose(giro: float, desnivel: float) -> Vista:
         return replace(vista, giro=vista.giro + giro, desnivel=desnivel,
                        inclinacion_este=float(np.interp(desnivel, tabla[:, 0], tabla[:, 1])),
                        inclinacion_norte=float(np.interp(desnivel, tabla[:, 0], tabla[:, 2])))
 
-    # Dos pasadas: la búsqueda de trozos alcanza unas decenas de metros, y la vista
-    # puede partir más lejos que eso. La segunda parte de lo que encontró la primera.
-    probada, antes = vista, None
-    for _ in range(PASADAS):
-        pares = _coincidencias(orto_ref, _orto(panorama, probada, este, norte, c_vista))
+    # Varias pasadas: la búsqueda de trozos alcanza unas decenas de metros y la vista
+    # puede partir más lejos que eso. Cada una parte de lo que encontró la anterior.
+    pose = np.array([0.0, vista.desnivel, 0.0, 0.0])   # giro, desnivel, corrimiento E, N
+    antes = None
+    for pasada in range(PASADAS):
+        probada = con_pose(pose[0], pose[1])
+        pares = _coincidencias(orto_ref, _orto(panorama, probada, este - pose[2], norte - pose[3], c_vista))
         if len(pares) < COINCIDENCIAS_MINIMAS:
             return Cruce(None, len(pares), motivo=f"solo {len(pares)} coincidencias")
         x, y, dx, dy = pares.T
-        # El punto del suelo según la referencia, y dónde lo ve la foto de la vista.
+        # El punto del suelo según la referencia, y en qué dirección lo ve la foto.
         e1, n1, c1 = _en(este, norte, c_vista, x, y)
         e2, n2, c2 = _en(este, norte, c_vista, x + dx, y + dy)
-        az_visto, el_visto = _direcciones(probada, e2, n2, c2)
-        distancia = np.hypot(e1, n1)
+        az_visto, el_visto = _direcciones(probada, e2 - pose[2], n2 - pose[3], c2)
 
-        def error(giro: float, desnivel: float) -> float:
-            az, el = _direcciones(con_pose(giro, desnivel), e1, n1, c1)
-            return _error_m(az, el, az_visto, el_visto, distancia,
-                            vista.altura_absoluta - c1 - desnivel)
+        def residuos(p: np.ndarray) -> np.ndarray:
+            giro, desnivel, de, dn = p
+            ee, nn = e1 - de, n1 - dn
+            az, el = _direcciones(con_pose(giro, desnivel), ee, nn, c1)
+            return _residuos_m(az, el, az_visto, el_visto, np.hypot(ee, nn),
+                               vista.altura_absoluta - c1 - desnivel)
+
+        def error(p) -> float:
+            return float(np.median(np.hypot(*residuos(np.asarray(p, float)).reshape(2, -1))))
 
         if antes is None:
-            antes = error(0.0, vista.desnivel)
-        desniveles = np.arange(tabla[0, 0], tabla[-1, 0] + 1e-9, 5.0)
-        mejor, giro, desnivel = min((error(float(g), float(d)), float(g), float(d))
-                                    for d in desniveles for g in GIROS[::3])
-        for d in np.clip(desnivel + np.arange(-5.0, 5.0001, 1.0), tabla[0, 0], tabla[-1, 0]):
-            for g in np.clip(giro + np.arange(-0.3, 0.3001, 0.1), GIROS[0], GIROS[-1]):
-                valor = error(float(g), float(d))
-                if valor < mejor:
-                    mejor, giro, desnivel = valor, float(g), float(d)
-        probada = con_pose(giro, desnivel)
+            antes = error([0.0, vista.desnivel, 0.0, 0.0])
+        if pasada == 0:
+            # Primero a lo bruto, sin corrimiento: la pose puede partir lejos.
+            _, g, d = min((error([g, d, 0.0, 0.0]), float(g), float(d))
+                          for d in np.arange(minimo, maximo + 1e-9, 5.0) for g in GIROS[::3])
+            pose = np.array([g, d, 0.0, 0.0])
+        ajuste = least_squares(residuos, pose, loss="soft_l1", f_scale=5.0,
+                               x_scale=[0.5, 10.0, 5.0, 5.0],
+                               bounds=([GIROS[0], minimo, -CORRIMIENTO_MAXIMO_M, -CORRIMIENTO_MAXIMO_M],
+                                       [GIROS[-1], maximo, CORRIMIENTO_MAXIMO_M, CORRIMIENTO_MAXIMO_M]))
+        pose = ajuste.x
+    mejor = error(pose)
+    giro, desnivel, de, dn = (float(v) for v in pose)
 
-    if abs(giro) >= GIROS[-1] - 0.05 or desnivel <= tabla[0, 0] or desnivel >= tabla[-1, 0]:
+    holgura = 0.05
+    if (abs(giro) >= GIROS[-1] - holgura or desnivel <= minimo + 1 or desnivel >= maximo - 1
+            or max(abs(de), abs(dn)) >= CORRIMIENTO_MAXIMO_M - 1):
         return Cruce(None, len(pares), antes, mejor, motivo="quedó en el borde de lo probado")
     if mejor > ERROR_MAXIMO_M or mejor >= antes:
         return Cruce(None, len(pares), antes, mejor, motivo=f"queda a {mejor:.0f} m")
+    final = con_pose(giro, desnivel)
     ajuste = Ajuste(giro=round(giro, 3),
-                    inclinacion_este=round(probada.inclinacion_este - vista.inclinacion_este, 3),
-                    inclinacion_norte=round(probada.inclinacion_norte - vista.inclinacion_norte, 3),
+                    inclinacion_este=round(final.inclinacion_este - vista.inclinacion_este, 3),
+                    inclinacion_norte=round(final.inclinacion_norte - vista.inclinacion_norte, 3),
                     desnivel=round(desnivel - vista.desnivel, 1))
-    return Cruce(ajuste, len(pares), antes, mejor)
+    return Cruce(ajuste, len(pares), antes, mejor, corrimiento=(round(de, 1), round(dn, 1)))
 
 
 def _rejilla(zona, vista: Vista) -> tuple[np.ndarray, np.ndarray]:
@@ -226,11 +254,10 @@ def _en(este, norte, cotas, x, y):
     return e, n, cotas[f, c]
 
 
-def _error_m(az, el, az_visto, el_visto, distancia, caida) -> float:
-    """Error mediano, en metros sobre el suelo, entre dónde la pose pone cada punto y
-    dónde lo ve la foto."""
+def _residuos_m(az, el, az_visto, el_visto, distancia, caida) -> np.ndarray:
+    """Cuánto se corre, en metros sobre el suelo, cada punto entre dónde lo pone la
+    pose y dónde lo ve la foto: de lado y a lo largo, uno tras otro."""
     lateral = np.radians((az - az_visto + 180.0) % 360.0 - 180.0) * distancia
     con = np.tan(np.radians(-np.minimum(el, -0.05)))
     visto = np.tan(np.radians(-np.minimum(el_visto, -0.05)))
-    radial = caida / con - caida / visto
-    return float(np.median(np.hypot(lateral, radial)))
+    return np.concatenate([lateral, caida / con - caida / visto])

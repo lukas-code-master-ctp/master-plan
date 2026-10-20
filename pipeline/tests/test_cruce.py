@@ -59,12 +59,13 @@ def vista(este_m: float, norte_m: float, **pose) -> Vista:
 ZONA = (*en_grados(-350, -300), *en_grados(350, 300))
 
 
-def test_encuentra_el_desnivel_y_el_giro_que_ve_la_referencia():
+def test_encuentra_el_desnivel_el_giro_y_el_corrimiento_que_ve_la_referencia():
     """Punto II de Lomas de Quillón: los caminos no alcanzaban y la vista quedaba 60 m
-    corrida; contra el punto I sale la altura que dice Google Earth."""
+    corrida; contra el punto I salen la altura y el error del GPS del dron."""
     textura = suelo()
     referencia = vista(-250, -200)
-    real = vista(250, -250, giro=0.4, desnivel=35.0)
+    # El GPS dijo (250, -250), pero el dron estaba 8 m más al este y 12 m más al sur.
+    real = vista(258, -262, giro=0.4, desnivel=35.0)
     supuesta = vista(250, -250)
 
     cruce = calibrar_contra(supuesta, panoramica(real, textura), None,
@@ -74,7 +75,10 @@ def test_encuentra_el_desnivel_y_el_giro_que_ve_la_referencia():
     assert cruce.ajuste is not None, cruce.motivo
     assert cruce.ajuste.desnivel == pytest.approx(35.0, abs=3.0)
     assert cruce.ajuste.giro == pytest.approx(0.4, abs=0.15)
-    assert cruce.error_despues_m < cruce.error_antes_m
+    assert cruce.corrimiento == pytest.approx((8.0, -12.0), abs=2.0)
+    assert cruce.error_despues_m < 3.0 < cruce.error_antes_m
+    corregida = cruce.aplicar(supuesta)
+    assert geo.a_metros(corregida.origen, real.origen) == pytest.approx((0.0, 0.0), abs=2.0)
 
 
 def test_dos_fotos_que_no_se_parecen_no_ajustan_nada():

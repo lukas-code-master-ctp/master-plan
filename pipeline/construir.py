@@ -757,17 +757,20 @@ def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
                                               inclinaciones[vista.id])
             if resultado.ajuste:
                 ajuste = resultado.ajuste
+                de, dn = resultado.corrimiento
                 print(f"  {vista.id}: con los caminos se fue al tope ({tope}); contra "
-                      f"{referencia.id}: giro {ajuste.giro:+.2f}°, desnivel {ajuste.desnivel:+.1f} m "
-                      f"({resultado.coincidencias} coincidencias, de {resultado.error_antes_m:.0f} m "
-                      f"a {resultado.error_despues_m:.0f} m)")
+                      f"{referencia.id}: giro {ajuste.giro:+.2f}°, desnivel {ajuste.desnivel:+.1f} m, "
+                      f"dron corrido {de:+.1f} m E / {dn:+.1f} m N ({resultado.coincidencias} "
+                      f"coincidencias, de {resultado.error_antes_m:.0f} m a "
+                      f"{resultado.error_despues_m:.0f} m)")
+                vista = resultado.aplicar(vista)
             else:
                 ajuste = ajuste_a_desnivel(vista, inclinaciones[vista.id], comun)
                 avisos.añadir(f"{vista.id}: el ajuste fino se fue al tope ({tope}) y no calzó contra "
                               f"{referencia.id} ({resultado.motivo}); toma el desnivel de las otras "
                               f"vistas ({comun:+.1f} m), sin giro. Revisa su calce.")
+                vista = aplicar(vista, ajuste)
             ajustes[vista.id] = ajuste
-            vista = aplicar(vista, ajuste)
         salida.append((panorama, rumbo, vista))
     return salida
 
