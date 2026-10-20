@@ -2083,3 +2083,42 @@ button { cursor: pointer; }
   stroke: rgb(0 30 60 / 0.7);
   stroke-width: 3px;
 }
+
+/* "Volver al masterplan": solo en los puntos solo foto (app.js, cambiarVista).
+   Arriba al centro, donde no lo tapa la barra de abajo ni la ficha del teléfono. */
+.volver-masterplan {
+  position: fixed;
+  z-index: 26;
+  top: 5rem;
+  left: 50%;
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--alto-control);
+  padding: 0 1.2rem 0 1rem;
+  border: 0;
+  border-radius: var(--radio-full);
+  background: var(--marca-800, #18181b);
+  color: #fff;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+  font: 700 0.875rem var(--sans);
+  white-space: nowrap;
+  cursor: pointer;
+  animation: volver-aparece 260ms var(--curva) both;
+}
+.volver-masterplan[hidden],
+body[data-plano="completo"] .volver-masterplan { display: none; }
+.volver-masterplan svg { width: 1.1rem; height: 1.1rem; }
+.volver-masterplan:hover { background: var(--marca-700, #27272a); }
+.volver-masterplan:focus-visible { outline: 3px solid var(--marca-anillo); outline-offset: 2px; }
+@keyframes volver-aparece {
+  from { opacity: 0; translate: -50% -8px; }
+  to { opacity: 1; translate: -50% 0; }
+}
+@media (max-width: 62rem) {
+  .volver-masterplan { top: 4.5rem; }
+  /* Con el plano a la vista no hay foto de la cual volver. */
+  body[data-panel="mapa"] .volver-masterplan { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .volver-masterplan { animation: none; } }
