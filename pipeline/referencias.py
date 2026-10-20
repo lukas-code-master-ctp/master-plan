@@ -122,20 +122,33 @@ def resolver(entradas: list, cerca_de: geo.Punto, cache: Path, pais: str = PAIS_
         if not nombre:
             continue
         clave = f"{pais}|{nombre.lower()}"
-        if clave not in guardadas:
-            candidatos = geocodificar(nombre, pais)
+        candidatos = _candidatos(guardadas.get(clave))
+        if candidatos is None:
+            try:
+                encontrados = geocodificar(nombre, pais)
+            except OSError as error:
+                encontrados = None
+                print(f"  aviso: el geocodificador no respondió para '{nombre}' ({error})")
+            if encontrados:
+                candidatos = [{"lon": float(c["longitude"]), "lat": float(c["latitude"]),
+                               "cota": float(c["elevation"]) if c.get("elevation") is not None else None}
+                              for c in encontrados]
+                guardadas[clave] = {"candidatos": candidatos}
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                cache.write_text(json.dumps(guardadas, ensure_ascii=False, indent=1), encoding="utf-8")
+            elif clave in guardadas and "lon" in guardadas[clave]:
+                # Sin red, mejor el lugar de antes que ninguno.
+                candidatos = [guardadas[clave]]
             if not candidatos:
                 print(f"  aviso: no encontré '{nombre}' en el geocodificador; se omite")
                 continue
-            elegido = min(candidatos, key=lambda c: geo.distancia((c["longitude"], c["latitude"]), cerca_de))
-            guardadas[clave] = asdict(Referencia(
-                nombre=nombre, lon=float(elegido["longitude"]), lat=float(elegido["latitude"]),
-                cota=float(elegido["elevation"]) if elegido.get("elevation") is not None else None))
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            cache.write_text(json.dumps(guardadas, ensure_ascii=False, indent=1), encoding="utf-8")
-        # El caché guarda el lugar, no el tiempo: ese lo pone cada loteo.
-        guardada = {c: v for c, v in guardadas[clave].items() if c != "tiempo"}
-        referencias.append(Referencia(**guardada, tiempo=tiempo))
+        # Se elige en cada loteo y no al guardar: el caché lo comparten todos, y el
+        # homónimo más cercano a un loteo puede quedar en la otra punta del país para
+        # el siguiente (un "Chillán" mal elegido aparecía al poniente de Quillón).
+        elegido = min(candidatos, key=lambda c: geo.distancia((c["lon"], c["lat"]), cerca_de))
+        # El tiempo no viene del caché: ese lo pone cada loteo.
+        referencias.append(Referencia(nombre=nombre, lon=elegido["lon"], lat=elegido["lat"],
+                                      cota=elegido.get("cota"), tiempo=tiempo))
     return referencias
 
 
@@ -197,6 +210,14 @@ def cresta(desde: geo.Punto, altura: float, hito: Referencia, cache: Path,
     if mejor is None or mejor[0] <= angulo(hito.cota + ALTO_VISIBLE_M, total) + MARGEN_TAPADO_GRADOS:
         return None
     return Referencia(nombre=hito.nombre, lon=mejor[1], lat=mejor[2], cota=mejor[3])
+
+
+def _candidatos(guardada: dict | None) -> list[dict] | None:
+    """Los homónimos guardados, o None si hay que preguntar. Las entradas antiguas
+    guardaban un solo lugar, ya elegido para otro loteo: esas se vuelven a preguntar."""
+    if guardada and guardada.get("candidatos"):
+        return guardada["candidatos"]
+    return None
 
 
 def _geocodificar(nombre: str, pais: str) -> list[dict]:

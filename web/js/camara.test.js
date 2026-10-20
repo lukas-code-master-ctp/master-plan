@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  Camara, FRENADO_MS, VELOCIDAD_MAXIMA, VELOCIDAD_MINIMA, anguloEntre, direccion, escalaDeRotulo, frenar,
+  Camara, FRENADO_MS, VELOCIDAD_MAXIMA, VELOCIDAD_MINIMA, anguloEntre, direccion, escalaComunDeRotulos, frenar,
   giroMasCorto, recortarCerca, rumboCardinal, rumboCorto, suavizar, velocidadAlSoltar,
 } from './camara.js';
 
@@ -251,9 +251,12 @@ test('el vuelo arranca y llega despacio', () => {
   assert.ok(suavizar(0.1) < 0.1 && suavizar(0.9) > 0.9);
 });
 
-test('con los números fijos la pastilla se achica con la parcela, hasta un mínimo', () => {
-  assert.equal(escalaDeRotulo(200), 1);
-  assert.equal(escalaDeRotulo(32), 0.5);
-  assert.equal(escalaDeRotulo(5), 0.5);
-  assert.ok(Math.abs(escalaDeRotulo(48) - 0.75) < 1e-9);
+test('con los números fijos todas las pastillas van del mismo tamaño, más chico si se aprietan', () => {
+  // Parcelas grandes en pantalla: tamaño normal en escritorio, algo menor en el celular.
+  assert.equal(escalaComunDeRotulos([200, 150, 120, 300], 1400), 1);
+  assert.equal(escalaComunDeRotulos([200, 150, 120, 300], 390), 0.82);
+  // Muchas parcelas chicas: el mínimo que todavía se lee.
+  assert.equal(escalaComunDeRotulos([10, 12, 15, 200], 1400), 0.8);
+  assert.equal(escalaComunDeRotulos([10, 12, 15, 200], 390), 0.7);
+  assert.equal(escalaComunDeRotulos([], 390), 0.82);
 });
