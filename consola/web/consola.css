@@ -1494,6 +1494,8 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
 }
 .modal__cerrar button:hover { background: var(--zinc-100); color: var(--zinc-900); }
 .modal__pie { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem; }
+/* Tres botones con el número en el texto no caben en una línea de celular. */
+.modal__pie--envuelve { flex-wrap: wrap; }
 .ayuda { margin: 0 0 1rem; font-size: 0.8125rem; color: var(--zinc-500); }
 
 .soltadero {
@@ -1874,6 +1876,7 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .kmz-numero .fila { min-width: 0; }
 .kmz-numero input { flex: 1 1 0; width: 0; min-width: 0; height: 2rem; padding: 0 0.5rem; border: 1px solid var(--zinc-300); border-radius: var(--radio-sm); font: 600 0.9375rem var(--sans); }
 .kmz-numero .boton { flex-shrink: 0; }
+.kmz-numero [data-accion="kmz-separar"] { justify-self: start; }
 .kmz-numero input:focus { border-color: var(--marca-700); box-shadow: 0 0 0 3px var(--marca-anillo); outline: none; }
 #kmz-mapa { position: absolute; inset: 0; }
 .kmz-etiqueta { padding: 0 0.35rem; font: 700 0.75rem/1.4 var(--sans); color: #1d4ed8; }

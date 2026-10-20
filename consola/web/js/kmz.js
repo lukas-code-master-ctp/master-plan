@@ -14,9 +14,10 @@ import { $, $$, abrirDialogo, avisar, estado, json, pedir } from './comun.js';
 import {
   anclaDesde, aplicarFuera, confirmarSugerencias, calzaLoDigitalizado, aplicarNumero, claveLote, conSemillas, decidirResto, devolverAlKmz, dudosos, duplicados, empujar, esFalloPasajero, formaDelCuadro, girarEntradas,
   herramientaAlEntrar, herramientaTrasRectangulo, HERRAMIENTAS_RECTANGULO, leerCoordenadas, loteEn, marcarRectangulo, mensajeNumerar, detalleUbicacion, filaDelPunto, numerosQueFaltan,
-  ordenarEsquinas, PASTILLAS, pastillaDe, pasoDeRuta, pasoSiguiente, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, porQueNoSigue, puedeUbicar, puntoDeRotulo,
+  ordenarEsquinas, PASTILLAS, pastillaDe, pasoDeRuta, pasoSiguiente, pasoSugerido, pasosHabilitados, pasosHechos, ponerNumero, renumerarUniones, porQueNoSigue, puedeUbicar, puntoDeRotulo,
   puntoEnPoligono, restoDe, semaforo, sesgoDeEscala, resumenRevision, resumenUbicacion, siguienteNombre, sinNumero, sugerencias, tamanoRotado, textoSemaforo, verticesDe,
   escalaDeUbicacion, leerEscala, lotesEnElMapa, normalizarGiro, similitudPorPunto, usaUbicacion,
+  aplicarUnion, loteConNumero, separarPartes, seTocan, unirParte,
   afinarAbierta, similitudPorAnclas, textoPuntos, ubicacionCompleta, ajustaConElCuadro, ofrecerAjusteDelCuadro,
 } from './kmz_geometria.js';
 import { LienzoPlano } from './lienzo_plano.js';
@@ -217,6 +218,16 @@ export function prepararKmz(opciones) {
     $('#kmz-sin-numero-dialogo').close();
     if (pendiente && pendiente === slug) crearKmz(true).catch((error) => avisar(error.message));
   });
+  for (const [boton, unir] of [['#kmz-unir-si', true], ['#kmz-unir-pasar', false]]) {
+    $(boton).addEventListener('click', () => {
+      const pendiente = unirPendiente;
+      unirPendiente = null;
+      $('#kmz-unir-dialogo').close();
+      // Si cambió de KMZ con el diálogo abierto, la parte ya no es de este plano.
+      if (pendiente?.slug === slug) (unir ? pendiente.unir : pendiente.pasar)();
+    });
+  }
+  $('#kmz-unir-dialogo').addEventListener('close', () => { unirPendiente = null; });
 
   $('#kmz-pdf').addEventListener('change', (e) => {
     const [archivo] = e.target.files;
@@ -508,6 +519,7 @@ async function manejar(nodo) {
   }
   if (accion === 'kmz-digitalizar' || accion === 'kmz-redigitalizar') return digitalizar();
   if (accion === 'kmz-siguiente-sin-numero') return siguienteSinNumero();
+  if (accion === 'kmz-separar') return separar();
   if (accion === 'kmz-confirmar-todos') return confirmarTodos();
   if (accion === 'kmz-resto-incluir') return elegirResto(true);
   if (accion === 'kmz-resto-fuera') return elegirResto(false);
@@ -930,7 +942,15 @@ function abrirNumero(x, y) {
   // El número se pone donde el lector leyó el rótulo (así lo corrige) o donde
   // se hizo clic, que está dentro del lote.
   const punto = lote?.properties.semilla ?? [x, y];
-  numerando = { x: punto[0], y: punto[1], anillos: lote?.geometry.coordinates ?? null };
+  // El número cuyas partes unidas se pueden separar: las del servidor (`unidas`) o las
+  // recién unidas que aún esperan la relectura (`parte_de`), tocando el lote o una parte.
+  const p = lote?.properties;
+  const delLote = p?.parte_de ?? p?.numero;
+  // Solo en Numerar: con la herramienta de número de Marcar no se une ni se separa.
+  const conPartes = paso === 'numerar' && delLote != null && (p.parte_de != null || p.unidas > 0
+    || rasgos.some((r) => r.properties.parte_de != null && claveLote(r.properties.parte_de) === claveLote(delLote)));
+  numerando = { x: punto[0], y: punto[1], anillos: lote?.geometry.coordinates ?? null, lote, separar: conPartes ? delLote : null };
+  $('#kmz-numero [data-accion="kmz-separar"]').hidden = !conPartes;
   const forma = $('#kmz-numero');
   const [sx, sy] = lienzo.aPantalla(x, y);
   const caja = $('#kmz-plano');
@@ -975,20 +995,32 @@ function ponerEnLote(numero, punto, anillos) {
     programarRelectura();
   }
   // Con número, la parte vuelve al KMZ aunque ella la hubiera dejado fuera.
-  cambiar({ ...(numero ? devolverAlKmz(entradas, anillos) : entradas), semillas });
+  const base = renumerarUniones(entradas, numero, anillos);
+  cambiar({ ...(numero ? devolverAlKmz(base, anillos) : base), semillas });
 }
 
 function escribirNumero(valor) {
   if (!numerando) return;
   // Como lo dice el cuadro: "8-8" queda "8-08", que es como sale en el KMZ.
   const limpio = formaDelCuadro(valor, numerosCuadro());
-  const otra = entradas.semillas.find((s) => claveLote(s.numero) === claveLote(limpio)
-    && !(numerando.anillos && puntoEnPoligono(s.x, s.y, numerando.anillos)));
-  if (limpio && otra && !confirm(`El ${limpio} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
   const { x, y, anillos } = numerando;
-  cerrarNumero();
-  ponerEnLote(limpio, [x, y], anillos);
-  lienzo.canvas.focus({ preventScroll: true });
+  // Si los lotes se releyeron con el cuadro abierto, el de la apertura ya no está en
+  // `rasgos`: se busca de nuevo, o el lote se vería a sí mismo como "la parte de al lado".
+  const lote = loteEn(rasgos, x, y) ?? numerando.lote;
+  // Una parte ya unida a ese mismo número: no hay nada que cambiar.
+  if (limpio && lote?.properties.parte_de != null && claveLote(lote.properties.parte_de) === claveLote(limpio)) {
+    return cerrarNumero();
+  }
+  const pasar = () => {
+    cerrarNumero();
+    ponerEnLote(limpio, [x, y], anillos);
+    lienzo.canvas.focus({ preventScroll: true });
+  };
+  if (limpio && preguntarUnir(limpio, [x, y], lote?.geometry.coordinates ?? anillos, lote, pasar)) return;
+  const otra = entradas.semillas.find((s) => claveLote(s.numero) === claveLote(limpio)
+    && !(anillos && puntoEnPoligono(s.x, s.y, anillos)));
+  if (limpio && otra && !confirm(`El ${limpio} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
+  pasar();
 }
 
 /** Confirma la lectura sugerida de la i-ésima parte con sugerencia: queda como número suyo. */
@@ -996,9 +1028,82 @@ function confirmarSugerencia(i) {
   const s = sugerencias(rasgos)[i];
   if (!s) return;
   const numero = formaDelCuadro(s.numero, numerosCuadro());
+  const pasar = () => ponerEnLote(numero, s.rasgo.rotulo, s.rasgo.geometry.coordinates);
+  if (preguntarUnir(numero, s.rasgo.rotulo, s.rasgo.geometry.coordinates, s.rasgo, pasar)) return;
   const otra = entradas.semillas.find((x) => claveLote(x.numero) === claveLote(numero));
   if (otra && !confirm(`El ${numero} ya está marcado en otro lote. ¿Lo pasas a este?`)) return;
-  ponerEnLote(numero, s.rasgo.rotulo, s.rasgo.geometry.coordinates);
+  pasar();
+}
+
+// --- unir las partes de un lote -----------------------------------------------------------
+
+/** Lo que espera la respuesta del diálogo de unir: {slug, unir, pasar}. */
+let unirPendiente = null;
+
+/**
+ * "Se tocan" en la pantalla: 0,5 mm de papel en px de página. Sin `ppmm` (una foto) se
+ * supone una página dibujada a 200 ppp, como se dibujan los PDF: unos 4 px. Es solo para
+ * decidir si se ofrece unir; si no se tocan de verdad, el servidor no las une y lo avisa.
+ */
+const tolUnir = () => 0.5 * (plano?.digitalizado?.pagina?.ppmm || 200 / 25.4);
+
+/**
+ * Si el número ya lo tiene otro lote (o una parte ya unida a él) que toca esta parte,
+ * pregunta si unirlas o pasarle el número, y devuelve true. También cuando ese número
+ * lo puso el lector y no ella: también es el mismo lote partido.
+ */
+function preguntarUnir(numero, punto, anillos, parte, pasar) {
+  if (paso !== 'numerar' || !anillos || !loteConNumero(rasgos, numero, parte)) return false;
+  const clave = claveLote(numero);
+  const vecina = rasgos.some((r) => r !== parte && r.properties.numero != null && claveLote(r.properties.numero) === clave
+    && seTocan(anillos, r.geometry.coordinates, tolUnir()));
+  if (!vecina) return false;
+  $('#kmz-unir-titulo').textContent = `El ${numero} ya está en la parte de al lado`;
+  $('#kmz-unir-si').textContent = `Unirlas en el lote ${numero}`;
+  $('#kmz-unir-pasar').textContent = `Pasar el ${numero} a esta parte`;
+  unirPendiente = { slug, pasar, unir: () => unirEnLote(numero, punto, anillos) };
+  abrirDialogo($('#kmz-unir-dialogo'));
+  return true;
+}
+
+/** Suma la parte al lote `numero`: se ve al tiro y la relectura la trae ya fundida. */
+function unirEnLote(numero, punto, anillos) {
+  cerrarNumero();
+  if (paso === 'numerar') {
+    rasgos = aplicarUnion(rasgos, numero, punto);
+    programarRelectura();
+  }
+  // Como al ponerle número: la parte vuelve al KMZ aunque la hubiera dejado fuera.
+  cambiar(unirParte(devolverAlKmz(entradas, anillos), numero, punto, anillos));
+  lienzo.canvas.focus({ preventScroll: true });
+}
+
+/** Quita las uniones del lote que está en el cuadro del número: al releer salen sus partes. */
+async function separar() {
+  const numero = numerando?.separar;
+  if (numero == null) return;
+  const mio = slug;
+  const optimistas = rasgos.some((r) => r.properties.parte_de != null && claveLote(r.properties.parte_de) === claveLote(numero));
+  cerrarNumero();
+  cambiar(separarPartes(entradas, numero));
+  programarRelectura();
+  // Las partes recién unidas (aún sin releer) se ven unidas solo en la pantalla: los lotes
+  // se traen de nuevo para que vuelvan a verse sueltas aunque no haga falta releer.
+  if (!optimistas) return;
+  await guardar();
+  if (mio !== slug) return;
+  await cargarLotes();
+  pintarPanel();
+}
+
+/** El aviso de las uniones que no se aplicaron al leer el plano (los números de sus lotes). */
+function textoUnionesDescartadas(numeros) {
+  if (!numeros?.length) return '';
+  if (numeros.length === 1) {
+    return `No se pudo unir la parte del lote ${numeros[0]}: después de leer el plano ya no se toca con él.`;
+  }
+  const cuales = `${numeros.slice(0, -1).join(', ')} y ${numeros[numeros.length - 1]}`;
+  return `No se pudieron unir las partes de los lotes ${cuales}: después de leer el plano ya no se tocan con ellos.`;
 }
 
 /**
@@ -1729,6 +1834,9 @@ function pintarNumerar() {
   // Un solo mensaje: cuántos faltan y qué hacer. Los huecos de la numeración van ahí cuando
   // no queda ningún lote rojo (si no, son esos mismos lotes).
   $('#kmz-sin-numero').textContent = mensajeNumerar(rasgos, numerosQueFaltan(d?.huecos, rasgos));
+  const descartadas = $('#kmz-uniones-descartadas');
+  descartadas.textContent = textoUnionesDescartadas(d?.uniones_descartadas);
+  descartadas.hidden = !descartadas.textContent;
   pintarResto();
   $('#kmz-actualizando').hidden = !actualizando() || Boolean(releerFallo && !trabajando());
   $('[data-accion="kmz-siguiente-sin-numero"]').hidden = !partes.length;

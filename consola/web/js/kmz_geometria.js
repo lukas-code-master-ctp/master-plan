@@ -695,6 +695,22 @@ export function unirParte(entradas, numero, punto, anillos) {
 }
 
 /** Las entradas sin las uniones del lote `numero`: al releer, sus partes vuelven a salir solas. */
+/**
+ * Las uniones que caen dentro del lote que cambia de número (`anillos`) siguen al lote:
+ * pasan al número nuevo, o se quitan si el número queda vacío. Así un lote ya fundido no
+ * se desarma al renumerarlo, y una parte recién unida a la que se le escribe otro número
+ * deja de pertenecer al lote de antes (su unión apunta a ella misma y no hace nada).
+ */
+export function renumerarUniones(entradas, numero, anillos) {
+  if (!entradas.uniones?.length || !anillos) return entradas;
+  const limpio = String(numero ?? '').trim();
+  const uniones = entradas.uniones.flatMap((u) => {
+    if (!puntoEnPoligono(u.x, u.y, anillos)) return [u];
+    return limpio ? [{ ...u, numero: limpio }] : [];
+  });
+  return { ...entradas, uniones };
+}
+
 export function separarPartes(entradas, numero) {
   const clave = claveLote(numero);
   return { ...entradas, uniones: (entradas.uniones ?? []).filter((u) => claveLote(u.numero) !== clave) };

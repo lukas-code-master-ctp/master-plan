@@ -12,7 +12,7 @@ import {
   aplicarHomografia, cajaGirada, escalaDeUbicacion, girarEnPantalla, husoDe, leerEscala, lonLatAUtm, lotesEnElMapa, paginaALonLat,
   similitudPorPunto, usaUbicacion, utmALonLat, similitudPorAnclas, afinarAbierta, textoPuntos,
   ajustaConElCuadro, escalaEnElAjuste, ofrecerAjusteDelCuadro,
-  aplicarUnion, duplicados, loteConNumero, separarPartes, seTocan, unirParte,
+  aplicarUnion, duplicados, loteConNumero, renumerarUniones, separarPartes, seTocan, unirParte,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
 
@@ -1409,4 +1409,16 @@ test('semáforo en ámbar si casi todos se desvían parejo, aunque menos de la m
   assert.equal(textoSemaforo(luz, { ajustable: true }), 'Casi todos los lotes salen cerca de un 4,9 % más chicos'
     + ' que en el cuadro de superficies. Suele ser la escala de los puntos de Ubicar: ajusta el tamaño con el'
     + ' cuadro de superficies o vuelve a Ubicar y marca los puntos de nuevo.');
+});
+
+test('al renumerar un lote, sus uniones lo siguen al número nuevo (o se quitan sin número)', () => {
+  const anillos = [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]];
+  const entradas = { uniones: [{ numero: '17', x: 5, y: 5 }, { numero: '17', x: 50, y: 5 }] };
+  const antes = structuredClone(entradas);
+  assert.deepEqual(renumerarUniones(entradas, '20', anillos).uniones,
+    [{ numero: '20', x: 5, y: 5 }, { numero: '17', x: 50, y: 5 }]);
+  assert.deepEqual(renumerarUniones(entradas, '', anillos).uniones, [{ numero: '17', x: 50, y: 5 }]);
+  assert.deepEqual(entradas, antes);
+  // Sin uniones, las entradas no ganan la clave.
+  assert.equal(renumerarUniones({ semillas: [] }, '20', anillos).uniones, undefined);
 });
