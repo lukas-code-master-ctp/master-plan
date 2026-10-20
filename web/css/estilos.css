@@ -2099,6 +2099,23 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .punto-360__icono, .punto-360__icono::before, .punto-360__icono::after { animation: none; }
 }
+/* En el celular la lupa de escritorio tapaba media pantalla: más chica y con
+   ondas más cortas, sigue siendo un blanco cómodo para el dedo. */
+@media (max-width: 40rem) {
+  .punto-360 { gap: 3px; }
+  .punto-360__icono { width: 34px; height: 34px; box-shadow: 0 2px 8px rgb(0 0 0 / 0.5); }
+  .punto-360__icono svg { width: 17px; height: 17px; stroke-width: 2.6; }
+  .punto-360__icono::before, .punto-360__icono::after {
+    border-width: 1.5px;
+    animation-name: punto-360-onda-corta;
+  }
+  .punto-360__nombre { padding: 1px 6px; font-size: 0.5625rem; letter-spacing: 0.08em; }
+  .punto-360::after { height: 10px; }
+}
+@keyframes punto-360-onda-corta {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
 /* Con una parcela elegida, los puntos dan un paso atrás como las demás parcelas. */
 .visor:has(.overlay--con-seleccion) .punto-360 { opacity: 0.35; }
 
