@@ -84,7 +84,7 @@ const SIN_MOVIMIENTO = typeof window !== 'undefined'
 export class Visor {
   constructor(elemento, {
     alElegirParcela, alPasarSobreParcela, alMoverCamara, alElegirPunto, rotuloDe, rotuloSeleccionadoDe,
-    numerosFijos = false, etapaDe = null,
+    numerosFijos = false, etapaDe = null, alElegirEtapa,
   } = {}) {
     this.elemento = elemento;
     this.lienzo = elemento.querySelector('canvas');
@@ -98,6 +98,10 @@ export class Visor {
     // De qué etapa es cada parcela, cuando el loteo se rotula por etapas: el
     // nombre de la etapa va una vez sobre su sector y las pastillas, solo el número.
     this.etapaDe = etapaDe;
+    this.alElegirEtapa = alElegirEtapa ?? (() => {});
+    // La etapa que se eligió (tocando su rótulo o en los filtros): su borde se
+    // engruesa y las demás se apagan.
+    this.etapaResaltada = null;
     this.nodosEtapa = new Map();
     this.contornosEtapa = [];
     this.nodosContorno = [];
@@ -552,7 +556,9 @@ export class Visor {
         const [x, y] = centro(pixeles);
         enPantalla.push({ id, x, y });
       }
-      if (this.etapaDe && !estilo.atenuada) {
+      // Con una etapa elegida las demás quedan atenuadas, pero sus rótulos siguen
+      // a la vista: son la forma de cambiar de etapa sin abrir los filtros.
+      if (this.etapaDe && (!estilo.atenuada || this.etapaResaltada != null)) {
         const [x, y] = centro(pixeles);
         centrosPorEtapa.push({ etapa: this.etapaDe(id), x, y });
       }
@@ -843,6 +849,7 @@ export class Visor {
       const x = acotar(puntos.reduce((suma, [px]) => suma + px, 0) / puntos.length, medio, ancho - medio);
       const y = Math.min(...puntos.map(([, py]) => py)) - ALTO_PASTILLA - 6;
       nodo.grupo.style.display = '';
+      this._marcarResaltado(nodo.grupo, etapa);
       nodo.grupo.setAttribute('transform', `translate(${x.toFixed(1)} ${Math.max(y, 14).toFixed(1)})`);
     }
   }
@@ -856,6 +863,7 @@ export class Visor {
         if (!nodo) {
           nodo = document.createElementNS(SVG_NS, 'path');
           nodo.setAttribute('class', 'etapa__contorno');
+          nodo.dataset.etapa = String(etapa);
           nodo.style.color = colorDeEtapa(etapa);
           this._capaEtapas().prepend(nodo);
           this.nodosContorno[indice] = nodo;
@@ -867,9 +875,23 @@ export class Visor {
           continue;
         }
         nodo.style.display = '';
+        this._marcarResaltado(nodo, etapa);
         nodo.setAttribute('d', aRuta(pixeles));
       }
     }
+  }
+
+  /** Elige la etapa que se destaca (null: ninguna) y redibuja. */
+  resaltarEtapa(etapa) {
+    this.etapaResaltada = etapa ?? null;
+    this._pintar();
+  }
+
+  _marcarResaltado(nodo, etapa) {
+    const hay = this.etapaResaltada != null;
+    const esta = hay && String(etapa) === String(this.etapaResaltada);
+    nodo.classList.toggle('etapa--resaltada', esta);
+    nodo.classList.toggle('etapa--apagada', hay && !esta);
   }
 
   _capaEtapas() {
@@ -890,6 +912,9 @@ export class Visor {
     if (nodo) return nodo;
     const grupo = document.createElementNS(SVG_NS, 'g');
     grupo.setAttribute('class', 'etapa');
+    grupo.dataset.etapa = String(etapa);
+    grupo.setAttribute('role', 'button');
+    grupo.setAttribute('aria-label', `Ver solo la etapa ${etapa}`);
     grupo.style.color = colorDeEtapa(etapa);
     const fondo = document.createElementNS(SVG_NS, 'rect');
     fondo.setAttribute('class', 'etapa__fondo');
@@ -1234,6 +1259,13 @@ export class Visor {
     const punto = objetivo?.closest?.('.punto-360');
     if (punto) {
       this.alElegirPunto(Number(punto.dataset.posicion));
+      return;
+    }
+    const rotuloEtapa = objetivo?.closest?.('.etapa');
+    if (rotuloEtapa) {
+      // Tocar la etapa que ya está elegida la suelta.
+      const etapa = Number(rotuloEtapa.dataset.etapa);
+      this.alElegirEtapa(String(etapa) === String(this.etapaResaltada) ? null : etapa);
       return;
     }
     const burbuja = objetivo?.closest?.('.burbuja');
