@@ -56,12 +56,12 @@ const ANCHO_MINIMO_ETIQUETA_PX = 42;
 // Lo que ocupa en pantalla un botón de punto 360 (la lupa, su nombre y la patita)
 // en escritorio, por si el botón todavía no se puede medir. Ningún número de
 // parcela se dibuja dentro.
-const ANCHO_ZONA_PUNTO = 76;
+const ANCHO_ZONA_PUNTO = 28;
 // El alfiler de los rótulos del horizonte y cuánto sube uno que chocaría con otro
 // (el alto de la píldora más un respiro).
 const ALFILER_REFERENCIA = 22;
 const ALTO_ESCALON_REFERENCIA = 32;
-const ALTO_ZONA_PUNTO = 92;
+const ALTO_ZONA_PUNTO = 36;
 // La burbuja de un grupo: más alta que una pastilla, porque dice más.
 const ALTO_BURBUJA = 30;
 // Por sobre las pastillas sueltas (que van hasta ~1e7) y bajo la elegida (1e9).
