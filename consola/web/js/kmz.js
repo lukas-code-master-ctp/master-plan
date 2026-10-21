@@ -30,6 +30,7 @@ import { oyentes, seguir } from './plano.js';
 import { relevo } from './sondeo.js';
 import { soltadero } from './subida.js';
 import { pintarEscaner } from './vuelo.js';
+import { tituloEsqueleto } from './esqueleto.js';
 
 const VACIAS = () => ({
   pagina: 1, rotacion: 0, rectangulo: null, mascaras: [], cuadro: null, esquinas: null, semillas: [], anclas: [], uniones: [],
@@ -388,7 +389,8 @@ export function pintarKmz(nuevoSlug, { nuevo = false, paso: pasoPedido = null } 
 function pintarCabecera(de = slug) {
   const nombre = (de === slug ? plano?.nombre : null)
     ?? estado.kmzs.find((k) => k.slug === de)?.nombre;
-  $('#kmz-titulo').textContent = nombre ?? 'Cargando…';
+  if (nombre) $('#kmz-titulo').textContent = nombre;
+  else tituloEsqueleto($('#kmz-titulo'));
   document.title = `${nombre ?? 'KMZ'} — Mis KMZ — Tu Masterplan`;
 }
 

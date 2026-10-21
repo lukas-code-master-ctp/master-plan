@@ -2178,3 +2178,80 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .trampa { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 
 .pie-cuenta { margin: 0; font-size: 0.8125rem; color: var(--zinc-500); text-align: center; }
+
+/* --- Esqueletos (js/esqueleto.js) ----------------------------------------------------- */
+
+/* Mientras llega una lista, su forma en gris con un brillo que la cruza. El brillo es
+   el de "Nuevo master", más lento: es la misma casa. Sin movimiento, solo el gris. */
+.esqueleto {
+  position: relative; display: block; overflow: hidden; flex-shrink: 0;
+  height: 0.75rem; border-radius: 999px; background: var(--zinc-200);
+}
+.esqueleto::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.6), transparent);
+  transform: translateX(-100%); animation: esqueleto-brillo 1.6s ease-in-out infinite;
+}
+@keyframes esqueleto-brillo { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .esqueleto::after { animation: none; display: none; } }
+
+.esqueleto--titulo { height: 1.125rem; }
+.esqueleto--h1 { height: 2.25rem; border-radius: var(--radio-md); }
+.esqueleto--chip { height: 1.5rem; }
+.esqueleto--cifra { height: 2rem; border-radius: var(--radio-md); }
+.esqueleto--boton { height: 2.25rem; border-radius: 0.75rem; }
+.esqueleto--bloque { height: 4.5rem; border-radius: 1rem; }
+.esqueleto--avatar { height: 2.5rem; border-radius: 50%; }
+.esqueleto--miniatura { height: auto; aspect-ratio: 16 / 10; border-radius: 0; }
+.esqueleto--panel { height: 14rem; border-radius: 1.375rem; }
+
+/* Mis 360°: la tarjeta toma las alturas de la rejilla y deja el texto abajo, como la foto. */
+.esqueleto-plano {
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 0.75rem;
+  min-height: 15.5rem; padding: 1.5rem; border-radius: 1.375rem;
+  background: var(--zinc-100); border: 1px solid var(--zinc-200);
+}
+.planos__item--destacada .esqueleto-plano { min-height: 32.25rem; }
+.esqueleto-plano .esqueleto { background: var(--zinc-200); }
+.esqueleto-plano .esqueleto--titulo { height: 1.75rem; border-radius: var(--radio-md); }
+
+/* Mis KMZ y Mis diseños. */
+.esqueleto-tarjeta {
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--zinc-200); border-radius: 1.375rem; background: #fff;
+}
+.esqueleto-tarjeta__pie { display: grid; gap: 0.6rem; padding: 1.1rem 1.25rem 1.35rem; }
+
+/* Reservas y contactos. */
+.esqueleto-fila {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1.5rem;
+  padding: 1.25rem 1.5rem; background: #fff; border: 1px solid var(--zinc-200); border-radius: 1.375rem;
+}
+.esqueleto-fila__texto { display: grid; gap: 0.6rem; min-width: 0; }
+.esqueleto-cifra { display: grid; gap: 0.6rem; align-content: start; }
+.resumen-planos .esqueleto { background: rgb(255 255 255 / 0.14); }
+.resumen-planos .esqueleto::after { background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.12), transparent); }
+
+/* Configuración. */
+.esqueleto-miembro { display: flex; align-items: center; gap: 0.85rem; padding: 0.6rem 0.25rem; }
+.esqueleto-miembro .esqueleto-fila__texto { flex: 1; }
+.esqueleto-actividad { display: grid; gap: 0.75rem; }
+
+/* La pantalla genérica: antetítulo, título, guía y dos paneles. */
+.esqueleto-pantalla { gap: 0.9rem; }
+.esqueleto-pantalla > .esqueleto--chip { width: 8rem; }
+.esqueleto-pantalla > .esqueleto--h1 { width: min(22rem, 70%); }
+.esqueleto-pantalla > .esqueleto--linea { width: min(34rem, 90%); }
+.esqueleto-pantalla__cuerpo { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1.25rem; margin-top: 1rem; }
+
+@media (max-width: 52rem) {
+  .planos__item--destacada .esqueleto-plano { min-height: 20rem; }
+  .esqueleto-plano { min-height: 16.5rem; }
+  .esqueleto-fila { grid-template-columns: auto minmax(0, 1fr); }
+  .esqueleto-fila > .esqueleto--boton { display: none; }
+}
+/* Sobre la portada del dron (tinta), el gris claro se vería como un agujero. */
+.heroe .esqueleto { background: rgb(255 255 255 / 0.14); }
+.heroe .esqueleto::after { background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.12), transparent); }
+.heroe .esqueleto--h1 { height: 3.5rem; }
+#perfil-email .esqueleto { margin-top: 0.5rem; }

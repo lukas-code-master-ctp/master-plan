@@ -6,6 +6,7 @@
  * (rutas_equipo.py): acá solo no se ofrece lo que no se puede.
  */
 import { $, abrirDialogo, avisar, json, pedir } from './comun.js';
+import { pintarEsqueleto, tituloEsqueleto } from './esqueleto.js';
 
 const ROLES = { 'dueño': 'Dueño', equipo: 'Equipo', plataforma: 'Operación CTP' };
 
@@ -77,6 +78,13 @@ export function prepararEquipo() {
 }
 
 export async function pintarEquipo({ animar = false } = {}) {
+  // La primera vez la lista está vacía: mientras llega, su forma. Después se deja lo que hay.
+  if (!cuenta) {
+    pintarEsqueleto('equipo-lista');
+    tituloEsqueleto($('#perfil-nombre'), { ancho: 'min(12rem, 40vw)', clase: 'esqueleto--titulo' });
+    tituloEsqueleto($('#perfil-email'), { ancho: 'min(16rem, 50vw)', clase: 'esqueleto--linea' });
+    $('#perfil-rol').hidden = true;
+  }
   try {
     pintar(await pedir('/api/cuenta'), { animar });
   } catch (error) {
@@ -91,6 +99,7 @@ function pintar(datos, { animar = false } = {}) {
   $('#perfil-nombre').textContent = datos.nombre || datos.email;
   $('#perfil-email').textContent = datos.email;
   $('#perfil-rol').textContent = ROLES[datos.rol] ?? datos.rol;
+  $('#perfil-rol').hidden = false;
   $('#perfil-rol').className = `chip${datos.rol === 'dueño' ? ' chip--tinta' : ''}`;
   $('#perfil-google').hidden = !datos.google;
   $('#seguridad-clave-nota').textContent = datos.google

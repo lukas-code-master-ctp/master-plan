@@ -6,6 +6,7 @@
  * y se piden de a partes hacia atrás con "Ver más".
  */
 import { $, avisar, pedir } from './comun.js';
+import { pintarEsqueleto } from './esqueleto.js';
 
 const POR_PARTE = 30;
 
@@ -93,6 +94,7 @@ export function prepararActividad() {
 }
 
 export async function pintarActividad() {
+  if (!eventos.length) pintarEsqueleto('actividad-lista');
   await cargar({ mas: false });
 }
 
