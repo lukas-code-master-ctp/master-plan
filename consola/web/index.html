@@ -691,6 +691,7 @@
           cuanto menos seguros; con "?" los más dudosos) y en
           <span class="kmz-muestra kmz-muestra--malo">rojo</span> los sin número o repetidos.</p>
         <p id="kmz-sin-numero" class="kmz-nota-fuerte" role="status"></p>
+        <p id="kmz-uniones-descartadas" class="nota" role="status" hidden></p>
         <p id="kmz-actualizando" class="kmz-actualizando" role="status" hidden>Actualizando los lotes…</p>
         <div id="kmz-resto" class="kmz-resto" role="group" aria-labelledby="kmz-resto-texto" hidden>
           <p id="kmz-resto-texto" class="kmz-resto__pregunta"></p>
@@ -958,6 +959,8 @@
               <datalist id="kmz-numeros-faltan"></datalist>
               <button class="boton boton--chico" type="submit">OK</button>
             </div>
+            <!-- type="button": no envía el cuadro con el número que haya escrito. -->
+            <button class="boton boton--texto boton--chico" data-accion="kmz-separar" type="button" hidden>Separar las partes</button>
           </form>
         </div>
         <div id="kmz-mapa-caja" class="kmz-mapa" hidden>
@@ -1374,6 +1377,18 @@
   <div class="modal__pie">
     <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
     <button id="kmz-crear-sin-numero" class="boton" type="button">Crear sin ellos</button>
+  </div>
+</dialog>
+
+<!-- Mis KMZ, Numerar: el número que escribe ya lo tiene la parte de al lado -->
+<dialog id="kmz-unir-dialogo" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2 id="kmz-unir-titulo">El 17 ya está en la parte de al lado</h2>
+  <p class="ayuda">Si son el mismo lote, únelas y quedan como un solo polígono.</p>
+  <div class="modal__pie modal__pie--envuelve">
+    <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
+    <button id="kmz-unir-pasar" class="boton boton--contorno" type="button">Pasar el 17 a esta parte</button>
+    <button id="kmz-unir-si" class="boton" type="button">Unirlas en el lote 17</button>
   </div>
 </dialog>
 

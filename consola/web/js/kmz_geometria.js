@@ -63,7 +63,7 @@ const redondo = (v) => Math.round(v * 100) / 100;
 
 /**
  * Lo marcado, llevado a otra rotación: si la loteadora gira la página después de
- * marcar, sus rectángulos, esquinas, semillas y anclas siguen donde estaban sobre
+ * marcar, sus rectángulos, esquinas, semillas, uniones y anclas siguen donde estaban sobre
  * el dibujo. ancho y alto son los de la imagen sin rotar.
  */
 export function girarEntradas(entradas, de, a, ancho, alto) {
@@ -92,6 +92,8 @@ export function girarEntradas(entradas, de, a, ancho, alto) {
   if (entradas.escala?.p && entradas.escala?.q) {
     salida.escala = { ...entradas.escala, p: punto(entradas.escala.p), q: punto(entradas.escala.q) };
   }
+  // Solo si las hay: unas entradas sin uniones quedan iguales (y su huella también).
+  if (entradas.uniones) salida.uniones = entradas.uniones.map(conXY);
   if (entradas.ubicacion) {
     // El punto sigue sobre el mismo lugar del dibujo, y el giro que falta para dejar el
     // norte arriba es el de antes menos lo que ya se giró la página (ambos horarios).
@@ -618,7 +620,8 @@ export function aplicarNumero(rasgos, numero, punto) {
   const salida = rasgos.map((r) => {
     const p = r.properties;
     if (r === lote) {
-      const { sugerencia: _s, ...resto } = p;
+      // Una parte unida a otro lote que recibe su propio número deja de ser parte.
+      const { sugerencia: _s, parte_de: _u, ...resto } = p;
       const nuevo = { ...r, properties: { ...resto, numero: limpio, origen: 'usuario', de_lote: false, fuera: false,
         confianza: null, apoyo: null, semilla: [punto[0], punto[1]],
         banderas: fuera(p.banderas, 'sin_numero', 'de_lote', 'fuera') } };
@@ -626,26 +629,128 @@ export function aplicarNumero(rasgos, numero, punto) {
     }
     if (p.numero != null && claveLote(p.numero) === clave) {
       // Era un lote con número: queda como un lote sin número (rojo), no como un camino.
-      const nuevo = { ...r, properties: { ...p, numero: null, semilla: null, de_lote: true, origen: null,
+      const { parte_de: _u, ...resto } = p;
+      const nuevo = { ...r, properties: { ...resto, numero: null, semilla: null, de_lote: true, origen: null,
         banderas: ['sin_numero', 'de_lote'] } };
       return { ...nuevo, rotulo: puntoDeRotulo(nuevo) };
     }
     return r;
   });
-  // Un número que estaba repetido puede dejar de estarlo (o al revés).
+  return recontarDuplicados(salida);
+}
+
+/**
+ * Un número que estaba repetido puede dejar de estarlo (o al revés). Una parte unida a
+ * su lote (`parte_de`) lleva su número sin ser otro lote: no cuenta ni se marca.
+ */
+function recontarDuplicados(rasgos) {
   const cuenta = new Map();
-  for (const { properties: p } of salida) {
-    if (p.numero != null) cuenta.set(claveLote(p.numero), (cuenta.get(claveLote(p.numero)) ?? 0) + 1);
+  for (const { properties: p } of rasgos) {
+    if (p.numero != null && p.parte_de == null) cuenta.set(claveLote(p.numero), (cuenta.get(claveLote(p.numero)) ?? 0) + 1);
   }
-  return salida.map((r) => {
+  return rasgos.map((r) => {
     const p = r.properties;
     if (p.numero == null) return r;
-    const repetido = cuenta.get(claveLote(p.numero)) > 1;
+    const repetido = p.parte_de == null && cuenta.get(claveLote(p.numero)) > 1;
     const tenia = (p.banderas ?? []).includes('duplicado');
     if (repetido === tenia) return r;
-    const banderas = repetido ? [...fuera(p.banderas), 'duplicado'] : fuera(p.banderas, 'duplicado');
+    const banderas = repetido ? [...(p.banderas ?? []), 'duplicado'] : p.banderas.filter((b) => b !== 'duplicado');
     return { ...r, properties: { ...p, banderas } };
   });
+}
+
+// --- unir las partes de un lote --------------------------------------------------------
+
+/** Distancia de (x, y) al segmento a–b. */
+function distanciaASegmento(x, y, [ax, ay], [bx, by]) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const largo = dx * dx + dy * dy;
+  const t = largo ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / largo)) : 0;
+  return Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
+}
+
+/**
+ * ¿Comparten borde dos polígonos (anillos en px)? Aproximado, para decidir si se ofrece
+ * unirlos: al menos dos vértices de uno a menos de `tol` del borde del otro. Uno solo
+ * sería tocarse en una esquina; la palabra final la tiene el servidor.
+ */
+export function seTocan(anillosA, anillosB, tol) {
+  const cerca = (de, a) => {
+    let n = 0;
+    for (const [x, y] of de.flatMap((anillo) => anillo.slice(0, -1))) {
+      const pega = a.some((anillo) => anillo.some((p, i) => i > 0 && distanciaASegmento(x, y, anillo[i - 1], p) <= tol));
+      if (pega && ++n >= 2) return true;
+    }
+    return false;
+  };
+  return cerca(anillosA, anillosB) || cerca(anillosB, anillosA);
+}
+
+/**
+ * El lote (rasgo) con `numero`, que no sea `salvo` (la parte donde se escribe), o null. Si
+ * el número ya tiene partes unidas, primero el lote mismo.
+ */
+export function loteConNumero(rasgos, numero, salvo = null) {
+  const clave = claveLote(numero);
+  const con = rasgos.filter((r) => r !== salvo && r.properties.numero != null && claveLote(r.properties.numero) === clave);
+  return con.find((r) => r.properties.parte_de == null) ?? con[0] ?? null;
+}
+
+/**
+ * Las entradas con la parte `anillos` sumada al lote `numero`: una unión en `punto` (dentro
+ * de la parte). La parte ya no tiene número propio: se quitan la semilla de la loteadora y
+ * las uniones a otro número que hubiera dentro de ella. No toca lo que recibe.
+ */
+export function unirParte(entradas, numero, punto, anillos) {
+  const dentro = (o) => puntoEnPoligono(o.x, o.y, anillos);
+  const uniones = (entradas.uniones ?? []).filter((u) => !dentro(u));
+  return {
+    ...entradas,
+    semillas: (entradas.semillas ?? []).filter((s) => !dentro(s)),
+    uniones: [...uniones, { numero: String(numero).trim(), x: redondo(punto[0]), y: redondo(punto[1]) }],
+  };
+}
+
+/** Las entradas sin las uniones del lote `numero`: al releer, sus partes vuelven a salir solas. */
+/**
+ * Las uniones que caen dentro del lote que cambia de número (`anillos`) siguen al lote:
+ * pasan al número nuevo, o se quitan si el número queda vacío. Así un lote ya fundido no
+ * se desarma al renumerarlo, y una parte recién unida a la que se le escribe otro número
+ * deja de pertenecer al lote de antes (su unión apunta a ella misma y no hace nada).
+ */
+export function renumerarUniones(entradas, numero, anillos) {
+  if (!entradas.uniones?.length || !anillos) return entradas;
+  const limpio = String(numero ?? '').trim();
+  const uniones = entradas.uniones.flatMap((u) => {
+    if (!puntoEnPoligono(u.x, u.y, anillos)) return [u];
+    return limpio ? [{ ...u, numero: limpio }] : [];
+  });
+  return { ...entradas, uniones };
+}
+
+export function separarPartes(entradas, numero) {
+  const clave = claveLote(numero);
+  return { ...entradas, uniones: (entradas.uniones ?? []).filter((u) => claveLote(u.numero) !== clave) };
+}
+
+/**
+ * Los lotes con la parte que contiene `punto` unida al lote `numero` al tiro, mientras se
+ * vuelve a leer el plano: verde, con el número, de la loteadora y sin banderas. Lleva
+ * `parte_de` para que no cuente como el número repetido (ni marque así al lote). La
+ * relectura la trae ya fundida con el lote. No toca los rasgos que recibe.
+ */
+export function aplicarUnion(rasgos, numero, punto) {
+  const limpio = String(numero ?? '').trim();
+  const parte = limpio ? loteEn(rasgos, punto[0], punto[1]) : null;
+  if (!parte) return rasgos;
+  const salida = rasgos.map((r) => {
+    if (r !== parte) return r;
+    const { sugerencia: _s, ...resto } = r.properties;
+    return { ...r, rotulo: [punto[0], punto[1]], properties: { ...resto, numero: limpio, origen: 'usuario', parte_de: limpio,
+      de_lote: false, fuera: false, confianza: null, apoyo: null, semilla: [punto[0], punto[1]], banderas: [] } };
+  });
+  return recontarDuplicados(salida);
 }
 
 // --- el resto de la propiedad ----------------------------------------------------------
@@ -753,16 +858,23 @@ export function aplicarFuera(rasgos, punto, fuera) {
 }
 
 /**
- * Las semillas de la loteadora que el último digitalizado todavía no tiene (las puso
- * después), puestas encima de los lotes: así un número recién escrito no se borra al
- * recargar los lotes mientras se vuelve a leer el plano.
+ * Las semillas (y las uniones) de la loteadora que el último digitalizado todavía no tiene
+ * (las puso después), puestas encima de los lotes: así un número recién escrito, o una
+ * parte recién unida, no se borra al recargar los lotes mientras se vuelve a leer el plano.
  */
-export function conSemillas(rasgos, semillas) {
+export function conSemillas(rasgos, semillas, uniones = []) {
   let salida = rasgos;
   for (const s of semillas ?? []) {
     const lote = loteEn(salida, s.x, s.y);
     if (lote && claveLote(lote.properties.numero ?? '') !== claveLote(s.numero)) {
       salida = aplicarNumero(salida, s.numero, [s.x, s.y]);
+    }
+  }
+  // Ya con su número (la relectura la fundió con el lote, o ya estaba aplicada): nada.
+  for (const u of uniones ?? []) {
+    const parte = loteEn(salida, u.x, u.y);
+    if (parte && claveLote(parte.properties.numero ?? '') !== claveLote(u.numero)) {
+      salida = aplicarUnion(salida, u.numero, [u.x, u.y]);
     }
   }
   return salida;

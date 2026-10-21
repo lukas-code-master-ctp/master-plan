@@ -72,6 +72,10 @@ Imprime una línea por etapa: la consola muestra la salida en vivo.
                                        resto de la propiedad): un punto dentro de cada una.
                                        No cambia los lotes; solo que la consola no las
                                        cuente como lotes sin número
+      "uniones": [{"numero": "17", "x": 812.0, "y": 455.5}]   partes que la loteadora juntó
+                                       en un lote (el lector lo partió en dos): un punto
+                                       dentro de la parte, que se suma al lote `numero` si
+                                       comparten un borde (`unir_partes`)
     }
 
 Todas las coordenadas van en **píxeles de página**: la imagen que trae el PDF, ya
@@ -92,7 +96,9 @@ cualquier página.
                  "huecos": [[[x, y], ...]], "area_px", "vertices",
                  "origen": "usuario" | "lector",   de dónde salió el número
                  "confianza", "apoyo",             del lector (null si lo marcó ella)
-                 "area_oficial"}],                 m² del cuadro de superficies (o null)
+                 "area_oficial",                   m² del cuadro de superficies (o null)
+                 "partes": [[x, y]]}],             los puntos de las uniones que se le
+                                                   sumaron ([] si ninguna)
                                                    todo en px de página
       "sin_numero": [{"poligono", "area_px",       caras dentro del contorno sin lote
                       "de_lote",                   del tamaño de un lote: un lote cuyo número
@@ -103,6 +109,9 @@ cualquier página.
                                                    que leyó el lector dentro, con menos apoyo
                                                    que `lector_apoyo_min` (no es semilla)
       "faltantes": ["13"],                         semillas de la loteadora sin polígono
+      "uniones_descartadas": ["17"],               lotes con una unión que no se aplicó: la
+                                                   parte ya no lo toca, el punto no cae en una
+                                                   parte o el lote no existe
       "huecos": ["8-03"],                          números que faltan en la numeración, por
                                                    sector (`numeros.huecos`), junto a una cara
                                                    sin número del tamaño de un lote; y los del
@@ -144,7 +153,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from shapely.geometry import Polygon
+from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
 from . import pagina as pag
@@ -161,6 +170,11 @@ AVANCE_LECTOR = "lector-avance"
 
 # Un rótulo leído a menos de esto de una semilla de la loteadora es el que ella corrigió.
 RADIO_CORRECCION_MM = 6.0
+# Dos partes se unen si comparten al menos BORDE_UNION_MM de borde: un vértice en común
+# no basta (el KMZ y el visor llevan un polígono por lote). TOLERANCIA_UNION_MM absorbe
+# las diferencias de coma flotante entre las dos caras al pasarlas a px de página.
+BORDE_UNION_MM = 1.0
+TOLERANCIA_UNION_MM = 0.25
 
 
 @dataclass
@@ -319,6 +333,18 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     r = digitalizar_imagen(imagen, ppmm, semillas, entradas.get("rectangulo"),
                            _mascaras(entradas), entradas.get("esquinas"),
                            entradas.get("marco_mm"), entradas.get("cuadricula"), avance)
+    # Antes de las sugerencias y los huecos: una parte unida ya no es una cara sin número.
+    # `r.lotes_trabajo` queda como salió: de aquí en adelante nadie lo usa.
+    origen = {s["numero"]: s["origen"] for s in combinadas}
+    lotes, sin_numero, sin_numero_lote, partes, descartadas = unir_partes(
+        r.lotes, r.sin_numero, r.sin_numero_lote, origen, entradas["uniones"], ppmm)
+    if partes or descartadas:
+        r.estadisticas.update(lotes=len(lotes), sin_numero=len(sin_numero),
+                              sin_numero_lote=sum(sin_numero_lote))
+        r = replace(r, lotes=lotes, sin_numero=sin_numero, sin_numero_lote=sin_numero_lote)
+        avance("Partes unidas: "
+               + (", ".join(f"{len(p)} al lote {n}" for n, p in partes.items()) or "ninguna")
+               + (f"; no se pudo unir al lote {_lista(descartadas)}" if descartadas else ""))
     detectada = r.cuadricula
     propuesta = (lector or {}).get("cuadricula")
     if detectada is None and cuadricula_suficiente(propuesta):
@@ -356,11 +382,12 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
                     huecos=[_anillo(h) for h in g.interiors], area_px=round(g.area, 1),
                     vertices=len(g.exterior.coords) - 1, origen=posicion[n]["origen"],
                     confianza=posicion[n]["confianza"], apoyo=posicion[n]["apoyo"],
-                    area_oficial=_area_oficial(cuadro, n))
+                    area_oficial=_area_oficial(cuadro, n), partes=partes.get(n, []))
                for n, g in r.lotes.items()],
         sin_numero=[dict(poligono=_anillo(g.exterior), area_px=round(g.area, 1), de_lote=es, sugerencia=sug)
                     for g, es, sug in zip(r.sin_numero, r.sin_numero_lote, sugerencias)],
         faltantes=faltantes,
+        uniones_descartadas=descartadas,
         huecos=huecos,
         cuadricula=detectada,
         lector=_resumen_lector(lector, entradas, de_lector, sin_poligono),
@@ -372,6 +399,60 @@ def digitalizar(carpeta: Path, avance=print) -> dict:
     shutil.rmtree(carpeta / AVANCE_LECTOR, ignore_errors=True)
     avance(f"Listo: {carpeta / SALIDA}")
     return datos
+
+
+def unir_partes(lotes: dict[str, Polygon], sin_numero: list[Polygon], sin_numero_lote: list[bool],
+                origen: dict[str, str], uniones: list[dict], ppmm: float):
+    """Suma a su lote las partes que la loteadora juntó (`entradas.uniones`), en px de
+    página. Cada unión, en orden, toma la cara que contiene su punto: una cara sin número
+    o un lote cuyo número leyó el lector (nunca uno que marcó ella: ese número manda). Se
+    une si el lote `numero` existe y comparten un borde de `BORDE_UNION_MM`; se compara
+    con el lote como va quedando, así una parte que solo toca a otra ya unida también
+    entra.
+
+    No toca lo que recibe. Devuelve (lotes, sin_numero, sin_numero_lote, partes,
+    descartadas): `partes` = {numero del lote: [[x, y], ...]} con los puntos de las
+    uniones aplicadas y `descartadas` los números (sin repetir) de las que no."""
+    lotes, sin_numero, sin_numero_lote = dict(lotes), list(sin_numero), list(sin_numero_lote)
+    tol, borde = TOLERANCIA_UNION_MM * ppmm, BORDE_UNION_MM * ppmm
+    partes: dict[str, list[list[float]]] = {}
+    descartadas: list[str] = []
+    por_clave = lambda numero: next((n for n in lotes if numeros_lote.clave(n) == numeros_lote.clave(numero)), None)
+    for u in uniones:
+        punto = Point(u["x"], u["y"])
+        destino = por_clave(u["numero"])
+        if destino is not None and lotes[destino].contains(punto):
+            # El lector ya la dejó dentro del lote: no hay nada que unir ni que avisar.
+            continue
+        cara = i = ajeno = None
+        if destino is not None:
+            i = next((k for k, c in enumerate(sin_numero) if c.contains(punto)), None)
+            if i is not None:
+                cara = sin_numero[i]
+            else:
+                ajeno = next((n for n, g in lotes.items() if g.contains(punto)), None)
+                if ajeno is not None and origen.get(ajeno) == "lector":
+                    cara = lotes[ajeno]
+        unido = None
+        if cara is not None and lotes[destino].buffer(tol).intersection(cara.boundary).length >= borde:
+            unido = unary_union([lotes[destino], cara])
+            if unido.geom_type != "Polygon":
+                # Las dos caras salen de la misma red, pero al pasar a px de página sus
+                # bordes pueden quedar a una fracción de px: se cierra la rendija.
+                unido = unido.buffer(tol, join_style="mitre").buffer(-tol, join_style="mitre")
+            if unido.geom_type != "Polygon" or unido.is_empty:
+                unido = None
+        if unido is None:
+            if str(u["numero"]) not in descartadas:
+                descartadas.append(str(u["numero"]))
+            continue
+        lotes[destino] = unido
+        if i is not None:
+            del sin_numero[i], sin_numero_lote[i]
+        else:
+            del lotes[ajeno]
+        partes.setdefault(destino, []).append([u["x"], u["y"]])
+    return lotes, sin_numero, sin_numero_lote, partes, descartadas
 
 
 def _area_oficial(cuadro: dict, numero: str) -> float | None:
@@ -655,6 +736,15 @@ def leer_entradas(carpeta: Path) -> dict:
     if not isinstance(fuera, list):
         raise ValueError(f"«fuera» es una lista de puntos [[x, y]], no {fuera!r}")
     salida["fuera"] = [numeros(f, 2, "fuera[]") for f in fuera]
+    uniones = e.get("uniones") or []
+    if not isinstance(uniones, list):
+        raise ValueError(f"«uniones» es una lista de {{\"numero\", \"x\", \"y\"}}, no {uniones!r}")
+    salida["uniones"] = []
+    for u in uniones:
+        if not isinstance(u, dict) or u.get("numero") in (None, ""):
+            raise ValueError(f"cada unión lleva «numero», «x» e «y»: {u!r}")
+        x, y = numeros([u.get("x"), u.get("y")], 2, f"unión al lote {u['numero']}: x, y")
+        salida["uniones"].append(dict(numero=str(u["numero"]), x=x, y=y))
     ajuste = e.get("ajuste") or {}
     if not isinstance(ajuste, dict):
         raise ValueError(f"«ajuste» es {{\"de\": metros, \"dn\": metros}}, no {ajuste!r}")
