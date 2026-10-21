@@ -4,7 +4,8 @@
  * Muestra la página girada según `rotacion` y habla en píxeles de página (ver
  * `kmz_geometria.js`). Quien lo usa pinta encima en `alDibujar` y escucha:
  * - `alTocar(x, y)`: un clic (o toque) sin arrastrar;
- * - `alRectangulo([x0, y0, x1, y1])`: con la herramienta "rectangulo", un arrastre.
+ * - `alRectangulo([x0, y0, x1, y1])`: con la herramienta "rectangulo", un arrastre;
+ * - `alPasar(x, y)`: el mouse pasa por el plano sin apretar (`null, null` al salir).
  *
  * Arrastrar mueve el plano (con la herramienta "rectangulo", dibuja; ahí se mueve
  * con el botón del medio o el derecho, o manteniendo la barra espaciadora). La
@@ -38,6 +39,7 @@ export class LienzoPlano {
     this.alDibujar = () => {};
     this.alTocar = () => {};
     this.alRectangulo = () => {};
+    this.alPasar = () => {};
     this.punteros = new Map();
     this.gesto = null;
     this.espacio = false;
@@ -50,6 +52,7 @@ export class LienzoPlano {
     canvas.addEventListener('pointermove', (e) => this.mover(e));
     canvas.addEventListener('pointerup', (e) => this.subir(e));
     canvas.addEventListener('pointercancel', (e) => this.soltar(e));
+    canvas.addEventListener('pointerleave', () => this.alPasar(null, null));
     canvas.addEventListener('wheel', (e) => this.rueda(e), { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('keydown', (e) => this.tecla(e));
@@ -237,6 +240,7 @@ export class LienzoPlano {
   }
 
   mover(e) {
+    if (!this.punteros.size && e.pointerType === 'mouse') this.alPasar(...aPagina(this.vista, ...this.posicion(e)));
     if (!this.punteros.has(e.pointerId) || !this.gesto) return;
     const p = this.posicion(e);
     this.punteros.set(e.pointerId, p);

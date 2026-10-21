@@ -11,8 +11,13 @@ Tres caminos:
   giro y traslación) por mínimos cuadrados, con residuo por ancla y marca de las
   atípicas.
 - **Un punto** (`por_punto`): la coordenada que tiene la loteadora y el punto del plano
-  donde cae. La escala sale del cuadro de superficies (`escala_del_cuadro`) o de la
-  escala impresa (1:N), y el giro lo elige ella mirando los lotes sobre el satélite.
+  donde cae. La escala sale de la que ella marcó en el plano (`escala_marcada_m_px`: la
+  barra de escala o la 1:N), si no del cuadro de superficies (`escala_del_cuadro`), si no
+  de la 1:N vieja de `ubicacion.escala_impresa`; el giro lo elige ella mirando los lotes
+  sobre el satélite.
+
+Con `entradas.metodo` ("puntos", "punto" o "cuadricula") se usa solo ese camino; sin él,
+la cuadrícula si sirve, si no 2 o más anclas, si no el punto.
 
 Más una traslación de ajuste fino (`ajuste_fino`), en metros.
 
@@ -28,7 +33,8 @@ superficies (`ajustar_escala`): los puntos dan la posición y el giro, el cuadro
 `<carpeta>/georreferencia.json`: `Transformacion.a_dict()` más `datum` (la comparación
 WGS84/PSAD56, si hubo cuadrícula y anclas). `<carpeta>/lotes.geojson`: los lotes en
 lon/lat, para el mapa de la consola. Las claves de entrada (`anclas`, `cuadricula`,
-`ubicacion`, `ajuste`, `escala_cuadro`) están en `pipeline/plano/digitalizar.py`.
+`ubicacion`, `metodo`, `escala`, `ajuste`, `escala_cuadro`) están en
+`pipeline/plano/digitalizar.py`.
 """
 from __future__ import annotations
 
@@ -399,31 +405,63 @@ def por_punto(ubicacion: dict, escala_m_px: float, homografia=None, epsg: int | 
     return Transformacion("punto", "similitud", epsg, s @ h, parametros)
 
 
-def _por_ubicacion(ubicacion: dict, digitalizado: dict, avance) -> Transformacion:
-    """`por_punto` con la escala del cuadro de superficies o, si no hay cuadro, la impresa."""
+def escala_marcada_m_px(escala: dict, trabajo: dict) -> float:
+    """m por px de trabajo de la escala que marcó la loteadora (`entradas.escala`).
+
+    La línea va en px de página: sus extremos se pasan por la homografía página →
+    trabajo y se mide ahí, donde el plano está enderezado (en un recorte, la página →
+    trabajo es una escala y una traslación; en una foto, una proyectiva, y en la página
+    un px no mide lo mismo en todas partes)."""
+    if escala.get("impresa"):
+        if not trabajo.get("ppmm"):
+            raise ValueError("lee el plano de nuevo: falta su resolución para usar la escala 1:N")
+        return escala_impresa_m_px(escala["impresa"], trabajo["ppmm"])
+    p, q = _aplicar(_homografia(trabajo.get("homografia")), [escala["p"], escala["q"]])
+    largo = float(np.hypot(*(q - p)))
+    if not (math.isfinite(largo) and largo > 0):
+        raise ValueError("la escala marcada no sirve: márcala de nuevo en el paso Marcar")
+    return float(escala["metros"]) / largo
+
+
+def _de_donde(origen: str, ubicacion: dict, escala: dict | None) -> str:
+    """De dónde salió el tamaño, en palabras de la loteadora."""
+    miles = lambda n: f"{int(n):,}".replace(",", ".")
+    if origen == "marcada":
+        if escala.get("impresa"):
+            return f"de la escala que marcaste (1:{miles(escala['impresa'])})"
+        metros = f"{float(escala['metros']):g}".replace(".", ",")
+        return f"de la escala que marcaste ({metros} m)"
+    if origen == "cuadro":
+        return "del cuadro de superficies"
+    return f"de la escala del plano (1:{miles(ubicacion['escala_impresa'])})"
+
+
+def _por_ubicacion(ubicacion: dict, digitalizado: dict, avance, escala: dict | None = None) -> Transformacion:
+    """`por_punto` con la escala marcada (`entradas.escala`) o, si no hay, la del cuadro de
+    superficies o, si tampoco, la 1:N vieja de `ubicacion.escala_impresa`. La marcada
+    manda sobre el cuadro: ella la eligió, y así el cuadro queda para comprobarla."""
     trabajo = digitalizado.get("trabajo") or {}
     # Siempre la homografía completa: la escala está en px de trabajo (también en un
     # recorte, que es una escala y una traslación de la página).
     homografia = trabajo.get("homografia")
-    escala = escala_del_cuadro(digitalizado)
-    origen = "cuadro"
-    if escala is None and ubicacion.get("escala_impresa"):
+    m_px, origen = None, None
+    if escala:
+        m_px, origen = escala_marcada_m_px(escala, trabajo), "marcada"
+    if m_px is None:
+        m_px, origen = escala_del_cuadro(digitalizado), "cuadro"
+    if m_px is None and ubicacion.get("escala_impresa"):
         if not trabajo.get("ppmm"):
             raise ValueError("lee el plano de nuevo: falta su resolución para usar la escala impresa")
-        escala, origen = escala_impresa_m_px(ubicacion["escala_impresa"], trabajo["ppmm"]), "escala_impresa"
-    if escala is None:
-        raise ValueError("Para ubicar con tu coordenada hace falta el cuadro de superficies o la escala del"
-                         " plano (por ejemplo 1:5.000). Si no la tienes, marca puntos.")
-    t = por_punto(ubicacion, escala, homografia)
+        m_px, origen = escala_impresa_m_px(ubicacion["escala_impresa"], trabajo["ppmm"]), "escala_impresa"
+    if m_px is None:
+        raise ValueError("Para ubicar con un punto hace falta la escala del plano: márcala en el paso Marcar"
+                         " (la barra de escala o la escala 1:N). Si no la tienes, ubica con varios puntos.")
+    t = por_punto(ubicacion, m_px, homografia)
     t.parametros["origen_escala"] = origen
-    if origen == "cuadro":
-        de_donde = "del cuadro de superficies"
-    else:
-        de_donde = f"de la escala del plano (1:{int(ubicacion['escala_impresa']):,})".replace(",", ".")
-    t.avisos.append(f"Ubicado con tu coordenada: el tamaño sale {de_donde}. Si los lotes no calzan con"
-                    " los caminos, gira el plano o afina con puntos.")
+    t.avisos.append(f"Ubicado con tu coordenada: el tamaño sale {_de_donde(origen, ubicacion, escala)}."
+                    " Si los lotes no calzan con los caminos, gira el plano o ubica con varios puntos.")
     avance(f"Punto: ({float(ubicacion['x']):.1f}, {float(ubicacion['y']):.1f}) px → ({float(ubicacion['lon']):.6f},"
-           f" {float(ubicacion['lat']):.6f}), {escala:.4f} m/px ({origen}), giro {t.parametros['giro_grados']:.2f}°,"
+           f" {float(ubicacion['lat']):.6f}), {m_px:.4f} m/px ({origen}), giro {t.parametros['giro_grados']:.2f}°,"
            f" EPSG:{t.epsg}")
     return t
 
@@ -672,7 +710,7 @@ def _aviso_escala(escala: dict, metodo: str) -> str:
     revisar = ("Revisa los puntos: márcalos en lugares que se vean igual en el plano y en la imagen"
                " (esquinas de deslinde, cruces de caminos), lo más separados posible."
                if metodo == "anclas" else
-               "Revisa la escala que escribiste o afina con puntos." if metodo == "punto" else
+               "Revisa la escala que marcaste o ubica con varios puntos." if metodo == "punto" else
                "Revisa los valores de la cuadrícula.")
     return (f"Los lotes salen un {coma(area)} % {'más chicos' if area < 0 else 'más grandes'} que en el"
             f" cuadro de superficies (sus lados, un {coma(factor)} % {'más cortos' if factor < 0 else 'más largos'})."
@@ -710,6 +748,47 @@ def _marcas(entradas: dict, detectada: dict | None, avisos: list) -> dict:
     return {f: list(entradas.get(f) or []) for f in familias}
 
 
+def _con_cuadricula(entradas: dict, digitalizado: dict, homografia, avisos: list, avance):
+    """(t, datum, error) con la cuadrícula impresa y sus valores; t None si no hay valores
+    o si no sirve (el error dice por qué). Las anclas, si hay, solo la comprueban (datum)."""
+    anclas = entradas.get("anclas") or []
+    cuadricula = entradas.get("cuadricula") or {}
+    marcas = _marcas(cuadricula, digitalizado.get("cuadricula"), avisos)
+    if not (cuadricula and any(m.get("valor") is not None for f in ("verticales", "horizontales")
+                               for m in marcas.get(f) or [])):
+        return None, None, ""
+    u = entradas.get("ubicacion")
+    epsg = cuadricula.get("epsg") or (huso(np.mean([a["lon"] for a in anclas]), np.mean([a["lat"] for a in anclas]))
+                                      if anclas else huso(float(u["lon"]), float(u["lat"]))
+                                      if ubicacion_completa(u) else 32719)
+    zona_de(epsg)           # un EPSG que no es UTM WGS84 ni PSAD56 es un error de la entrada
+    try:
+        t = por_cuadricula(marcas, epsg, homografia)
+    except ValueError as e:
+        # El aviso dice con qué se ubicó en su lugar: se escribe cuando se sabe.
+        avance(f"Cuadrícula: no sirve ({e})")
+        return None, None, str(e)
+    p = t.parametros
+    avance(f"Cuadrícula: {p['n_lineas']} líneas, {p['n_puntos']} puntos, residuo {p['rms_m']:.2f} m"
+           f" (máx. {p['maximo_m']:.2f} m), giro {p['rotacion_grados']:.3f}°, EPSG:{t.epsg}")
+    datum = None
+    if anclas:
+        datum = comparar_datum(t, anclas)
+        for c in datum["candidatos"][:3]:
+            avance(f"Datum {c['datum']} {c['huso']}: anclas a {c['distancia_rms_m']:.1f} m de la cuadrícula")
+        if datum["elegido"] != t.epsg and datum["concluyente"] and not cuadricula.get("epsg"):
+            t = t.con_epsg(datum["elegido"])
+            t.avisos.append(f"Según los puntos, la cuadrícula impresa está en {datum['datum']} huso"
+                            f" {datum['huso']}: se ubicó con ese sistema.")
+        elif not datum["concluyente"]:
+            t.avisos.append("Con estos puntos no se sabe en qué sistema está impresa la cuadrícula:"
+                            " revisa los puntos o suma otro.")
+    elif not cuadricula.get("epsg"):
+        t.avisos.append("Sin puntos no se comprueba que la cuadrícula calce con el mapa:"
+                        " puedes sumar puntos para comprobarlo.")
+    return t, datum, ""
+
+
 def georreferenciar(carpeta: Path, avance=print) -> Transformacion:
     from .digitalizar import SALIDA as DIGITALIZADO, escribir_json, leer_entradas
     from .salida import geojson
@@ -725,49 +804,32 @@ def georreferenciar(carpeta: Path, avance=print) -> Transformacion:
     # escala y una traslación, que la similitud absorbe igual.
     homografia = trabajo.get("homografia") if trabajo.get("modo") == "perspectiva" else None
     anclas = entradas.get("anclas") or []
-    cuadricula = entradas.get("cuadricula") or {}
+    ubicacion = entradas.get("ubicacion")
+    # Con el método elegido se usa solo ese, y si le falta algo se dice qué; sin él (los
+    # KMZ de antes), la precedencia de siempre: cuadrícula > 2 puntos > un punto.
+    metodo = entradas.get("metodo")
     avisos = []
 
     t = None
     datum = None
     error_cuadricula = ""
-    marcas = _marcas(cuadricula, digitalizado.get("cuadricula"), avisos)
-    if cuadricula and any(m.get("valor") is not None for f in ("verticales", "horizontales")
-                          for m in marcas.get(f) or []):
-        u = entradas.get("ubicacion")
-        epsg = cuadricula.get("epsg") or (huso(np.mean([a["lon"] for a in anclas]), np.mean([a["lat"] for a in anclas]))
-                                          if anclas else huso(float(u["lon"]), float(u["lat"]))
-                                          if ubicacion_completa(u) else 32719)
-        zona_de(epsg)           # un EPSG que no es UTM WGS84 ni PSAD56 es un error de la entrada
+    if metodo in (None, "cuadricula"):
+        t, datum, error_cuadricula = _con_cuadricula(entradas, digitalizado, homografia, avisos, avance)
+        if metodo == "cuadricula" and t is None:
+            if error_cuadricula:
+                raise ValueError(f"La cuadrícula no sirve para ubicar ({error_cuadricula}): revisa sus valores"
+                                 " o elige otro método.")
+            raise ValueError("Para ubicar con la cuadrícula hacen falta los valores impresos de sus líneas:"
+                             " escríbelos o elige otro método.")
+    if metodo == "punto" and not ubicacion_completa(ubicacion):
+        raise ValueError("Para ubicar con un punto hace falta tu coordenada y dónde cae en el plano:"
+                         " pégala, aprieta Ir y haz clic en el plano.")
+    if metodo == "puntos" and len(anclas) < 2:
+        raise ValueError("Para ubicar con varios puntos hacen falta al menos 2: marca otro en el plano y en el mapa.")
+    if metodo == "punto" or metodo is None and t is None and len(anclas) < 2 and ubicacion_completa(ubicacion):
+        # Sin método, los puntos (2 o más) mandan sobre la coordenada.
         try:
-            t = por_cuadricula(marcas, epsg, homografia)
-        except ValueError as e:
-            # El aviso dice con qué se ubicó en su lugar: se escribe cuando se sabe.
-            error_cuadricula = str(e)
-            avance(f"Cuadrícula: no sirve ({e})")
-        else:
-            p = t.parametros
-            avance(f"Cuadrícula: {p['n_lineas']} líneas, {p['n_puntos']} puntos, residuo {p['rms_m']:.2f} m"
-                   f" (máx. {p['maximo_m']:.2f} m), giro {p['rotacion_grados']:.3f}°, EPSG:{t.epsg}")
-            if anclas:
-                datum = comparar_datum(t, anclas)
-                for c in datum["candidatos"][:3]:
-                    avance(f"Datum {c['datum']} {c['huso']}: anclas a {c['distancia_rms_m']:.1f} m de la cuadrícula")
-                if datum["elegido"] != t.epsg and datum["concluyente"] and not cuadricula.get("epsg"):
-                    t = t.con_epsg(datum["elegido"])
-                    t.avisos.append(f"Según los puntos, la cuadrícula impresa está en {datum['datum']} huso"
-                                    f" {datum['huso']}: se ubicó con ese sistema.")
-                elif not datum["concluyente"]:
-                    t.avisos.append("Con estos puntos no se sabe en qué sistema está impresa la cuadrícula:"
-                                    " revisa los puntos o suma otro.")
-            elif not cuadricula.get("epsg"):
-                t.avisos.append("Sin puntos no se comprueba que la cuadrícula calce con el mapa:"
-                                " puedes sumar puntos para comprobarlo.")
-    ubicacion = entradas.get("ubicacion")
-    if t is None and len(anclas) < 2 and ubicacion_completa(ubicacion):
-        # Los puntos (2 o más) mandan sobre la coordenada: son "Afinar con puntos".
-        try:
-            t = _por_ubicacion(ubicacion, digitalizado, avance)
+            t = _por_ubicacion(ubicacion, digitalizado, avance, entradas.get("escala"))
         except ValueError as e:
             # Sin escala tampoco sirve la coordenada: que no se pierda por qué no sirvió la cuadrícula.
             if error_cuadricula:

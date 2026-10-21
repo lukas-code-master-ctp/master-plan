@@ -88,6 +88,10 @@ export function girarEntradas(entradas, de, a, ancho, alto) {
     fuera: (entradas.fuera ?? []).map(punto),
   };
   if (entradas.cuadro) salida.cuadro = caja(entradas.cuadro);
+  // La línea de la escala gira con el dibujo; la 1:N no tiene dónde girar.
+  if (entradas.escala?.p && entradas.escala?.q) {
+    salida.escala = { ...entradas.escala, p: punto(entradas.escala.p), q: punto(entradas.escala.q) };
+  }
   // Solo si las hay: unas entradas sin uniones quedan iguales (y su huella también).
   if (entradas.uniones) salida.uniones = entradas.uniones.map(conXY);
   if (entradas.ubicacion) {
@@ -206,6 +210,20 @@ export function siguienteNombre(usados) {
     } while (n >= 0);
     if (!tomados.has(nombre)) return nombre;
   }
+}
+
+// Desde Ubicar se marcan a lo más 4 puntos: con 2 ya se ubica y con 4 se nota el que quedó mal.
+const LETRAS = ['A', 'B', 'C', 'D'];
+
+/**
+ * La letra del punto que se puede añadir desde Ubicar: la primera de A..D libre, o null
+ * con 4 puntos ya puestos (aunque los de un KMZ viejo se llamen de otra forma).
+ */
+export function siguienteLetra(anclas) {
+  const lista = anclas ?? [];
+  if (lista.length >= LETRAS.length) return null;
+  const letra = siguienteNombre(lista.map((a) => a.nombre));
+  return LETRAS.includes(letra) ? letra : null;
 }
 
 const decima = (v) => Math.round(v * 10) / 10;
@@ -1016,13 +1034,120 @@ export function ubicacionCompleta(u) {
   return Boolean(u) && ['x', 'y', 'lon', 'lat'].every((k) => Number.isFinite(u[k]));
 }
 
+export const METODOS = ['puntos', 'punto', 'cuadricula'];
+
+/** Cómo se llama cada método en pantalla ("Método: Un punto y girar"). */
+export const NOMBRES_METODO = { puntos: 'Varios puntos', punto: 'Un punto y girar', cuadricula: 'Cuadrícula impresa' };
+
 /**
- * ¿Hay con qué ubicar? La cuadrícula elegida, 2 o más puntos, o la coordenada con su
- * punto en el plano (lo mismo que prueba `georreferenciar` en el servidor).
+ * Las tarjetas de Ubicar, en orden. La cuadrícula solo si el lector la propuso (y sirve)
+ * o ya está elegida: sin ella no hay con qué ubicar por ese lado.
+ */
+export function metodosOfrecidos({ propuesta = false, elegida = false } = {}) {
+  return METODOS.filter((m) => m !== 'cuadricula' || propuesta || elegida);
+}
+
+/**
+ * A qué va un clic en el plano de Ubicar: `punto` (el de la coordenada, con "un punto" y
+ * esperándolo), `ancla` (con varios puntos o la cuadrícula, la fila activa ya con su
+ * coordenada: el clic la completa) o `nada` (sin método en pantalla, o sin esperar el
+ * clic: un toque para desplazar en el celular no mueve lo ya puesto).
+ */
+export function destinoDelClic(metodo, { marcandoPunto = false, esperaPlano = false } = {}) {
+  if (metodo === 'punto') return marcandoPunto ? 'punto' : 'nada';
+  if (metodo === 'puntos' || metodo === 'cuadricula') return esperaPlano ? 'ancla' : 'nada';
+  return 'nada';
+}
+
+/**
+ * Lo que se dice tras un clic en el plano que no marca nada (`destinoDelClic` = nada).
+ * `puntos`: el `estadoDePuntos` vigente, con varios puntos o la cuadrícula.
+ */
+export function textoClicSuelto(metodo, ubicacion = null, puntos = null) {
+  if (metodo === 'puntos' || metodo === 'cuadricula') {
+    const activa = puntos?.activa;
+    if (activa) return `Primero pega la coordenada de ${activa.nombre} y aprieta "Ir", o haz clic en ese punto del mapa.`;
+    if (puntos?.anadir) return `Para marcar otro punto, aprieta "Añadir ${puntos.anadir}".`;
+    return 'Para cambiar un punto, aprieta "Rehacer" en su fila.';
+  }
+  if (metodo !== 'punto') return 'Primero elige cómo ubicar el plano.';
+  if (!(Number.isFinite(ubicacion?.lon) && Number.isFinite(ubicacion?.lat))) return 'Primero pega tu coordenada y aprieta "Ir".';
+  if (Number.isFinite(ubicacion?.x) && Number.isFinite(ubicacion?.y)) return 'Para cambiar tu punto, aprieta "Mover el punto".';
+  return 'Para poner tu punto, aprieta "Marcar el punto en el plano".';
+}
+
+/**
+ * El método con que se entra a Ubicar: el elegido (`entradas.metodo`) o, en un KMZ de
+ * antes de elegirlo, el que se deduce de lo que ya tiene (cuadrícula elegida, 2 o más
+ * puntos, la coordenada con su punto). null: nada aún, se muestran las tarjetas. La
+ * cuadrícula elegida sin cuadrícula que proponer ni elegida tampoco tiene pantalla: a
+ * las tarjetas también.
+ */
+export function metodoAlEntrar(entradas, hayPropuestaCuadricula = false) {
+  const metodo = entradas?.metodo;
+  if (metodo === 'cuadricula' && !hayPropuestaCuadricula && !entradas?.cuadricula) return null;
+  if (METODOS.includes(metodo)) return metodo;
+  return metodoDeducido(entradas);
+}
+
+/** Lo que usa el servidor sin `metodo`: cuadrícula > 2 puntos > la coordenada con su punto. */
+function metodoDeducido(entradas) {
+  if (entradas?.cuadricula) return 'cuadricula';
+  if ((entradas?.anclas?.length ?? 0) >= 2) return 'puntos';
+  if (ubicacionCompleta(entradas?.ubicacion)) return 'punto';
+  return null;
+}
+
+/**
+ * El método con que ubicaría el servidor ahora: el elegido o, sin elegir, el de la
+ * precedencia de siempre. null si no hay con qué.
+ */
+export function metodoVigente(entradas) {
+  return METODOS.includes(entradas?.metodo) ? entradas.metodo : metodoDeducido(entradas);
+}
+
+/**
+ * ¿Elegir la tarjeta `metodo` cambia algo en el servidor? En un KMZ de antes (sin
+ * `entradas.metodo`) elegir el método que ya se deducía no se guarda: `metodo` entra en la
+ * huella de ubicar y lo ya ubicado quedaría atrasado sin que cambie nada. Se guarda con el
+ * primer cambio de verdad (`conMetodo` en kmz.js).
+ */
+export function cambiaElMetodo(entradas, metodo) {
+  return metodo !== metodoVigente(entradas);
+}
+
+/**
+ * Los avisos de lo ubicado como se muestran bajo su resumen. Con un punto, el del servidor
+ * empieza repitiendo el resumen ("Ubicado con tu coordenada: el tamaño sale…"): se deja
+ * desde el tamaño.
+ */
+export function avisosDeUbicacion(g) {
+  const prefijo = 'Ubicado con tu coordenada: ';
+  return (g?.avisos ?? []).map((texto) => (g.metodo === 'punto' && texto.startsWith(prefijo)
+    ? texto.charAt(prefijo.length).toUpperCase() + texto.slice(prefijo.length + 1)
+    : texto));
+}
+
+/**
+ * ¿Se muestra la nota "Tamaño: de …" bajo el giro? Solo mientras no la dice ya lo ubicado
+ * con un punto y al día (su aviso dice de dónde sale el tamaño): sin ubicación, o atrasada,
+ * es la única que lo dice.
+ */
+export function notaDeEscalaVisible(g) {
+  return !(g?.vigente && g.metodo === 'punto');
+}
+
+/**
+ * ¿Hay con qué ubicar? Con el método elegido, lo que ese método pide (lo mismo que
+ * prueba `georreferenciar` en el servidor); sin él, cualquiera de los tres.
  */
 export function puedeUbicar(entradas) {
-  return Boolean(entradas?.cuadricula) || (entradas?.anclas?.length ?? 0) >= 2
-    || ubicacionCompleta(entradas?.ubicacion);
+  switch (entradas?.metodo) {
+    case 'cuadricula': return Boolean(entradas.cuadricula);
+    case 'puntos': return (entradas.anclas?.length ?? 0) >= 2;
+    case 'punto': return ubicacionCompleta(entradas.ubicacion);
+    default: return metodoDeducido(entradas) != null;
+  }
 }
 
 /**
@@ -1065,13 +1190,11 @@ export function porQueNoSigue(paso, e, local = {}) {
       // Mientras se ubica (o está por ubicarse tras girar o mover) lo ubicado ya no es lo que se ve.
       if (e?.georreferencia?.vigente && !local.ubicando) return '';
       if (d && !d.vigente) return 'Cambiaste el plano: abre "Revisar los números" para que se lea de nuevo.';
-      if (!puedeUbicar(local.entradas)) {
-        return 'Pega tu coordenada y haz clic en ese punto del plano, o marca 2 puntos en "Afinar con puntos".';
-      }
-      // Con solo la coordenada, el tamaño sale del cuadro de superficies o de la escala impresa.
-      const soloCoordenada = !local.entradas?.cuadricula && (local.entradas?.anclas?.length ?? 0) < 2;
-      if (soloCoordenada && d?.escala_m_px == null && !local.entradas?.ubicacion?.escala_impresa) {
-        return 'Para ubicar con tu coordenada falta la escala del plano (por ejemplo 1:5.000), o marca puntos.';
+      if (!puedeUbicar(local.entradas)) return faltaParaUbicar(local.entradas);
+      // Con la coordenada, el tamaño sale de la escala marcada, del cuadro de superficies
+      // o de la 1:N vieja: sin ninguna, el servidor no puede ubicar.
+      if (usaUbicacion(local.entradas) && !escalaDeUbicacion(d, local.entradas.ubicacion, local.entradas.escala)) {
+        return 'Falta la escala del plano: márcala en el paso Marcar, o ubica con varios puntos.';
       }
       return local.ubicando ? 'Ubicando el plano…' : 'Aprieta "Ubicar de nuevo" para ubicar los lotes.';
     }
@@ -1079,6 +1202,23 @@ export function porQueNoSigue(paso, e, local = {}) {
       return local.duplicados ? 'Hay números repetidos: corrígelos en "Revisar los números".' : '';
     default:
       return '';
+  }
+}
+
+/** Qué le falta al método elegido para ubicar (o a cualquiera, sin método). */
+function faltaParaUbicar(entradas) {
+  switch (entradas?.metodo) {
+    case 'cuadricula': return 'Para ubicar con la cuadrícula, elige la que encontramos en el plano.';
+    case 'puntos': {
+      // Cuenta lo guardado: un punto que se rehace sigue valiendo hasta que se reemplaza.
+      const n = entradas.anclas?.length ?? 0;
+      const como = 'pega su coordenada, aprieta "Ir" y haz clic en ese punto del plano.';
+      return n ? `Falta otro punto para ubicar con varios puntos: ${como}`
+        : `Para ubicar con varios puntos hacen falta al menos 2. Parte por A: ${como}`;
+    }
+    case 'punto': return 'Pega tu coordenada, aprieta Ir y haz clic en ese punto del plano.';
+    // Sin método ni con qué deducirlo, Ubicar muestra las tarjetas.
+    default: return 'Elige cómo ubicar el plano.';
   }
 }
 
@@ -1371,51 +1511,99 @@ export function paginaALonLat(t, x, y, ajuste = null) {
 }
 
 /**
- * La escala (m por px de trabajo) con que se ubica con un punto: la del cuadro de
- * superficies o, sin cuadro, la impresa (1:N son N/1000/ppmm m por px). null si no hay.
+ * m por px de trabajo de la escala marcada en Marcar (`entradas.escala`), como
+ * `escala_marcada_m_px` del servidor: la línea va en px de página y se mide después de
+ * pasar sus extremos por la homografía página → trabajo (en una foto enderezada un px de
+ * la página no mide lo mismo en todas partes); la 1:N son N/1000/ppmm m por px. null si
+ * no sirve (sin ppmm, o una línea sin largo).
  */
-export function escalaDeUbicacion(digitalizado, ubicacion) {
+export function escalaMarcadaMPx(escala, homografia, ppmm) {
+  if (!escala) return null;
+  if (escala.impresa) return ppmm ? escala.impresa / 1000 / ppmm : null;
+  if (!escala.p || !escala.q || !(escala.metros > 0)) return null;
+  const [px, py] = aplicarHomografia(homografia, ...escala.p);
+  const [qx, qy] = aplicarHomografia(homografia, ...escala.q);
+  const largo = Math.hypot(qx - px, qy - py);
+  return Number.isFinite(largo) && largo > 0 ? escala.metros / largo : null;
+}
+
+/**
+ * La escala (m por px de trabajo) con que se ubica con un punto, con la precedencia del
+ * servidor: la marcada en Marcar (`escala`, la de `entradas`) > la del cuadro de
+ * superficies > la 1:N vieja de `ubicacion.escala_impresa`. null si no hay. La marcada
+ * manda: ella la eligió, y así el cuadro queda para comprobarla.
+ */
+export function escalaDeUbicacion(digitalizado, ubicacion, escala = null) {
+  const ppmm = digitalizado?.ppmm;
+  // Como el servidor: si hay escala marcada se usa esa o ninguna (no cae al cuadro).
+  if (escala) return escalaMarcadaMPx(escala, digitalizado?.homografia, ppmm);
   if (Number.isFinite(digitalizado?.escala_m_px) && digitalizado.escala_m_px > 0) return digitalizado.escala_m_px;
   const n = ubicacion?.escala_impresa;
-  const ppmm = digitalizado?.ppmm;
   return n && ppmm ? n / 1000 / ppmm : null;
 }
 
 /**
- * ¿"Afinar con puntos" se abre sola? Cuando ya hay puntos (o un punto a medias o por
- * rehacer) o la cuadrícula elegida, que también vive ahí: si no, lo que manda quedaría
- * escondido.
+ * Las filas de "varios puntos" (y las de comprobar la cuadrícula): una por ancla, en su
+ * orden, y la activa, la que se está marcando. `pendiente` es la fila a medias de kmz.js:
+ * `{nombre}` espera su coordenada y `{nombre, lat, lon}` espera el clic en el plano. Sin
+ * puntos la fila A ya está activa (se parte por ahí). Con una fila activa no se ofrece
+ * otra: "Añadir X" vuelve cuando se termina o se cancela, hasta D (`siguienteLetra`).
  */
-export function afinarAbierta(entradas, { pendiente = null, rehacer = null } = {}) {
-  return (entradas?.anclas?.length ?? 0) > 0 || Boolean(entradas?.cuadricula) || Boolean(pendiente || rehacer);
+export function estadoDePuntos(anclas, pendiente = null) {
+  const lista = anclas ?? [];
+  const activa = pendiente ?? (lista.length ? null : { nombre: siguienteLetra(lista) });
+  const rehace = Boolean(activa) && lista.some((a) => a.nombre === activa.nombre);
+  const filas = lista.map((a) => ({ nombre: a.nombre, ancla: a, activa: a.nombre === activa?.nombre }));
+  if (activa && !rehace) filas.push({ nombre: activa.nombre, ancla: null, activa: true });
+  const espera = activa && Number.isFinite(activa.lat) && Number.isFinite(activa.lon) ? 'plano' : 'coordenada';
+  return {
+    filas,
+    activa: activa ? { nombre: activa.nombre, espera, rehace } : null,
+    // La fila A de partida no se cancela: no hay nada a medias que deshacer.
+    cancelable: Boolean(pendiente),
+    anadir: activa ? null : siguienteLetra(lista),
+    hechas: lista.length,
+  };
+}
+
+/** El texto guía sobre las filas: con 0 o 1 punto, cuántos hacen falta; con 2, nada. */
+export function guiaDePuntos(n, { cuadricula = false } = {}) {
+  if (cuadricula) return n ? '' : 'Pega la coordenada de un punto que veas en el plano para comprobar que la cuadrícula calza.';
+  return n < 2 ? 'Marca al menos 2 puntos: A y B. C y D sirven para afinar.' : '';
+}
+
+/** Qué pide la fila activa (lo dice también al lector de pantalla). */
+export function textoFilaActiva(activa) {
+  if (!activa) return '';
+  const { nombre, espera, rehace } = activa;
+  if (espera === 'plano') return `Ahora haz clic en el plano donde está ${nombre} (acerca bien).`;
+  if (rehace) return `Corrige la coordenada de ${nombre} si hace falta y aprieta "Ir", o haz clic en ese punto del mapa.`;
+  return `Pega la coordenada de ${nombre} (un punto que veas en el plano: una esquina, un cruce) y aprieta "Ir",`
+    + ' o haz clic en ese punto del mapa.';
+}
+
+/** La coordenada de un punto hecho, abreviada a 5 decimales (~1 m): lo justo para reconocerla. */
+export function coordenadaCorta(lat, lon) {
+  return Number.isFinite(lat) && Number.isFinite(lon) ? `${lat.toFixed(5)}, ${lon.toFixed(5)}` : '';
+}
+
+/** La coordenada de un ancla tal como se precarga en su campo al rehacerla. */
+export function coordenadaDelCampo(lat, lon) {
+  return Number.isFinite(lat) && Number.isFinite(lon) ? `${Number(lat.toFixed(7))}, ${Number(lon.toFixed(7))}` : '';
 }
 
 /**
- * La línea de estado de "Afinar con puntos": qué toca ahora y quién manda. `coordenada`
- * dice si ella ya ubicó con su coordenada (con 2 puntos dejan de mandar su coordenada y
- * el giro: hay que decírselo).
+ * ¿El servidor ubica con la coordenada? Con "un punto" elegido, siempre que esté completa
+ * (aunque haya puntos); con otro método, nunca; sin método, si no hay cuadrícula elegida
+ * ni 2 puntos que manden.
  */
-export function textoPuntos({ n = 0, pendiente = null, rehacer = null, coordenada = false, cuadricula = false } = {}) {
-  if (pendiente) {
-    return `Punto ${pendiente} marcado en el plano. Ahora haz clic en el mismo punto del mapa, `
-      + `o pega sus coordenadas arriba y aprieta "Usar como punto ${pendiente}" (Esc cancela).`;
-  }
-  if (rehacer) return `Marca de nuevo el punto ${rehacer}: primero en el plano, después en el mapa.`;
-  const como = 'Haz clic en un punto del plano (acerca bien) y después en el mismo punto del mapa.';
-  if (cuadricula) {
-    return n ? `${n} ${n === 1 ? 'punto' : 'puntos'} para comprobar la cuadrícula. ${como}`
-      : `Puedes marcar puntos para comprobar que la cuadrícula calza. ${como}`;
-  }
-  const mandan = coordenada ? 'Con 2 o más puntos, ellos mandan sobre tu coordenada.' : 'Con 2 puntos ya se ubica el plano.';
-  if (n === 0) return `${como} ${mandan}`;
-  if (n === 1) return `1 punto. Marca otro: ${mandan.charAt(0).toLowerCase()}${mandan.slice(1)}`;
-  const control = n < 4 ? ' Con 4 se nota si alguno quedó mal marcado.' : '';
-  return `${n} puntos.${coordenada ? ' Con 2 o más puntos, ellos mandan sobre tu coordenada.' : ''}${control}`;
+export function usaUbicacion(entradas) {
+  return metodoVigente(entradas) === 'punto' && ubicacionCompleta(entradas?.ubicacion);
 }
 
-/** ¿El servidor ubica con la coordenada? Sin cuadrícula elegida y sin 2 puntos que manden. */
-export function usaUbicacion(entradas) {
-  return !entradas?.cuadricula && (entradas?.anclas?.length ?? 0) < 2 && ubicacionCompleta(entradas?.ubicacion);
+/** ¿El servidor ubica con los puntos (2 o más)? Lo mismo que `usaUbicacion` para `por_anclas`. */
+export function usaAnclas(entradas) {
+  return metodoVigente(entradas) === 'puntos' && (entradas?.anclas?.length ?? 0) >= 2;
 }
 
 /**
@@ -1468,4 +1656,63 @@ export function cajaGirada(ancho, alto, grados) {
   const r = grados * RAD;
   const [c, s] = [Math.abs(Math.cos(r)), Math.abs(Math.sin(r))];
   return [ancho * c + alto * s, ancho * s + alto * c];
+}
+
+// --- la escala marcada en Marcar ---------------------------------------------------------------
+
+// El largo mínimo de la línea, el mismo de `digitalizar` en el servidor: más corta, un px de
+// error ya es un porcentaje grande de la escala.
+export const ESCALA_LINEA_MIN_PX = 10;
+
+/**
+ * Metros escritos como se escriben aquí: "200", "12,5", "1.000" (punto de miles) o "1.000,5".
+ * Un punto que no separa miles se toma como decimal ("12.5"). null si vacío, NaN si no es un
+ * número mayor que 0.
+ */
+export function leerMetros(texto) {
+  let limpio = String(texto ?? '').replace(/\s/g, '').replace(/m$/i, '');
+  if (!limpio) return null;
+  if (limpio.includes(',')) limpio = limpio.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(limpio)) limpio = limpio.replace(/\./g, '');
+  if (!/^\d+(\.\d+)?$|^\.\d+$/.test(limpio)) return Number.NaN;
+  const n = Number(limpio);
+  return n > 0 ? n : Number.NaN;
+}
+
+/**
+ * La escala de la línea marcada (dos puntos en px de página) y el texto de cuántos metros
+ * mide: `{escala: {p, q, metros}}` o `{error}` con lo que hay que decirle.
+ */
+export function escalaDesdeLinea(p, q, textoMetros) {
+  if (!p || !q || Math.hypot(q[0] - p[0], q[1] - p[1]) < ESCALA_LINEA_MIN_PX) {
+    return { error: 'La línea es muy corta: haz clic en los dos extremos de la barra de escala.' };
+  }
+  const metros = leerMetros(textoMetros);
+  if (metros === null) return { error: 'Escribe cuántos metros mide la barra de escala.' };
+  if (Number.isNaN(metros)) return { error: 'Escribe los metros como un número, por ejemplo 200 o 12,5.' };
+  const r = (v) => Math.round(v * 10) / 10;
+  return { escala: { p: [r(p[0]), r(p[1])], q: [r(q[0]), r(q[1])], metros } };
+}
+
+/** "200 m", "1.500 m", "12,5 m": los metros de la línea, como se leen aquí. */
+export const textoMetros = (m) => `${new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 }).format(m)} m`;
+
+/**
+ * De dónde sale el tamaño con un punto, para la nota bajo el giro (con la precedencia de
+ * `escalaDeUbicacion`). null sin escala: ahí se pide marcarla.
+ */
+export function origenDeEscala(digitalizado, ubicacion, escala = null) {
+  if (!escalaDeUbicacion(digitalizado, ubicacion, escala)) return null;
+  const n = (v) => new Intl.NumberFormat('es-CL').format(v);
+  if (escala?.impresa) return `Tamaño: de la escala que marcaste (1:${n(escala.impresa)})`;
+  if (escala) return `Tamaño: de la escala que marcaste (${textoMetros(escala.metros)})`;
+  if (digitalizado?.escala_m_px > 0) return 'Tamaño: del cuadro de superficies';
+  return `Tamaño: de la escala 1:${n(ubicacion.escala_impresa)} que escribiste`;
+}
+
+/** La fila de lo marcado: "Escala: 200 m" o "Escala 1:1.000"; null sin escala. */
+export function textoEscala(escala) {
+  if (escala?.impresa) return `Escala 1:${new Intl.NumberFormat('es-CL').format(escala.impresa)}`;
+  if (escala?.p && escala?.q && escala.metros > 0) return `Escala: ${textoMetros(escala.metros)}`;
+  return null;
 }

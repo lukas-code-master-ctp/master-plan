@@ -634,7 +634,11 @@ descargar**. Leer el plano y Numerar no tienen pastilla: son parte de Marcar.
    esquinas del marco impreso, para enderezar la perspectiva. Con la herramienta
    **Cuadro de superficies** se encierra el cuadro de áreas del plano, **aunque quede
    fuera del dibujo** (en Caminos de Rapel lo estaba, y no se leía): de ahí salen las
-   áreas oficiales y la lista de números que el plano debería tener.
+   áreas oficiales y la lista de números que el plano debería tener. Con la herramienta
+   **Escala** se marcan con dos clics los extremos de la barra de escala del plano y se
+   escribe cuánto mide ("200" → "Escala: 200 m" en la lista); sin barra, se escribe la
+   escala 1:N. Se guarda en `entradas.escala` y solo la usa Ubicar con un punto: no
+   vuelve a leer el plano.
    - **Leer el plano** (por dentro, `digitalizar`) lo lanza "Seguir" de Marcar, en un
      trabajo de fondo con avance en vivo: la tinta de los deslindes (roja o negra; se
      descartan verde, azul, achurados y cuadrícula), regiones cerradas separadas con los
@@ -712,33 +716,49 @@ página, el paso 1 ofrece **"El loteo está en varias hojas: unirlas"**:
   número anterior o el siguiente es vecino de un lote sin número; si no, suele ser un
   lote que esa lámina no dibuja (Curicó mostraba 10 avisos así; ahora ninguno).
 
-### Ubicar: cuadrícula o anclas
+### Ubicar: el método
 
 La forma sale bien; **lo que mete error es la ubicación**. En las pruebas, con
 cuadrícula impresa el centroide quedó a 1,7 m del real; con anclas de Google Earth,
 a 5–10 m.
 
-- **Cuadrícula impresa (preferida).** Si el plano trae marcas UTM (E-…, N-…), se leen,
-  se descartan las que no siguen la progresión y se ajusta con las intersecciones.
-  WGS84/SIRGAS UTM por defecto; PSAD56 si las anclas lo indican.
-- **Anclas.** Pares de puntos plano ↔ mapa, con zoom grande sobre el plano: esquinas
-  del predio y cruces de caminos. Se ajusta una similitud (escala, giro y traslación)
-  por mínimos cuadrados, con el residuo de cada ancla. **Conviene marcar 4**: con 2 no
-  hay cómo saber cuál está mala, y con 3 o más un ancla atípica (sin ella, su residuo
-  pasa de 3× la mediana de las demás y de 4 m) queda marcada para quitarla o volver a
-  marcarla. Cada ancla de Google Earth se desvía 1–19 m.
-- **Ajuste fino**: un arrastre de los lotes sobre la imagen satelital, para calzar los
-  caminos con los deslindes.
+Ubicar parte preguntando el método, con tarjetas, y guarda la elección en
+`entradas.metodo`. Solo se usa el elegido; **Cambiar de método** vuelve a las tarjetas
+sin borrar lo de los otros.
+
+- **Varios puntos** (`"puntos"`, el más preciso). Una fila por punto, de A a D: se pega
+  la coordenada y **Ir** (o se hace clic en el mapa), y luego un clic en el plano donde
+  está. Con A y B ya ubica; **Añadir** suma C y D para afinar, y cada punto muestra su
+  distancia y estado con **Rehacer** y **Quitar**. Se ajusta una similitud (escala, giro
+  y traslación) por mínimos cuadrados, con el residuo de cada punto. **Conviene marcar
+  4**: con 2 no hay cómo saber cuál está malo, y con 3 o más uno atípico (su residuo
+  pasa de 3× la mediana de los demás y de 4 m) queda como "No calza". Cada punto de
+  Google Earth se desvía 1–19 m.
+- **Un punto y girar** (`"punto"`). La coordenada + Ir, un clic en el plano y se gira
+  hasta que los lotes calcen con el satélite. El tamaño sale de la escala marcada en
+  Marcar (la línea o la 1:N), si no del cuadro de superficies. Sin ninguna, Ubicar lo
+  dice y ofrece **Ir a Marcar**.
+- **Cuadrícula impresa** (`"cuadricula"`, solo si el lector la encontró). Si el plano
+  trae marcas UTM (E-…, N-…), se leen, se descartan las que no siguen la progresión y se
+  ajusta con las intersecciones. WGS84/SIRGAS UTM por defecto; PSAD56 si los puntos lo
+  indican. Abajo, puntos opcionales para comprobarla.
+- **Ajuste fino** en todos: flechas y un arrastre de los lotes sobre la imagen
+  satelital, para calzar los caminos con los deslindes.
+
+Los KMZ de antes, sin `metodo`, entran al que ya usaban (2 puntos o más → varios puntos;
+la cuadrícula elegida → cuadrícula; la coordenada con su punto → un punto) y el
+servidor mantiene la precedencia de entonces (cuadrícula > 2 puntos > un punto), así no
+quedan atrasados.
 
 El huso UTM sale de las anclas o de la cuadrícula: no queda fijo en 19S.
 
 **Aviso de escala.** Si hay al menos 3 lotes con área oficial, se compara la escala
-que dan las anclas con la que implican las áreas del cuadro. Si difieren en más de
-**1,5 %** (3 % en área), Ubicar lo avisa: las anclas de Google Earth pueden encoger o
-agrandar el plano. En Caminos de Rapel lo encogían ~2,8 %, y eso explicaba buena parte
+que dan los puntos (o la escala marcada, con un punto) con la que implican las áreas
+del cuadro. Si difieren en más de **1,5 %** (3 % en área), Ubicar lo avisa: los puntos de
+Google Earth pueden encoger o agrandar el plano. En Caminos de Rapel lo encogían ~2,8 %, y eso explicaba buena parte
 de que los lotes midieran 5–10 % menos que el oficial (el resto era texto pegado a un
 deslinde que se tomaba por achurado: ahora solo cuentan como achurado las zonas de
-250 mm² o más). Lo que corrige es marcar mejor las anclas, más separadas.
+250 mm² o más). Lo que corrige es marcar mejor los puntos, más separados.
 
 ### El lector de rótulos
 

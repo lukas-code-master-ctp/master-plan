@@ -588,7 +588,7 @@ def test_un_punto_con_el_giro_y_la_escala_del_cuadro_calza_con_la_posicion_real(
     # La escala salió del cuadro: compararla con él sería circular, no se avisa.
     assert p["escala_cuadro"]["area_pct"] == pytest.approx(0, abs=0.05)
     assert t.avisos == ["Ubicado con tu coordenada: el tamaño sale del cuadro de superficies. Si los lotes no"
-                        " calzan con los caminos, gira el plano o afina con puntos."]
+                        " calzan con los caminos, gira el plano o ubica con varios puntos."]
     assert "Punto:" in capsys.readouterr().out
 
 
@@ -633,8 +633,8 @@ def test_un_punto_sin_cuadro_ni_escala_dice_que_falta(tmp_path, capsys):
     (tmp_path / "entradas.json").write_text(json.dumps(dict(
         pdf="plano.pdf", semillas=[], ubicacion=_ubicacion(verdad, giro=90))), encoding="utf-8")
     assert main(["georreferenciar", str(tmp_path)]) == 1
-    assert ("Para ubicar con tu coordenada hace falta el cuadro de superficies o la escala del plano"
-            " (por ejemplo 1:5.000). Si no la tienes, marca puntos.") in capsys.readouterr().err
+    assert ("Para ubicar con un punto hace falta la escala del plano: márcala en el paso Marcar"
+            " (la barra de escala o la escala 1:N). Si no la tienes, ubica con varios puntos.") in capsys.readouterr().err
 
 
 def _cuadricula_que_no_sirve():
@@ -668,7 +668,7 @@ def test_si_la_cuadricula_no_sirve_y_falta_la_escala_se_dicen_las_dos_cosas(tmp_
     assert main(["georreferenciar", str(tmp_path)]) == 1
 
     error = capsys.readouterr().err
-    assert "escala del plano (por ejemplo 1:5.000)" in error
+    assert "márcala en el paso Marcar" in error
     assert "la cuadrícula no sirve:" in error and "en cada dirección" in error
 
 
@@ -893,3 +893,180 @@ def test_la_escala_del_cuadro_en_el_plano_del_ajuste():
     # Con la foto rectificada las anclas ya se ajustan en px de trabajo.
     assert escala_en_el_ajuste(0.25, [[1.3, 0.1, 0], [0.05, 0.9, 0], [1e-5, 0, 1]], en_trabajo=True) == 0.25
     assert escala_en_el_ajuste(0.25, None, en_trabajo=False) == 0.25
+
+
+# --- el método elegido y la escala marcada ----------------------------------------
+
+@pytest.mark.parametrize("entradas, error", [
+    (dict(metodo="anclas"), "«metodo» es puntos, punto, cuadricula o null"),
+    (dict(metodo=1), "«metodo»"),
+    (dict(escala=[1, 2]), "«escala» es"),
+    (dict(escala=dict(p=[0, 0], q=[100, 0], metros=0)), "mayor que 0"),
+    (dict(escala=dict(p=[0, 0], q=[100, 0], metros=-5)), "mayor que 0"),
+    (dict(escala=dict(p=[0, 0], q=[100, 0], metros="200")), "mayor que 0"),
+    (dict(escala=dict(p=[0, 0], q=[100, 0])), "mayor que 0"),
+    (dict(escala=dict(p=[0, 0], q=[6, 7.9], metros=200)), "casi en el mismo lugar"),
+    (dict(escala=dict(p=[0, 0], q="x", metros=200)), "«escala.q»"),
+    (dict(escala=dict(p=[0, True], q=[100, 0], metros=200)), "«escala.p»"),
+    (dict(escala=dict(impresa=50)), "no parece real"),
+    (dict(escala=dict(impresa=2_000_000)), "no parece real"),
+    (dict(escala=dict(impresa=2500.5)), "entero"),
+    (dict(escala=dict(impresa="1:2000")), "entero"),
+])
+def test_el_metodo_y_la_escala_mal_escritos_se_dicen(tmp_path, entradas, error):
+    from pipeline.plano.digitalizar import leer_entradas
+    (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+    with pytest.raises(ValueError, match=error):
+        leer_entradas(tmp_path)
+
+
+def test_el_metodo_y_la_escala_se_normalizan_y_sin_la_clave_no_se_agregan(tmp_path):
+    from pipeline.plano.digitalizar import leer_entradas
+
+    def leer(**entradas):
+        (tmp_path / "entradas.json").write_text(json.dumps(entradas), encoding="utf-8")
+        return leer_entradas(tmp_path)
+
+    sin = leer()
+    assert "metodo" not in sin and "escala" not in sin
+    assert leer(metodo=None, escala=None)["metodo"] is None
+    assert leer(metodo="punto", escala=dict(p=[1, 2], q=[11, 2], metros=200))["escala"] == dict(
+        p=[1.0, 2.0], q=[11.0, 2.0], metros=200.0)
+    assert leer(escala=dict(impresa=2000.0))["escala"] == dict(impresa=2000)
+
+
+def _escala_linea(largo_px=600.0, metros=None):
+    """Una barra de escala horizontal en px de página del `_loteo_girado` (1:2.000 en la
+    página: 1/3 m por px). Sin `metros`, los que mide de verdad."""
+    from pipeline.tests.plano_sintetico import PPMM
+    return dict(p=[500.0, 1000.0], q=[500.0 + largo_px, 1000.0],
+                metros=largo_px * 2000 / 1000 / PPMM if metros is None else metros)
+
+
+def test_la_escala_marcada_se_mide_en_px_de_trabajo():
+    from pipeline.plano.georreferencia import escala_marcada_m_px
+    # Un recorte agrandado 1,016 veces y corrido: la barra de 600 px de página mide
+    # 609,6 px de trabajo; la traslación no cambia el largo.
+    trabajo = dict(ppmm=6.0 * 1.016, homografia=[[1.016, 0, -120.0], [0, 1.016, -70.0], [0, 0, 1]])
+    assert escala_marcada_m_px(dict(p=[500, 1000], q=[1100, 1000], metros=200), trabajo) == pytest.approx(
+        200 / (600 * 1.016))
+    assert escala_marcada_m_px(dict(impresa=2000), trabajo) == pytest.approx(2 / 6 / 1.016)
+    with pytest.raises(ValueError, match="resolución"):
+        escala_marcada_m_px(dict(impresa=2000), dict(homografia=None))
+
+
+def test_en_una_foto_la_escala_marcada_se_mide_despues_de_enderezar():
+    from pipeline.plano.georreferencia import escala_marcada_m_px
+    # Una foto (homografía proyectiva): la misma barra mide distinto según dónde esté en la
+    # página, y lo que vale es su largo ya enderezado, no el de la página.
+    h = np.array([[1.2, 0.1, -40.0], [0.05, 0.9, 10.0], [2e-4, 1e-4, 1.0]])
+    trabajo = dict(ppmm=6.0, modo="perspectiva", homografia=h.tolist())
+    for p, q in (([100.0, 100.0], [700.0, 100.0]), ([100.0, 1500.0], [700.0, 1500.0])):
+        a = h @ [*p, 1.0]
+        b = h @ [*q, 1.0]
+        largo = float(np.hypot(*(b[:2] / b[2] - a[:2] / a[2])))
+        assert escala_marcada_m_px(dict(p=p, q=q, metros=200), trabajo) == pytest.approx(200 / largo)
+        assert abs(largo - 600) > 10      # medir en la página daría otra escala
+
+
+def test_un_punto_con_la_escala_marcada_en_el_plano(tmp_path):
+    verdad, lotes = _loteo_girado(tmp_path, con_cuadro=False)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], metodo="punto", escala=_escala_linea(),
+        ubicacion=_ubicacion(verdad, giro=90, escala_impresa=5000))), encoding="utf-8")
+
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+
+    error, t = _error_maximo(tmp_path, verdad, lotes)
+    assert error < 0.5
+    # La marcada manda sobre la 1:N vieja de la ubicación.
+    assert t.parametros["origen_escala"] == "marcada"
+    assert t.parametros["escala_m_px"] == pytest.approx(2 / 6 / 1.016)
+    assert t.avisos == ["Ubicado con tu coordenada: el tamaño sale de la escala que marcaste (200 m). Si los"
+                        " lotes no calzan con los caminos, gira el plano o ubica con varios puntos."]
+
+
+def test_un_punto_con_la_escala_1_n_marcada(tmp_path):
+    verdad, lotes = _loteo_girado(tmp_path)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], escala=dict(impresa=2000), ubicacion=_ubicacion(verdad, giro=90))),
+        encoding="utf-8")
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    error, t = _error_maximo(tmp_path, verdad, lotes)
+    assert error < 0.5 and t.parametros["origen_escala"] == "marcada"
+    assert "de la escala que marcaste (1:2.000)" in t.avisos[0]
+
+
+def test_la_escala_marcada_manda_sobre_el_cuadro_y_se_compara_con_el(tmp_path):
+    # Una barra que dice 220 m donde hay 200: los lados salen un 10 % más largos, y el
+    # cuadro de superficies lo nota (con la escala del cuadro no se avisaba: era circular).
+    verdad, _ = _loteo_girado(tmp_path)
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], escala=_escala_linea(metros=220), ubicacion=_ubicacion(verdad, giro=90))),
+        encoding="utf-8")
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    p = g["parametros"]
+    assert p["origen_escala"] == "marcada"
+    assert p["escala_cuadro"]["escala_pct"] == pytest.approx(10, abs=0.1)
+    assert any(a.startswith("Los lotes salen un 21,0 % más grandes") and "Revisa la escala que marcaste" in a
+               for a in g["avisos"])
+
+    # Bien marcada calza con el cuadro y no hay nada que avisar.
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], escala=_escala_linea(), ubicacion=_ubicacion(verdad, giro=90))),
+        encoding="utf-8")
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    assert not any(a.startswith("Los lotes salen") for a in g["avisos"])
+
+
+def test_con_el_metodo_punto_los_puntos_no_mandan(tmp_path):
+    verdad, lotes = _loteo_girado(tmp_path)
+    px = PX_LOTEO[:3]
+    e, n = verdad(px[:, 0], px[:, 1])
+    lon, lat = Transformer.from_crs(32719, 4326, always_xy=True).transform(e, n)
+    # Puntos corridos 30 m: si mandaran, los lotes quedarían corridos.
+    anclas = [dict(x=float(x), y=float(y), lon=float(lo) + 0.0003, lat=float(la)) for (x, y), lo, la in zip(px, lon, lat)]
+    (tmp_path / "entradas.json").write_text(json.dumps(dict(
+        pdf="plano.pdf", semillas=[], metodo="punto", anclas=anclas, escala_cuadro=True,
+        ubicacion=_ubicacion(verdad, giro=90))), encoding="utf-8")
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    error, t = _error_maximo(tmp_path, verdad, lotes)
+    assert t.metodo == "punto" and error < 0.5
+
+
+def test_con_el_metodo_puntos_no_mandan_la_cuadricula_ni_la_coordenada(tmp_path):
+    u = _anclas(PX[:1])[0]
+    _carpeta(tmp_path, cuadricula=_marcas(con_rectas=False), anclas=_anclas(PX[:4]), metodo="puntos",
+             ubicacion=dict(x=u["x"], y=u["y"], lon=u["lon"], lat=u["lat"], giro=0, escala_impresa=2000))
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    g = json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))
+    assert g["metodo"] == "anclas" and g["datum"] is None
+    assert not any("cuadrícula" in a for a in g["avisos"])
+
+
+def test_con_el_metodo_cuadricula_no_manda_la_coordenada(tmp_path):
+    u = _anclas(PX[:1])[0]
+    _carpeta(tmp_path, cuadricula=_marcas(con_rectas=False), metodo="cuadricula",
+             ubicacion=dict(x=u["x"], y=u["y"], lon=u["lon"], lat=u["lat"], giro=0, escala_impresa=2000))
+    assert main(["georreferenciar", str(tmp_path)]) == 0
+    assert json.loads((tmp_path / "georreferencia.json").read_text(encoding="utf-8"))["metodo"] == "cuadricula"
+
+
+@pytest.mark.parametrize("metodo, entradas, error", [
+    ("puntos", lambda u: dict(anclas=_anclas(PX[:1]), ubicacion=u), "varios puntos hacen falta al menos 2"),
+    ("punto", lambda u: dict(anclas=_anclas(PX[:4]), ubicacion=dict(lon=u["lon"], lat=u["lat"])),
+     "Para ubicar con un punto hace falta tu coordenada y dónde cae en el plano"),
+    ("cuadricula", lambda u: dict(anclas=_anclas(PX[:4]), ubicacion=u),
+     "hacen falta los valores impresos de sus líneas"),
+    ("cuadricula", lambda u: dict(anclas=_anclas(PX[:4]), ubicacion=u, cuadricula=_cuadricula_que_no_sirve()),
+     "La cuadrícula no sirve para ubicar"),
+])
+def test_al_metodo_elegido_le_falta_algo_y_se_dice_sin_usar_otro(tmp_path, capsys, metodo, entradas, error):
+    a = _anclas(PX[:1])[0]
+    u = dict(x=a["x"], y=a["y"], lon=a["lon"], lat=a["lat"], giro=0, escala_impresa=2000)
+    _carpeta(tmp_path, metodo=metodo, **entradas(u))
+    assert main(["georreferenciar", str(tmp_path)]) == 1
+    assert error in capsys.readouterr().err
+    assert not (tmp_path / "georreferencia.json").exists()

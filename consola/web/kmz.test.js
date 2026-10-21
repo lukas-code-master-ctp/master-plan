@@ -10,8 +10,11 @@ import {
   puntoDeRotulo, puntoEnPoligono, rectanguloDe, resumenRevision, rotarPunto, semaforo, sesgoDeEscala, siguienteNombre, sinNumero, sugerencias, verticesDe,
   tamanoRotado, normalizarGiro, puedeUbicar, ubicacionCompleta, textoHuecos, textoSemaforo, vistaAjustada, zoomEn,
   aplicarHomografia, cajaGirada, escalaDeUbicacion, girarEnPantalla, husoDe, leerEscala, lonLatAUtm, lotesEnElMapa, paginaALonLat,
-  similitudPorPunto, usaUbicacion, utmALonLat, similitudPorAnclas, afinarAbierta, textoPuntos,
+  similitudPorPunto, usaUbicacion, usaAnclas, metodoAlEntrar, metodoVigente, escalaMarcadaMPx, siguienteLetra, utmALonLat, similitudPorAnclas, estadoDePuntos, guiaDePuntos, textoFilaActiva, coordenadaCorta, coordenadaDelCampo,
+  destinoDelClic, metodosOfrecidos, NOMBRES_METODO, origenDeEscala, textoClicSuelto,
+  cambiaElMetodo, avisosDeUbicacion, notaDeEscalaVisible,
   ajustaConElCuadro, escalaEnElAjuste, ofrecerAjusteDelCuadro,
+  escalaDesdeLinea, leerMetros, textoEscala, textoMetros,
   aplicarUnion, duplicados, loteConNumero, renumerarUniones, separarPartes, seTocan, unirParte,
 } from './js/kmz_geometria.js';
 import { ruta } from './js/comun.js';
@@ -81,6 +84,12 @@ test('girar la página lleva el punto de la coordenada y descuenta el giro', () 
   // A medio armar (solo la coordenada) se lleva tal cual.
   assert.deepEqual(girarEntradas({ ubicacion: { lon: -71.5, lat: -34.1 } }, 0, 180, 100, 60).ubicacion,
     { lon: -71.5, lat: -34.1 });
+  // La línea de la escala gira con el dibujo; la 1:N queda igual.
+  const conEscala = { rotacion: 0, escala: { p: [10, 5], q: [50, 5], metros: 200 } };
+  assert.deepEqual(girarEntradas(conEscala, 0, 90, 100, 60).escala, { p: [54, 10], q: [54, 50], metros: 200 });
+  assert.deepEqual(girarEntradas(girarEntradas(conEscala, 0, 90, 100, 60), 90, 0, 100, 60).escala, conEscala.escala);
+  assert.deepEqual(girarEntradas({ rotacion: 0, escala: { impresa: 1000 } }, 0, 90, 100, 60).escala, { impresa: 1000 });
+  assert.equal(girarEntradas({ rotacion: 0, escala: null }, 0, 90, 100, 60).escala, null);
   assert.equal(normalizarGiro(-200), 160);
   assert.equal(normalizarGiro(270), -90);
   assert.equal(normalizarGiro(180), 180);
@@ -92,6 +101,14 @@ test('se puede ubicar con la cuadrícula, 2 puntos o la coordenada con su punto'
   assert.equal(puedeUbicar({ anclas: [], cuadricula: {} }), true);
   assert.equal(puedeUbicar({ anclas: [], ubicacion: { lon: -71.5, lat: -34.1 } }), false);
   assert.equal(puedeUbicar({ anclas: [], ubicacion: { x: 0, y: 0, lon: -71.5, lat: -34.1 } }), true);
+  // Con el método elegido, solo cuenta lo de ese método.
+  const u = { x: 0, y: 0, lon: -71.5, lat: -34.1 };
+  assert.equal(puedeUbicar({ metodo: 'puntos', anclas: [{}], ubicacion: u, cuadricula: {} }), false);
+  assert.equal(puedeUbicar({ metodo: 'puntos', anclas: [{}, {}] }), true);
+  assert.equal(puedeUbicar({ metodo: 'punto', anclas: [{}, {}], cuadricula: {} }), false);
+  assert.equal(puedeUbicar({ metodo: 'punto', anclas: [{}, {}], ubicacion: u }), true);
+  assert.equal(puedeUbicar({ metodo: 'cuadricula', anclas: [{}, {}], ubicacion: u }), false);
+  assert.equal(puedeUbicar({ metodo: 'cuadricula', anclas: [], cuadricula: {} }), true);
   assert.equal(ubicacionCompleta({ x: 1, y: null, lon: -71.5, lat: -34.1 }), false);
   assert.equal(ubicacionCompleta(null), false);
 });
@@ -192,6 +209,78 @@ test('la escala de la ubicación: la del cuadro, si no la impresa', () => {
   assert.ok(Number.isNaN(leerEscala('1:5.00')));
 });
 
+test('la escala marcada manda sobre el cuadro y la 1:N vieja', () => {
+  const linea = { p: [100, 100], q: [400, 500], metros: 250 };    // 500 px de largo
+  // Sin homografía (o la identidad) se mide en la página.
+  cerca(escalaMarcadaMPx(linea, null, 6), 0.5);
+  // En un recorte a la mitad de tamaño la línea mide 250 px de trabajo.
+  const mitad = [[0.5, 0, -10], [0, 0.5, -20], [0, 0, 1]];
+  cerca(escalaMarcadaMPx(linea, mitad, 6), 1);
+  cerca(escalaMarcadaMPx({ impresa: 1000 }, mitad, 4), 0.25);
+  assert.equal(escalaMarcadaMPx({ impresa: 1000 }, mitad, null), null);
+  assert.equal(escalaMarcadaMPx({ p: [1, 1], q: [1, 1], metros: 10 }, null, 6), null);
+  assert.equal(escalaMarcadaMPx(null, null, 6), null);
+
+  const d = { escala_m_px: 0.83, ppmm: 4, homografia: mitad };
+  cerca(escalaDeUbicacion(d, { escala_impresa: 5000 }, linea), 1);
+  cerca(escalaDeUbicacion(d, { escala_impresa: 5000 }, { impresa: 2000 }), 0.5);
+  assert.equal(escalaDeUbicacion(d, { escala_impresa: 5000 }, null), 0.83);
+  // Una 1:N marcada sin ppmm no cae al cuadro: el servidor tampoco.
+  assert.equal(escalaDeUbicacion({ ...d, ppmm: null }, {}, { impresa: 2000 }), null);
+});
+
+test('el método al entrar a Ubicar: el elegido o el que se deduce', () => {
+  const u = { x: 1, y: 2, lon: -71.5, lat: -34.1 };
+  assert.equal(metodoAlEntrar({ metodo: 'punto', anclas: [{}, {}] }, false), 'punto');
+  assert.equal(metodoAlEntrar({ metodo: 'puntos', anclas: [] }, false), 'puntos');
+  assert.equal(metodoAlEntrar({ metodo: 'cuadricula', anclas: [] }, true), 'cuadricula');
+  // Sin cuadrícula que proponer ni elegida, la cuadrícula no tiene pantalla: a las tarjetas.
+  assert.equal(metodoAlEntrar({ metodo: 'cuadricula', anclas: [] }, false), null);
+  // Los KMZ de antes: cuadrícula > 2 puntos > la coordenada con su punto.
+  assert.equal(metodoAlEntrar({ anclas: [{}, {}], cuadricula: {}, ubicacion: u }, true), 'cuadricula');
+  assert.equal(metodoAlEntrar({ anclas: [{}, {}], ubicacion: u }, false), 'puntos');
+  assert.equal(metodoAlEntrar({ anclas: [{}], ubicacion: u }, false), 'punto');
+  assert.equal(metodoAlEntrar({ anclas: [{}], ubicacion: { lon: -71.5, lat: -34.1 } }, true), null);
+  assert.equal(metodoAlEntrar({ metodo: null, anclas: [] }, false), null);
+  assert.equal(metodoAlEntrar(null), null);
+  assert.equal(metodoVigente({ metodo: null, anclas: [{}, {}] }), 'puntos');
+});
+
+test('elegir el método que ya se deducía en un KMZ de antes no lo guarda (no atrasa lo ubicado)', () => {
+  const u = { x: 1, y: 2, lon: -71.5, lat: -34.1 };
+  assert.equal(cambiaElMetodo({ anclas: [], ubicacion: u }, 'punto'), false);
+  assert.equal(cambiaElMetodo({ anclas: [{}, {}], ubicacion: u }, 'puntos'), false);
+  assert.equal(cambiaElMetodo({ anclas: [{}, {}], ubicacion: u }, 'punto'), true);
+  assert.equal(cambiaElMetodo({ metodo: 'punto', anclas: [] }, 'punto'), false);
+  assert.equal(cambiaElMetodo({ metodo: 'puntos', anclas: [], ubicacion: u }, 'punto'), true);
+  // Sin nada que deducir, elegir sí se guarda.
+  assert.equal(cambiaElMetodo({ anclas: [] }, 'punto'), true);
+});
+
+test('con un punto al día, el tamaño lo dice el aviso y no se repite', () => {
+  const g = { metodo: 'punto', vigente: true, avisos: ['Ubicado con tu coordenada: el tamaño sale de la escala que marcaste (200 m). Si no calzan, gira.'] };
+  assert.deepEqual(avisosDeUbicacion(g), ['El tamaño sale de la escala que marcaste (200 m). Si no calzan, gira.']);
+  assert.deepEqual(avisosDeUbicacion({ metodo: 'anclas', avisos: ['Ubicado con tu coordenada: x'] }), ['Ubicado con tu coordenada: x']);
+  assert.deepEqual(avisosDeUbicacion(null), []);
+  assert.equal(notaDeEscalaVisible(g), false);
+  assert.equal(notaDeEscalaVisible({ ...g, vigente: false }), true);
+  assert.equal(notaDeEscalaVisible({ metodo: 'anclas', vigente: true }), true);
+  assert.equal(notaDeEscalaVisible(null), true);
+});
+
+test('las letras de los puntos de Ubicar van de A a D', () => {
+  const con = (...n) => n.map((nombre) => ({ nombre }));
+  assert.equal(siguienteLetra([]), 'A');
+  assert.equal(siguienteLetra(null), 'A');
+  assert.equal(siguienteLetra(con('A', 'B')), 'C');
+  assert.equal(siguienteLetra(con('A', 'C')), 'B');               // la que se quitó se reusa
+  assert.equal(siguienteLetra(con('A', 'B', 'C')), 'D');
+  assert.equal(siguienteLetra(con('A', 'B', 'C', 'D')), null);
+  // Un KMZ viejo con otros nombres: hasta 4 puntos en total.
+  assert.equal(siguienteLetra(con('X', 'Y')), 'A');
+  assert.equal(siguienteLetra(con('X', 'Y', 'Z', 'W')), null);
+});
+
 test('el servidor ubica con la coordenada solo sin cuadrícula y sin 2 puntos', () => {
   const u = { x: 1, y: 2, lon: -71.5, lat: -34.1 };
   assert.equal(usaUbicacion({ anclas: [], ubicacion: u }), true);
@@ -199,6 +288,16 @@ test('el servidor ubica con la coordenada solo sin cuadrícula y sin 2 puntos', 
   assert.equal(usaUbicacion({ anclas: [{}, {}], ubicacion: u }), false);
   assert.equal(usaUbicacion({ anclas: [], cuadricula: {}, ubicacion: u }), false);
   assert.equal(usaUbicacion({ anclas: [], ubicacion: { lon: -71.5, lat: -34.1 } }), false);
+  // Con el método elegido manda ese, aunque haya puntos o cuadrícula.
+  assert.equal(usaUbicacion({ metodo: 'punto', anclas: [{}, {}], cuadricula: {}, ubicacion: u }), true);
+  assert.equal(usaUbicacion({ metodo: 'punto', anclas: [], ubicacion: { lon: -71.5, lat: -34.1 } }), false);
+  assert.equal(usaUbicacion({ metodo: 'puntos', anclas: [], ubicacion: u }), false);
+  assert.equal(usaUbicacion({ metodo: 'cuadricula', anclas: [], ubicacion: u }), false);
+  assert.equal(usaAnclas({ anclas: [{}, {}] }), true);
+  assert.equal(usaAnclas({ anclas: [{}, {}], cuadricula: {} }), false);
+  assert.equal(usaAnclas({ metodo: 'puntos', anclas: [{}, {}], cuadricula: {} }), true);
+  assert.equal(usaAnclas({ metodo: 'puntos', anclas: [{}] }), false);
+  assert.equal(usaAnclas({ metodo: 'punto', anclas: [{}, {}], ubicacion: u }), false);
 });
 
 test('el plano girado en pantalla vuelve a la página', () => {
@@ -380,28 +479,110 @@ test('"Ajustar el tamaño con el cuadro" se ofrece con puntos y sesgo, y se desh
   assert.equal(ajustaConElCuadro({ ...cuatro, cuadricula: {}, escala_cuadro: true }), false);
 });
 
-test('"Afinar con puntos" se abre sola con puntos, uno a medias o la cuadrícula', () => {
-  assert.equal(afinarAbierta({ anclas: [] }), false);
-  assert.equal(afinarAbierta({ anclas: [], ubicacion: { x: 1, y: 2, lon: -71, lat: -34 } }), false);
-  assert.equal(afinarAbierta({ anclas: [{}] }), true);
-  assert.equal(afinarAbierta({ anclas: [], cuadricula: {} }), true);
-  assert.equal(afinarAbierta({ anclas: [] }, { pendiente: { nombre: 'A' } }), true);
-  assert.equal(afinarAbierta({ anclas: [] }, { rehacer: 'B' }), true);
-  assert.equal(afinarAbierta(null), false);
+test('las tarjetas de Ubicar: la cuadrícula solo propuesta o ya elegida', () => {
+  assert.deepEqual(metodosOfrecidos(), ['puntos', 'punto']);
+  assert.deepEqual(metodosOfrecidos({ propuesta: true }), ['puntos', 'punto', 'cuadricula']);
+  assert.deepEqual(metodosOfrecidos({ elegida: true }), ['puntos', 'punto', 'cuadricula']);
+  assert.equal(NOMBRES_METODO.punto, 'Un punto y girar');
+  assert.equal(NOMBRES_METODO.puntos, 'Varios puntos');
 });
 
-test('el estado de los puntos dice qué toca y quién manda', () => {
-  assert.match(textoPuntos({ n: 0, coordenada: true }), /^Haz clic en un punto del plano.*ellos mandan sobre tu coordenada\.$/);
-  assert.match(textoPuntos({ n: 0 }), /Con 2 puntos ya se ubica el plano\.$/);
-  assert.equal(textoPuntos({ n: 1, coordenada: true }), '1 punto. Marca otro: con 2 o más puntos, ellos mandan sobre tu coordenada.');
-  assert.equal(textoPuntos({ n: 2, coordenada: true }),
-    '2 puntos. Con 2 o más puntos, ellos mandan sobre tu coordenada. Con 4 se nota si alguno quedó mal marcado.');
-  assert.equal(textoPuntos({ n: 3 }), '3 puntos. Con 4 se nota si alguno quedó mal marcado.');
-  assert.equal(textoPuntos({ n: 4 }), '4 puntos.');
-  assert.match(textoPuntos({ n: 2, pendiente: 'C' }), /^Punto C marcado en el plano\. Ahora haz clic en el mismo punto del mapa/);
-  assert.match(textoPuntos({ n: 3, rehacer: 'B' }), /^Marca de nuevo el punto B/);
-  assert.match(textoPuntos({ n: 0, cuadricula: true }), /comprobar que la cuadrícula calza/);
-  assert.match(textoPuntos({ n: 2, cuadricula: true }), /^2 puntos para comprobar la cuadrícula/);
+test('el clic en el plano de Ubicar va al método en pantalla', () => {
+  assert.equal(destinoDelClic('punto', { marcandoPunto: true }), 'punto');
+  // Con su punto puesto un toque suelto no lo mueve: hay que pedirlo con "Mover el punto".
+  assert.equal(destinoDelClic('punto'), 'nada');
+  // Con puntos, solo la fila que ya tiene su coordenada toma el clic.
+  assert.equal(destinoDelClic('puntos', { esperaPlano: true }), 'ancla');
+  assert.equal(destinoDelClic('cuadricula', { esperaPlano: true }), 'ancla');
+  assert.equal(destinoDelClic('puntos'), 'nada');
+  assert.equal(destinoDelClic('punto', { esperaPlano: true }), 'nada');
+  // En las tarjetas no marca nada, aunque hubiera estado marcando.
+  assert.equal(destinoDelClic(null, { marcandoPunto: true }), 'nada');
+});
+
+test('un clic suelto dice qué falta en el método', () => {
+  assert.equal(textoClicSuelto(null), 'Primero elige cómo ubicar el plano.');
+  assert.equal(textoClicSuelto('punto', {}), 'Primero pega tu coordenada y aprieta "Ir".');
+  assert.equal(textoClicSuelto('punto', { lon: -71, lat: -34 }), 'Para poner tu punto, aprieta "Marcar el punto en el plano".');
+  assert.equal(textoClicSuelto('punto', { lon: -71, lat: -34, x: 1, y: 2 }), 'Para cambiar tu punto, aprieta "Mover el punto".');
+  const a = { nombre: 'A', x: 1, y: 2, lon: -71, lat: -34 };
+  assert.equal(textoClicSuelto('puntos', null, estadoDePuntos([])), 'Primero pega la coordenada de A y aprieta "Ir", o haz clic en ese punto del mapa.');
+  assert.equal(textoClicSuelto('puntos', null, estadoDePuntos([a])), 'Para marcar otro punto, aprieta "Añadir B".');
+  const cuatro = ['A', 'B', 'C', 'D'].map((nombre) => ({ ...a, nombre }));
+  assert.equal(textoClicSuelto('cuadricula', null, estadoDePuntos(cuatro)), 'Para cambiar un punto, aprieta "Rehacer" en su fila.');
+});
+
+test('la nota del tamaño dice de qué escala sale, con la precedencia del servidor', () => {
+  const d = { ppmm: 2, escala_m_px: 0.5, homografia: null };
+  const linea = { p: [0, 0], q: [100, 0], metros: 200 };
+  assert.equal(origenDeEscala(d, {}, linea), 'Tamaño: de la escala que marcaste (200 m)');
+  assert.equal(origenDeEscala(d, {}, { impresa: 1000 }), 'Tamaño: de la escala que marcaste (1:1.000)');
+  assert.equal(origenDeEscala(d, { escala_impresa: 5000 }), 'Tamaño: del cuadro de superficies');
+  const sinCuadro = { ppmm: 2, escala_m_px: null };
+  assert.equal(origenDeEscala(sinCuadro, { escala_impresa: 5000 }), 'Tamaño: de la escala 1:5.000 que escribiste');
+  assert.equal(origenDeEscala(sinCuadro, {}), null);
+  // La 1:N marcada sin ppmm no da tamaño: se pide marcarla, no se cae al cuadro.
+  assert.equal(origenDeEscala({ escala_m_px: 0.5 }, {}, { impresa: 1000 }), null);
+  assert.equal(origenDeEscala(null, {}), null);
+});
+
+test('las filas de puntos: parte con A activa y ofrece "Añadir" de a una, hasta D', () => {
+  const punto = (nombre) => ({ nombre, x: 1, y: 2, lon: -71, lat: -34 });
+  // Sin puntos: la fila A ya está activa, esperando su coordenada, y no se puede cancelar.
+  let e = estadoDePuntos([]);
+  assert.deepEqual(e.filas.map((f) => [f.nombre, f.activa]), [['A', true]]);
+  assert.deepEqual(e.activa, { nombre: 'A', espera: 'coordenada', rehace: false });
+  assert.equal(e.anadir, null);
+  assert.equal(e.cancelable, false);
+  assert.equal(estadoDePuntos(null).activa.nombre, 'A');
+  // Con la coordenada puesta, espera el clic en el plano y ya se puede cancelar.
+  e = estadoDePuntos([], { nombre: 'A', lat: -34.98, lon: -71.24 });
+  assert.equal(e.activa.espera, 'plano');
+  assert.equal(e.cancelable, true);
+  // A hecha: nada activo y "Añadir B".
+  e = estadoDePuntos([punto('A')]);
+  assert.equal(e.activa, null);
+  assert.equal(e.anadir, 'B');
+  assert.deepEqual(e.filas.map((f) => [f.nombre, f.activa]), [['A', false]]);
+  // B abierta: va al final, y no se ofrece otra mientras está a medias.
+  e = estadoDePuntos([punto('A')], { nombre: 'B' });
+  assert.deepEqual(e.filas.map((f) => [f.nombre, f.activa]), [['A', false], ['B', true]]);
+  assert.equal(e.anadir, null);
+  // Rehacer B: la fila queda en su lugar y activa, con su ancla todavía puesta.
+  e = estadoDePuntos([punto('A'), punto('B'), punto('C')], { nombre: 'B' });
+  assert.deepEqual(e.filas.map((f) => [f.nombre, f.activa, Boolean(f.ancla)]), [['A', false, true], ['B', true, true], ['C', false, true]]);
+  assert.equal(e.activa.rehace, true);
+  assert.equal(e.hechas, 3);
+  // La letra que se quitó se reusa; con 4 ya no se añade.
+  assert.equal(estadoDePuntos([punto('A'), punto('C')]).anadir, 'B');
+  assert.equal(estadoDePuntos(['A', 'B', 'C', 'D'].map(punto)).anadir, null);
+});
+
+test('las filas de un KMZ viejo: todas hechas, y "Añadir" solo con letra libre y menos de 4', () => {
+  const punto = (nombre) => ({ nombre, x: 1, y: 2, lon: -71, lat: -34 });
+  let e = estadoDePuntos([punto('roja'), punto('azul')]);
+  assert.deepEqual(e.filas.map((f) => f.nombre), ['roja', 'azul']);
+  assert.equal(e.anadir, 'A');
+  e = estadoDePuntos(['roja', 'azul', 'verde', 'negra', 'gris'].map(punto));
+  assert.equal(e.filas.length, 5);
+  assert.equal(e.activa, null);
+  assert.equal(e.anadir, null);
+});
+
+test('el texto de los puntos: la guía de arriba y lo que pide la fila activa', () => {
+  assert.equal(guiaDePuntos(0), 'Marca al menos 2 puntos: A y B. C y D sirven para afinar.');
+  assert.equal(guiaDePuntos(1), 'Marca al menos 2 puntos: A y B. C y D sirven para afinar.');
+  assert.equal(guiaDePuntos(2), '');
+  assert.match(guiaDePuntos(0, { cuadricula: true }), /comprobar que la cuadrícula calza/);
+  assert.equal(guiaDePuntos(1, { cuadricula: true }), '');
+  assert.equal(textoFilaActiva({ nombre: 'A', espera: 'plano' }), 'Ahora haz clic en el plano donde está A (acerca bien).');
+  assert.match(textoFilaActiva({ nombre: 'B', espera: 'coordenada' }), /^Pega la coordenada de B .*aprieta "Ir", o haz clic en ese punto del mapa\.$/);
+  assert.match(textoFilaActiva({ nombre: 'C', espera: 'coordenada', rehace: true }), /^Corrige la coordenada de C/);
+  assert.equal(textoFilaActiva(null), '');
+  assert.equal(coordenadaCorta(-34.9812345, -71.2398765), '-34.98123, -71.23988');
+  assert.equal(coordenadaCorta(undefined, -71), '');
+  // Lo precargado al rehacer se vuelve a leer igual.
+  assert.deepEqual(leerCoordenadas(coordenadaDelCampo(-34.9812345, -71.2398765)), { lat: -34.9812345, lon: -71.2398765 });
 });
 
 test('el cuadro de superficies es un rectángulo solo, que se reemplaza y se quita', () => {
@@ -1228,19 +1409,32 @@ test('bajo un "Seguir" apagado va por qué, en cada paso', () => {
   // Recién girado o movido, lo ubicado en el servidor aún no es lo que se ve.
   assert.equal(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: 0.8 }, georreferencia: { vigente: true } },
     { entradas: { anclas: [], ubicacion: { x: 1, y: 2, lon: -71.5, lat: -34.1 } }, ubicando: true }), 'Ubicando el plano…');
-  assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [{}] } }),
-    'Pega tu coordenada y haz clic en ese punto del plano, o marca 2 puntos en "Afinar con puntos".');
+  assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [{}] } }), 'Elige cómo ubicar el plano.');
+  // Con uno guardado falta otro (no "al menos 2"); sin ninguno, se parte por A. El flujo es
+  // coordenada + Ir y después el plano, no el plano y después el mapa.
+  assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { metodo: 'puntos', anclas: [{}] } }),
+    'Falta otro punto para ubicar con varios puntos: pega su coordenada, aprieta "Ir" y haz clic en ese punto del plano.');
+  assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { metodo: 'puntos', anclas: [] } }),
+    'Para ubicar con varios puntos hacen falta al menos 2. Parte por A: pega su coordenada, aprieta "Ir" y haz clic en ese punto del plano.');
+  assert.match(porQueNoSigue('ubicar', vigente, { entradas: { metodo: 'punto', anclas: [{}, {}] } }), /aprieta Ir/);
+  assert.match(porQueNoSigue('ubicar', vigente, { entradas: { metodo: 'cuadricula', anclas: [] } }), /cuadrícula/);
   // La coordenada sola, sin el punto del plano, todavía no ubica.
-  assert.match(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [], ubicacion: { lon: -71.5, lat: -34.1 } } }),
+  assert.match(porQueNoSigue('ubicar', vigente, { entradas: { metodo: 'punto', anclas: [], ubicacion: { lon: -71.5, lat: -34.1 } } }),
     /coordenada/);
+  assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [], ubicacion: { lon: -71.5, lat: -34.1 } } }),
+    'Elige cómo ubicar el plano.');
   const punto = { x: 10, y: 20, lon: -71.5, lat: -34.1, giro: 90 };
   // Con la coordenada y su punto, la escala sale del cuadro…
   assert.equal(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: 0.8 } },
     { entradas: { anclas: [], ubicacion: punto }, ubicando: true }), 'Ubicando el plano…');
   // …o de la escala impresa; sin ninguna de las dos, se pide.
-  assert.match(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: null } },
-    { entradas: { anclas: [], ubicacion: punto } }), /1:5\.000/);
   assert.equal(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: null } },
+    { entradas: { anclas: [], ubicacion: punto } }), 'Falta la escala del plano: márcala en el paso Marcar, o ubica con varios puntos.');
+  // …o de la escala marcada en Marcar.
+  assert.equal(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: null } },
+    { entradas: { anclas: [], ubicacion: punto, escala: { p: [0, 0], q: [100, 0], metros: 50 } }, ubicando: true }),
+  'Ubicando el plano…');
+  assert.equal(porQueNoSigue('ubicar', { digitalizado: { vigente: true, escala_m_px: null, ppmm: 6 } },
     { entradas: { anclas: [], ubicacion: { ...punto, escala_impresa: 5000 } }, ubicando: true }), 'Ubicando el plano…');
   assert.equal(porQueNoSigue('ubicar', vigente, { entradas: { anclas: [{}, {}] }, ubicando: true }), 'Ubicando el plano…');
   assert.match(porQueNoSigue('ubicar', { digitalizado: { vigente: false } }, { entradas: { anclas: [] } }), /Revisar los números/);
@@ -1409,6 +1603,42 @@ test('semáforo en ámbar si casi todos se desvían parejo, aunque menos de la m
   assert.equal(textoSemaforo(luz, { ajustable: true }), 'Casi todos los lotes salen cerca de un 4,9 % más chicos'
     + ' que en el cuadro de superficies. Suele ser la escala de los puntos de Ubicar: ajusta el tamaño con el'
     + ' cuadro de superficies o vuelve a Ubicar y marca los puntos de nuevo.');
+});
+
+// --- la escala marcada en Marcar -------------------------------------------------------------
+
+test('los metros de la barra se leen como se escriben aquí', () => {
+  assert.equal(leerMetros('200'), 200);
+  assert.equal(leerMetros(' 12,5 '), 12.5);
+  assert.equal(leerMetros('12.5'), 12.5);
+  assert.equal(leerMetros('1.000'), 1000);
+  assert.equal(leerMetros('1.000,5'), 1000.5);
+  assert.equal(leerMetros('200 m'), 200);
+  assert.equal(leerMetros(''), null);
+  assert.ok(Number.isNaN(leerMetros('0')));
+  assert.ok(Number.isNaN(leerMetros('-5')));
+  assert.ok(Number.isNaN(leerMetros('doscientos')));
+});
+
+test('la escala de la línea pide extremos a 10 px o más y metros válidos', () => {
+  assert.deepEqual(escalaDesdeLinea([10.04, 20], [210.26, 20], '200'),
+    { escala: { p: [10, 20], q: [210.3, 20], metros: 200 } });
+  assert.deepEqual(escalaDesdeLinea([0, 0], [6, 8], '1,5').escala, { p: [0, 0], q: [6, 8], metros: 1.5 });
+  assert.match(escalaDesdeLinea([0, 0], [5, 5], '200').error, /corta/);
+  assert.match(escalaDesdeLinea([0, 0], null, '200').error, /corta/);
+  assert.match(escalaDesdeLinea([0, 0], [100, 0], '').error, /cuántos metros/);
+  assert.match(escalaDesdeLinea([0, 0], [100, 0], '0').error, /número/);
+  assert.match(escalaDesdeLinea([0, 0], [100, 0], 'abc').error, /número/);
+});
+
+test('la fila de la escala dice los metros o la 1:N', () => {
+  assert.equal(textoMetros(200), '200 m');
+  assert.equal(textoMetros(1500), '1.500 m');
+  assert.equal(textoMetros(12.5), '12,5 m');
+  assert.equal(textoEscala({ p: [0, 0], q: [100, 0], metros: 200 }), 'Escala: 200 m');
+  assert.equal(textoEscala({ impresa: 1000 }), 'Escala 1:1.000');
+  assert.equal(textoEscala(null), null);
+  assert.equal(textoEscala(undefined), null);
 });
 
 test('al renumerar un lote, sus uniones lo siguen al número nuevo (o se quitan sin número)', () => {

@@ -89,7 +89,9 @@ CALIDAD = 90
 # líneas: su valor impreso se puede corregir sin volver a digitalizar.
 CLAVES_DIGITALIZAR = ("pdf", "pagina", "rotacion", "rectangulo", "mascaras", "esquinas", "marco_mm",
                       "semillas", "lector", "lector_apoyo_min", "cuadro", "union", "uniones")
-CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula", "ubicacion", "escala_cuadro")
+# `metodo` y `escala` son de ubicar aunque la escala se marque en Marcar: no cambian los
+# lotes, y guardarlas no debe pedir leer el plano de nuevo.
+CLAVES_UBICAR = ("anclas", "ajuste", "cuadricula", "ubicacion", "escala_cuadro", "metodo", "escala")
 
 # Topes de lo que se marca a mano: muy por sobre un loteo real, y lejos de lo que
 # atora la revisión (las semillas repetidas se buscan de a pares).
@@ -1082,14 +1084,30 @@ def huella_kmz(huella_georreferencia: str | None, digitalizado: dict, entradas: 
 
 
 def huella_ubicar(entradas: dict, huella_digitalizado: str) -> str:
-    # `ubicacion` cuenta solo cuando `georreferenciar` la usa: completa y sin 2 puntos que
-    # manden. Mientras ella la arma (solo la coordenada), o si ya ubicó con puntos, cambiarla
-    # no cambia la ubicación y no debe dejarla atrasada. Sin ella, la huella es la de antes
-    # de que existiera la clave: lo ya ubicado sigue al día.
-    usa = ubicacion_completa(entradas.get("ubicacion")) and len(entradas.get("anclas") or []) < 2
-    # `escala_cuadro` igual: solo con 2 o más puntos (y puesto) cambia la ubicación.
-    ajusta = bool(entradas.get("escala_cuadro")) and len(entradas.get("anclas") or []) >= 2
-    usadas = {"ubicacion": usa, "escala_cuadro": ajusta}
+    """Lo que, si cambia, deja atrasada la ubicación. Cada clave cuenta solo cuando
+    `georreferenciar` la usa con el método vigente: mientras ella arma otro método (o la
+    coordenada a medias), cambiarla no cambia la ubicación y no debe dejarla atrasada. Y
+    una clave que no viene no entra: la huella de los KMZ de antes de que existiera queda
+    igual, y lo ya ubicado sigue al día."""
+    metodo = entradas.get("metodo")
+    anclas = entradas.get("anclas") or []
+    completa = ubicacion_completa(entradas.get("ubicacion"))
+    if metodo == "punto":
+        usa = completa
+    elif metodo == "cuadricula":
+        # Solo para elegir el huso de la cuadrícula, si no hay anclas ni EPSG.
+        usa = completa and not anclas and not (entradas.get("cuadricula") or {}).get("epsg")
+    elif metodo == "puntos":
+        usa = False
+    else:
+        # Sin método, la regla de antes: la usa sin 2 puntos que manden.
+        usa = completa and len(anclas) < 2
+    # `escala_cuadro`: solo con 2 o más puntos (y puesto) cambia la ubicación.
+    ajusta = bool(entradas.get("escala_cuadro")) and len(anclas) >= 2 and metodo in (None, "puntos")
+    usadas = {"ubicacion": usa, "escala_cuadro": ajusta,
+              # La escala marcada, solo cuando ubica con el punto (no para el huso).
+              "escala": usa and metodo != "cuadricula" and entradas.get("escala") is not None,
+              "metodo": metodo is not None}
     datos = {k: entradas.get(k) for k in CLAVES_UBICAR if usadas.get(k, True)}
     return _huella(dict(datos, digitalizado=huella_digitalizado))
 
