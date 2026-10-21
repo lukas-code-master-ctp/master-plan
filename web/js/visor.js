@@ -14,6 +14,7 @@ import { romano, textoReferencia, lejaniaReferencia } from './datos.js';
 import { Gesto } from './gesto.js';
 import { debeColapsar } from './grupos.js';
 import { estaInsertado, ruedaAcerca } from './insertado.js';
+import { apoyoDelGlobo } from './globo.js';
 import { rotulosSinChoques } from './rotulos.js';
 
 const VERTICE = `
@@ -564,12 +565,12 @@ export class Visor {
       }
       const cabe = this.numerosFijos || anchoEnPantalla >= ANCHO_MINIMO_ETIQUETA_PX;
       if ((elegida || cabe) && conNumero && !estilo.atenuada) {
-        const [cx, cy] = centro(pixeles);
-        const y = elegida ? this._ponerGlobo(nodo, pixeles) : cy;
+        let [cx, cy] = centro(pixeles);
+        if (elegida) [cx, cy] = this._ponerGlobo(nodo, pixeles) ?? [cx, cy];
         nodo.disco.style.fill = estilo.color;
         nodo.numero.style.fill = estilo.texto;
         candidatas.push({
-          id, x: cx, y, nodo, elegida, anchoEnPantalla,
+          id, x: cx, y: cy, nodo, elegida, anchoEnPantalla,
           // Primero la elegida; después lo que se vende; después lo más cercano,
           // que es lo que se ve más grande.
           prioridad: (elegida ? 1e9 : 0) + (estilo.prioridad ?? 0) * 1e6 + anchoEnPantalla,
@@ -613,20 +614,21 @@ export class Visor {
   }
 
   /**
-   * Sube la pastilla de la elegida por sobre el borde de arriba de la parcela y
-   * tiende la patita hasta él. Devuelve dónde queda el centro de la pastilla.
+   * Sube la pastilla de la elegida por sobre la parcela y tiende la patita hasta
+   * su borde, justo debajo (globo.js). Devuelve dónde queda el centro de la pastilla.
    */
   _ponerGlobo(nodo, pixeles) {
-    let tope = Infinity;
-    for (const [, py] of pixeles) tope = Math.min(tope, py);
+    const anchoGlobo = (Number(nodo.disco.getAttribute('width')) || ALTO_PASTILLA) * ESCALA_ELEGIDA;
+    const apoyo = apoyoDelGlobo(pixeles, anchoGlobo);
+    if (!apoyo) return null;
     const medioAlto = (ALTO_PASTILLA * ESCALA_ELEGIDA) / 2;
     // Pegada al borde de la pantalla no puede subir más: ahí tapa un poco, pero se lee.
-    const y = Math.max(tope - PATITA_PX - medioAlto, medioAlto + 4);
-    const largo = Math.max(tope - y, medioAlto);
+    const y = Math.max(apoyo.tope - PATITA_PX - medioAlto, medioAlto + 4);
+    const largo = Math.max(apoyo.apoyo - y, medioAlto);
     nodo.patita.setAttribute('y1', medioAlto.toFixed(1));
     nodo.patita.setAttribute('y2', largo.toFixed(1));
     nodo.punta.setAttribute('cy', largo.toFixed(1));
-    return y;
+    return [apoyo.x, y];
   }
 
   /**
