@@ -14,6 +14,7 @@ import {
   pintarEstado, textoDeReferencias, urlDeVistaPrevia,
 } from './detalle.js';
 import { pintarVuelo } from './vuelo.js';
+import { tituloEsqueleto } from './esqueleto.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
 import { relevo, retomarRegistro, textoInterrumpido, trasFalloDeSondeo } from './sondeo.js';
@@ -89,7 +90,8 @@ export function pintarPlano(slug, { nuevo = false, buscando = false } = {}) {
   actual = slug;
   const proyecto = proyectoActual();
   if (!proyecto) {
-    $('#plano-nombre').textContent = buscando ? 'Cargando…' : 'Este loteo no existe';
+    if (buscando) tituloEsqueleto($('#plano-nombre'));
+    else $('#plano-nombre').textContent = 'Este loteo no existe';
     $('#plano-meta').replaceChildren();
     $('#plano-estado').replaceChildren();
     $('#plano').classList.add('plano-detalle--vacio');

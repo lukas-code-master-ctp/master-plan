@@ -66,6 +66,18 @@
 
 <main class="lienzo">
 
+  <!-- Mientras llegan los datos de una pantalla que no tiene esqueleto propio (js/esqueleto.js). -->
+  <section id="pantalla-cargando" class="pantalla esqueleto-pantalla" aria-busy="true" aria-label="Cargando" hidden>
+    <span class="oculto">Cargando…</span>
+    <span class="esqueleto esqueleto--chip" aria-hidden="true"></span>
+    <span class="esqueleto esqueleto--h1" aria-hidden="true"></span>
+    <span class="esqueleto esqueleto--linea" aria-hidden="true"></span>
+    <div class="esqueleto-pantalla__cuerpo" aria-hidden="true">
+      <span class="esqueleto esqueleto--panel"></span>
+      <span class="esqueleto esqueleto--panel"></span>
+    </div>
+  </section>
+
   <!-- Mis 360° -->
   <section id="pantalla-planos" class="pantalla" aria-labelledby="titulo-planos" hidden>
     <header class="pantalla__cabecera">

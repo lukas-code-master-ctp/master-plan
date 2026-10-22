@@ -9,6 +9,9 @@ export const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
 /** Lo que la app sabe en este momento. Una sola fuente, que todas leen. */
 export const estado = {
   sesion: null,
+  // Si ya llegó la primera carga (loteos, diseños, KMZ, reservas). Hasta entonces las
+  // pantallas muestran su esqueleto (js/esqueleto.js).
+  cargado: false,
   proyectos: [],
   disenos: [],
   kmzs: [],
