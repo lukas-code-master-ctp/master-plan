@@ -12,10 +12,15 @@ let refrescar = async () => {};
 async function cargarLoteadoras() {
   loteadoras = await pedir('/api/plataforma/clientes');
   $('#clientes-lista').replaceChildren(...loteadoras.map(filaLoteadora));
-  $('#habilitar-cliente').replaceChildren(...loteadoras.map((c) => {
-    const opcion = document.createElement('option');
-    opcion.value = c.id;
-    opcion.textContent = c.nombre;
+  // Sin loteadora elegida de partida: la primera de la lista es la propia (CTP) y
+  // habilitar a nombre de otra por no tocar el selector deja el loteo mal puesto.
+  const elegir = new Option('Elige una loteadora', '', true, true);
+  elegir.disabled = true;
+  $('#habilitar-cliente').replaceChildren(elegir, ...loteadoras.map((c) => {
+    const suspendida = c.estado !== 'activo';
+    const opcion = new Option(suspendida ? `${c.nombre} · suspendida` : c.nombre, c.id);
+    // Su gente no puede entrar: el loteo quedaría donde nadie lo ve.
+    opcion.disabled = suspendida;
     return opcion;
   }));
 }
@@ -126,12 +131,22 @@ export function prepararBackOffice(opciones) {
     const cliente = $('#habilitar-cliente').value;
     const nombre = $('#habilitar-nombre').value.trim();
     const cobro = $('#habilitar-cobro').value.trim();
+    if (!cliente) return avisar('Elige a qué loteadora va el loteo.');
     if (!nombre) return avisar('Ponle un nombre al loteo.');
     if (!cobro) return avisar('Anota cómo se pagó: es el único registro del cobro.');
     try {
-      await pedir(`/api/plataforma/clientes/${cliente}/proyectos`, json({ nombre, nota_cobro: cobro }));
+      const creado = await pedir(`/api/plataforma/clientes/${cliente}/proyectos`,
+        json({ nombre, nota_cobro: cobro }));
+      const duenia = loteadoras.find((c) => String(c.id) === String(cliente))?.nombre;
       $('#habilitar').close();
       await refrescar();
+      // Se lleva al loteo recién nacido, que es donde sigue el trabajo (subir el
+      // vuelo y el KMZ). Al cambiar de pantalla se borran los avisos, así que el
+      // de "listo" se pone después de llegar.
+      window.addEventListener('hashchange', () => avisar(
+        `${creado.nombre} quedó habilitado${duenia ? ` para ${duenia}` : ''}: ya lo ven en su Mis 360°.`,
+        'ok'), { once: true });
+      location.hash = `#/planos/${creado.slug}`;
     } catch (error) { avisar(error.message); }
   });
 }

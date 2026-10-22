@@ -1496,6 +1496,8 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
 .modal__pie { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem; }
 /* Tres botones con el número en el texto no caben en una línea de celular. */
 .modal__pie--envuelve { flex-wrap: wrap; }
+/* Varios campos seguidos en un modal: sin aire, cada etiqueta se pega al campo de arriba. */
+.modal__campos { display: grid; gap: 0.9rem; margin-top: 1rem; }
 .ayuda { margin: 0 0 1rem; font-size: 0.8125rem; color: var(--zinc-500); }
 
 .soltadero {
@@ -1550,6 +1552,8 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
 
 .fila--envuelve { flex-wrap: wrap; }
 .fila--envuelve input { flex: 1 1 10rem; }
+/* En el padrón se escriben nombres y correos, no rutas ni códigos: van en la letra de siempre. */
+#clientes .fila input { font-family: var(--sans); font-size: 0.875rem; }
 
 /* Los pasos del flujo, en una línea. Va en gris y sin caja: tiene que estar
    disponible para quien la necesita y desaparecer para quien ya sabe. */
