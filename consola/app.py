@@ -82,7 +82,7 @@ from .rutas_cuentas import (
 from .rutas_contactos import PUBLICAS as PUBLICAS_DE_CONTACTO
 from .rutas_contactos import rutas_de_contactos
 from .rutas_reservas import PUBLICAS as PUBLICAS_DE_RESERVAS
-from .rutas_actividad import rutas_de_actividad
+from .rutas_actividad import eventos_json, rutas_de_actividad
 from .rutas_equipo import ADMINISTRAN, rutas_de_equipo
 from .rutas_preferencias import preferencias_de, rutas_de_preferencias, whatsapp_valido
 from .rutas_reservas import rutas_de_reservas
@@ -856,6 +856,38 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     def loteadoras(_: Sesion = Depends(solo_plataforma)) -> list[dict]:
         return [_cliente_json(c, base) for c in base.clientes()]
 
+    @app.get("/api/plataforma/clientes/{cliente_id}")
+    def ficha_de_loteadora(cliente_id: int, _: Sesion = Depends(solo_plataforma)) -> dict:
+        """Todo lo de una loteadora en un lugar: sus loteos, su gente y lo último que pasó.
+
+        Las cuentas van con su estado porque es lo que se pregunta cuando alguien
+        llama diciendo que no puede entrar: si confirmó el correo, si la desactivaron.
+        """
+        cliente = base.cliente(cliente_id)            # 404 si no existe
+        return {
+            **_cliente_json(cliente, base),
+            "creado_en": cliente.creado_en.isoformat(),
+            "cuentas": [{"id": u.id, "email": u.email, "nombre": u.nombre, "rol": u.rol,
+                         "activo": u.activo, "email_verificado": u.email_verificado}
+                        for u in base.usuarios_de(cliente_id)],
+            "loteos": [_loteo_de_ficha(p) for p in base.proyectos(cliente_id=cliente_id)],
+            "historial": eventos_json(base, base.historial(cliente_id, limite=20)),
+        }
+
+    @app.get("/api/plataforma/por-habilitar")
+    def por_habilitar(_: Sesion = Depends(solo_plataforma)) -> list[dict]:
+        """Los loteos cuya loteadora pidió habilitar y que siguen sin pago anotado.
+
+        El correo al equipo avisa una vez; esta lista es lo que queda pendiente, para
+        que un pedido no se pierda en la bandeja. El más antiguo primero: es el que
+        lleva más rato esperando.
+        """
+        nombres = {c.id: c.nombre for c in base.clientes()}
+        pedidos = [p for p in base.proyectos() if not p.pagado and p.habilitacion_pedida_en]
+        pedidos.sort(key=lambda p: p.habilitacion_pedida_en)
+        return [{**_loteo_de_ficha(p), "cliente_id": p.cliente_id,
+                 "cliente": nombres.get(p.cliente_id, "")} for p in pedidos]
+
     @app.post("/api/plataforma/clientes", status_code=201)
     def crear_loteadora(campos: dict = Body(...),
                         yo: Sesion = Depends(solo_plataforma)) -> dict:
@@ -1261,13 +1293,29 @@ def _adjunto(nombre: str, respaldo: str) -> str:
 
 
 def _cliente_json(cliente, base: Base) -> dict:
+    loteos = base.proyectos(cliente_id=cliente.id)
     return {
         "id": cliente.id,
         "slug": cliente.slug,
         "nombre": cliente.nombre,
         "estado": cliente.estado,
         "cuentas": [u.email for u in base.usuarios_de(cliente.id)],
-        "loteos": len(base.proyectos(cliente_id=cliente.id)),
+        "loteos": len(loteos),
+        "por_habilitar": sum(1 for p in loteos if not p.pagado and p.habilitacion_pedida_en),
+    }
+
+
+def _loteo_de_ficha(proyecto) -> dict:
+    """Lo que el back-office muestra de un loteo sin abrirlo: no lee el disco."""
+    return {
+        "slug": proyecto.slug,
+        "nombre": proyecto.nombre,
+        "pagado": proyecto.pagado,
+        "nota_cobro": proyecto.nota_cobro,
+        "publicado": bool(proyecto.url_publicada),
+        "url": proyecto.url_publicada,
+        "habilitacion_pedida": (proyecto.habilitacion_pedida_en.isoformat()
+                                if proyecto.habilitacion_pedida_en else None),
     }
 
 
