@@ -518,6 +518,8 @@ RUTAS = {
     ("GET", "/api/kmz/{slug}/descargar"): AJENO_404,
     ("POST", "/api/proyectos/vincular"): SOLO_CTP,
     ("GET", "/api/plataforma/clientes"): SOLO_CTP,
+    ("GET", "/api/plataforma/clientes/{cliente_id}"): SOLO_CTP,
+    ("GET", "/api/plataforma/por-habilitar"): SOLO_CTP,
     ("POST", "/api/plataforma/clientes"): SOLO_CTP,
     ("POST", "/api/plataforma/clientes/{cliente_id}/usuarios"): SOLO_CTP,
     ("POST", "/api/plataforma/clientes/{cliente_id}/estado"): SOLO_CTP,
@@ -687,6 +689,8 @@ def test_dos_loteadoras_con_el_mismo_nombre_de_loteo_no_se_pisan(ana_y_luis):
 
 @pytest.mark.parametrize("pedir", [
     lambda web, cid: web.get("/api/plataforma/clientes"),
+    lambda web, cid: web.get(f"/api/plataforma/clientes/{cid}"),
+    lambda web, cid: web.get("/api/plataforma/por-habilitar"),
     lambda web, cid: web.post("/api/plataforma/clientes",
                               json={"nombre": "Trucha", "email": "t@t.cl"}),
     lambda web, cid: web.post(f"/api/plataforma/clientes/{cid}/usuarios",
@@ -701,7 +705,7 @@ def test_dos_loteadoras_con_el_mismo_nombre_de_loteo_no_se_pisan(ana_y_luis):
     lambda web, cid: web.post("/api/plataforma/usuarios/clave", json={"email": "luis@delvalle.cl"}),
     lambda web, cid: web.get("/api/plataforma/contactos"),
     lambda web, cid: web.post("/api/plataforma/contactos/1/estado", json={"estado": "atendido"}),
-], ids=["listar", "crear cliente", "crear cuenta", "suspender", "habilitar loteo", "historial",
+], ids=["listar", "ficha", "por habilitar", "crear cliente", "crear cuenta", "suspender", "habilitar loteo", "historial",
         "anotar pago", "clave nueva", "ver contactos", "atender contacto"])
 def test_una_loteadora_no_entra_al_back_office(ana_y_luis, pedir):
     """Sobre todo la penúltima: si un cliente pudiera habilitarse loteos solo,
@@ -805,6 +809,51 @@ def test_agregar_una_cuenta_mas_a_una_loteadora(ana_y_luis):
     cuentas = [c for c in ctp.get("/api/plataforma/clientes").json()
                if c["nombre"] == "Los Robles"][0]["cuentas"]
     assert "socio@losrobles.cl" in cuentas
+
+
+def test_la_ficha_de_una_loteadora_junta_loteos_cuentas_e_historial(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+    cliente_id = id_de(registro, "ana@losrobles.cl")
+    habilitado = de_ana(ctp, ana, registro)
+    pedido = crear(ana, "Pedido por Ana")["slug"]
+    ana.post(f"/api/proyectos/{pedido}/habilitacion")
+
+    ficha = ctp.get(f"/api/plataforma/clientes/{cliente_id}").json()
+
+    assert ficha["nombre"] == "Los Robles"
+    assert ficha["por_habilitar"] == 1
+    assert [c["email"] for c in ficha["cuentas"]] == ["ana@losrobles.cl"]
+    assert {"rol", "activo", "email_verificado"} <= set(ficha["cuentas"][0])
+    loteos = {l["slug"]: l for l in ficha["loteos"]}
+    assert loteos[habilitado]["pagado"] is True
+    assert loteos[pedido]["pagado"] is False and loteos[pedido]["habilitacion_pedida"]
+    assert "loteo habilitado" in [e["que"] for e in ficha["historial"]]
+    # La clave nunca viaja, ni cifrada.
+    assert "clave" not in str(ficha["cuentas"])
+
+
+def test_la_ficha_de_una_loteadora_que_no_existe_da_404(ana_y_luis):
+    ctp, _, _, _, _ = ana_y_luis
+
+    assert ctp.get("/api/plataforma/clientes/9999").status_code == 404
+
+
+def test_por_habilitar_lista_los_pedidos_sin_pago_de_todas(ana_y_luis):
+    ctp, ana, luis, registro, _ = ana_y_luis
+    de_ana_pedido = crear(ana, "Pedido por Ana")["slug"]
+    ana.post(f"/api/proyectos/{de_ana_pedido}/habilitacion")
+    de_luis_pedido = crear(luis, "Pedido por Luis")["slug"]
+    luis.post(f"/api/proyectos/{de_luis_pedido}/habilitacion")
+    crear(luis, "Sin pedir")                              # no pidió: no está
+
+    pendientes = ctp.get("/api/plataforma/por-habilitar").json()
+
+    assert [p["slug"] for p in pendientes] == [de_ana_pedido, de_luis_pedido]
+    assert pendientes[0]["cliente"] == "Los Robles"
+
+    # Con el pago anotado sale de la lista.
+    ctp.post(f"/api/plataforma/proyectos/{de_ana_pedido}/pago", json={"nota_cobro": "transferencia 1"})
+    assert [p["slug"] for p in ctp.get("/api/plataforma/por-habilitar").json()] == [de_luis_pedido]
 
 
 def test_lo_que_decide_algo_queda_anotado(ana_y_luis):

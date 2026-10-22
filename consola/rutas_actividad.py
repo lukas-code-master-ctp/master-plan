@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from .acceso import Sesion
-from .datos import Base
+from .datos import Base, Evento
 
 LIMITE_MAXIMO = 100
 
@@ -21,16 +21,21 @@ def rutas_de_actividad(base: Base, quien) -> APIRouter:
     def actividad(limite: int = Query(default=50, ge=1, le=LIMITE_MAXIMO),
                   antes: int | None = Query(default=None, ge=1),
                   sesion: Sesion = Depends(quien)) -> list[dict]:
-        eventos = base.historial(sesion.cliente_id, limite=limite, antes=antes)
-        personas: dict[int, dict | None] = {}
-        for evento in eventos:
-            if evento.usuario_id is not None and evento.usuario_id not in personas:
-                usuario = base.usuario(evento.usuario_id)
-                personas[evento.usuario_id] = (
-                    {"nombre": usuario.nombre, "email": usuario.email, "rol": usuario.rol}
-                    if usuario else None)
-        return [{"id": e.id, "que": e.que, "detalle": e.detalle, "cuando": e.cuando.isoformat(),
-                 "quien": personas.get(e.usuario_id) if e.usuario_id is not None else None}
-                for e in eventos]
+        return eventos_json(base, base.historial(sesion.cliente_id, limite=limite, antes=antes))
 
     return rutas
+
+
+def eventos_json(base: Base, eventos: list[Evento]) -> list[dict]:
+    """Cada evento con quién lo hizo. Lo usa también la ficha de una loteadora en el
+    back-office, que muestra lo mismo que ella ve en su Actividad."""
+    personas: dict[int, dict | None] = {}
+    for evento in eventos:
+        if evento.usuario_id is not None and evento.usuario_id not in personas:
+            usuario = base.usuario(evento.usuario_id)
+            personas[evento.usuario_id] = (
+                {"nombre": usuario.nombre, "email": usuario.email, "rol": usuario.rol}
+                if usuario else None)
+    return [{"id": e.id, "que": e.que, "detalle": e.detalle, "cuando": e.cuando.isoformat(),
+             "quien": personas.get(e.usuario_id) if e.usuario_id is not None else None}
+            for e in eventos]

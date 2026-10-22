@@ -1499,7 +1499,21 @@
 <!-- Padrón de loteadoras (CTP) -->
 <dialog id="clientes" class="modal modal--ancho">
   <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <!-- Arriba y no al fondo: con la ficha abierta, un aviso al final queda fuera de la vista. -->
+  <p class="aviso" role="alert" hidden></p>
+  <pre id="clientes-clave" class="consola-log" hidden></pre>
+
+  <div id="padron-ficha" class="ficha" hidden></div>
+
+  <div id="padron-todas">
   <h2>Loteadoras</h2>
+
+  <section id="por-habilitar" class="padron__bloque" hidden>
+    <h3>Por habilitar <span id="por-habilitar-cuenta" class="config__cuenta"></span></h3>
+    <p class="ayuda">Pidieron publicar y esperan que anotes el pago. El más antiguo, arriba.</p>
+    <div id="por-habilitar-lista" class="padron"></div>
+  </section>
+
   <div id="clientes-lista" class="padron"></div>
 
   <details class="alternativa">
@@ -1523,8 +1537,7 @@
     <p class="ayuda">Para quien olvidó la suya mientras no haya recuperación por correo. Corta
       sus sesiones abiertas y la clave se muestra <strong>una sola vez</strong>.</p>
   </details>
-
-  <pre id="clientes-clave" class="consola-log" hidden></pre>
+  </div>
 </dialog>
 
 <script type="module" src="js/app.js"></script>
