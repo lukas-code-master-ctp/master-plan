@@ -871,7 +871,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                          "activo": u.activo, "email_verificado": u.email_verificado}
                         for u in base.usuarios_de(cliente_id)],
             "loteos": [_loteo_de_ficha(p) for p in base.proyectos(cliente_id=cliente_id)],
-            "historial": eventos_json(base, base.historial(cliente_id, limite=20)),
+            "historial": eventos_json(base, base.historial(cliente_id, limite=60)),
         }
 
     @app.get("/api/plataforma/por-habilitar")

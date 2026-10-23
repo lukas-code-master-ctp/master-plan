@@ -13,6 +13,8 @@ export function seccionDe(pantalla) {
   if (pantalla === 'contactos') return 'contactos';
   // Configuración se abre desde el avatar, no desde la isla: ninguna pestaña es suya.
   if (pantalla === 'configuracion') return null;
+  // Loteadoras también: es del equipo de CTP y se abre desde el mismo menú.
+  if (pantalla.startsWith('loteadora')) return null;
   return 'planos';
 }
 

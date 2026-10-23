@@ -4,20 +4,23 @@
  * Que los botones estén escondidos no protege nada —el servidor contesta 403
  * igual—; es para que una loteadora no vea puertas que no puede abrir.
  *
- * El diálogo Loteadoras tiene dos vistas: el padrón (arriba, los pedidos por
- * habilitar; abajo, todas las loteadoras) y la ficha de una, con sus loteos, su
- * gente y lo último que pasó.
+ * Dos pantallas: `#/loteadoras` (arriba, los pedidos por habilitar; abajo, todas
+ * las loteadoras con buscador) y `#/loteadoras/<id>`, la ficha de una con sus
+ * loteos, su gente y lo último que pasó. Tienen dirección propia para poder
+ * volver atrás y mandarle el enlace a alguien del equipo.
  */
 import { $, $$, abrirDialogo, avisar, estado, json, pedir, pastilla } from './comun.js';
 import { fraseDe } from './actividad.js';
 
 let loteadoras = [];
-let fichaAbierta = null;      // el id de la loteadora cuya ficha se ve, o null en el padrón
+let fichaAbierta = null;      // el id de la loteadora cuya ficha se ve, o null
 let refrescar = async () => {};
 
 const DIA = new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'short', year: 'numeric' });
 const DIA_CORTO = new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'short' });
 const ROLES = { 'dueño': 'Dueño', equipo: 'Equipo', plataforma: 'Equipo CTP' };
+// Cuántas líneas de "Lo último" se muestran, ya juntadas las repeticiones.
+const LINEAS_DE_HISTORIAL = 12;
 
 // --- lo que se puede probar sin página ------------------------------------------------
 
@@ -46,6 +49,34 @@ export function marcasDeCuenta(cuenta) {
   return marcas;
 }
 
+/** ¿La loteadora calza con lo que se busca? Por nombre o por el correo de alguien suyo. */
+export function calzaCon(cliente, busqueda) {
+  const normal = (texto) => String(texto ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const buscado = normal(busqueda).trim();
+  if (!buscado) return true;
+  return [cliente.nombre, cliente.slug, ...cliente.cuentas].some((t) => normal(t).includes(buscado));
+}
+
+/**
+ * Junta los eventos seguidos que dicen lo mismo el mismo día: publicar siete veces
+ * en una tarde es una línea "· 7 veces", no siete líneas iguales que tapan el resto.
+ * Devuelve `{ evento, veces }`, en el mismo orden (el más nuevo primero).
+ */
+export function juntarRepetidos(eventos) {
+  const dia = (iso) => new Date(iso).toDateString();
+  const lineas = [];
+  for (const evento of eventos) {
+    const ultima = lineas.at(-1);
+    if (ultima && ultima.evento.que === evento.que && ultima.evento.detalle === evento.detalle
+        && ultima.evento.quien?.email === evento.quien?.email && dia(ultima.evento.cuando) === dia(evento.cuando)) {
+      ultima.veces += 1;
+    } else {
+      lineas.push({ evento, veces: 1 });
+    }
+  }
+  return lineas;
+}
+
 // --- ayudas de DOM --------------------------------------------------------------------
 
 function nodo(etiqueta, clase, texto) {
@@ -67,12 +98,14 @@ function chip(texto, tono) {
 }
 
 /** Muestra una clave provisional, que no se guarda en claro en ninguna parte. */
-function mostrarClave(lineas) {
-  const caja = $('#clientes-clave');
+function mostrarClave(caja, lineas) {
   caja.textContent = `${lineas.join('\n')}\n\nCópiala ahora: no se vuelve a mostrar. Pásasela por un canal aparte.`;
   caja.hidden = false;
-  caja.scrollIntoView({ block: 'nearest' });
+  caja.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
+
+/** La caja de la clave de la pantalla que se está viendo. */
+const cajaDeClave = () => (fichaAbierta != null ? $('#ficha-clave') : $('#clientes-clave'));
 
 /**
  * Un botón "Anotar pago" que, al apretarlo, abre ahí mismo dónde anotar cómo se
@@ -112,7 +145,7 @@ function anotarPago(loteo) {
 
 function enlaceAlLoteo(loteo) {
   const a = nodo('a', 'padron__enlace', loteo.nombre);
-  a.href = `#/planos/${loteo.slug}`;
+  a.href = `#/planos/${encodeURIComponent(loteo.slug)}`;
   return a;
 }
 
@@ -120,7 +153,7 @@ function enlaceAlLoteo(loteo) {
 
 async function cargarLoteadoras() {
   loteadoras = await pedir('/api/plataforma/clientes');
-  $('#clientes-lista').replaceChildren(...loteadoras.map(filaLoteadora));
+  pintarLista();
   // Sin loteadora elegida de partida: la primera de la lista es la propia (CTP) y
   // habilitar a nombre de otra por no tocar el selector deja el loteo mal puesto.
   const elegir = new Option('Elige una loteadora', '', true, true);
@@ -134,6 +167,15 @@ async function cargarLoteadoras() {
   }));
 }
 
+/** La lista, filtrada por el buscador. Se repinta al escribir, sin pedir nada. */
+function pintarLista() {
+  const busqueda = $('#loteadoras-buscar').value;
+  const vistas = loteadoras.filter((c) => calzaCon(c, busqueda));
+  $('#clientes-cuenta').textContent = busqueda.trim() ? `${vistas.length} de ${loteadoras.length}` : loteadoras.length;
+  $('#clientes-lista').replaceChildren(...vistas.map(filaLoteadora));
+  $('#clientes-vacio').hidden = vistas.length > 0;
+}
+
 async function cargarPorHabilitar() {
   const pedidos = await pedir('/api/plataforma/por-habilitar');
   $('#por-habilitar').hidden = !pedidos.length;
@@ -141,8 +183,10 @@ async function cargarPorHabilitar() {
   $('#por-habilitar-lista').replaceChildren(...pedidos.map((loteo) => {
     const fila = nodo('div', 'padron__fila padron__fila--pedido');
     const texto = nodo('div', 'padron__texto');
-    const detalle = nodo('span', 'ayuda',
-      `${loteo.cliente} · pidió el ${DIA.format(new Date(loteo.habilitacion_pedida))}`);
+    const quien = nodo('a', 'padron__de', loteo.cliente);
+    quien.href = `#/loteadoras/${loteo.cliente_id}`;
+    const detalle = nodo('span', 'ayuda');
+    detalle.append(quien, ` · pidió el ${DIA.format(new Date(loteo.habilitacion_pedida))}`);
     texto.append(enlaceAlLoteo(loteo), detalle);
     fila.append(texto, anotarPago(loteo));
     return fila;
@@ -150,80 +194,87 @@ async function cargarPorHabilitar() {
 }
 
 function filaLoteadora(cliente) {
-  const fila = nodo('div', 'padron__fila');
-  const abrir = nodo('button', 'padron__abrir');
-  abrir.type = 'button';
-  abrir.setAttribute('aria-label', `Ver la ficha de ${cliente.nombre}`);
+  const fila = nodo('a', 'padron__fila padron__fila--enlace');
+  fila.href = `#/loteadoras/${cliente.id}`;
+  const texto = nodo('span', 'padron__texto');
   const titulo = nodo('span', 'padron__nombre');
   titulo.append(nodo('strong', null, cliente.nombre));
   if (cliente.id === estado.sesion?.cliente_id) titulo.append(chip('La tuya'));
   if (cliente.estado !== 'activo') titulo.append(chip('Suspendida', 'apagada'));
   if (cliente.por_habilitar) titulo.append(chip(`${cliente.por_habilitar} por habilitar`, 'aviso'));
-  abrir.append(titulo, nodo('span', 'ayuda', resumenDe(cliente)));
-  abrir.addEventListener('click', () => abrirFicha(cliente.id));
-  fila.append(abrir, nodo('span', 'padron__flecha', '›'));
+  texto.append(titulo, nodo('span', 'ayuda', resumenDe(cliente)));
+  fila.append(texto, nodo('span', 'padron__flecha', '›'));
   return fila;
 }
 
-/** Vuelve a pedir lo que se está viendo: el padrón entero o la ficha abierta. */
+/** Vuelve a pedir lo de la pantalla que se ve: el padrón o la ficha abierta. */
 async function recargar() {
-  if (fichaAbierta != null) {
-    await Promise.all([pintarFicha(fichaAbierta), cargarLoteadoras(), cargarPorHabilitar()]);
-  } else {
-    await Promise.all([cargarLoteadoras(), cargarPorHabilitar()]);
-  }
+  if (fichaAbierta != null) await Promise.all([dibujarFicha(fichaAbierta), cargarLoteadoras()]);
+  else await Promise.all([cargarLoteadoras(), cargarPorHabilitar()]);
 }
 
-function verPadron() {
+/** Llega a `#/loteadoras`. Solo pide al llegar: un refresco de fondo no borra lo escrito. */
+export async function pintarLoteadoras({ llegando }) {
   fichaAbierta = null;
-  $('#padron-ficha').hidden = true;
-  $('#padron-todas').hidden = false;
+  if (!llegando) return;
   $('#clientes-clave').hidden = true;
-  avisar(null);
+  try {
+    await Promise.all([cargarLoteadoras(), cargarPorHabilitar()]);
+  } catch (error) { avisar(error.message); }
 }
 
 // --- la ficha -------------------------------------------------------------------------
 
-async function abrirFicha(clienteId) {
+/** Llega a `#/loteadoras/<id>`. */
+export async function pintarFicha(id, { llegando }) {
+  fichaAbierta = id;
+  if (!llegando) return;
+  $('#ficha-clave').hidden = true;
+  $('#padron-ficha').replaceChildren(nodo('p', 'ayuda', 'Cargando…'));
   try {
-    await pintarFicha(clienteId);
-  } catch (error) { return avisar(error.message); }
-  fichaAbierta = clienteId;
-  $('#clientes-clave').hidden = true;
-  avisar(null);
-  $('#padron-todas').hidden = true;
-  $('#padron-ficha').hidden = false;
-  $('#clientes').scrollTop = 0;
+    await dibujarFicha(id);
+  } catch (error) {
+    $('#padron-ficha').replaceChildren(nodo('h1', null, 'No encontramos esa loteadora'),
+      nodo('p', 'ayuda', error.message));
+  }
 }
 
-async function pintarFicha(clienteId) {
-  const ficha = await pedir(`/api/plataforma/clientes/${clienteId}`);
+async function dibujarFicha(clienteId) {
+  const ficha = await pedir(`/api/plataforma/clientes/${encodeURIComponent(clienteId)}`);
+  // Si mientras llegaba se cambió de pantalla, no se pinta encima de otra.
+  if (String(fichaAbierta) !== String(clienteId)) return;
   const propia = ficha.id === estado.sesion?.cliente_id;
   const activa = ficha.estado === 'activo';
+  document.title = `${ficha.nombre} — Tu Masterplan`;
 
-  const volver = boton('← Todas las loteadoras', verPadron, 'boton boton--texto ficha__volver');
-
-  const cabeza = nodo('div', 'ficha__cabeza');
+  const cabeza = nodo('header', 'pantalla__cabecera');
   const titulo = nodo('div');
-  titulo.append(nodo('h2', null, ficha.nombre), nodo('p', 'ayuda',
-    `Desde el ${DIA.format(new Date(ficha.creado_en))} · ${activa ? 'activa' : 'suspendida'}`));
-  const acciones = nodo('div', 'ficha__acciones');
-  if (activa) {
-    acciones.append(boton('Habilitar un loteo', () => abrirHabilitar(ficha.id), 'boton boton--chico'));
-  }
+  const nombre = nodo('h1', null, ficha.nombre);
+  nombre.id = 'ficha-titulo';
+  const marcas = nodo('p', 'guia');
+  marcas.append(`Desde el ${DIA.format(new Date(ficha.creado_en))}`);
+  if (propia) marcas.append(' · ', chip('La tuya'));
+  if (!activa) marcas.append(' · ', chip('Suspendida', 'apagada'));
+  titulo.append(nodo('span', 'antetitulo', 'Loteadora'), nombre, marcas);
+  const acciones = nodo('div', 'pantalla__acciones');
   // La propia loteadora no se puede suspender —quedaría la app sin operador y
   // nadie por encima para arreglarlo—, así que el servidor lo rechaza. Ofrecer el
   // botón sería prometer algo que siempre falla.
   if (!propia) acciones.append(boton(activa ? 'Suspender' : 'Reactivar', () => cambiarEstado(ficha)));
+  if (activa) acciones.append(boton('Habilitar un loteo', () => abrirHabilitar(ficha.id), 'boton'));
   cabeza.append(titulo, acciones);
 
-  $('#padron-ficha').replaceChildren(volver, cabeza,
-    seccionLoteos(ficha), seccionCuentas(ficha), seccionHistorial(ficha));
+  const cuerpo = nodo('div', 'ficha__cuerpo');
+  const principal = nodo('div', 'ficha__principal');
+  principal.append(seccionLoteos(ficha), seccionCuentas(ficha));
+  cuerpo.append(principal, seccionHistorial(ficha));
+
+  $('#padron-ficha').replaceChildren(cabeza, cuerpo);
 }
 
 function seccion(titulo, cantidad) {
   const s = nodo('section', 'padron__bloque');
-  const h = nodo('h3', null, titulo);
+  const h = nodo('h2', null, titulo);
   if (cantidad != null) h.append(' ', nodo('span', 'config__cuenta', String(cantidad)));
   s.append(h);
   return s;
@@ -276,16 +327,18 @@ function seccionCuentas(ficha) {
   const fila = nodo('div', 'fila fila--envuelve');
   const email = nodo('input');
   Object.assign(email, { type: 'email', placeholder: 'correo', autocomplete: 'off' });
+  email.setAttribute('aria-label', 'Correo de la cuenta nueva');
   const nombre = nodo('input');
   Object.assign(nombre, { type: 'text', placeholder: 'nombre', autocomplete: 'off' });
+  nombre.setAttribute('aria-label', 'Nombre de la cuenta nueva');
   const crear = boton('Agregar', async () => {
     const correo = email.value.trim();
     if (!correo) return avisar('Escribe el correo de la cuenta nueva.');
     try {
       const nueva = await pedir(`/api/plataforma/clientes/${ficha.id}/usuarios`,
         json({ email: correo, nombre: nombre.value.trim() }));
-      await pintarFicha(ficha.id);
-      mostrarClave([ficha.nombre, nueva.email, `Clave provisional: ${nueva.clave_provisional}`]);
+      await dibujarFicha(ficha.id);
+      mostrarClave($('#ficha-clave'), [ficha.nombre, nueva.email, `Clave provisional: ${nueva.clave_provisional}`]);
     } catch (error) { avisar(error.message); }
   }, 'boton');
   fila.append(email, nombre, crear);
@@ -297,15 +350,17 @@ function seccionCuentas(ficha) {
 
 function seccionHistorial(ficha) {
   const s = seccion('Lo último');
+  s.classList.add('ficha__lado');
   if (!ficha.historial.length) {
     s.append(nodo('p', 'ayuda', 'Sin movimientos todavía.'));
     return s;
   }
   const lista = nodo('ul', 'ficha__historial');
-  for (const evento of ficha.historial) {
+  for (const { evento, veces } of juntarRepetidos(ficha.historial).slice(0, LINEAS_DE_HISTORIAL)) {
     const item = nodo('li');
-    item.append(nodo('span', 'ficha__cuando', DIA_CORTO.format(new Date(evento.cuando))),
-      nodo('span', null, fraseDe(evento).texto));
+    const texto = nodo('span', null, fraseDe(evento).texto);
+    if (veces > 1) texto.append(' ', nodo('span', 'ficha__veces', `· ${veces} veces`));
+    item.append(nodo('span', 'ficha__cuando', DIA_CORTO.format(new Date(evento.cuando))), texto);
     lista.append(item);
   }
   s.append(lista);
@@ -323,11 +378,15 @@ async function cambiarEstado(cliente) {
 }
 
 async function darClaveNueva(email) {
-  if (!confirm(`¿Dar una contraseña nueva a ${email}?\n\nSe cierran sus sesiones abiertas.`)) return;
+  if (!confirm(`¿Dar una contraseña nueva a ${email}?\n\nSe cierran sus sesiones abiertas.`)) return false;
   try {
     const nueva = await pedir('/api/plataforma/usuarios/clave', json({ email }));
-    mostrarClave([nueva.email, `Clave provisional: ${nueva.clave_provisional}`]);
-  } catch (error) { avisar(error.message); }
+    mostrarClave(cajaDeClave(), [nueva.email, `Clave provisional: ${nueva.clave_provisional}`]);
+    return true;
+  } catch (error) {
+    avisar(error.message);
+    return false;
+  }
 }
 
 // --- habilitar un loteo ---------------------------------------------------------------
@@ -338,7 +397,6 @@ async function abrirHabilitar(clienteId = null) {
   if (clienteId != null) $('#habilitar-cliente').value = String(clienteId);
   $('#habilitar-nombre').value = '';
   $('#habilitar-cobro').value = '';
-  if ($('#clientes').open) $('#clientes').close();
   abrirDialogo($('#habilitar'));
 }
 
@@ -358,11 +416,8 @@ export function prepararBackOffice(opciones) {
     b.addEventListener('click', () => b.closest('dialog').close());
   }
 
-  $('#loteadoras').addEventListener('click', async () => {
-    verPadron();
-    try { await recargar(); } catch (error) { return avisar(error.message); }
-    abrirDialogo($('#clientes'));
-  });
+  $('#loteadoras-buscar').addEventListener('input', pintarLista);
+  $('#loteadoras-habilitar').addEventListener('click', () => abrirHabilitar());
 
   $('#cliente-crear').addEventListener('click', async () => {
     const nombre = $('#cliente-nombre').value.trim();
@@ -371,7 +426,7 @@ export function prepararBackOffice(opciones) {
     try {
       const creada = await pedir('/api/plataforma/clientes',
         json({ nombre, email, duenio: $('#cliente-duenio').value.trim() }));
-      mostrarClave([creada.nombre, email, `Clave provisional: ${creada.clave_provisional}`]);
+      mostrarClave($('#clientes-clave'), [creada.nombre, email, `Clave provisional: ${creada.clave_provisional}`]);
       for (const campo of ['#cliente-nombre', '#cliente-email', '#cliente-duenio']) $(campo).value = '';
       await cargarLoteadoras();
     } catch (error) { avisar(error.message); }
@@ -380,8 +435,7 @@ export function prepararBackOffice(opciones) {
   $('#clave-nueva-dar').addEventListener('click', async () => {
     const email = $('#clave-nueva-email').value.trim();
     if (!email) return avisar('Escribe el correo de la cuenta.');
-    await darClaveNueva(email);
-    $('#clave-nueva-email').value = '';
+    if (await darClaveNueva(email)) $('#clave-nueva-email').value = '';
   });
 
   $('#nuevo').addEventListener('click', () => abrirHabilitar());

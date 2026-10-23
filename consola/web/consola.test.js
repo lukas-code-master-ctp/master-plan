@@ -114,6 +114,8 @@ test('el hash elige la pantalla', () => {
   assert.deepEqual(ruta('#/reservas'), { pantalla: 'reservas' });
   assert.deepEqual(ruta('#/kmz'), { pantalla: 'kmzs' });
   assert.deepEqual(ruta('#/kmz/los-robles'), { pantalla: 'kmz', slug: 'los-robles' });
+  assert.deepEqual(ruta('#/loteadoras'), { pantalla: 'loteadoras' });
+  assert.deepEqual(ruta('#/loteadoras/7'), { pantalla: 'loteadora', id: '7' });
   assert.deepEqual(ruta('#/cualquier-cosa'), { pantalla: 'planos' });
 });
 

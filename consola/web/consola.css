@@ -1550,49 +1550,65 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
 
 .padron__fila .ayuda { display: block; margin: 0.15rem 0 0; }
 
-/* Las secciones del padrón y de la ficha: pedidos, loteos, cuentas, lo último. */
-.padron__bloque { margin: 1.25rem 0 0.5rem; }
-.padron__bloque h3 { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.5rem; font: 700 0.9375rem/1.2 var(--sans); }
-.padron__bloque > .ayuda { margin: -0.25rem 0 0.6rem; }
-#por-habilitar .padron__fila { background: var(--ambar-50); border-color: var(--ambar-200); }
+/* Las secciones de Loteadoras y de la ficha: pedidos, todas, loteos, cuentas, lo último. */
+.padron__bloque { margin: 1.75rem 0 0.5rem; }
+.padron__bloque h2 { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.6rem; font: 700 1.125rem/1.2 var(--sans); letter-spacing: -0.01em; }
+.padron__bloque > .ayuda { margin: -0.3rem 0 0.75rem; }
+.padron .padron__fila { background: #fff; }
+.padron__bloque--pedidos .padron .padron__fila { background: var(--ambar-50); border-color: var(--ambar-200); }
+
+.padron__buscar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.6rem; }
+.padron__buscar h2 { margin: 0; }
+.padron__buscar input {
+  flex: 0 1 20rem; min-width: 0; height: 2.5rem; padding: 0 0.875rem;
+  border: 1px solid var(--zinc-200); border-radius: 999px; background: #fff;
+  font: 400 0.875rem var(--sans); color: var(--zinc-900);
+}
+.padron__buscar input:focus { outline: none; border-color: var(--zinc-900); box-shadow: 0 0 0 4px rgb(24 24 27 / 0.08); }
 
 .padron__texto { min-width: 0; }
 .padron__nombre { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 .padron__enlace { color: var(--zinc-900); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
-.padron__enlace:hover { text-decoration: underline; }
+.padron__enlace:hover, .padron__de:hover { text-decoration: underline; }
+.padron__de { color: inherit; text-decoration: none; }
 
-/* Toda la fila de una loteadora abre su ficha. */
-.padron__abrir {
-  flex: 1; min-width: 0; padding: 0; border: 0; background: none; text-align: left;
-  font: inherit; color: inherit; cursor: pointer;
-}
-.padron__fila:has(.padron__abrir):hover { border-color: var(--zinc-400); }
+/* Toda la fila de una loteadora es el enlace a su ficha. */
+.padron__fila--enlace { color: inherit; text-decoration: none; transition: border-color 150ms, box-shadow 150ms; }
+.padron__fila--enlace:hover { border-color: var(--zinc-400); box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); }
 .padron__flecha { color: var(--zinc-400); font-size: 1.25rem; line-height: 1; }
 
 /* Anotar el pago ahí mismo, sin otro diálogo encima. */
 .padron__pago { flex: none; }
 .padron__pago .fila { min-width: min(20rem, 60vw); }
+.padron__fila > .boton { flex: none; white-space: nowrap; }
 
-.ficha__volver { margin: -0.25rem 0 0.5rem -0.6rem; }
-.ficha__cabeza { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
-.ficha__cabeza .ayuda { margin: 0; }
-.ficha__acciones { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.ficha__historial { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; font-size: 0.8125rem; color: var(--zinc-700); }
+.padron__extras { margin-top: 1.5rem; }
+/* Se escriben nombres y correos, no rutas ni códigos: van en la letra de siempre. */
+#pantalla-loteadoras .fila input, #pantalla-loteadora .fila input { font-family: var(--sans); font-size: 0.875rem; }
+#clientes-clave, #ficha-clave { margin: 1rem 0 0; }
+
+/* La ficha: loteos y cuentas a la izquierda, lo último a la derecha en pantallas anchas. */
+.ficha { display: grid; gap: 0.5rem; }
+.ficha__cuerpo { display: grid; gap: 0 2rem; }
+@media (min-width: 60rem) {
+  .ficha__cuerpo { grid-template-columns: minmax(0, 1fr) 18rem; align-items: start; }
+  .ficha__lado { position: sticky; top: 6rem; }
+}
+.ficha__historial { display: grid; gap: 0.55rem; margin: 0; padding: 0; list-style: none; font-size: 0.8125rem; color: var(--zinc-700); }
 .ficha__historial li { display: flex; gap: 0.75rem; }
-.ficha__cuando { flex: none; width: 4.5rem; color: var(--zinc-500); }
-#clientes > .aviso { margin: 0 2.5rem 0.75rem 0; }
-#clientes-clave { margin: 0 2.5rem 0.75rem 0; }
+.ficha__cuando { flex: none; width: 3.75rem; color: var(--zinc-500); }
+.ficha__veces { color: var(--zinc-500); white-space: nowrap; }
+.ficha .guia .chip { vertical-align: middle; }
 
 @media (max-width: 40rem) {
   /* En el celular, el pago va debajo del nombre y a todo el ancho. */
   .padron__fila--pedido, .padron__fila:has(.padron__pago) { flex-wrap: wrap; }
   .padron__pago, .padron__pago .fila { width: 100%; min-width: 0; }
+  .padron__buscar input { flex-basis: 100%; }
 }
 
 .fila--envuelve { flex-wrap: wrap; }
 .fila--envuelve input { flex: 1 1 10rem; }
-/* En el padrón se escriben nombres y correos, no rutas ni códigos: van en la letra de siempre. */
-#clientes .fila input { font-family: var(--sans); font-size: 0.875rem; }
 
 /* Los pasos del flujo, en una línea. Va en gris y sin caja: tiene que estar
    disponible para quien la necesita y desaparecer para quien ya sabe. */
@@ -2298,4 +2314,3 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .heroe .esqueleto::after { background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.12), transparent); }
 .heroe .esqueleto--h1 { height: 3.5rem; }
 #perfil-email .esqueleto { margin-top: 0.5rem; }
-.padron__fila > .boton { flex: none; white-space: nowrap; }

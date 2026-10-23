@@ -7,6 +7,9 @@ import { seccionDe } from './js/barra.js';
 test('cada pantalla marca su sección en la barra', () => {
   assert.equal(seccionDe('planos'), 'planos');
   assert.equal(seccionDe('plano'), 'planos');
+  // Loteadoras se abre desde el menú del avatar, como Configuración.
+  assert.equal(seccionDe('loteadoras'), null);
+  assert.equal(seccionDe('loteadora'), null);
   assert.equal(seccionDe('nuevo'), 'planos');
   assert.equal(seccionDe('configuracion'), null);
   assert.equal(seccionDe('kmzs'), 'kmz');
