@@ -122,6 +122,8 @@ export function ruta(hash) {
   if (partes[0] === 'disenos') return { pantalla: 'disenos' };
   if (partes[0] === 'reservas') return { pantalla: 'reservas' };
   if (partes[0] === 'contactos') return { pantalla: 'contactos' };
+  if (partes[0] === 'loteadoras' && partes[1]) return { pantalla: 'loteadora', id: partes[1] };
+  if (partes[0] === 'loteadoras') return { pantalla: 'loteadoras' };
   if (partes[0] === 'configuracion') return { pantalla: 'configuracion' };
   // `#/kmz/<slug>/<paso>` abre ese paso (ver `pasoDeRuta` en kmz_geometria.js).
   if (partes[0] === 'kmz' && partes[1] && partes[2]) return { pantalla: 'kmz', slug: partes[1], paso: partes[2] };

@@ -53,7 +53,7 @@
       </div>
       <a role="menuitem" href="#/configuracion">Configuración</a>
       <button id="abrir-clave" role="menuitem" type="button">Cambiar contraseña</button>
-      <button id="loteadoras" role="menuitem" type="button" hidden>Loteadoras</button>
+      <a id="loteadoras" role="menuitem" href="#/loteadoras" hidden>Loteadoras</a>
       <button id="nuevo" role="menuitem" type="button" hidden>Habilitar loteo a una loteadora</button>
       <form method="post" action="/salir">
         <button role="menuitem" type="submit">Salir</button>
@@ -1207,6 +1207,71 @@
     <div id="contactos" class="reservas" aria-live="polite"></div>
   </section>
 
+  <!-- Loteadoras (solo el equipo de CTP) -->
+  <section id="pantalla-loteadoras" class="pantalla" aria-labelledby="titulo-loteadoras" hidden>
+    <header class="pantalla__cabecera">
+      <div>
+        <span class="antetitulo">Back-office</span>
+        <h1 id="titulo-loteadoras">Loteadoras</h1>
+        <p class="guia">Quién usa Tu Masterplan, qué pidieron y qué tienen pagado. Toca una para ver
+          su ficha.</p>
+      </div>
+      <div class="pantalla__acciones">
+        <button id="loteadoras-habilitar" class="boton" type="button">Habilitar un loteo</button>
+      </div>
+    </header>
+
+    <pre id="clientes-clave" class="consola-log" hidden></pre>
+
+    <section id="por-habilitar" class="padron__bloque padron__bloque--pedidos" hidden>
+      <h2>Por habilitar <span id="por-habilitar-cuenta" class="config__cuenta"></span></h2>
+      <p class="ayuda">Pidieron publicar y esperan que anotes el pago. El más antiguo, arriba.</p>
+      <div id="por-habilitar-lista" class="padron"></div>
+    </section>
+
+    <section class="padron__bloque">
+      <div class="padron__buscar">
+        <h2>Todas <span id="clientes-cuenta" class="config__cuenta"></span></h2>
+        <input id="loteadoras-buscar" type="search" placeholder="Buscar por nombre o correo"
+               aria-label="Buscar loteadora por nombre o correo" autocomplete="off" spellcheck="false">
+      </div>
+      <div id="clientes-lista" class="padron"></div>
+      <p id="clientes-vacio" class="ayuda" hidden>Ninguna loteadora coincide con la búsqueda.</p>
+    </section>
+
+    <div class="padron__extras">
+      <details class="alternativa">
+        <summary>Dar de alta una loteadora</summary>
+        <div class="fila fila--envuelve">
+          <input id="cliente-nombre" type="text" placeholder="Bosques del Sur" aria-label="Nombre de la loteadora" autocomplete="off">
+          <input id="cliente-email" type="email" placeholder="correo del dueño" aria-label="Correo del dueño" autocomplete="off">
+          <input id="cliente-duenio" type="text" placeholder="nombre del dueño" aria-label="Nombre del dueño" autocomplete="off">
+          <button id="cliente-crear" class="boton" type="button">Crear</button>
+        </div>
+        <p class="ayuda">Las loteadoras ya se registran solas en tumasterplan.cl. Esto es para darle
+          cuenta a una a mano: se genera una clave provisional que se muestra <strong>una sola vez</strong>.</p>
+      </details>
+
+      <details class="alternativa">
+        <summary>Dar una contraseña nueva a una cuenta</summary>
+        <div class="fila">
+          <input id="clave-nueva-email" type="email" placeholder="correo de la cuenta" aria-label="Correo de la cuenta" autocomplete="off">
+          <button id="clave-nueva-dar" class="boton" type="button">Dar clave nueva</button>
+        </div>
+        <p class="ayuda">Para quien olvidó la suya mientras no haya recuperación por correo. Corta
+          sus sesiones abiertas y la clave se muestra <strong>una sola vez</strong>. También está en
+          la ficha de cada loteadora.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- La ficha de una loteadora (solo el equipo de CTP) -->
+  <section id="pantalla-loteadora" class="pantalla" aria-labelledby="ficha-titulo" hidden>
+    <a class="volver" href="#/loteadoras">← Loteadoras</a>
+    <pre id="ficha-clave" class="consola-log" hidden></pre>
+    <div id="padron-ficha" class="ficha"></div>
+  </section>
+
   <!-- Un diseño -->
   <section id="pantalla-diseno" class="pantalla" aria-labelledby="diseno-titulo" hidden>
     <a class="volver" href="#/disenos">← Mis diseños</a>
@@ -1496,49 +1561,6 @@
   </div>
 </dialog>
 
-<!-- Padrón de loteadoras (CTP) -->
-<dialog id="clientes" class="modal modal--ancho">
-  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
-  <!-- Arriba y no al fondo: con la ficha abierta, un aviso al final queda fuera de la vista. -->
-  <p class="aviso" role="alert" hidden></p>
-  <pre id="clientes-clave" class="consola-log" hidden></pre>
-
-  <div id="padron-ficha" class="ficha" hidden></div>
-
-  <div id="padron-todas">
-  <h2>Loteadoras</h2>
-
-  <section id="por-habilitar" class="padron__bloque" hidden>
-    <h3>Por habilitar <span id="por-habilitar-cuenta" class="config__cuenta"></span></h3>
-    <p class="ayuda">Pidieron publicar y esperan que anotes el pago. El más antiguo, arriba.</p>
-    <div id="por-habilitar-lista" class="padron"></div>
-  </section>
-
-  <div id="clientes-lista" class="padron"></div>
-
-  <details class="alternativa">
-    <summary>Dar de alta una loteadora</summary>
-    <div class="fila fila--envuelve">
-      <input id="cliente-nombre" type="text" placeholder="Bosques del Sur" autocomplete="off">
-      <input id="cliente-email" type="email" placeholder="correo del dueño" autocomplete="off">
-      <input id="cliente-duenio" type="text" placeholder="nombre del dueño" autocomplete="off">
-      <button id="cliente-crear" class="boton" type="button">Crear</button>
-    </div>
-    <p class="ayuda">Se genera una clave provisional que se muestra <strong>una sola vez</strong>.
-      Anótala y pásasela por un canal aparte.</p>
-  </details>
-
-  <details class="alternativa">
-    <summary>Dar una contraseña nueva a una cuenta</summary>
-    <div class="fila">
-      <input id="clave-nueva-email" type="email" placeholder="correo de la cuenta" autocomplete="off">
-      <button id="clave-nueva-dar" class="boton" type="button">Dar clave nueva</button>
-    </div>
-    <p class="ayuda">Para quien olvidó la suya mientras no haya recuperación por correo. Corta
-      sus sesiones abiertas y la clave se muestra <strong>una sola vez</strong>.</p>
-  </details>
-  </div>
-</dialog>
 
 <script type="module" src="js/app.js"></script>
 </body>
