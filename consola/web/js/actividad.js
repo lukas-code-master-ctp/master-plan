@@ -19,6 +19,8 @@ const FRASES = {
   'loteo habilitado': ['habilitó para publicar {d}', 'publicado'],
   'loteo pagado': ['anotó el pago de {d}', 'publicado'],
   'habilitación pedida': ['pidió habilitar {d}', 'publicado'],
+  'plan asignado': ['dejó la loteadora en el plan {d}', 'cuenta'],
+  'plan quitado': ['quitó el plan {d}', 'cuenta'],
   'reserva confirmada': ['confirmó la reserva de la {d}', 'reserva'],
   'reserva liberada': ['liberó la {d}', 'reserva'],
   'diseño creado': ['creó el diseño {d}', 'marca'],

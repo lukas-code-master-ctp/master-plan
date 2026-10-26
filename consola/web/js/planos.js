@@ -177,7 +177,7 @@ function tarjeta(proyecto, indice, forma) {
   }
   arriba.append(etapa);
   // Sin correo configurado el aviso a CTP no sale: que se vea también en la lista.
-  if (!proyecto.pagado && proyecto.habilitacion_pedida) {
+  if (!proyecto.habilitado && proyecto.habilitacion_pedida) {
     arriba.append(pastilla('Pidió habilitar', 'aviso'));
   }
   if (proyecto.construido && proyecto.resumen.vistas) {

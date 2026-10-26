@@ -41,7 +41,7 @@ Reglas que las pruebas hacen cumplir:
   pasa cuando la pide otra loteadora.
 - **Aislamiento entre loteadoras:** las rutas reciben `registro.para(sesion)`, nunca un
   `cliente_id` suelto. Un loteo ajeno responde 404, no 403.
-- **El cobro se controla solo al publicar** (402 sin pago). No agregues chequeos de
+- **El cobro se controla solo al publicar** (402 sin plan con cupo; ver `consola/planes.py`). No agregues chequeos de
   pago en otras rutas.
 
 ## QA local

@@ -319,6 +319,8 @@ def test_quitar_un_loteo_con_reservas_borra_sus_solicitudes(consola):
     """En Postgres las solicitudes apuntan al loteo y la base no deja borrarlo si
     quedan: quitarlo daba 500. SQLite no lo revisa, así que se mira que no queden."""
     solicitar(consola)
+    # Pagado aparte: uno en línea con el plan no se quita desde la consola.
+    consola["base"].anotar_pago(consola["slug"], "transferencia 1")
 
     respuesta = consola["ana"].delete(f"/api/proyectos/{consola['slug']}")
 

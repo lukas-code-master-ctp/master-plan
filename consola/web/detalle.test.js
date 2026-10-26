@@ -60,25 +60,34 @@ test('quitar uno publicado avisa que el sitio queda sin reservas', () => {
   assert.doesNotMatch(aviso, /No se borra ningún archivo/);
 });
 
-test('sin pago, la nota invita a pedir la habilitación', () => {
-  const nota = notaDePublicar({ pagado: false, habilitacion_pedida: null, construido: true });
+test('sin plan, la nota invita a elegir uno', () => {
+  const nota = notaDePublicar({ habilitado: false, habilitacion_pedida: null, construido: true },
+    { plan: null, pedido: null });
 
-  assert.match(nota, /pide que lo habilitemos/);
+  assert.match(nota, /elige un plan/);
   assert.doesNotMatch(nota, /escríbenos/);
 });
 
-test('ya pedida, la nota dice cuándo y que llega un correo', () => {
+test('ya pedido el plan, la nota dice cuándo y que llega un correo', () => {
   const nota = notaDePublicar({
-    pagado: false, habilitacion_pedida: '2026-10-13T15:00:00+00:00', construido: true,
-  });
+    habilitado: false, habilitacion_pedida: '2026-10-13T15:00:00+00:00', construido: true,
+  }, { plan: null, pedido: 'pro' });
 
-  assert.match(nota, /Pediste habilitarlo el 13 de octubre/);
+  assert.match(nota, /Pediste tu plan el 13 de octubre/);
   assert.match(nota, /te avisamos por correo/);
 });
 
-test('pagado, la nota vuelve a hablar de construir y publicar', () => {
-  assert.match(notaDePublicar({ pagado: true, construido: false }), /una vez construido/);
-  assert.equal(notaDePublicar({ pagado: true, construido: true, publicado: false, url: 'https://x' }),
+test('con el plan lleno, la nota dice cuántos incluye y que se puede cambiar', () => {
+  const nota = notaDePublicar({ habilitado: false, construido: true },
+    { plan: 'pro', nombre: 'Pro', loteos: 3, en_linea: 3, pedido: null });
+
+  assert.match(nota, /Tu plan Pro incluye 3 loteos en línea y ya están ocupados/);
+  assert.match(nota, /Cambia a un plan más grande/);
+});
+
+test('habilitado, la nota vuelve a hablar de construir y publicar', () => {
+  assert.match(notaDePublicar({ habilitado: true, construido: false }), /una vez construido/);
+  assert.equal(notaDePublicar({ habilitado: true, construido: true, publicado: false, url: 'https://x' }),
     'Va a quedar en https://x');
 });
 

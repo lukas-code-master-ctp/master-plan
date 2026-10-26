@@ -184,7 +184,7 @@ async def _traer(api: Cierra, guardadas: Conexiones, proyecto: Proyecto, clave: 
         # Lotes que no están en el sitio: eso pide leer el KMZ de nuevo.
         return {**respuesta, "requiere_reconstruir": list(resultado.faltan)}
     respuesta["cambiadas"] = len(resultado.cambiadas)
-    if resultado.cambiadas and publicar_en_linea and proyecto.publicado and proyecto.pagado:
+    if resultado.cambiadas and publicar_en_linea and proyecto.publicado and proyecto.habilitado:
         respuesta["publicando"] = publicar_en_linea(proyecto)["id"]
     return respuesta
 

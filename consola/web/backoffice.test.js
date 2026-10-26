@@ -1,16 +1,28 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { calzaCon, estadoDelLoteo, juntarRepetidos, marcasDeCuenta, resumenDe } from './js/backoffice.js';
+import { calzaCon, estadoDelLoteo, juntarRepetidos, marcasDeCuenta, resumenDe, resumenDelPlan } from './js/backoffice.js';
 
 test('el estado de un loteo se mira desde el cobro', () => {
-  assert.deepEqual(estadoDelLoteo({ publicado: true, pagado: true }), { texto: 'Publicado', tono: 'ok' });
-  assert.deepEqual(estadoDelLoteo({ publicado: false, pagado: true }), { texto: 'Habilitado', tono: 'ok' });
-  assert.deepEqual(estadoDelLoteo({ publicado: false, pagado: false, habilitacion_pedida: null }),
-    { texto: 'Sin pagar', tono: null });
+  assert.deepEqual(estadoDelLoteo({ publicado: true, pagado: false, habilitado: true }), { texto: 'Publicado', tono: 'ok' });
+  assert.deepEqual(estadoDelLoteo({ publicado: true, pagado: true }), { texto: 'Publicado · pagado aparte', tono: 'ok' });
+  assert.deepEqual(estadoDelLoteo({ publicado: false, pagado: true }), { texto: 'Pagado aparte', tono: 'ok' });
+  assert.deepEqual(estadoDelLoteo({ publicado: false, pagado: false, habilitado: true }), { texto: 'Habilitado', tono: 'ok' });
+  assert.deepEqual(estadoDelLoteo({ publicado: false, pagado: false, habilitado: false, habilitacion_pedida: null }),
+    { texto: 'Sin plan', tono: null });
   const pedido = estadoDelLoteo({ publicado: false, pagado: false, habilitacion_pedida: '2026-10-21T15:00:00Z' });
   assert.equal(pedido.tono, 'aviso');
   assert.match(pedido.texto, /^Pidió habilitar · 21/);
+});
+
+test('el plan de una loteadora en una línea', () => {
+  const planes = [{ plan: 'fly', nombre: 'Fly' }, { plan: 'pro', nombre: 'Pro' }];
+  assert.equal(resumenDelPlan(null, planes), 'Sin plan');
+  assert.equal(resumenDelPlan({ plan: null, pedido: 'pro' }, planes), 'Sin plan · pidió Pro');
+  assert.equal(resumenDelPlan({ plan: 'fly', nombre: 'Fly', loteos: 1, en_linea: 1, pedido: 'pro' }, planes),
+    'Fly · 1 de 1 en línea · pidió Pro');
+  assert.equal(resumenDelPlan({ plan: 'pro', nombre: 'Pro', loteos: 3, en_linea: 2, pedido: null }, planes),
+    'Pro · 2 de 3 en línea');
 });
 
 test('el resumen de una loteadora cuenta loteos y cuentas en singular o plural', () => {

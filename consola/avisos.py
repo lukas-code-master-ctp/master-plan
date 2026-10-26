@@ -42,18 +42,20 @@ class Avisos:
             ]))
 
     def habilitacion_pedida(self, *, loteo: str, slug: str, cliente_id: int,
-                            quien: str, url_consola: str = "") -> None:
-        """Al equipo de CTP, cuando una loteadora pide que le dejen publicar un loteo."""
+                            quien: str, plan: str | None = None, url_consola: str = "") -> None:
+        """Al equipo de CTP, cuando una loteadora pide un plan para publicar un loteo."""
         loteadora = self.base.cliente(cliente_id).nombre
         self._al_equipo(
-            f"Pide habilitar un loteo: {loteo} ({loteadora})",
+            f"Pide el plan {plan}: {loteadora}" if plan
+            else f"Pide habilitar un loteo: {loteo} ({loteadora})",
             "\n".join([
-                f"{loteadora} quiere publicar \"{loteo}\" y pidió que se lo habiliten.",
+                f"{loteadora} quiere publicar \"{loteo}\""
+                + (f" y eligió el plan {plan}." if plan else " y pidió que se lo habiliten."),
                 "",
                 f"Lo pidió: {quien}",
                 "",
-                "Cuando esté pagado, anota el pago en el loteo (Anotar pago) y a la "
-                "loteadora le llega un correo para que lo publique.",
+                "Cuando esté pagado, asígnale el plan en su ficha (Loteadoras) y a la "
+                "loteadora le llega un correo para que publique.",
                 "",
                 f"El loteo: {url_consola.rstrip('/')}/#/planos/{slug}" if url_consola
                 else f"Búscalo en la consola: {slug}",
@@ -74,6 +76,22 @@ class Avisos:
         for usuario in self.base.usuarios_de(cliente_id):
             if usuario.activo and usuario.email_verificado:
                 self._enviar(usuario.email, f"Ya puedes publicar {loteo}", texto)
+
+    def plan_activo(self, *, cliente_id: int, plan: str, loteos: int | None,
+                    url_consola: str = "") -> None:
+        """A la loteadora, cuando CTP le asigna un plan y ya puede publicar."""
+        cupo = f"{loteos} {'loteo' if loteos == 1 else 'loteos'} en línea a la vez"
+        texto = "\n".join([
+            "Hola:",
+            "",
+            f"Tu plan {plan} ya está activo: puedes tener {cupo}.",
+            "",
+            f"Abre tu master y aprieta Publicar: {url_consola.rstrip('/')}/#/planos" if url_consola
+            else "Abre tu master en Mis 360° y aprieta Publicar.",
+        ])
+        for usuario in self.base.usuarios_de(cliente_id):
+            if usuario.activo and usuario.email_verificado:
+                self._enviar(usuario.email, f"Tu plan {plan} está activo", texto)
 
     def _al_equipo(self, asunto: str, texto: str) -> None:
         for usuario in self.base.usuarios_de_plataforma():

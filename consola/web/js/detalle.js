@@ -62,7 +62,7 @@ export function pintarEstado(proyecto) {
   // decide y no tiene a quién escribirle. Se avisa antes de publicar, no después.
   if (proyecto.sin_contacto) partes.push(pastilla('Sin contacto', 'aviso'));
   // Para CTP es lo que hay que atender; para la loteadora, que ya se pidió.
-  if (!proyecto.pagado && proyecto.habilitacion_pedida) {
+  if (!proyecto.habilitado && proyecto.habilitacion_pedida) {
     partes.push(pastilla('Pidió habilitar', 'aviso'));
   }
   const etapa = etapaDe(proyecto);
@@ -221,15 +221,25 @@ export function avisoAlQuitar(proyecto) {
   return partes.join(' ');
 }
 
-/** Lo que falta para publicar, dicho en una línea. */
-export function notaDePublicar(proyecto) {
-  if (!proyecto.pagado && proyecto.habilitacion_pedida) {
-    return `Pediste habilitarlo el ${DIA.format(new Date(proyecto.habilitacion_pedida))}. Te escribimos `
-      + 'para dejarlo listo y te avisamos por correo cuando puedas publicarlo.';
+/**
+ * Lo que falta para publicar, dicho en una línea. `plan` es el de la loteadora (el de
+ * la sesión); el equipo de CTP no lo pasa, porque el suyo no es el del loteo.
+ */
+export function notaDePublicar(proyecto, plan = null) {
+  if (!proyecto.habilitado && plan?.pedido) {
+    const pedido = proyecto.habilitacion_pedida
+      ? ` el ${DIA.format(new Date(proyecto.habilitacion_pedida))}` : '';
+    return `Pediste tu plan${pedido}. Te escribimos para el pago y te avisamos por correo `
+      + 'cuando puedas publicarlo.';
   }
-  if (!proyecto.pagado) {
-    return 'Puedes construir y revisar cuantas veces quieras. Para publicarlo, pide que '
-      + 'lo habilitemos: te contactamos y te avisamos por correo cuando esté listo.';
+  if (!proyecto.habilitado && plan?.plan) {
+    return `Tu plan ${plan.nombre} incluye ${plan.loteos} ${plan.loteos === 1 ? 'loteo' : 'loteos'} en línea y ya `
+      + `${plan.loteos === 1 ? 'está ocupado' : 'están ocupados'}. Cambia a un plan más grande `
+      + 'para publicar este, o escríbenos para bajar uno.';
+  }
+  if (!proyecto.habilitado) {
+    return 'Puedes construir y revisar cuantas veces quieras. Para publicarlo, elige un '
+      + 'plan: te escribimos para el pago y te avisamos por correo cuando esté activo.';
   }
   if (!proyecto.construido) return 'Se publica una vez construido y revisado el control de calce.';
   if (proyecto.publicado) return 'Lo que cambies aquí llega al sitio cuando lo publicas de nuevo.';
