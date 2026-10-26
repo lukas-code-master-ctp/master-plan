@@ -26,12 +26,21 @@ const LINEAS_DE_HISTORIAL = 12;
 
 /** En qué está un loteo, visto desde el cobro: es lo que el back-office decide. */
 export function estadoDelLoteo(loteo) {
-  if (loteo.publicado) return { texto: 'Publicado', tono: 'ok' };
-  if (loteo.pagado) return { texto: 'Habilitado', tono: 'ok' };
+  if (loteo.publicado) return { texto: loteo.pagado ? 'Publicado · pagado aparte' : 'Publicado', tono: 'ok' };
+  if (loteo.pagado) return { texto: 'Pagado aparte', tono: 'ok' };
+  if (loteo.habilitado) return { texto: 'Habilitado', tono: 'ok' };
   if (loteo.habilitacion_pedida) {
     return { texto: `Pidió habilitar · ${DIA_CORTO.format(new Date(loteo.habilitacion_pedida))}`, tono: 'aviso' };
   }
-  return { texto: 'Sin pagar', tono: null };
+  return { texto: 'Sin plan', tono: null };
+}
+
+/** El plan de una loteadora en una línea: "Pro · 2 de 3 en línea". */
+export function resumenDelPlan(plan, planes = []) {
+  const nombre = (clave) => planes.find((p) => p.plan === clave)?.nombre ?? clave;
+  const pidio = plan?.pedido && plan.pedido !== plan.plan ? ` · pidió ${nombre(plan.pedido)}` : '';
+  if (!plan?.plan) return `Sin plan${pidio}`;
+  return `${plan.nombre} · ${plan.en_linea} de ${plan.loteos} en línea${pidio}`;
 }
 
 /** El resumen de una loteadora en el padrón: "3 loteos · 2 cuentas". */
@@ -187,8 +196,12 @@ async function cargarPorHabilitar() {
     quien.href = `#/loteadoras/${loteo.cliente_id}`;
     const detalle = nodo('span', 'ayuda');
     detalle.append(quien, ` · pidió el ${DIA.format(new Date(loteo.habilitacion_pedida))}`);
-    texto.append(enlaceAlLoteo(loteo), detalle);
-    fila.append(texto, anotarPago(loteo));
+    const plan = nodo('span', 'ayuda', resumenDelPlan(loteo.plan, estado.sesion?.planes));
+    texto.append(enlaceAlLoteo(loteo), detalle, plan);
+    // El plan se asigna en la ficha, donde se ve cuántos tiene en línea.
+    const asignar = nodo('a', 'boton boton--chico', 'Asignar plan');
+    asignar.href = `#/loteadoras/${loteo.cliente_id}`;
+    fila.append(texto, asignar);
     return fila;
   }));
 }
@@ -201,6 +214,7 @@ function filaLoteadora(cliente) {
   titulo.append(nodo('strong', null, cliente.nombre));
   if (cliente.id === estado.sesion?.cliente_id) titulo.append(chip('La tuya'));
   if (cliente.estado !== 'activo') titulo.append(chip('Suspendida', 'apagada'));
+  if (cliente.plan?.plan) titulo.append(chip(cliente.plan.nombre));
   if (cliente.por_habilitar) titulo.append(chip(`${cliente.por_habilitar} por habilitar`, 'aviso'));
   texto.append(titulo, nodo('span', 'ayuda', resumenDe(cliente)));
   fila.append(texto, nodo('span', 'padron__flecha', '›'));
@@ -266,7 +280,7 @@ async function dibujarFicha(clienteId) {
 
   const cuerpo = nodo('div', 'ficha__cuerpo');
   const principal = nodo('div', 'ficha__principal');
-  principal.append(seccionLoteos(ficha), seccionCuentas(ficha));
+  principal.append(seccionPlan(ficha), seccionLoteos(ficha), seccionCuentas(ficha));
   cuerpo.append(principal, seccionHistorial(ficha));
 
   $('#padron-ficha').replaceChildren(cabeza, cuerpo);
@@ -287,7 +301,7 @@ function seccionLoteos(ficha) {
     return s;
   }
   // Primero lo que espera algo del equipo; después, el resto por nombre.
-  const orden = (l) => (!l.pagado && l.habilitacion_pedida ? 0 : 1);
+  const orden = (l) => (!l.habilitado && l.habilitacion_pedida ? 0 : 1);
   const loteos = [...ficha.loteos].sort((a, b) => orden(a) - orden(b) || a.nombre.localeCompare(b.nombre));
   const lista = nodo('div', 'padron');
   for (const loteo of loteos) {
@@ -299,10 +313,67 @@ function seccionLoteos(ficha) {
     texto.append(linea);
     if (loteo.nota_cobro) texto.append(nodo('span', 'ayuda', `Cobro: ${loteo.nota_cobro}`));
     fila.append(texto);
-    if (!loteo.pagado) fila.append(anotarPago(loteo));
+    // Fuera del plan: un loteo de cortesía o cobrado aparte, que no ocupa cupo.
+    if (!loteo.pagado && !loteo.publicado && !loteo.habilitado) fila.append(anotarPago(loteo));
     lista.append(fila);
   }
   s.append(lista);
+  return s;
+}
+
+/**
+ * El plan de la loteadora y dónde cambiarlo. Sin pasarela, CTP cobra afuera y lo
+ * anota acá: la nota es el registro del cobro, como al anotar el pago de un loteo.
+ */
+function seccionPlan(ficha) {
+  const s = seccion('Plan');
+  const planes = estado.sesion?.planes ?? [];
+  const plan = ficha.plan;
+  s.append(nodo('p', null, resumenDelPlan(plan, planes)));
+  if (plan?.plan) {
+    const desde = plan.desde ? `Desde el ${DIA.format(new Date(plan.desde))}` : '';
+    const cobro = ficha.nota_plan ? `Cobro: ${ficha.nota_plan}` : '';
+    s.append(nodo('p', 'ayuda', [desde, cobro].filter(Boolean).join(' · ')));
+  }
+
+  const fila = nodo('div', 'fila fila--envuelve');
+  const elegir = nodo('select');
+  elegir.setAttribute('aria-label', 'Plan');
+  elegir.append(new Option('Sin plan', ''),
+    ...planes.map((p) => new Option(p.loteos ? `${p.nombre} · ${p.loteos} en línea` : `${p.nombre} · a la medida`, p.plan)));
+  // De entrada, lo que pidió; si no pidió nada, el que tiene.
+  elegir.value = plan?.pedido ?? plan?.plan ?? '';
+  const cupo = nodo('input');
+  Object.assign(cupo, { type: 'number', min: 1, max: 500, placeholder: 'Loteos', value: plan?.loteos ?? '' });
+  cupo.setAttribute('aria-label', 'Loteos en línea del plan a la medida');
+  const nota = nodo('input');
+  Object.assign(nota, { type: 'text', placeholder: 'Cómo se pagó', autocomplete: 'off' });
+  nota.setAttribute('aria-label', 'Cómo se pagó el plan');
+  const aLaMedida = () => planes.find((p) => p.plan === elegir.value)?.loteos === null;
+  const mostrar = () => { cupo.hidden = !aLaMedida(); nota.hidden = !elegir.value; };
+  elegir.addEventListener('change', mostrar);
+  mostrar();
+  const guardar = boton('Guardar plan', async () => {
+    const clave = elegir.value;
+    if (clave && !nota.value.trim()) return avisar('Anota cómo se pagó el plan: es el único registro del cobro.');
+    if (!clave && plan?.plan && !confirm(`¿Dejar a ${ficha.nombre} sin plan?\n\n`
+      + 'Sus loteos en línea siguen en línea, pero no se pueden volver a publicar.')) return;
+    guardar.disabled = true;
+    try {
+      await pedir(`/api/plataforma/clientes/${ficha.id}/plan`, json({
+        plan: clave || null, nota_cobro: nota.value.trim(), loteos: aLaMedida() ? Number(cupo.value) : null,
+      }));
+      avisar(clave ? `${ficha.nombre} quedó en el plan ${planes.find((p) => p.plan === clave)?.nombre}.`
+        : `${ficha.nombre} quedó sin plan.`, 'ok');
+      await recargar();
+      refrescar().catch(() => {});
+    } catch (error) {
+      avisar(error.message);
+      guardar.disabled = false;
+    }
+  }, 'boton');
+  fila.append(elegir, cupo, nota, guardar);
+  s.append(fila);
   return s;
 }
 

@@ -27,6 +27,7 @@ from typing import BinaryIO
 
 from pipeline import config
 
+from . import planes
 from .acceso import Sesion
 from .datos import Base, NoEncontrado, ProyectoGuardado
 from .portada import portada
@@ -202,6 +203,12 @@ class Proyecto:
     visor_publicado: str | None = None
     # Cuándo la loteadora pidió que se lo habiliten, si lo pidió.
     habilitacion_pedida_en: datetime | None = None
+    # Por qué no se puede publicar ahora (sin plan, o el plan lleno); None si se puede.
+    sin_publicar_por: str | None = None
+
+    @property
+    def habilitado(self) -> bool:
+        return self.sin_publicar_por is None
 
     @property
     def publicado(self) -> bool:
@@ -365,7 +372,14 @@ class Registro:
             diseno_id=guardado.diseno_id,
             visor_publicado=guardado.visor_publicado,
             habilitacion_pedida_en=guardado.habilitacion_pedida_en,
+            sin_publicar_por=self.por_que_no_publica(guardado),
         )
+
+    def por_que_no_publica(self, guardado: ProyectoGuardado) -> str | None:
+        if guardado.pagado:
+            return None
+        return planes.por_que_no_publica(guardado, self.base.cliente(guardado.cliente_id),
+                                         self.base.proyectos(cliente_id=guardado.cliente_id))
 
     def _escribir_json(self, carpeta: Path, slug: str, campos: dict) -> None:
         """Deja en la carpeta lo que el pipeline necesita leer, sin tocar lo demás."""
@@ -417,12 +431,14 @@ class Vista:
         """Un loteo nuevo a nombre de quien lo crea, todavía sin pagar."""
         tope = self.registro.limites.sin_pagar
         if not self.es_equipo:
+            # Los que están en línea con el plan ya los paga la suscripción: cuentan
+            # solo los que se arman sin publicar.
             sin_pagar = [g for g in self.registro.base.proyectos(cliente_id=self.duenio)
-                         if not g.pagado]
+                         if not g.pagado and not g.url_publicada]
             if len(sin_pagar) >= tope:
                 raise LimiteAlcanzado(
-                    f"ya tienes {len(sin_pagar)} masters sin habilitar, que es el máximo. "
-                    "Quita uno que no uses o escríbenos para habilitar alguno")
+                    f"ya tienes {len(sin_pagar)} masters sin publicar, que es el máximo. "
+                    "Quita uno que no uses o publica alguno")
         return self.registro.crear(self.duenio, nombre)
 
     def subir(self, slug: str, archivos: list[Subida]) -> Proyecto:
@@ -561,6 +577,12 @@ class Vista:
         de saltarse el tope de masters sin pagar llenando el disco igual.
         """
         proyecto = self.ver(slug)
+        # Quitarlo no baja el sitio, así que liberaría el cupo con el loteo igual en
+        # línea: con plan, publicar uno y quitarlo dejaría tener todos los que quiera.
+        if not self.es_equipo and proyecto.publicado and not proyecto.pagado:
+            raise LimiteAlcanzado(
+                "este loteo está en línea con tu plan: para bajarlo y liberar el cupo, "
+                "escríbenos")
         self.registro.base.olvidar_proyecto(slug)
         if proyecto.subido and not proyecto.pagado:
             shutil.rmtree(proyecto.fuentes, ignore_errors=True)

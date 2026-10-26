@@ -107,7 +107,7 @@ def _revisar(todos, cierra, conexiones, ocupado, publicar_en_linea, slug) -> Rev
         return Revision(slug, f"hay que reconstruir: {', '.join(resultado.faltan[:10])}")
     if not resultado.cambiadas:
         return Revision(slug, "sin cambios")
-    if proyecto.publicado and proyecto.pagado:
+    if proyecto.publicado and proyecto.habilitado:
         publicar_en_linea(proyecto)
         return Revision(slug, "publicando", len(resultado.cambiadas))
     return Revision(slug, "al día (sin publicar)", len(resultado.cambiadas))

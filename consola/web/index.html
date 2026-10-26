@@ -411,7 +411,7 @@
             </div>
             <button class="boton boton--claro" data-accion="publicar" type="button">Publicar</button>
             <p id="plano-publicar-nota" class="nota"></p>
-            <button class="boton boton--contorno-claro" data-accion="pedir-habilitacion" type="button" hidden>Pedir habilitación</button>
+            <button class="boton boton--contorno-claro" data-accion="pedir-habilitacion" type="button" hidden>Elegir plan</button>
             <button class="boton boton--texto" data-accion="pago" type="button" hidden>Anotar pago</button>
           </footer>
 
@@ -1225,7 +1225,7 @@
 
     <section id="por-habilitar" class="padron__bloque padron__bloque--pedidos" hidden>
       <h2>Por habilitar <span id="por-habilitar-cuenta" class="config__cuenta"></span></h2>
-      <p class="ayuda">Pidieron publicar y esperan que anotes el pago. El más antiguo, arriba.</p>
+      <p class="ayuda">Pidieron un plan para publicar y esperan que se lo asignes. El más antiguo, arriba.</p>
       <div id="por-habilitar-lista" class="padron"></div>
     </section>
 
@@ -1530,6 +1530,20 @@
   <div class="modal__pie">
     <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
     <button id="pago-listo" class="boton" type="button">Habilitar publicación</button>
+  </div>
+</dialog>
+
+<!-- La loteadora pide el plan con que quiere publicar -->
+<dialog id="plan" class="modal">
+  <form method="dialog" class="modal__cerrar"><button aria-label="Cerrar">✕</button></form>
+  <h2 id="plan-titulo">Elige tu plan</h2>
+  <p class="ayuda">Los planes solo cambian en cuántos loteos tienes en línea a la vez. Todo lo
+    demás viene en todos. Precios mensuales en pesos chilenos.</p>
+  <div id="plan-opciones" class="planes" role="radiogroup" aria-labelledby="plan-titulo"></div>
+  <p class="ayuda">Te escribimos para el pago y te avisamos por correo cuando esté activo.</p>
+  <div class="modal__pie">
+    <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
+    <button id="plan-listo" class="boton" type="button">Pedir este plan</button>
   </div>
 </dialog>
 

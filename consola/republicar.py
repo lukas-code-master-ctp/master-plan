@@ -5,7 +5,7 @@ arreglo mergeado no llega a ninguno hasta que alguien lo vuelve a subir. Esto lo
 hace solo: compara la huella del visor actual con la que quedó anotada al
 publicar cada loteo y republica los que quedaron atrás.
 
-Solo los que ya están en línea, pagados y construidos: nunca pone en línea uno
+Solo los que ya están en línea, con plan (o pagados aparte) y construidos: nunca pone en línea uno
 que hoy no lo está, ni crea proyectos en el hosting. Va de a uno y por los mismos
 `Trabajos` que usan las rutas, así que respeta el bloqueo por loteo. Lo que pasa
 se escribe en el log del proceso, que en Cloud Run va a Cloud Logging: no hay
@@ -28,9 +28,9 @@ TOPE_POR_LOTEO = 30 * 60
 
 
 def pendientes(vista: Vista, huella: str) -> list[Proyecto]:
-    """Los publicados, pagados y construidos cuyo visor no es el actual (o no se sabe)."""
+    """Los publicados, habilitados y construidos cuyo visor no es el actual (o no se sabe)."""
     return sorted((p for p in vista.listar()
-                   if p.publicado and p.pagado and p.construido
+                   if p.publicado and p.habilitado and p.construido
                    and p.visor_publicado != huella),
                   key=lambda p: p.slug)
 

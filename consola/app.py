@@ -64,6 +64,7 @@ from .inventario import poner_al_dia, poner_datos_del_loteo, revisar_cierra
 from .kmzs import NombreInvalido, RegistroKmz, VistaKmz, slug_de_clave
 from .kmzs import clave as clave_kmz
 from .plano import LotesSinNumero, Plano, PlanoInvalido, PlanoNoListo
+from . import planes
 from .plantilla import MIME_XLSX, plantilla
 from .proyectos import KMZ as KMZ_DEL_MASTER
 from .proyectos import KmzExistente, LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
@@ -94,7 +95,7 @@ WEB = Path(__file__).resolve().parent / "web"
 # Los módulos de la página. Se sirven por nombre de una lista cerrada, no
 # cualquier archivo de la carpeta: una ruta que arma rutas de disco con lo que
 # llega en la URL es una ruta para leer el disco.
-MODULOS = ("app.js", "barra.js", "comun.js", "detalle.js", "planos.js", "nuevo.js", "plano.js", "subida.js",
+MODULOS = ("app.js", "barra.js", "comun.js", "detalle.js", "planos.js", "planes.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
            "vuelo.js", "configuracion.js", "equipo.js", "preferencias.js", "actividad.js", "esqueleto.js", "primeros.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
            "mapa_kmz.js", "sondeo.js", "reservas.js", "contactos.js")
@@ -397,6 +398,10 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             "puede_vincular": acceso.local,
             # Para avisar antes de subir, no después de mandar un giga. El equipo
             # no tiene topes.
+            # El plan de su loteadora y los que puede pedir, para "Elegir plan".
+            "plan": planes.como_json(base.cliente(quien_es.cliente_id),
+                                     base.proyectos(cliente_id=quien_es.cliente_id)),
+            "planes": planes.catalogo(),
             "limites": None if quien_es.es_plataforma else {
                 "megas_por_loteo": registro.limites.megas_por_loteo,
                 "sin_pagar": registro.limites.sin_pagar,
@@ -526,7 +531,10 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         # Quitar uno sin pagar borra sus archivos: no mientras el pipeline los lee.
         if trabajos.corriendo(slug):
             raise HTTPException(409, "está construyendo o publicando; espera a que termine")
-        mios.olvidar(slug)
+        try:
+            mios.olvidar(slug)
+        except LimiteAlcanzado as error:
+            raise HTTPException(409, str(error)) from error
         anotar(yo, "master quitado", proyecto.nombre, cliente_id=proyecto.cliente_id)
 
     # --- acciones ------------------------------------------------------------
@@ -553,8 +561,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         # Con `publicar`, un loteo que ya está en línea queda al día en el sitio
         # también (lo pide "Actualizar desde Cierra"): si no, la consola muestra
         # los precios nuevos y el comprador sigue viendo los viejos. Solo si ya
-        # estaba publicado y pagado: la primera publicación se confirma a mano.
-        if opciones.get("publicar") and proyecto.publicado and proyecto.pagado and proyecto.vercel_proyecto:
+        # estaba publicado y habilitado: la primera publicación se confirma a mano.
+        if opciones.get("publicar") and proyecto.publicado and proyecto.habilitado and proyecto.vercel_proyecto:
             # El diseño se escribe antes: la construcción no lo toca y la
             # publicación tiene que salir con la marca puesta.
             disenos.escribir_en_sitio(proyecto.diseno_id, proyecto.salida.datos)
@@ -572,10 +580,10 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         proyecto = mios.ver(slug)
         if not proyecto.construido:
             raise HTTPException(409, "todavía no está construido")
-        # El único control de cobro: un loteo se arma gratis, se publica pagado.
-        if not proyecto.pagado:
-            raise HTTPException(402, "este loteo todavía no está habilitado para "
-                                     "publicarse: pide que lo habilitemos y te avisamos")
+        # El único control de cobro: un loteo se arma gratis y se publica con un plan
+        # que tenga cupo (consola/planes.py).
+        if proyecto.sin_publicar_por:
+            raise HTTPException(402, proyecto.sin_publicar_por)
         # Publicar deja el loteo a la vista de cualquiera con el enlace, con sus
         # precios y sus estados. Que no baste un clic ni un POST suelto.
         if not opciones.get("confirmado"):
@@ -597,16 +605,30 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         return lanzado
 
     @app.post("/api/proyectos/{slug}/habilitacion")
-    def pedir_habilitacion(slug: str, peticion: Request, mios: Vista = Depends(vista),
-                           yo: Sesion = Depends(quien)) -> dict:
-        """La loteadora pide que le dejen publicar el loteo. No habilita nada: avisa a
-        CTP, que cobra fuera del sistema y anota el pago. Solo el primer pedido avisa."""
+    def pedir_habilitacion(slug: str, peticion: Request, campos: dict = Body(default={}),
+                           mios: Vista = Depends(vista), yo: Sesion = Depends(quien)) -> dict:
+        """La loteadora pide el plan con que quiere publicar el loteo. No habilita
+        nada: avisa a CTP, que cobra fuera del sistema y le asigna el plan.
+
+        Avisa el primer pedido de cada loteo y, después, solo si cambia el plan
+        pedido: el botón puede apretarse dos veces, pero pasar de Fly a Pro es otra
+        conversación.
+        """
+        plan = campos.get("plan") or None
+        if plan is not None and plan not in planes.PLANES:
+            raise HTTPException(400, "ese plan no existe")
+        anterior = base.cliente(mios.ver(slug).cliente_id).plan_pedido
         proyecto, nuevo = mios.pedir_habilitacion(slug)
-        if nuevo:
+        if plan:
+            base.pedir_plan(proyecto.cliente_id, plan)
+        if nuevo or (plan and plan != anterior):
             avisos.habilitacion_pedida(loteo=proyecto.nombre, slug=proyecto.slug,
                                        cliente_id=proyecto.cliente_id, quien=yo.quien,
+                                       plan=planes.PLANES[plan].nombre if plan else None,
                                        url_consola=url_para_avisos(peticion, acceso.local))
-            anotar(yo, "habilitación pedida", proyecto.nombre, cliente_id=proyecto.cliente_id)
+            anotar(yo, "habilitación pedida",
+                   f"{proyecto.nombre} · plan {planes.PLANES[plan].nombre}" if plan
+                   else proyecto.nombre, cliente_id=proyecto.cliente_id)
         return _como_json(proyecto, trabajos)
 
     # --- mis KMZ: del plano aprobado a un KMZ propio, sin master ---------------------
@@ -864,13 +886,15 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         llama diciendo que no puede entrar: si confirmó el correo, si la desactivaron.
         """
         cliente = base.cliente(cliente_id)            # 404 si no existe
+        loteos = base.proyectos(cliente_id=cliente_id)
         return {
             **_cliente_json(cliente, base),
             "creado_en": cliente.creado_en.isoformat(),
             "cuentas": [{"id": u.id, "email": u.email, "nombre": u.nombre, "rol": u.rol,
                          "activo": u.activo, "email_verificado": u.email_verificado}
                         for u in base.usuarios_de(cliente_id)],
-            "loteos": [_loteo_de_ficha(p) for p in base.proyectos(cliente_id=cliente_id)],
+            "loteos": [_loteo_de_ficha(p, cliente, loteos) for p in loteos],
+            "nota_plan": cliente.plan_nota,
             "historial": eventos_json(base, base.historial(cliente_id, limite=60)),
         }
 
@@ -882,11 +906,15 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         que un pedido no se pierda en la bandeja. El más antiguo primero: es el que
         lleva más rato esperando.
         """
-        nombres = {c.id: c.nombre for c in base.clientes()}
-        pedidos = [p for p in base.proyectos() if not p.pagado and p.habilitacion_pedida_en]
+        clientes = {c.id: c for c in base.clientes()}
+        todos = base.proyectos()
+        de = {cid: [p for p in todos if p.cliente_id == cid] for cid in clientes}
+        pedidos = [p for p in todos if _pendiente(p, clientes[p.cliente_id], de[p.cliente_id])]
         pedidos.sort(key=lambda p: p.habilitacion_pedida_en)
-        return [{**_loteo_de_ficha(p), "cliente_id": p.cliente_id,
-                 "cliente": nombres.get(p.cliente_id, "")} for p in pedidos]
+        return [{**_loteo_de_ficha(p, clientes[p.cliente_id], de[p.cliente_id]),
+                 "cliente_id": p.cliente_id, "cliente": clientes[p.cliente_id].nombre,
+                 "plan": planes.como_json(clientes[p.cliente_id], de[p.cliente_id])}
+                for p in pedidos]
 
     @app.post("/api/plataforma/clientes", status_code=201)
     def crear_loteadora(campos: dict = Body(...),
@@ -980,6 +1008,38 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         base.anotar("loteo habilitado", cliente_id=cliente_id, usuario_id=yo.usuario_id,
                     detalle=f"{proyecto.slug} · {cobro}")
         return _como_json(proyecto, trabajos)
+
+    @app.post("/api/plataforma/clientes/{cliente_id}/plan")
+    def asignar_plan(cliente_id: int, peticion: Request, campos: dict = Body(...),
+                     yo: Sesion = Depends(solo_plataforma)) -> dict:
+        """Deja a una loteadora en un plan, o sin plan (`plan` vacío).
+
+        La nota de cobro es obligatoria al dar un plan por lo mismo que al anotar un
+        pago: sin pasarela, es el único registro de que se cobró. Quitar el plan no
+        baja sus sitios: quedan en línea, pero no se pueden volver a publicar.
+        """
+        cliente = base.cliente(cliente_id)             # 404 si no existe
+        try:
+            plan, loteos = planes.validar(campos.get("plan"), campos.get("loteos"))
+        except planes.PlanInvalido as error:
+            raise HTTPException(400, str(error)) from error
+        cobro = str(campos.get("nota_cobro") or "").strip()
+        if plan and not cobro:
+            raise HTTPException(400, "anota cómo se pagó el plan")
+        base.asignar_plan(cliente_id, plan, loteos=loteos, nota=cobro or None)
+        if plan:
+            nombre = planes.PLANES[plan].nombre
+            base.anotar("plan asignado", cliente_id=cliente_id, usuario_id=yo.usuario_id,
+                        detalle=f"{nombre} · {cobro}")
+            # Solo si es un plan nuevo para ella: corregir la nota no amerita correo.
+            if plan != cliente.plan or loteos != cliente.plan_loteos:
+                avisos.plan_activo(cliente_id=cliente_id, plan=nombre,
+                                   loteos=planes.cupo_de(base.cliente(cliente_id)),
+                                   url_consola=url_para_avisos(peticion, acceso.local))
+        elif cliente.plan:
+            base.anotar("plan quitado", cliente_id=cliente_id, usuario_id=yo.usuario_id,
+                        detalle=planes.PLANES[cliente.plan].nombre)
+        return _cliente_json(base.cliente(cliente_id), base)
 
     @app.post("/api/plataforma/proyectos/{slug}/pago")
     def anotar_pago(slug: str, peticion: Request, campos: dict = Body(...),
@@ -1301,16 +1361,24 @@ def _cliente_json(cliente, base: Base) -> dict:
         "estado": cliente.estado,
         "cuentas": [u.email for u in base.usuarios_de(cliente.id)],
         "loteos": len(loteos),
-        "por_habilitar": sum(1 for p in loteos if not p.pagado and p.habilitacion_pedida_en),
+        "por_habilitar": sum(1 for p in loteos if _pendiente(p, cliente, loteos)),
+        "plan": planes.como_json(cliente, loteos),
     }
 
 
-def _loteo_de_ficha(proyecto) -> dict:
+def _pendiente(proyecto, cliente, loteos) -> bool:
+    """Pidió habilitar y todavía no puede publicar: es lo que CTP tiene que atender."""
+    return (proyecto.habilitacion_pedida_en is not None
+            and planes.por_que_no_publica(proyecto, cliente, loteos) is not None)
+
+
+def _loteo_de_ficha(proyecto, cliente, loteos) -> dict:
     """Lo que el back-office muestra de un loteo sin abrirlo: no lee el disco."""
     return {
         "slug": proyecto.slug,
         "nombre": proyecto.nombre,
         "pagado": proyecto.pagado,
+        "habilitado": planes.por_que_no_publica(proyecto, cliente, loteos) is None,
         "nota_cobro": proyecto.nota_cobro,
         "publicado": bool(proyecto.url_publicada),
         "url": proyecto.url_publicada,
@@ -1368,6 +1436,9 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "url": proyecto.url_publicada or url_propuesta(proyecto.slug),
         "publicado": proyecto.publicado,
         "pagado": proyecto.pagado,
+        # Si hoy se puede publicar: pagado aparte, o con un plan que tenga cupo.
+        "habilitado": proyecto.habilitado,
+        "sin_publicar_por": proyecto.sin_publicar_por,
         "habilitacion_pedida": (proyecto.habilitacion_pedida_en.isoformat()
                                 if proyecto.habilitacion_pedida_en else None),
         # Quitar de la lista uno subido y sin pagar borra sus archivos.

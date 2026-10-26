@@ -286,14 +286,21 @@ sin secreto de firma, cualquiera se fabrica una galleta.
 (`POST /api/proyectos`), y nacen **sin pagar**: puede subir, construir y revisar
 cuantas veces quiera. El cobro se controla en un solo lugar, **al publicar**, que es
 cuando el loteo empieza a servirle a alguien más que a quien lo armó: publicar uno
-sin pago da 402. El equipo lo deja publicar anotando el pago
-(`/api/plataforma/proyectos/<slug>/pago`, solo rol `plataforma`), o habilita de
-entrada un loteo ya pagado a nombre de una loteadora cuando el vuelo lo hace el
-equipo. En los dos casos la nota de cobro es obligatoria —sin pasarela, esa línea de
-texto es todo el control de pago que hay— y queda en el historial con quién la
-escribió. Concentrar el control en un punto es lo que evita repartirlo por cada ruta
-que escribe algo, que es como se termina con un cliente trabajando gratis sin que
-nadie se entere.
+que no está habilitado da 402.
+
+Se cobra una **suscripción por loteadora**, como vende la landing: los planes Fly,
+Pro y Master dejan 1, 3 y 6 loteos en línea a la vez, y Enterprise los que se
+acuerden (`consola/planes.py`). Publicar un loteo nuevo pide un plan con cupo;
+volver a publicar uno que ya está en línea solo pide tener plan. La loteadora pide
+su plan desde el loteo ("Elegir plan") y el equipo se lo asigna en la ficha de la
+loteadora (`/api/plataforma/clientes/<id>/plan`, solo rol `plataforma`). Los loteos
+pagados de a uno (el modelo anterior: `/api/plataforma/proyectos/<slug>/pago`, o
+habilitados de entrada a nombre de una loteadora cuando el vuelo lo hace el equipo)
+siguen publicables sin plan y no ocupan cupo. En todos los casos la nota de cobro es
+obligatoria —sin pasarela, esa línea de texto es todo el control de pago que hay— y
+queda en el historial con quién la escribió. Concentrar el control en un punto es lo
+que evita repartirlo por cada ruta que escribe algo, que es como se termina con un
+cliente trabajando gratis sin que nadie se entere.
 
 **Vista previa antes de pagar.** Un loteo construido y sin publicar se puede recorrer
 en `/vista-previa/<slug>/`: la consola sirve el mismo sitio que subiría al hosting, con

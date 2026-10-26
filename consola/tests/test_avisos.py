@@ -124,3 +124,53 @@ def test_pedir_la_habilitacion_de_un_loteo_ajeno_da_404(con_loteo):
 
     assert otra.post(f"/api/proyectos/{slug}/habilitacion").status_code == 404
     assert a(correo, CTP) == []
+
+
+# --- planes ---------------------------------------------------------------------------
+
+def test_pedir_un_plan_le_dice_a_ctp_cual(con_loteo):
+    web, base, correo, slug = con_loteo
+
+    respuesta = web.post(f"/api/proyectos/{slug}/habilitacion", json={"plan": "pro"})
+
+    assert respuesta.status_code == 200
+    [(asunto, texto)] = a(correo, CTP)
+    assert asunto == "Pide el plan Pro: Bosques del Sur"
+    assert "eligió el plan Pro" in texto
+    assert base.cliente(base.proyecto(slug).cliente_id).plan_pedido == "pro"
+
+
+def test_cambiar_el_plan_pedido_vuelve_a_avisar(con_loteo):
+    web, _, correo, slug = con_loteo
+
+    web.post(f"/api/proyectos/{slug}/habilitacion", json={"plan": "fly"})
+    web.post(f"/api/proyectos/{slug}/habilitacion", json={"plan": "fly"})
+    web.post(f"/api/proyectos/{slug}/habilitacion", json={"plan": "master"})
+
+    assert [asunto for asunto, _ in a(correo, CTP)] == [
+        "Pide el plan Fly: Bosques del Sur", "Pide el plan Master: Bosques del Sur"]
+
+
+def test_pedir_un_plan_que_no_existe_da_400(con_loteo):
+    web, _, correo, slug = con_loteo
+
+    assert web.post(f"/api/proyectos/{slug}/habilitacion", json={"plan": "gratis"}).status_code == 400
+    assert a(correo, CTP) == []
+
+
+def test_asignar_un_plan_le_avisa_a_la_loteadora(con_loteo):
+    web, base, correo, slug = con_loteo
+    ctp = TestClient(web.app, follow_redirects=False)
+    entrar(ctp, CTP)
+    cliente_id = base.proyecto(slug).cliente_id
+
+    respuesta = ctp.post(f"/api/plataforma/clientes/{cliente_id}/plan",
+                         json={"plan": "pro", "nota_cobro": "factura 77"})
+    # Corregir la nota del mismo plan no manda otro correo.
+    ctp.post(f"/api/plataforma/clientes/{cliente_id}/plan",
+             json={"plan": "pro", "nota_cobro": "factura 77, pagada"})
+
+    assert respuesta.status_code == 200, respuesta.text
+    [(asunto, texto)] = a(correo, "pia@bosques.cl")
+    assert asunto == "Tu plan Pro está activo"
+    assert "3 loteos en línea a la vez" in texto

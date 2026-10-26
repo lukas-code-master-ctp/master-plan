@@ -67,6 +67,14 @@ clientes = Table(
     Column("whatsapp", String(20), nullable=True),
     Column("diseno_id", Integer, nullable=True),
     Column("horas_apartado", Integer, nullable=True),
+    # La suscripción (consola/planes.py). La anota CTP, que cobra fuera del sistema:
+    # sin pasarela, la nota es el registro del cobro. plan_loteos solo para el plan a
+    # la medida; plan_pedido es el que la loteadora pidió desde la consola.
+    Column("plan", String(20), nullable=True),
+    Column("plan_loteos", Integer, nullable=True),
+    Column("plan_nota", Text, nullable=True),
+    Column("plan_desde", DateTime(timezone=True), nullable=True),
+    Column("plan_pedido", String(20), nullable=True),
 )
 
 usuarios = Table(
@@ -303,6 +311,11 @@ class Cliente:
     whatsapp: str | None = None
     diseno_id: int | None = None
     horas_apartado: int | None = None
+    plan: str | None = None
+    plan_loteos: int | None = None
+    plan_nota: str | None = None
+    plan_desde: datetime | None = None
+    plan_pedido: str | None = None
 
 
 @dataclass(frozen=True)
@@ -526,6 +539,23 @@ class Base:
             return
         with self.motor.begin() as con:
             con.execute(update(clientes).where(clientes.c.id == cliente_id).values(**validos))
+
+    def asignar_plan(self, cliente_id: int, plan: str | None, *, loteos: int | None = None,
+                     nota: str | None = None) -> None:
+        """Deja a la loteadora en un plan, o sin plan con None. Atiende su pedido.
+
+        Sin plan, sus loteos en línea siguen en línea: bajarlos no es algo que la
+        consola haga sola, y sin plan simplemente no se pueden volver a publicar.
+        """
+        with self.motor.begin() as con:
+            con.execute(update(clientes).where(clientes.c.id == cliente_id).values(
+                plan=plan, plan_loteos=loteos, plan_nota=nota,
+                plan_desde=_ahora() if plan else None, plan_pedido=None))
+
+    def pedir_plan(self, cliente_id: int, plan: str) -> None:
+        with self.motor.begin() as con:
+            con.execute(update(clientes).where(clientes.c.id == cliente_id)
+                        .values(plan_pedido=plan))
 
     def renombrar_cliente(self, cliente_id: int, nombre: str) -> None:
         """Solo el nombre que se muestra: el slug no cambia, que nombra carpetas."""
@@ -1064,8 +1094,11 @@ def _migrar(motor) -> None:
         with motor.begin() as con:
             con.execute(text(f"ALTER TABLE proyectos ADD COLUMN habilitacion_pedida_en {tipo}"))
     columnas = {c["name"] for c in inspect(motor).get_columns("clientes")}
+    fecha = DateTime(timezone=True).compile(dialect=motor.dialect)
     for columna, tipo in (("whatsapp", "VARCHAR(20)"), ("diseno_id", "INTEGER"),
-                          ("horas_apartado", "INTEGER")):
+                          ("horas_apartado", "INTEGER"), ("plan", "VARCHAR(20)"),
+                          ("plan_loteos", "INTEGER"), ("plan_nota", "TEXT"),
+                          ("plan_desde", fecha), ("plan_pedido", "VARCHAR(20)")):
         if columna not in columnas:
             with motor.begin() as con:
                 con.execute(text(f"ALTER TABLE clientes ADD COLUMN {columna} {tipo}"))
@@ -1108,7 +1141,10 @@ def _utc(momento: datetime) -> datetime:
 def _cliente(fila) -> Cliente:
     return Cliente(id=fila.id, slug=fila.slug, nombre=fila.nombre,
                    estado=fila.estado, creado_en=fila.creado_en, whatsapp=fila.whatsapp,
-                   diseno_id=fila.diseno_id, horas_apartado=fila.horas_apartado)
+                   diseno_id=fila.diseno_id, horas_apartado=fila.horas_apartado,
+                   plan=fila.plan, plan_loteos=fila.plan_loteos, plan_nota=fila.plan_nota,
+                   plan_desde=_utc(fila.plan_desde) if fila.plan_desde else None,
+                   plan_pedido=fila.plan_pedido)
 
 
 def _invitacion(fila) -> Invitacion:

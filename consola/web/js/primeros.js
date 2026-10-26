@@ -18,7 +18,7 @@ export function pasosDe({ proyectos = [], disenos = [], preferencias = {}, plata
   const construido = proyectos.find((p) => p.construido);
   const empezado = proyectos[0];
   const enlaceDe = (proyecto) => `#/planos/${encodeURIComponent(proyecto.slug)}`;
-  const pedido = construido && !construido.pagado && construido.habilitacion_pedida;
+  const pedido = construido && !construido.habilitado && construido.habilitacion_pedida;
 
   return [
     {
@@ -51,11 +51,11 @@ export function pasosDe({ proyectos = [], disenos = [], preferencias = {}, plata
     {
       clave: 'publicar',
       titulo: 'Publicarlo',
-      texto: construido?.pagado
+      texto: construido?.habilitado
         ? 'Ya está habilitado: publícalo cuando quieras y comparte el enlace con tus compradores.'
         : pedido
-          ? 'Ya pediste habilitarlo: te escribimos y te avisamos por correo cuando puedas publicarlo.'
-          : 'Construir y revisar es gratis. Cuando te guste cómo quedó, pides que lo habilitemos y lo publicas.',
+          ? 'Ya pediste tu plan: te escribimos para el pago y te avisamos por correo cuando puedas publicarlo.'
+          : 'Construir y revisar es gratis. Cuando te guste cómo quedó, eliges un plan y lo publicas.',
       hecho: false,
       accion: construido && !pedido ? { texto: 'Ir a publicar', href: enlaceDe(construido) } : null,
     },

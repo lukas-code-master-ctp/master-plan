@@ -524,6 +524,7 @@ RUTAS = {
     ("POST", "/api/plataforma/clientes/{cliente_id}/usuarios"): SOLO_CTP,
     ("POST", "/api/plataforma/clientes/{cliente_id}/estado"): SOLO_CTP,
     ("POST", "/api/plataforma/clientes/{cliente_id}/proyectos"): SOLO_CTP,
+    ("POST", "/api/plataforma/clientes/{cliente_id}/plan"): SOLO_CTP,
     ("POST", "/api/plataforma/proyectos/{slug}/pago"): SOLO_CTP,
     ("GET", "/api/plataforma/historial"): SOLO_CTP,
     ("GET", "/api/plataforma/contactos"): SOLO_CTP,
@@ -1096,7 +1097,7 @@ def test_no_se_pasa_del_tope_de_masters_sin_pagar(con_topes):
     respuesta = ana.post("/api/proyectos", json={"nombre": "Tres"})
 
     assert respuesta.status_code == 409
-    assert "sin habilitar" in respuesta.json()["detail"]
+    assert "sin publicar" in respuesta.json()["detail"]
 
 
 def test_un_master_pagado_libera_su_lugar(con_topes):

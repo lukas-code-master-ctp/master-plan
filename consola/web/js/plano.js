@@ -9,6 +9,7 @@ import {
 import { anotarResultado, manejarCierra, pintarCierra, prepararCierra } from './cierra.js';
 import { opcionesDeDiseno } from './disenos.js';
 import { abrirElegirKmz } from './kmzs.js';
+import { abrirPlanes, botonDePlan } from './planes.js';
 import {
   avisoAlQuitar, hayVistaPrevia, leerReferencias, meta, notaDePublicar, pintarCalce, pintarCifras,
   pintarEstado, textoDeReferencias, urlDeVistaPrevia,
@@ -165,7 +166,7 @@ function pintarPublicar(proyecto) {
   const pago = $('[data-accion="pago"]');
   const equipo = estado.sesion?.rol === 'plataforma';
   boton.textContent = proyecto.publicado ? 'Volver a publicar' : 'Publicar';
-  boton.disabled = Boolean(proyecto.trabajo) || !proyecto.construido || !proyecto.pagado;
+  boton.disabled = Boolean(proyecto.trabajo) || !proyecto.construido || !proyecto.habilitado;
   // Ya en línea, lo que más se hace es ir a verlo: ese pasa a ser el botón
   // principal, y volver a publicar queda al lado, en segundo plano.
   const ver = $('#plano-ver-sitio');
@@ -184,18 +185,21 @@ function pintarPublicar(proyecto) {
   const previa = $('#plano-vista-previa');
   previa.hidden = !hayVistaPrevia(proyecto);
   previa.href = urlDeVistaPrevia(proyecto);
-  previa.className = proyecto.pagado ? 'boton boton--contorno-claro' : 'boton boton--claro';
-  pago.hidden = !(equipo && !proyecto.pagado);
-  // El equipo de CTP no se pide permiso a sí mismo: anota el pago.
-  $('[data-accion="pedir-habilitacion"]').hidden = equipo || proyecto.pagado
-    || Boolean(proyecto.habilitacion_pedida);
+  previa.className = proyecto.habilitado ? 'boton boton--contorno-claro' : 'boton boton--claro';
+  pago.hidden = !(equipo && !proyecto.habilitado);
+  // El equipo de CTP no se pide permiso a sí mismo: anota el pago o asigna el plan.
+  // Con un pedido de plan esperando, no se ofrece pedir otro.
+  const plan = estado.sesion?.plan;
+  const pedirPlan = $('[data-accion="pedir-habilitacion"]');
+  pedirPlan.textContent = botonDePlan(plan);
+  pedirPlan.hidden = equipo || proyecto.habilitado || Boolean(plan?.pedido);
   const enLinea = proyecto.publicado && !proyecto.trabajo;
   const estadoPublicacion = $('#plano-publicar-estado');
   estadoPublicacion.classList.toggle('publicar__estado--vivo', enLinea);
   estadoPublicacion.textContent = proyecto.trabajo?.accion === 'publicar' ? 'Publicando…'
     : proyecto.publicado ? 'En línea' : 'Sin publicar';
 
-  nota.textContent = notaDePublicar(proyecto);
+  nota.textContent = notaDePublicar(proyecto, equipo ? null : plan);
 }
 
 // --- Datos del loteo ---------------------------------------------------------
@@ -302,7 +306,7 @@ async function manejar(accion, proyecto) {
     if (accion === 'copiar-url') return await copiarEnlace(proyecto);
     if (accion === 'olvidar') return await olvidar(proyecto);
     if (accion === 'pago') return abrirPago(proyecto);
-    if (accion === 'pedir-habilitacion') return await pedirHabilitacion(proyecto);
+    if (accion === 'pedir-habilitacion') return abrirPlanes(proyecto, refrescar);
     if (accion === 'construir') return await lanzar(proyecto, 'construir', {});
     if (accion === 'publicar') {
       // Publicar deja el loteo a la vista de cualquiera con el enlace: se confirma.
@@ -320,12 +324,6 @@ async function manejar(accion, proyecto) {
   } catch (error) {
     avisar(error.message);
   }
-}
-
-async function pedirHabilitacion(proyecto) {
-  await pedir(`/api/proyectos/${proyecto.slug}/habilitacion`, json({}));
-  // La nota de la tarjeta pasa a decir que ya se pidió: no hace falta otro aviso.
-  await refrescar();
 }
 
 async function lanzar(proyecto, accion, cuerpo) {

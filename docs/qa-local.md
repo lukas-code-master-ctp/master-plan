@@ -11,7 +11,7 @@ El porqué y el diseño están en [`specs/2026-10-05-qa-local.md`](specs/2026-10
 | --- | --- |
 | Entrar con Google | No hay un OAuth falso: sin `GOOGLE_CLIENT_ID` el botón no aparece. |
 | Leer rótulos en Crea tu KMZ | Necesita Tesseract, que no está en los hilos. Los números a mano funcionan. |
-| Cobros | No hay pasarela: "habilitar" es una marca que pone `plataforma` (Anotar pago). |
+| Cobros | No hay pasarela: el plan (o el pago de un loteo suelto) lo anota `plataforma` en la ficha de la loteadora. |
 | El criterio visual final | Las capturas sirven para encontrar errores; la última mirada es en staging. |
 
 ## Inicio rápido
@@ -219,8 +219,9 @@ npm run qa:captura -- --como duenio --ruta '#/planos/loteo-sin-construir' \
 ### Publicar y abrir el sitio publicado
 
 Praderas Demo ya está publicado: su botón dice **Volver a publicar**. Publicar pide
-confirmar con un `confirm()` del navegador. Un loteo sin pagar tiene Publicar apagado:
-entra como `plataforma`, abre el loteo y usa **Anotar pago** → "Habilitar publicación".
+confirmar con un `confirm()` del navegador. Sin plan, un loteo nuevo tiene Publicar
+apagado y ofrece **Elegir plan**: entra como `plataforma`, abre Loteadoras → Loteadora
+Demo y, en **Plan**, elige uno con su nota de cobro y aprieta **Guardar plan**.
 
 ```bash
 ls .qa/publicados/                     # masterplan-praderas-demo/ ...
