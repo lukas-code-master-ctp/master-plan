@@ -110,6 +110,32 @@ def test_registrarse_crea_la_cuenta_sin_verificar_y_manda_el_enlace(entorno):
     assert correo.enlace("pia@bosques.cl", "/verificar")
 
 
+def test_llegar_desde_elegir_pro_lo_dice_y_lo_anota(entorno):
+    """"Elegir Pro" en la landing lleva acá: no pide nada todavía, pero queda anotado
+    para sugerírselo al publicar y para que CTP sepa qué le interesó."""
+    web, base, _ = entorno
+
+    pagina = web.get("/registro?plan=pro").text
+    assert "Elegiste el plan <strong>Pro</strong> · $80.000 al mes" in pagina
+    assert '<input type="hidden" name="plan" value="pro">' in pagina
+
+    registrarse(web, plan="pro")
+
+    cliente = base.cliente(base.usuario_por_email("pia@bosques.cl").cliente_id)
+    assert cliente.plan_interes == "pro"
+    assert cliente.plan is None and cliente.plan_pedido is None
+
+
+def test_un_plan_inventado_en_el_enlace_se_ignora(entorno):
+    web, base, _ = entorno
+
+    assert "Elegiste" not in web.get("/registro?plan=<b>gratis</b>").text
+    registrarse(web, plan="gratis")
+
+    cliente = base.cliente(base.usuario_por_email("pia@bosques.cl").cliente_id)
+    assert cliente.plan_interes is None
+
+
 def token_de(correo, para, ruta):
     return correo.enlace(para, ruta).split("t=")[1]
 

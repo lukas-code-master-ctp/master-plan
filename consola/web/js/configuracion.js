@@ -6,7 +6,8 @@
  * master: se pega acá una sola vez, se guarda cifrada y solo se muestran sus
  * últimos caracteres. Después, en cada master solo se elige el proyecto.
  */
-import { $, $$, avisar, fecha, json, pedir } from './comun.js';
+import { $, $$, avisar, estado as app, fecha, json, pedir } from './comun.js';
+import { resumenDeMiPlan } from './planes.js';
 import { pintarEquipo, prepararEquipo } from './equipo.js';
 import { pintarPreferencias, prepararPreferencias } from './preferencias.js';
 import { pintarActividad, prepararActividad } from './actividad.js';
@@ -28,6 +29,7 @@ export function prepararConfiguracion() {
 }
 
 export async function pintarConfiguracion({ animar = false } = {}) {
+  pintarPlan();
   pintarEquipo({ animar });
   pintarPreferencias();
   pintarActividad();
@@ -96,6 +98,30 @@ async function quitar() {
   } catch (error) {
     avisar(error.message);
   }
+}
+
+/**
+ * Tu plan. El equipo de CTP no tiene uno propio que mostrar: la sección no va. Sale
+ * de la sesión, que puede llegar después de pintar la pantalla: app.js lo repinta.
+ */
+export function pintarPlan() {
+  const equipo = app.sesion?.rol === 'plataforma';
+  $('#config-plan').hidden = equipo;
+  $('#config-indice-plan').hidden = equipo;
+  if (equipo) return;
+  const resumen = resumenDeMiPlan(app.sesion?.plan, app.sesion?.planes ?? []);
+  const pastilla = $('#config-plan-pastilla');
+  pastilla.textContent = resumen.pastilla.texto;
+  pastilla.className = 'pastilla' + (resumen.pastilla.tono ? ` pastilla--${resumen.pastilla.tono}` : '');
+  $('#config-plan-datos').replaceChildren(...resumen.datos.flatMap(([rotulo, valor]) => {
+    const dt = document.createElement('dt');
+    dt.textContent = rotulo;
+    const dd = document.createElement('dd');
+    dd.textContent = valor;
+    return [dt, dd];
+  }));
+  $('#config-plan-datos').hidden = !resumen.datos.length;
+  $('#config-plan-nota').textContent = resumen.nota;
 }
 
 // --- El índice ---------------------------------------------------------------------

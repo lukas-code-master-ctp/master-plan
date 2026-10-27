@@ -302,6 +302,18 @@ queda en el historial con quién la escribió. Concentrar el control en un punto
 que evita repartirlo por cada ruta que escribe algo, que es como se termina con un
 cliente trabajando gratis sin que nadie se entere.
 
+**Hasta cuándo, y bajar del aire.** Al asignar un plan, el equipo anota también hasta
+qué día está pagado (por defecto, un mes). La revisión de cada 15 minutos
+(`/api/tareas/cierra`, o `/api/tareas/planes` sola, con la misma clave) manda un
+recordatorio 5 días antes, otro al vencer, y 7 días después de vencer sin renovar baja
+los sitios del plan y se lo quita (`consola/vencimientos.py`). Renovar es asignar de
+nuevo con otra fecha. Un plan sin fecha (los asignados antes) no vence. Aparte, la
+loteadora puede bajar cualquiera de sus loteos con **Bajar del aire**
+(`POST /api/proyectos/<slug>/bajar`, que corre `despublicar.sh`): libera el cupo, deja
+el master como estaba y publicar lo trae de vuelta con el mismo nombre. Los correos de
+vencimiento dicen a quién escribir con `CONSOLA_CONTACTO` (por defecto, el correo de la
+landing).
+
 **Vista previa antes de pagar.** Un loteo construido y sin publicar se puede recorrer
 en `/vista-previa/<slug>/`: la consola sirve el mismo sitio que subiría al hosting, con
 el nombre, el WhatsApp y el diseño que el loteo tiene hoy, sin escribir nada en él

@@ -29,6 +29,10 @@ export const PASOS = {
     ['Subiendo a la web', /^▶ Publicando/],
     ['Dejándolo en línea', /^(Production|Aliased|▶ URL publicada)/],
   ],
+  bajar: [
+    ['Bajando el sitio', /^▶ Bajando/],
+    ['Fuera de línea', /^▶ .* ya no está en línea/],
+  ],
   // Crea tu KMZ: las líneas de `python -m pipeline.plano digitalizar`. "Semillas" sale
   // justo después del lector (junta sus números con los de la loteadora), antes de la
   // imagen de trabajo: es parte de leer los números, no de separar los lotes.
@@ -62,6 +66,7 @@ const DENTRO = {
 
 /** El resultado de los trabajos que no son construir ni publicar. */
 const RESUMENES = {
+  bajar: () => 'Fuera de línea: lo vuelves a publicar cuando quieras',
   actualizar: (lineas) => {
     const url = [...lineas].reverse().find((l) => /URL publicada/.test(l));
     return url ? `Al día en línea: ${url.split(': ').pop().trim()}` : 'Sitio al día';
@@ -76,6 +81,7 @@ const RESUMENES = {
 const NOMBRES = {
   construir: ['Construyendo', 'construir'],
   publicar: ['Publicando', 'publicar'],
+  bajar: ['Bajando del aire', 'bajar del aire'],
   actualizar: ['Actualizando el sitio', 'actualizar el sitio'],
   'digitalizar-plano': ['Leyendo el plano', 'leer el plano'],
 };

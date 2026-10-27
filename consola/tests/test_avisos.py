@@ -174,3 +174,64 @@ def test_asignar_un_plan_le_avisa_a_la_loteadora(con_loteo):
     [(asunto, texto)] = a(correo, "pia@bosques.cl")
     assert asunto == "Tu plan Pro está activo"
     assert "3 loteos en línea a la vez" in texto
+
+
+# --- el plan de la landing y los vencimientos -----------------------------------------
+
+def test_la_cuenta_nueva_cuenta_que_plan_le_intereso_en_la_landing(tmp_path):
+    web, _, correo = montar(tmp_path)
+    registrarse(web, plan="master")
+
+    confirmar(web, correo)
+
+    [(_, texto)] = a(correo, CTP)
+    assert "Llegó desde la landing eligiendo el plan Master." in texto
+
+
+def plan_que_vence(tmp_path):
+    from datetime import date
+
+    from consola.avisos import Avisos
+
+    web, base, correo = montar(tmp_path)
+    registrarse(web)
+    confirmar(web, correo)
+    cliente_id = base.usuario_por_email("pia@bosques.cl").cliente_id
+    correo.enviados.clear()
+    return Avisos(base=base, correo=correo, en_segundo_plano=False), cliente_id, correo, date
+
+
+def test_el_recordatorio_dice_hasta_cuando_y_a_quien_escribir(tmp_path):
+    avisos, cliente_id, correo, date = plan_que_vence(tmp_path)
+
+    avisos.plan_por_vencer(cliente_id=cliente_id, plan="Pro", hasta=date(2026, 11, 30))
+
+    [(asunto, texto)] = a(correo, "pia@bosques.cl")
+    assert asunto == "Tu plan Pro vence el 30/11/2026"
+    assert "escríbenos a" in texto and "7 días después" in texto
+    [(asunto, _)] = a(correo, CTP)
+    assert asunto == "Vence el plan Pro: Bosques del Sur"
+
+
+def test_al_vencer_dice_el_dia_en_que_se_bajan(tmp_path):
+    avisos, cliente_id, correo, date = plan_que_vence(tmp_path)
+
+    avisos.plan_vencido(cliente_id=cliente_id, plan="Pro", hasta=date(2026, 11, 30),
+                        bajada=date(2026, 12, 8))
+
+    [(asunto, texto)] = a(correo, "pia@bosques.cl")
+    assert asunto == "Venció tu plan Pro"
+    assert "hasta el 08/12/2026" in texto
+    assert len(a(correo, CTP)) == 1
+
+
+def test_al_bajarlos_dice_que_los_masters_siguen(tmp_path):
+    avisos, cliente_id, correo, _ = plan_que_vence(tmp_path)
+
+    avisos.plan_bajado(cliente_id=cliente_id, plan="Pro")
+
+    [(asunto, texto)] = a(correo, "pia@bosques.cl")
+    assert asunto == "Tus loteos se bajaron del aire"
+    assert "masters siguen guardados" in texto
+    [(asunto, _)] = a(correo, CTP)
+    assert asunto == "Sitios bajados: Bosques del Sur"

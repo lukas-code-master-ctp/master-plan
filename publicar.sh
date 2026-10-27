@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # publicar.sh — Sube al hosting el sitio ya construido de un loteo.
 #
-#   ./publicar.sh <carpeta-del-sitio> <proyecto-en-vercel> [--crear] [--dominio <host>]
+#   ./publicar.sh <carpeta-del-sitio> <proyecto-en-vercel> [--crear | --crear-si-falta] [--dominio <host>]
 #
 # La consola dice qué publicar y cómo se llama el proyecto; el script no deduce
 # nada. Eso importa: el nombre del proyecto es la identidad del loteo en el
@@ -11,6 +11,10 @@
 # `--crear` solo la primera vez. Si el proyecto ya existe, `vercel project add`
 # falla y el script **muere**: ese error es justamente la colisión que antes se
 # tragaba un `|| true` y terminaba desplegando encima del sitio de otro.
+#
+# `--crear-si-falta` es para volver a publicar un loteo que se bajó del aire
+# (despublicar.sh): el nombre ya es suyo en la consola, así que si el proyecto
+# sigue en el hosting se usa, y si el hosting lo borró se crea de nuevo.
 #
 # `--dominio` (p. ej. praderas.tumasterplan.cl) se le pide al hosting en cada
 # publicación, así un loteo publicado antes de tener dominio lo gana al republicar.
@@ -22,7 +26,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-sitio="${1:?uso: ./publicar.sh <carpeta-del-sitio> <proyecto-en-vercel> [--crear] [--dominio <host>]}"
+sitio="${1:?uso: ./publicar.sh <carpeta-del-sitio> <proyecto-en-vercel> [--crear | --crear-si-falta] [--dominio <host>]}"
 proyecto="${2:?falta el nombre del proyecto en el hosting}"
 shift 2
 crear=""
@@ -30,6 +34,7 @@ dominio=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --crear) crear="--crear" ;;
+    --crear-si-falta) crear="--crear-si-falta" ;;
     --dominio) dominio="${2:?falta el host de --dominio}"; shift ;;
     *) echo "opción desconocida: $1" >&2; exit 2 ;;
   esac
@@ -58,6 +63,10 @@ echo "▶ Publicando $sitio como $proyecto en $scope"
 if [ "$crear" = "--crear" ]; then
   # Sin `|| true`: si el nombre ya está tomado, esto tiene que fallar.
   vercel project add "$proyecto" --scope "$scope" ${token[@]+"${token[@]}"}
+elif [ "$crear" = "--crear-si-falta" ]; then
+  if ! respuesta=$(vercel project add "$proyecto" --scope "$scope" ${token[@]+"${token[@]}"} 2>&1); then
+    printf '%s\n' "$respuesta" | grep -qi 'already' || { printf '%s\n' "$respuesta" >&2; exit 1; }
+  fi
 fi
 
 vercel link --yes --project "$proyecto" --scope "$scope" ${token[@]+"${token[@]}"} --cwd "$sitio" >/dev/null

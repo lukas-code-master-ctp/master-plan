@@ -222,6 +222,17 @@ export function avisoAlQuitar(proyecto) {
 }
 
 /**
+ * Lo que se pregunta antes de bajar un loteo del aire. Lo de la consola (el master,
+ * lo construido, las reservas) no se toca: publicar lo trae de vuelta.
+ */
+export function avisoAlBajar(proyecto) {
+  return `¿Bajar "${proyecto.nombre}" del aire?\n\n`
+    + `${proyecto.url} deja de mostrarse y nadie más puede reservar desde ahí. `
+    + 'El master y lo construido quedan en la consola: lo vuelves a publicar cuando quieras, '
+    + 'en la misma dirección. Libera un cupo de tu plan.';
+}
+
+/**
  * Lo que falta para publicar, dicho en una línea. `plan` es el de la loteadora (el de
  * la sesión); el equipo de CTP no lo pasa, porque el suyo no es el del loteo.
  */
@@ -232,10 +243,15 @@ export function notaDePublicar(proyecto, plan = null) {
     return `Pediste tu plan${pedido}. Te escribimos para el pago y te avisamos por correo `
       + 'cuando puedas publicarlo.';
   }
+  if (!proyecto.habilitado && plan?.plan && plan.vencido) {
+    const hasta = plan.hasta ? ` el ${DIA.format(new Date(`${plan.hasta}T12:00:00`))}` : '';
+    return `Tu plan ${plan.nombre} venció${hasta}. Renuévalo para publicar este: `
+      + 'te escribimos para el pago.';
+  }
   if (!proyecto.habilitado && plan?.plan) {
     return `Tu plan ${plan.nombre} incluye ${plan.loteos} ${plan.loteos === 1 ? 'loteo' : 'loteos'} en línea y ya `
       + `${plan.loteos === 1 ? 'está ocupado' : 'están ocupados'}. Cambia a un plan más grande `
-      + 'para publicar este, o escríbenos para bajar uno.';
+      + 'para publicar este, o baja del aire uno de los que tienes.';
   }
   if (!proyecto.habilitado) {
     return 'Puedes construir y revisar cuantas veces quieras. Para publicarlo, elige un '

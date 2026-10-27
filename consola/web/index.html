@@ -413,6 +413,8 @@
             <p id="plano-publicar-nota" class="nota"></p>
             <button class="boton boton--contorno-claro" data-accion="pedir-habilitacion" type="button" hidden>Elegir plan</button>
             <button class="boton boton--texto" data-accion="pago" type="button" hidden>Anotar pago</button>
+            <!-- La otra mitad de publicar: libera el cupo del plan sin pasar por CTP. -->
+            <button class="boton boton--texto boton--peligro" data-accion="bajar" type="button" hidden>Bajar del aire</button>
           </footer>
 
           <section id="plano-inventario" class="inventario" aria-labelledby="inventario-titulo" hidden>
@@ -1003,6 +1005,8 @@
       <nav class="config__indice" aria-label="Secciones de Configuración">
         <button type="button" data-ir="config-cuenta" aria-current="true">
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="7" r="3.2"/><path d="M3.8 16.5c.9-3 3.3-4.6 6.2-4.6s5.3 1.6 6.2 4.6"/></svg>Tu cuenta</button>
+        <button type="button" data-ir="config-plan" id="config-indice-plan">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="5" width="15" height="10.5" rx="2"/><path d="M2.5 8.5h15M5.5 12.5h3"/></svg>Tu plan</button>
         <button type="button" data-ir="config-equipo">
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="7.5" cy="7.5" r="2.7"/><circle cx="14" cy="8.5" r="2.1"/><path d="M2.5 16c.7-2.6 2.6-4 5-4s4.3 1.4 5 4M13 12.3c2 0 3.6 1.1 4.3 3.4"/></svg>Equipo</button>
         <button type="button" data-ir="config-reservas">
@@ -1047,6 +1051,19 @@
               <button id="seguridad-sesiones" class="boton boton--contorno" type="button">Cerrar todas</button>
             </li>
           </ul>
+        </section>
+
+        <!-- Tu plan: lo que paga la loteadora y cuánto le queda. Sin esto, el plan solo
+             se veía al ir a publicar un loteo. -->
+        <section id="config-plan" class="config__seccion" aria-labelledby="titulo-config-plan">
+          <header class="config__cabecera">
+            <div>
+              <h2 id="titulo-config-plan">Tu plan <span id="config-plan-pastilla" class="pastilla"></span></h2>
+              <p class="nota">Armar y revisar masters es gratis; el plan decide cuántos tienes en línea a la vez.</p>
+            </div>
+          </header>
+          <dl id="config-plan-datos" class="plan-datos"></dl>
+          <p id="config-plan-nota" class="nota"></p>
         </section>
 
         <!-- Equipo -->
@@ -1540,7 +1557,7 @@
   <p class="ayuda">Los planes solo cambian en cuántos loteos tienes en línea a la vez. Todo lo
     demás viene en todos. Precios mensuales en pesos chilenos.</p>
   <div id="plan-opciones" class="planes" role="radiogroup" aria-labelledby="plan-titulo"></div>
-  <p class="ayuda">Te escribimos para el pago y te avisamos por correo cuando esté activo.</p>
+  <p id="plan-pie" class="ayuda"></p>
   <div class="modal__pie">
     <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
     <button id="plan-listo" class="boton" type="button">Pedir este plan</button>

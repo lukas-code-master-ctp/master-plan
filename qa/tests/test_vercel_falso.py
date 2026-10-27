@@ -97,3 +97,51 @@ def test_otro_subcomando_falla(tmp_path):
 
     assert hecho.returncode == 1
     assert "no existe" in hecho.stderr
+
+
+def despublicar(tmp_path: Path) -> subprocess.CompletedProcess:
+    entorno = {**os.environ,
+               "PATH": f"{BIN}:{os.environ['PATH']}",
+               "QA_PUBLICADOS": str(tmp_path / "publicados"),
+               "VERCEL_TOKEN": "qa"}
+    return subprocess.run(["bash", str(REPO / "despublicar.sh"), PROYECTO],
+                          env=entorno, capture_output=True, text=True)
+
+
+def test_despublicar_saca_el_sitio(tmp_path):
+    sitio = sitio_con(tmp_path, "<html>primera</html>")
+    assert publicar(tmp_path, sitio, "--crear").returncode == 0
+
+    hecho = despublicar(tmp_path)
+
+    assert hecho.returncode == 0, hecho.stderr
+    assert f"▶ {PROYECTO} ya no está en línea" in hecho.stdout
+    assert not (tmp_path / "publicados" / PROYECTO).exists()
+
+
+def test_despublicar_lo_que_no_existe_falla(tmp_path):
+    assert despublicar(tmp_path).returncode != 0
+
+
+def test_volver_a_publicar_uno_bajado_lo_crea_si_falta(tmp_path):
+    sitio = sitio_con(tmp_path, "<html>primera</html>")
+    assert publicar(tmp_path, sitio, "--crear").returncode == 0
+    assert despublicar(tmp_path).returncode == 0
+
+    hecho = publicar(tmp_path, sitio, "--crear-si-falta")
+
+    assert hecho.returncode == 0, hecho.stderr
+    assert (tmp_path / "publicados" / PROYECTO / "index.html").is_file()
+
+
+def test_crear_si_falta_usa_el_que_ya_existe(tmp_path):
+    """El hosting puede conservar el proyecto vacío: chocar con el propio no es error."""
+    sitio = sitio_con(tmp_path, "<html>primera</html>")
+    assert publicar(tmp_path, sitio, "--crear").returncode == 0
+    sitio_con(tmp_path, "<html>segunda</html>")
+
+    hecho = publicar(tmp_path, sitio, "--crear-si-falta")
+
+    assert hecho.returncode == 0, hecho.stderr
+    publicado = tmp_path / "publicados" / PROYECTO / "index.html"
+    assert publicado.read_text(encoding="utf-8") == "<html>segunda</html>"

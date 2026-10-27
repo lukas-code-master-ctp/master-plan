@@ -18,12 +18,13 @@ import re
 import secrets
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from passlib.context import CryptContext
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -75,6 +76,15 @@ clientes = Table(
     Column("plan_nota", Text, nullable=True),
     Column("plan_desde", DateTime(timezone=True), nullable=True),
     Column("plan_pedido", String(20), nullable=True),
+    # Hasta qué día está pagado el plan (consola/vencimientos.py). Vacío = sin
+    # fecha, como los planes asignados antes de que existiera: no vencen.
+    Column("plan_hasta", Date, nullable=True),
+    # El último aviso de vencimiento que se mandó ("previo" o "vencido"), para no
+    # repetirlo cada 15 minutos. Se limpia al asignar o renovar el plan.
+    Column("plan_avisado", String(20), nullable=True),
+    # El plan que eligió en la landing antes de registrarse ("Elegir Pro"). No pide
+    # nada: sugiere ese plan al publicar y le cuenta a CTP qué le interesó.
+    Column("plan_interes", String(20), nullable=True),
 )
 
 usuarios = Table(
@@ -316,6 +326,9 @@ class Cliente:
     plan_nota: str | None = None
     plan_desde: datetime | None = None
     plan_pedido: str | None = None
+    plan_hasta: date | None = None
+    plan_avisado: str | None = None
+    plan_interes: str | None = None
 
 
 @dataclass(frozen=True)
@@ -541,16 +554,33 @@ class Base:
             con.execute(update(clientes).where(clientes.c.id == cliente_id).values(**validos))
 
     def asignar_plan(self, cliente_id: int, plan: str | None, *, loteos: int | None = None,
-                     nota: str | None = None) -> None:
+                     nota: str | None = None, hasta: date | None = None) -> None:
         """Deja a la loteadora en un plan, o sin plan con None. Atiende su pedido.
 
-        Sin plan, sus loteos en línea siguen en línea: bajarlos no es algo que la
-        consola haga sola, y sin plan simplemente no se pueden volver a publicar.
+        Sin plan, sus loteos en línea siguen en línea hasta que alguien los baje:
+        quitar el plan a mano no baja nada; el vencimiento sí (consola/vencimientos.py).
+        Renovar es asignar de nuevo con otra fecha, y vuelve a armar los avisos.
         """
         with self.motor.begin() as con:
             con.execute(update(clientes).where(clientes.c.id == cliente_id).values(
                 plan=plan, plan_loteos=loteos, plan_nota=nota,
-                plan_desde=_ahora() if plan else None, plan_pedido=None))
+                plan_desde=_ahora() if plan else None, plan_pedido=None,
+                plan_hasta=hasta if plan else None, plan_avisado=None))
+            if plan:
+                # Con el plan dado, los pedidos de sus loteos ya se atendieron: si no,
+                # al vencer volverían a la cola "Por habilitar" con su fecha vieja.
+                con.execute(update(proyectos).where(proyectos.c.cliente_id == cliente_id)
+                            .values(habilitacion_pedida_en=None))
+
+    def anotar_interes(self, cliente_id: int, plan: str) -> None:
+        with self.motor.begin() as con:
+            con.execute(update(clientes).where(clientes.c.id == cliente_id)
+                        .values(plan_interes=plan))
+
+    def anotar_aviso_de_plan(self, cliente_id: int, aviso: str) -> None:
+        with self.motor.begin() as con:
+            con.execute(update(clientes).where(clientes.c.id == cliente_id)
+                        .values(plan_avisado=aviso))
 
     def pedir_plan(self, cliente_id: int, plan: str) -> None:
         with self.motor.begin() as con:
@@ -823,6 +853,13 @@ class Base:
         with self.motor.begin() as con:
             con.execute(update(proyectos).where(proyectos.c.slug == slug).values(
                 vercel_proyecto=vercel_proyecto, url_publicada=url, publicado_en=_ahora()))
+
+    def anotar_bajada(self, slug: str) -> None:
+        """El loteo dejó de estar en línea. El nombre en el hosting se queda: sigue
+        siendo suyo, y al publicar de nuevo se vuelve a usar."""
+        with self.motor.begin() as con:
+            con.execute(update(proyectos).where(proyectos.c.slug == slug).values(
+                url_publicada=None, publicado_en=None, visor_publicado=None))
 
     def anotar_visor(self, slug: str, huella: str) -> None:
         """Con qué visor quedó publicado. Aparte de `anotar_publicacion` porque la
@@ -1098,7 +1135,9 @@ def _migrar(motor) -> None:
     for columna, tipo in (("whatsapp", "VARCHAR(20)"), ("diseno_id", "INTEGER"),
                           ("horas_apartado", "INTEGER"), ("plan", "VARCHAR(20)"),
                           ("plan_loteos", "INTEGER"), ("plan_nota", "TEXT"),
-                          ("plan_desde", fecha), ("plan_pedido", "VARCHAR(20)")):
+                          ("plan_desde", fecha), ("plan_pedido", "VARCHAR(20)"),
+                          ("plan_hasta", "DATE"), ("plan_avisado", "VARCHAR(20)"),
+                          ("plan_interes", "VARCHAR(20)")):
         if columna not in columnas:
             with motor.begin() as con:
                 con.execute(text(f"ALTER TABLE clientes ADD COLUMN {columna} {tipo}"))
@@ -1144,7 +1183,8 @@ def _cliente(fila) -> Cliente:
                    diseno_id=fila.diseno_id, horas_apartado=fila.horas_apartado,
                    plan=fila.plan, plan_loteos=fila.plan_loteos, plan_nota=fila.plan_nota,
                    plan_desde=_utc(fila.plan_desde) if fila.plan_desde else None,
-                   plan_pedido=fila.plan_pedido)
+                   plan_pedido=fila.plan_pedido, plan_hasta=fila.plan_hasta,
+                   plan_avisado=fila.plan_avisado, plan_interes=fila.plan_interes)
 
 
 def _invitacion(fila) -> Invitacion:

@@ -24,6 +24,7 @@ from .cuentas import (
     validar_clave,
     validar_registro,
 )
+from . import planes
 from .datos import EmailYaExiste
 
 WEB = Path(__file__).resolve().parent / "web"
@@ -93,10 +94,27 @@ def pagina_de_entrada(error: str | None = None, *, con_google: bool, con_registr
   <nav class="entrada__enlaces">{enlaces}</nav>""", estado)
 
 
+def _plan_de_la_landing(clave: str | None):
+    """El plan con que llegó desde "Elegir Pro" en la landing, o None si no es uno."""
+    return planes.PLANES.get(str(clave or "").strip().lower())
+
+
+def _eligio(plan) -> str:
+    if plan is None:
+        return ""
+    precio = (f" · ${plan.precio_mensual:,.0f} al mes".replace(",", ".")
+              if plan.precio_mensual else "")
+    return (f'<p class="aviso aviso--ok">Elegiste el plan <strong>{escape(plan.nombre)}</strong>'
+            f'{precio}. Primero armas y revisas tu master gratis; el plan se activa '
+            'cuando lo publicas.</p>'
+            f'<input type="hidden" name="plan" value="{escape(plan.clave, quote=True)}">')
+
+
 def _formulario_de_registro(error: str | None = None, campos: dict | None = None,
                             *, con_google: bool, estado: int = 200) -> HTMLResponse:
     campos = campos or {}
     valor = lambda clave: escape(str(campos.get(clave) or ""), quote=True)
+    plan = _plan_de_la_landing(campos.get("plan"))
     google = (f'<a class="boton boton--google" href="/entrar/google">{LOGO_GOOGLE}'
               'Registrarse con Google</a><p class="separador">o</p>') if con_google else ""
     return pagina("Crear cuenta", f"""
@@ -105,6 +123,7 @@ def _formulario_de_registro(error: str | None = None, campos: dict | None = None
   {_aviso(error)}
   {google}
   <form method="post" action="/registro">
+    {_eligio(plan)}
     <label class="campo"><span>Tu loteadora</span>
       <input name="loteadora" value="{valor('loteadora')}" autocomplete="organization" required></label>
     <label class="campo"><span>Tu nombre</span>
@@ -292,16 +311,18 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
     # --- Regístrate ----------------------------------------------------------
 
     @rutas.get("/registro", response_class=HTMLResponse)
-    def formulario_de_registro() -> HTMLResponse:
-        return cerrado("Crear cuenta") or _formulario_de_registro(con_google=con_google)
+    def formulario_de_registro(plan: str = "") -> HTMLResponse:
+        return cerrado("Crear cuenta") or _formulario_de_registro(None, {"plan": plan},
+                                                                   con_google=con_google)
 
     @rutas.post("/registro", response_class=HTMLResponse)
     def registrarse(peticion: Request, loteadora: str = Form(default=""),
                     nombre: str = Form(default=""), email: str = Form(default=""),
-                    clave: str = Form(default=""), sitio: str = Form(default="")) -> HTMLResponse:
+                    clave: str = Form(default=""), sitio: str = Form(default=""),
+                    plan: str = Form(default="")) -> HTMLResponse:
         if (respuesta := cerrado("Crear cuenta")) is not None:
             return respuesta
-        campos = {"loteadora": loteadora, "nombre": nombre, "email": email}
+        campos = {"loteadora": loteadora, "nombre": nombre, "email": email, "plan": plan}
         listo = _revisa_tu_correo("Si el correo es válido, te mandamos un enlace para confirmarlo. "
                                   "Ábrelo y entras directo.")
         # Un robot llena el campo escondido: se le contesta como si hubiera
@@ -314,7 +335,9 @@ def rutas_de_cuentas(acceso: Acceso, cuentas: Cuentas, google: Google | None,
             return _formulario_de_registro(str(error), campos, con_google=con_google, estado=400)
         if not limitador.permitir(ip_de(peticion, acceso.local)):
             return demasiados()
-        cuentas.registrar(datos, url_base(peticion, acceso.local))
+        elegido = _plan_de_la_landing(plan)
+        cuentas.registrar(datos, url_base(peticion, acceso.local),
+                          plan_interes=elegido.clave if elegido else None)
         return listo
 
     @rutas.get("/verificar", response_class=HTMLResponse)

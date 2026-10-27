@@ -39,8 +39,32 @@ export function estadoDelLoteo(loteo) {
 export function resumenDelPlan(plan, planes = []) {
   const nombre = (clave) => planes.find((p) => p.plan === clave)?.nombre ?? clave;
   const pidio = plan?.pedido && plan.pedido !== plan.plan ? ` · pidió ${nombre(plan.pedido)}` : '';
-  if (!plan?.plan) return `Sin plan${pidio}`;
+  const interes = !plan?.plan && !plan?.pedido && plan?.interes ? ` · le interesó ${nombre(plan.interes)} en la landing` : '';
+  if (!plan?.plan) return `Sin plan${pidio}${interes}`;
   return `${plan.nombre} · ${plan.en_linea} de ${plan.loteos} en línea${pidio}`;
+}
+
+/** "2026-11-27" un mes después de "2026-10-27"; del 31 de enero, el último de febrero. */
+export function unMesDespues(iso) {
+  const [anio, mes, dia] = iso.split('-').map(Number);
+  const siguiente = mes === 12 ? [anio + 1, 1] : [anio, mes + 1];
+  const ultimo = new Date(Date.UTC(siguiente[0], siguiente[1], 0)).getUTCDate();
+  const d = Math.min(dia, ultimo);
+  return `${siguiente[0]}-${String(siguiente[1]).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+/**
+ * La fecha que conviene proponer al asignar un plan: renovar uno al día suma un mes
+ * a lo pagado (no se pierden los días que quedaban); uno nuevo o vencido, desde hoy.
+ */
+export function hastaSugerido(plan, hoy) {
+  const desde = plan?.plan && plan.hasta && plan.hasta >= hoy ? plan.hasta : hoy;
+  return unMesDespues(desde);
+}
+
+/** Hoy en Chile, como AAAA-MM-DD: el plan se paga por días de acá. */
+export function hoyEnChile(ahora = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(ahora);
 }
 
 /** El resumen de una loteadora en el padrón: "3 loteos · 2 cuentas". */
@@ -215,6 +239,7 @@ function filaLoteadora(cliente) {
   if (cliente.id === estado.sesion?.cliente_id) titulo.append(chip('La tuya'));
   if (cliente.estado !== 'activo') titulo.append(chip('Suspendida', 'apagada'));
   if (cliente.plan?.plan) titulo.append(chip(cliente.plan.nombre));
+  if (cliente.plan?.vencido) titulo.append(chip('Plan vencido', 'aviso'));
   if (cliente.por_habilitar) titulo.append(chip(`${cliente.por_habilitar} por habilitar`, 'aviso'));
   texto.append(titulo, nodo('span', 'ayuda', resumenDe(cliente)));
   fila.append(texto, nodo('span', 'padron__flecha', '›'));
@@ -332,8 +357,14 @@ function seccionPlan(ficha) {
   s.append(nodo('p', null, resumenDelPlan(plan, planes)));
   if (plan?.plan) {
     const desde = plan.desde ? `Desde el ${DIA.format(new Date(plan.desde))}` : '';
+    const hasta = plan.hasta ? `pagado hasta el ${DIA.format(new Date(`${plan.hasta}T12:00:00`))}`
+      : 'sin fecha de pago (no vence)';
     const cobro = ficha.nota_plan ? `Cobro: ${ficha.nota_plan}` : '';
-    s.append(nodo('p', 'ayuda', [desde, cobro].filter(Boolean).join(' · ')));
+    s.append(nodo('p', 'ayuda', [[desde, hasta].filter(Boolean).join(', '), cobro].filter(Boolean).join(' · ')));
+    if (plan.vencido) {
+      s.append(nodo('p', 'nota nota--aviso', 'Venció: sus sitios se bajan solos 7 días después '
+        + 'de la fecha pagada. Renuévalo con la nueva fecha para que sigan en línea.'));
+    }
   }
 
   const fila = nodo('div', 'fila fila--envuelve');
@@ -349,19 +380,31 @@ function seccionPlan(ficha) {
   const nota = nodo('input');
   Object.assign(nota, { type: 'text', placeholder: 'Cómo se pagó', autocomplete: 'off' });
   nota.setAttribute('aria-label', 'Cómo se pagó el plan');
+  // Hasta qué día cubre el pago: el aviso de vencimiento y la bajada salen de acá.
+  const hoy = hoyEnChile();
+  const hasta = nodo('input');
+  Object.assign(hasta, { type: 'date', min: hoy, value: hastaSugerido(plan, hoy) });
+  hasta.setAttribute('aria-label', 'Pagado hasta');
+  hasta.title = 'Pagado hasta';
   const aLaMedida = () => planes.find((p) => p.plan === elegir.value)?.loteos === null;
-  const mostrar = () => { cupo.hidden = !aLaMedida(); nota.hidden = !elegir.value; };
+  const mostrar = () => {
+    cupo.hidden = !aLaMedida();
+    nota.hidden = !elegir.value;
+    hasta.hidden = !elegir.value;
+  };
   elegir.addEventListener('change', mostrar);
   mostrar();
   const guardar = boton('Guardar plan', async () => {
     const clave = elegir.value;
     if (clave && !nota.value.trim()) return avisar('Anota cómo se pagó el plan: es el único registro del cobro.');
+    if (clave && !hasta.value) return avisar('Pon hasta qué día está pagado el plan.');
     if (!clave && plan?.plan && !confirm(`¿Dejar a ${ficha.nombre} sin plan?\n\n`
       + 'Sus loteos en línea siguen en línea, pero no se pueden volver a publicar.')) return;
     guardar.disabled = true;
     try {
       await pedir(`/api/plataforma/clientes/${ficha.id}/plan`, json({
         plan: clave || null, nota_cobro: nota.value.trim(), loteos: aLaMedida() ? Number(cupo.value) : null,
+        hasta: clave ? hasta.value : null,
       }));
       avisar(clave ? `${ficha.nombre} quedó en el plan ${planes.find((p) => p.plan === clave)?.nombre}.`
         : `${ficha.nombre} quedó sin plan.`, 'ok');
@@ -372,7 +415,12 @@ function seccionPlan(ficha) {
       guardar.disabled = false;
     }
   }, 'boton');
-  fila.append(elegir, cupo, nota, guardar);
+  const etiquetaHasta = nodo('label', 'campo-en-linea');
+  etiquetaHasta.append(nodo('span', 'ayuda', 'Pagado hasta'), hasta);
+  const mostrarEtiqueta = () => { etiquetaHasta.hidden = !elegir.value; };
+  elegir.addEventListener('change', mostrarEtiqueta);
+  mostrarEtiqueta();
+  fila.append(elegir, cupo, nota, etiquetaHasta, guardar);
   s.append(fila);
   return s;
 }
