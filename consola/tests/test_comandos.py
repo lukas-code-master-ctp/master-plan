@@ -77,9 +77,19 @@ def test_publicar_sube_siempre_el_visor_actual(comandos, tmp_path):
     orden = comandos.publicar(proyecto, vercel_proyecto="masterplan-las-araucarias")
 
     assert orden[:2] == ["/bin/sh", "-c"]
-    copiar, subir = orden[2].split(" && ")
+    copiar, geo, subir = orden[2].split(" && ")
     assert "'pipeline.visor'" in copiar and f"'{proyecto.salida.web}'" in copiar
     assert "publicar.sh" in subir
+
+
+def test_publicar_rehace_el_geo_dentro_del_sitio(comandos, tmp_path):
+    """El geo viaja en el sitio: cada publicación, también la que piden los estados
+    nuevos de Cierra, deja al día el mismo link."""
+    proyecto = proyecto_de_prueba(tmp_path)
+
+    _, geo, _ = comandos.publicar(proyecto, vercel_proyecto="masterplan-las-araucarias")[2].split(" && ")
+
+    assert "'pipeline.geo_pintado'" in geo and f"'{proyecto.salida.web}'" in geo
 
 
 def test_encadenar_corta_al_primer_error():
@@ -114,7 +124,7 @@ def test_actualizar_el_visor_copia_y_sube_sin_crear(comandos, tmp_path):
     orden = comandos.actualizar_visor(proyecto, "masterplan-las-araucarias")
 
     assert orden[:2] == ["/bin/sh", "-c"]
-    copiar, subir = orden[2].split(" && ")
+    copiar, _, subir = orden[2].split(" && ")
     assert "'pipeline.visor'" in copiar and f"'{proyecto.salida.web}'" in copiar
     assert "publicar.sh" in subir and "'masterplan-las-araucarias'" in subir
     assert "--crear" not in orden[2]

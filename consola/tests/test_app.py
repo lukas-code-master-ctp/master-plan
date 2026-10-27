@@ -1,10 +1,12 @@
 """La API de la consola."""
 import io
 import json
+import os
 import sys
 import time
 
 import openpyxl
+import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 
@@ -473,6 +475,7 @@ RUTAS = {
     ("POST", "/api/proyectos"): SOLO_SUYO,
     ("GET", "/api/proyectos/{slug}/portada"): AJENO_404,
     ("GET", "/api/proyectos/{slug}/plantilla"): AJENO_404,
+    ("GET", "/api/proyectos/{slug}/geo.pdf"): AJENO_404,
     ("GET", "/api/plantilla-inventario"): SOLO_SUYO,
     ("POST", "/api/proyectos/{slug}/inventario/actualizar"): AJENO_404,
     ("POST", "/api/tareas/cierra"): SIN_SESION,
@@ -625,10 +628,11 @@ def de_ana(ctp, ana, registro, nombre="De Ana"):
     lambda web, slug: web.get(f"/calce/{slug}/p01-210.jpg"),
     lambda web, slug: web.get(f"/api/proyectos/{slug}/portada"),
     lambda web, slug: web.get(f"/api/proyectos/{slug}/plantilla"),
+    lambda web, slug: web.get(f"/api/proyectos/{slug}/geo.pdf"),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/archivos",
                                files=[("archivos", ("x.kmz", b"kmz", "application/octet-stream"))]),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/kmz", json={"kmz": "x", "confirmar_reemplazo": True}),
-], ids=["ajustar", "olvidar", "construir", "publicar", "pedir-habilitacion", "calce", "portada", "plantilla", "subir",
+], ids=["ajustar", "olvidar", "construir", "publicar", "pedir-habilitacion", "calce", "portada", "plantilla", "geo", "subir",
         "usar-kmz"])
 def test_el_loteo_de_otra_contesta_404_en_todas_las_rutas(ana_y_luis, pedir):
     ctp, ana, luis, registro, comandos = ana_y_luis
@@ -1606,3 +1610,52 @@ def test_construir_con_publicar_no_publica_sin_pago(ana_y_luis):
     esperar_trabajo(ana, respuesta.json()["id"])
 
     assert not any(p[0] == "publicar" for p in comandos.pedidos)
+
+
+CUADRADO = [[-72.0, -36.0], [-71.999, -36.0], [-71.999, -35.999], [-72.0, -35.999]]
+
+
+def test_el_geo_del_loteo_sale_en_pdf_con_los_estados_de_hoy(ana_y_luis):
+    _, ana, _, registro, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+    corrido = [[x + 0.001, y] for x, y in CUADRADO]
+    construir_con_precios(registro.salidas, slug, [
+        {"id": "A1", "estado": "disponible", "poligono": CUADRADO},
+        {"id": "A2", "estado": "vendido", "poligono": corrido},
+    ])
+
+    respuesta = ana.get(f"/api/proyectos/{slug}/geo.pdf")
+
+    assert respuesta.status_code == 200
+    assert respuesta.headers["content-type"] == "application/pdf"
+    assert "attachment" in respuesta.headers["content-disposition"]
+    texto = pymupdf.open(stream=respuesta.content, filetype="pdf")[0].get_text()
+    assert "LOTE A1" in texto and "Disponible (1)" in texto
+
+
+def test_el_geo_se_rehace_cuando_cambia_el_inventario(ana_y_luis):
+    _, ana, _, registro, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+    construir_con_precios(registro.salidas, slug, [
+        {"id": "A1", "estado": "disponible", "poligono": CUADRADO}])
+    assert "Disponible (1)" in pymupdf.open(
+        stream=ana.get(f"/api/proyectos/{slug}/geo.pdf").content, filetype="pdf")[0].get_text()
+
+    # Cierra trae la venta: el parcelas.json queda más nuevo que el geo.
+    archivo = registro.salidas / slug / "sitio" / "datos" / "parcelas.json"
+    datos = json.loads(archivo.read_text())
+    datos["parcelas"][0]["estado"] = "vendido"
+    archivo.write_text(json.dumps(datos))
+    geo = registro.salidas / slug / "sitio" / "geo.pdf"
+    os.utime(geo, (geo.stat().st_mtime - 60,) * 2)
+
+    texto = pymupdf.open(stream=ana.get(f"/api/proyectos/{slug}/geo.pdf").content,
+                         filetype="pdf")[0].get_text()
+    assert "Disponible (0)" in texto
+
+
+def test_sin_construir_no_hay_geo(ana_y_luis):
+    _, ana, _, _, _ = ana_y_luis
+    slug = crear(ana)["slug"]
+
+    assert ana.get(f"/api/proyectos/{slug}/geo.pdf").status_code == 409

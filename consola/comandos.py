@@ -49,7 +49,14 @@ class Comandos:
         dominio = dominio_propio(proyecto.slug)
         if dominio:
             subir += ["--dominio", dominio]
-        return encadenar(self.copiar_visor(proyecto), subir)
+        # El geo va dentro del sitio (`<sitio>/geo.pdf`): así el link no cambia y cada
+        # publicación, también la que piden los estados nuevos de Cierra, lo deja al día.
+        return encadenar(self.copiar_visor(proyecto), self.geo(proyecto), subir)
+
+    def geo(self, proyecto) -> list[str]:
+        """El PDF con las disponibles pintadas. Nunca corta la cadena: si el satélite
+        no contesta, sale sin él."""
+        return [sys.executable, "-m", "pipeline.geo_pintado", str(proyecto.salida.web)]
 
     def copiar_visor(self, proyecto) -> list[str]:
         return [sys.executable, "-m", "pipeline.visor", "--sitio", str(proyecto.salida.web)]

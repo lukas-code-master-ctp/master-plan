@@ -1213,6 +1213,8 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
 .inventario__acciones .boton { flex: 1 1 auto; justify-content: center; border-radius: 0.75rem; }
 .inventario__cierra { display: grid; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px dashed var(--zinc-200); }
 .inventario__cierra .nota { margin: 0; }
+.inventario__geo { display: grid; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px dashed var(--zinc-200); }
+.inventario__geo .nota { margin: 0; }
 .segmentado { display: inline-flex; gap: 0.25rem; margin-bottom: 0.5rem; padding: 0.2rem;
   background: var(--zinc-100); border-radius: var(--radio-md); }
 .segmentado button { padding: 0.375rem 0.875rem; border: 0; border-radius: var(--radio-sm);
