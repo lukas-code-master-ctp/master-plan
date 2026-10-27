@@ -109,6 +109,10 @@ def como_json(cliente, guardados) -> dict:
         "precio_mensual": plan.precio_mensual if plan else None,
         "desde": cliente.plan_desde.isoformat() if cliente.plan_desde else None,
         "pedido": cliente.plan_pedido,
+        # Pagado con tarjeta en Flow: con qué tarjeta y, si pidió cancelar, hasta cuándo.
+        "con_tarjeta": bool(cliente.flow_suscripcion),
+        "tarjeta": cliente.flow_tarjeta,
+        "hasta": cliente.flow_hasta,
     }
 
 

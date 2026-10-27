@@ -5,11 +5,12 @@
 #   npm run qa:levantar               # de cero: borra .qa/, siembra y levanta
 #   npm run qa:levantar -- --conservar  # levanta sobre el .qa/ que ya había
 #
-# Levanta tres cosas en segundo plano: la consola (hypercorn), la Cierra falsa y un
-# servidor de lo que publica el `vercel` falso. Sus PID quedan en .qa/pids/ y sus
-# registros en .qa/logs/. `npm run qa:bajar` las termina.
+# Levanta cuatro cosas en segundo plano: la consola (hypercorn), la Cierra falsa, el
+# Flow falso (pago con tarjeta) y un servidor de lo que publica el `vercel` falso.
+# Sus PID quedan en .qa/pids/ y sus registros en .qa/logs/. `npm run qa:bajar` las
+# termina.
 #
-# Los puertos se cambian con QA_PUERTO_CONSOLA, QA_PUERTO_CIERRA y
+# Los puertos se cambian con QA_PUERTO_CONSOLA, QA_PUERTO_CIERRA, QA_PUERTO_FLOW y
 # QA_PUERTO_PUBLICADOS.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -21,7 +22,7 @@ conservar=""
 for argumento in "$@"; do
   case "$argumento" in
     --conservar) conservar=1 ;;
-    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "✗ No conozco '$argumento'. Uso: qa/levantar.sh [--conservar]" >&2; exit 2 ;;
   esac
 done
@@ -29,6 +30,7 @@ done
 QA_PUERTO_CONSOLA="${QA_PUERTO_CONSOLA:-8780}"
 QA_PUERTO_CIERRA="${QA_PUERTO_CIERRA:-8791}"
 QA_PUERTO_PUBLICADOS="${QA_PUERTO_PUBLICADOS:-8792}"
+QA_PUERTO_FLOW="${QA_PUERTO_FLOW:-8793}"
 
 # --- lo que haya quedado de la vez anterior --------------------------------------
 
@@ -61,7 +63,7 @@ command -v curl >/dev/null 2>&1 || { echo "✗ Hace falta curl para ver si la co
 # nuestro: un hilo con credenciales en el entorno tampoco se escapa.
 unset MASTERPLAN_BD RESEND_API_KEY SENDGRID_API_KEY EMAIL_FROM GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
       VERCEL_TOKEN VERCEL_SCOPE CIERRA_API_URL CONSOLA_URL MASTERPLAN_DOMINIO \
-      MASTERPLAN_CRM_CSV CONSOLA_REPUBLICAR_AL_ARRANCAR
+      MASTERPLAN_CRM_CSV CONSOLA_REPUBLICAR_AL_ARRANCAR FLOW_API_KEY FLOW_SECRET_KEY FLOW_API_URL
 
 export CONSOLA_ENTORNO=local
 export MASTERPLAN_DATOS="$QA/datos"
@@ -73,7 +75,12 @@ export CIERRA_API_URL="http://127.0.0.1:$QA_PUERTO_CIERRA"
 export QA_PUBLICADOS="$QA/publicados"
 export QA_URL_PUBLICADOS="http://127.0.0.1:$QA_PUERTO_PUBLICADOS"
 export QA_URL_CONSOLA="http://127.0.0.1:$QA_PUERTO_CONSOLA"
-export QA_PUERTO_CONSOLA QA_PUERTO_CIERRA QA_PUERTO_PUBLICADOS
+# El Flow falso: firma como el de verdad, pero con claves públicas que solo sirven acá.
+export FLOW_API_URL="http://127.0.0.1:$QA_PUERTO_FLOW/api"
+FLOW_API_KEY="$(python3 -c 'from qa.flow_falsa import CLAVE; print(CLAVE)')"
+FLOW_SECRET_KEY="$(python3 -c 'from qa.flow_falsa import SECRETO; print(SECRETO)')"
+export FLOW_API_KEY FLOW_SECRET_KEY
+export QA_PUERTO_CONSOLA QA_PUERTO_CIERRA QA_PUERTO_PUBLICADOS QA_PUERTO_FLOW
 # El `vercel` falso primero: publicar.sh (el de verdad) lo encuentra a él.
 export PATH="$REPO/qa/bin:$PATH"
 export VERCEL_SCOPE=qa-local
@@ -99,7 +106,7 @@ PY
 
 ocupados=""
 for par in "QA_PUERTO_CONSOLA:$QA_PUERTO_CONSOLA" "QA_PUERTO_CIERRA:$QA_PUERTO_CIERRA" \
-           "QA_PUERTO_PUBLICADOS:$QA_PUERTO_PUBLICADOS"; do
+           "QA_PUERTO_PUBLICADOS:$QA_PUERTO_PUBLICADOS" "QA_PUERTO_FLOW:$QA_PUERTO_FLOW"; do
   variable="${par%%:*}"; puerto="${par#*:}"
   if ! puerto_libre "$puerto"; then
     echo "✗ El puerto $puerto está ocupado. Libéralo o elige otro con $variable=<puerto>." >&2
@@ -165,13 +172,18 @@ listo=""
 trap '[ -n "$listo" ] || bash "$REPO/qa/bajar.sh" >&2' EXIT
 trap 'exit 130' INT TERM
 
-echo "▶ Levantando la Cierra falsa y el servidor de lo publicado..."
+echo "▶ Levantando la Cierra falsa, el Flow falso y el servidor de lo publicado..."
 en_segundo_plano cierra_falsa python3 -m qa.cierra_falsa --puerto "$QA_PUERTO_CIERRA"
+# Avisa los pagos a la consola, como Flow al `urlCallback` de cada plan.
+en_segundo_plano flow_falso python3 -m qa.flow_falsa --puerto "$QA_PUERTO_FLOW" \
+  --aviso "$QA_URL_CONSOLA/api/flow/pago"
 en_segundo_plano publicados python3 -m http.server "$QA_PUERTO_PUBLICADOS" \
   --bind 127.0.0.1 --directory "$QA/publicados"
 # Sin clave, la Cierra falsa contesta 401: con eso basta para saber que está.
 esperar cierra_falsa "$CIERRA_API_URL/integrations/proyectos" 401
 esperar publicados "$QA_URL_PUBLICADOS/"
+# Sin firma, el Flow falso contesta 401.
+esperar flow_falso "$FLOW_API_URL/plans/get" 401
 
 if [ -z "$conservar" ]; then
   echo "▶ Sembrando (construye y publica Praderas Demo, tarda unos segundos)..."
@@ -198,7 +210,8 @@ listo=1
   echo "unset MASTERPLAN_BD RESEND_API_KEY SENDGRID_API_KEY EMAIL_FROM GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET VERCEL_TOKEN CONSOLA_URL MASTERPLAN_DOMINIO MASTERPLAN_CRM_CSV CONSOLA_REPUBLICAR_AL_ARRANCAR"
   for variable in CONSOLA_ENTORNO MASTERPLAN_DATOS CONSOLA_SECRETO CONSOLA_BUZON QA_BUZON \
                   CIERRA_API_URL QA_PUBLICADOS QA_URL_PUBLICADOS QA_URL_CONSOLA \
-                  QA_PUERTO_CONSOLA QA_PUERTO_CIERRA QA_PUERTO_PUBLICADOS VERCEL_SCOPE \
+                  QA_PUERTO_CONSOLA QA_PUERTO_CIERRA QA_PUERTO_PUBLICADOS QA_PUERTO_FLOW VERCEL_SCOPE \
+                  FLOW_API_URL FLOW_API_KEY FLOW_SECRET_KEY \
                   PYTHONUNBUFFERED; do
     printf 'export %s=%q\n' "$variable" "${!variable}"
   done
@@ -211,6 +224,7 @@ echo
 echo "✓ QA local arriba"
 echo "  Consola         $QA_URL_CONSOLA"
 echo "  Cierra falsa    $CIERRA_API_URL  (clave: $clave_cierra)"
+echo "  Flow falso      $FLOW_API_URL  (tarjeta aprobada o rechazada, a elección)"
 echo "  Publicados      $QA_URL_PUBLICADOS/"
 for sitio in "$QA/publicados"/*/; do
   [ -d "$sitio" ] || continue

@@ -296,11 +296,60 @@ su plan desde el loteo ("Elegir plan") y el equipo se lo asigna en la ficha de l
 loteadora (`/api/plataforma/clientes/<id>/plan`, solo rol `plataforma`). Los loteos
 pagados de a uno (el modelo anterior: `/api/plataforma/proyectos/<slug>/pago`, o
 habilitados de entrada a nombre de una loteadora cuando el vuelo lo hace el equipo)
-siguen publicables sin plan y no ocupan cupo. En todos los casos la nota de cobro es
-obligatoria —sin pasarela, esa línea de texto es todo el control de pago que hay— y
-queda en el historial con quién la escribió. Concentrar el control en un punto es lo
+siguen publicables sin plan y no ocupan cupo. Cuando el plan lo anota el equipo, la
+nota de cobro es obligatoria —sin pasarela, esa línea de texto es todo el control de
+pago que hay— y queda en el historial con quién la escribió. Con Flow configurado, la
+loteadora lo paga sola con tarjeta (abajo). Concentrar el control en un punto es lo
 que evita repartirlo por cada ruta que escribe algo, que es como se termina con un
 cliente trabajando gratis sin que nadie se entere.
+
+**El pago con tarjeta (Flow).** Con `FLOW_API_KEY` y `FLOW_SECRET_KEY`, la
+loteadora paga su plan sola, con tarjeta, desde Configuración → Plan y pago (o al
+publicar, en "Elegir plan"), y Flow le cobra cada mes. El recorrido
+(`consola/cobros.py`, rutas en `consola/rutas_flow.py`):
+
+1. Elige el plan. Si no tiene tarjeta, se crea su cliente en Flow y se la manda a
+   flow.cl a registrarla (`customer/register`).
+2. Flow devuelve el navegador a `POST /api/flow/tarjeta` con un token. Con la tarjeta
+   registrada se crea la suscripción (`subscription/create`) y Flow cobra el primer
+   mes en ese momento. La consola vuelve a `/?plan=listo#/configuracion`.
+3. Flow cobra solo cada mes y avisa cada pago a `POST /api/flow/pago`, el `urlCallback`
+   de los planes.
+
+Quien decide si el plan está activo es Flow: los avisos solo traen un token, que se
+verifica con una llamada firmada antes de revisar las suscripciones. El plan queda
+activo con la suscripción activa, sin mora y con un mes pagado. Si Flow la cancela o
+queda morosa después de sus reintentos, la loteadora queda sin plan: sus sitios siguen
+en línea, pero no publica más. Cambiar de plan cancela la suscripción anterior y crea
+la nueva, cobrando el mes completo desde ese día (Flow no prorratea). Cancelar desde la
+consola deja el plan hasta el fin del período pagado. Un plan anotado a mano
+(Enterprise, una transferencia) nunca lo quita una suscripción.
+
+Por si un aviso se pierde, `POST /api/tareas/flow` revisa todas las suscripciones; la
+llama Cloud Scheduler una vez al día con el header `x-tarea-clave:
+$CONSOLA_TAREAS_CLAVE`.
+
+| Variable | Para qué | Sin ella |
+| --- | --- | --- |
+| `FLOW_API_KEY`, `FLOW_SECRET_KEY` | Las claves de la cuenta de Flow (Secret Manager: `flow-api-key`, `flow-secret-key`) | No se ofrece pagar con tarjeta: el plan se pide y el equipo lo anota a mano |
+| `FLOW_API_URL` | `https://sandbox.flow.cl/api` para probar con claves de sandbox | Desplegada, producción (`https://www.flow.cl/api`); en este computador, el sandbox |
+
+Para conectarlo en Cloud Run, una sola vez:
+
+```bash
+# Las claves, sin que pasen por el historial de la terminal ni por un chat:
+read -rsp 'apiKey: ' v && printf '%s' "$v" | gcloud secrets create flow-api-key --data-file=- --project tumasterplan
+read -rsp 'secretKey: ' v && printf '%s' "$v" | gcloud secrets create flow-secret-key --data-file=- --project tumasterplan
+unset v
+# La cuenta de servicio de Cloud Run tiene que poder leerlos (la misma que lee resend-api-key).
+
+# Los tres planes en Flow, con los precios de consola/planes.py. No toca los que ya existen.
+FLOW_API_KEY=… FLOW_SECRET_KEY=… python -m consola.flow planes --url-consola https://consola.tumasterplan.cl
+```
+
+Después, en `cloudbuild.yaml`, agregar `FLOW_API_KEY=flow-api-key:latest,FLOW_SECRET_KEY=flow-secret-key:latest`
+a `--set-secrets` (y `FLOW_API_URL=https://sandbox.flow.cl/api` a las variables si las
+claves son de sandbox). Sin los secretos creados el despliegue falla, por eso va después.
 
 **Vista previa antes de pagar.** Un loteo construido y sin publicar se puede recorrer
 en `/vista-previa/<slug>/`: la consola sirve el mismo sitio que subiría al hosting, con

@@ -19,6 +19,7 @@ import { cerrarDialogos, pintarPlano, prepararPlano, seguir } from './plano.js';
 import { marcarSeccion } from './barra.js';
 import { pintarCifrasEsqueleto, pintarEsqueleto } from './esqueleto.js';
 import { pintarPlanos } from './planos.js';
+import { avisarVueltaDeFlow, pintarSuscripcion, prepararSuscripcion } from './suscripcion.js';
 import { cargarReservas, pintarContador, pintarReservas, prepararReservas } from './reservas.js';
 import { cargarContactos, pintarContactos, pintarContadorContactos, prepararContactos } from './contactos.js';
 
@@ -149,6 +150,7 @@ async function arrancar() {
   prepararReservas({ refrescar });
   prepararContactos({ refrescar });
   prepararConfiguracion();
+  prepararSuscripcion({ refrescar });
   prepararKmz({ refrescar });
   prepararKmzs({ refrescar });
   prepararNuevo({
@@ -170,6 +172,7 @@ async function arrancar() {
   pintarCuenta();
   pintarBackOffice();
   pintarGuia();
+  pintarSuscripcion();
   try {
     await refrescar();
     recordarClaveProvisional();
@@ -179,6 +182,8 @@ async function arrancar() {
     mostrar();
     avisar(error.message);
   }
+  // Después de pintar: llegar a una pantalla borra los avisos.
+  avisarVueltaDeFlow();
 }
 
 arrancar();

@@ -49,6 +49,7 @@ linea_de_comando() {
 huella() {
   case "$1" in
     cierra_falsa) echo "qa.cierra_falsa" ;;
+    flow_falso) echo "qa.flow_falsa" ;;
     publicados) echo "http.server"; echo "$QA/publicados" ;;
     consola) echo "hypercorn"; echo "consola.app" ;;
   esac

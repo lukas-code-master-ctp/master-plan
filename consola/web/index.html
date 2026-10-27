@@ -1005,6 +1005,8 @@
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="7" r="3.2"/><path d="M3.8 16.5c.9-3 3.3-4.6 6.2-4.6s5.3 1.6 6.2 4.6"/></svg>Tu cuenta</button>
         <button type="button" data-ir="config-equipo">
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="7.5" cy="7.5" r="2.7"/><circle cx="14" cy="8.5" r="2.1"/><path d="M2.5 16c.7-2.6 2.6-4 5-4s4.3 1.4 5 4M13 12.3c2 0 3.6 1.1 4.3 3.4"/></svg>Equipo</button>
+        <button type="button" data-ir="config-plan">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="5" width="15" height="10.5" rx="2"/><path d="M2.5 8.5h15M5.5 12.5h3"/></svg>Plan y pago</button>
         <button type="button" data-ir="config-reservas">
           <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3.5" y="4.5" width="13" height="12" rx="2"/><path d="M3.5 8.5h13M7 3v3M13 3v3M7.5 12.5l1.8 1.6 3.4-3.4"/></svg>Reservas y contacto</button>
         <button type="button" data-ir="config-integraciones">
@@ -1079,6 +1081,31 @@
             </div>
           </div>
           <p id="equipo-solo-duenio" class="nota" hidden>Solo el dueño de la loteadora invita o desactiva a alguien.</p>
+        </section>
+
+        <!-- Plan y pago -->
+        <section id="config-plan" class="config__seccion" aria-labelledby="titulo-config-plan">
+          <header class="config__cabecera">
+            <div>
+              <h2 id="titulo-config-plan">Plan y pago</h2>
+              <p class="nota">Cuántos loteos puedes tener en línea y cómo se paga.</p>
+            </div>
+          </header>
+          <article class="integracion" id="config-plan-caja">
+            <header class="integracion__cabecera">
+              <div>
+                <h3 id="config-plan-nombre"></h3>
+                <p id="config-plan-cupo" class="nota"></p>
+              </div>
+              <span id="config-plan-pastilla" class="pastilla"></span>
+            </header>
+            <p id="config-plan-estado" class="nota"></p>
+            <div id="config-plan-acciones" class="integracion__acciones">
+              <button id="config-plan-elegir" class="boton" type="button">Elegir plan</button>
+              <button id="config-plan-cancelar" class="boton boton--texto boton--peligro" type="button" hidden>Cancelar suscripción</button>
+            </div>
+            <p id="config-plan-solo-duenio" class="nota" hidden>El plan lo elige el dueño de la loteadora.</p>
+          </article>
         </section>
 
         <!-- Reservas y contacto -->
@@ -1540,7 +1567,7 @@
   <p class="ayuda">Los planes solo cambian en cuántos loteos tienes en línea a la vez. Todo lo
     demás viene en todos. Precios mensuales en pesos chilenos.</p>
   <div id="plan-opciones" class="planes" role="radiogroup" aria-labelledby="plan-titulo"></div>
-  <p class="ayuda">Te escribimos para el pago y te avisamos por correo cuando esté activo.</p>
+  <p id="plan-nota" class="ayuda">Te escribimos para el pago y te avisamos por correo cuando esté activo.</p>
   <div class="modal__pie">
     <button class="boton boton--texto" type="button" data-cerrar>Cancelar</button>
     <button id="plan-listo" class="boton" type="button">Pedir este plan</button>
