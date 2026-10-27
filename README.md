@@ -1012,6 +1012,19 @@ llave derivada de `CONSOLA_SECRETO` (cambiar ese secreto obliga a pegarla de nue
 es siempre la de la loteadora dueña del loteo, aunque quien conecte sea el equipo.
 Todo esto aparece solo con `CIERRA_API_URL` (en producción, `https://api.cierra.cl`).
 
+**El geo.** Cada loteo construido tiene su geo: el PDF A3 que las loteadoras mandan a
+vendedores y corredores, con el satélite, todos los lotes con borde amarillo y su nombre
+("LOTE A42") y las disponibles rellenas en celeste, más la leyenda con cuántas quedan y
+la fecha (`pipeline/geo_pintado.py`, `python -m pipeline.geo_pintado <sitio>`). Sale del
+mismo `parcelas.json` que el visor, así que nunca dice algo distinto del sitio. Publicar
+lo rehace dentro del sitio (`<sitio>/geo.pdf`), y como la revisión de Cierra republica
+cada loteo cuyo estado cambió, ese link queda fijo y se pinta solo con las ventas: es el
+que va en "Geo topográfico" de Cierra o en el grupo de los vendedores. En la consola,
+Inventario → **Descargar geo** lo entrega con los estados de ese momento, publicado o no.
+El satélite (teselas de Esri) se guarda en `<datos>/cache/satelite`; si no llega, el geo
+sale sobre fondo liso y la publicación sigue. `MASTERPLAN_SATELITE=0` lo apaga (las
+pruebas lo hacen).
+
 **La plantilla.** La consola entrega el .xlsx listo para llenar (`consola/plantilla.py`):
 en Nuevo master sale con tres filas de ejemplo, y en el detalle de un master construido,
 con una fila por parcela del KMZ y lo que muestra hoy, que es lo que evita escribir un lote

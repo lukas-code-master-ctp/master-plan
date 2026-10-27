@@ -5,6 +5,10 @@
       "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
     },
     {
+      "source": "/geo.pdf",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    },
+    {
       "source": "/panoramas/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=2592000" }]
     },

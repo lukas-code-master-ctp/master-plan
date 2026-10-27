@@ -39,7 +39,7 @@ from fastapi import (
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from pipeline import config, visor
+from pipeline import config, geo_pintado, visor
 from pipeline.kmz import leer_kmz
 from pipeline.plano.digitalizar import SALIDA as DIGITALIZADO, escribir_json
 
@@ -465,6 +465,24 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         proyecto = mios.ver(slug)
         return _descarga(plantilla(proyecto.parcelas() or None, proyecto.nombre),
                          f"inventario-{proyecto.slug}.xlsx")
+
+    @app.get("/api/proyectos/{slug}/geo.pdf")
+    def geo_del_loteo(slug: str, mios: Vista = Depends(vista)) -> Response:
+        """El geo con las disponibles pintadas, con los estados que tiene hoy el loteo.
+
+        Se rehace al pedirlo si el inventario cambió después del último: lo que se
+        descarga acá es lo mismo que muestra el sitio, publicado o no.
+        """
+        proyecto = mios.ver(slug)
+        if not proyecto.construido:
+            raise HTTPException(409, "todavía no está construido")
+        try:
+            archivo = geo_pintado.al_dia(proyecto.salida.web, geo_pintado.teselas_del_entorno())
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+        return FileResponse(archivo, media_type="application/pdf", headers={
+            "Content-Disposition": _adjunto(f"Geo {proyecto.nombre}.pdf", f"geo-{proyecto.slug}.pdf"),
+            "Cache-Control": "private, no-cache"})
 
     @app.post("/api/proyectos/{slug}/archivos", status_code=201)
     async def subir(slug: str, archivos: list[UploadFile] = File(...),

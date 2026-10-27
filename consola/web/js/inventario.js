@@ -14,9 +14,36 @@ export const comoInventario = ({ archivo }) => ({
   archivo, ruta: /\.csv$/i.test(archivo.name) ? 'inventario.csv' : 'inventario.xlsx' });
 
 let slugActual = null;
+let linkDelGeo = null;
+
+/**
+ * El geo: el PDF con las disponibles pintadas que se manda a los vendedores. Publicado,
+ * vive en `<sitio>/geo.pdf` y cada publicación lo rehace, así que ese link sirve para
+ * dejarlo fijo en Cierra o en un grupo de WhatsApp: siempre dice lo de hoy.
+ */
+export function geoDelLoteo(proyecto) {
+  if (!proyecto.construido) return null;
+  const sitio = proyecto.publicado && proyecto.url ? proyecto.url.replace(/\/+$/, '') : null;
+  return {
+    descarga: `/api/proyectos/${proyecto.slug}/geo.pdf`,
+    link: sitio ? `${sitio}/geo.pdf` : null,
+    nota: sitio
+      ? 'El geo con las disponibles pintadas. Este link se actualiza solo cada vez que cambia el inventario.'
+      : 'El geo con las disponibles pintadas, con los estados de hoy. Al publicar tendrá un link fijo que se actualiza solo.',
+  };
+}
 
 /** `alSubir(slug)` se llama con el inventario ya en el servidor. */
 export function prepararInventario({ alSubir }) {
+  $('#inventario-geo-copiar').addEventListener('click', async () => {
+    if (!linkDelGeo) return;
+    try {
+      await navigator.clipboard.writeText(linkDelGeo);
+      avisar('Link del geo copiado.', 'ok');
+    } catch {
+      window.prompt('Copia el link del geo:', linkDelGeo);
+    }
+  });
   const boton = $('#inventario-subir');
   boton.addEventListener('click', () => $('#inventario-archivo').click());
   $('#inventario-archivo').addEventListener('change', async (evento) => {
@@ -67,4 +94,12 @@ export function pintarInventario(proyecto) {
   $('#inventario-subir').disabled = Boolean(proyecto.trabajo);
   // Lo vuelve a esconder cierra.js si el loteo está conectado con Cierra.
   $('#inventario-subir').hidden = false;
+
+  const geo = geoDelLoteo(proyecto);
+  $('#inventario-geo').hidden = !geo;
+  if (!geo) return;
+  $('#inventario-geo-nota').textContent = geo.nota;
+  $('#inventario-geo-descargar').href = geo.descarga;
+  linkDelGeo = geo.link;
+  $('#inventario-geo-copiar').hidden = !geo.link;
 }
