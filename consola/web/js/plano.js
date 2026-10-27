@@ -11,7 +11,7 @@ import { opcionesDeDiseno } from './disenos.js';
 import { abrirElegirKmz } from './kmzs.js';
 import { abrirPlanes, botonDePlan } from './planes.js';
 import {
-  avisoAlQuitar, hayVistaPrevia, leerReferencias, meta, notaDePublicar, pintarCalce, pintarCifras,
+  avisoAlBajar, avisoAlQuitar, hayVistaPrevia, leerReferencias, meta, notaDePublicar, pintarCalce, pintarCifras,
   pintarEstado, textoDeReferencias, urlDeVistaPrevia,
 } from './detalle.js';
 import { pintarVuelo } from './vuelo.js';
@@ -197,7 +197,11 @@ function pintarPublicar(proyecto) {
   const estadoPublicacion = $('#plano-publicar-estado');
   estadoPublicacion.classList.toggle('publicar__estado--vivo', enLinea);
   estadoPublicacion.textContent = proyecto.trabajo?.accion === 'publicar' ? 'Publicando…'
-    : proyecto.publicado ? 'En línea' : 'Sin publicar';
+    : proyecto.trabajo?.accion === 'bajar' ? 'Bajando…'
+      : proyecto.publicado ? 'En línea' : 'Sin publicar';
+  const bajar = $('[data-accion="bajar"]');
+  bajar.hidden = !proyecto.publicado;
+  bajar.disabled = Boolean(proyecto.trabajo);
 
   nota.textContent = notaDePublicar(proyecto, equipo ? null : plan);
 }
@@ -308,6 +312,10 @@ async function manejar(accion, proyecto) {
     if (accion === 'pago') return abrirPago(proyecto);
     if (accion === 'pedir-habilitacion') return abrirPlanes(proyecto, refrescar);
     if (accion === 'construir') return await lanzar(proyecto, 'construir', {});
+    if (accion === 'bajar') {
+      if (!confirm(avisoAlBajar(proyecto))) return;
+      return await lanzar(proyecto, 'bajar', { confirmado: true });
+    }
     if (accion === 'publicar') {
       // Publicar deja el loteo a la vista de cualquiera con el enlace: se confirma.
       if (!confirm(

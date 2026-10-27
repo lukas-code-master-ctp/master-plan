@@ -178,7 +178,8 @@ export function pastilla(texto, tono) {
 export function etapaDe(proyecto) {
   if (proyecto.trabajo?.estado === 'en_cola') return pastilla('En cola…', 'aviso');
   if (proyecto.trabajo) {
-    return pastilla(proyecto.trabajo.accion === 'publicar' ? 'Publicando…' : 'Construyendo…', 'curso');
+    const texto = { publicar: 'Publicando…', bajar: 'Bajando…' }[proyecto.trabajo.accion] ?? 'Construyendo…';
+    return pastilla(texto, 'curso');
   }
   if (proyecto.publicado) return pastilla('Publicado', 'ok');
   if (proyecto.construido) return pastilla('Construido', 'ok');

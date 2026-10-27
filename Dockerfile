@@ -30,7 +30,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY pipeline/ pipeline/
 COPY consola/ consola/
 COPY web/ web/
-COPY publicar.sh ./
+COPY publicar.sh despublicar.sh ./
 
 # El volumen con los datos se monta acá: proyectos, salidas y cachés.
 # OMP_THREAD_LIMIT=1: una hebra por proceso de Tesseract. El lector ya corre las

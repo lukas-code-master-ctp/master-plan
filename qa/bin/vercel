@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Un `vercel` de mentira para QA local: publica en una carpeta de la máquina.
 
-Imita los subcomandos que usa `publicar.sh` (`project add`, `link`,
-`deploy --prod`, `inspect` y `domains add`) y nada más, para que el `publicar.sh` de verdad
-corra sin tocar el hosting:
+Imita los subcomandos que usan `publicar.sh` y `despublicar.sh` (`project add`,
+`link`, `deploy --prod`, `inspect`, `remove` y `domains add`) y nada más, para que
+los scripts de verdad corran sin tocar el hosting:
 
 - `project add <nombre>` crea `<publicados>/<nombre>/`. Si ya existe falla, igual
   que el real: es la protección contra colisiones que `--crear` tiene que probar.
@@ -11,6 +11,7 @@ corra sin tocar el hosting:
 - `deploy --prod --cwd <sitio>` copia el sitio (sin `.vercel`) a
   `<publicados>/<proyecto>/`, reemplazando lo que había.
 - `inspect <despliegue>` lista los alias, entre ellos la URL local.
+- `remove <nombre>` borra lo publicado (lo que hace `despublicar.sh`).
 
 La carpeta sale de `QA_PUBLICADOS` (por defecto `<repo>/.qa/publicados`) y la URL
 base de `QA_URL_PUBLICADOS` (por defecto `http://127.0.0.1:<puerto>`, con el puerto
@@ -168,9 +169,20 @@ def domains_add(posicionales: list[str]) -> None:
     print(f"Success! Domain {posicionales[0]} added to project {posicionales[1]}")
 
 
+def remove(posicionales: list[str]) -> None:
+    """Como el real con un nombre de proyecto: se van todos sus despliegues."""
+    if not posicionales:
+        morir("uso: vercel remove <proyecto>")
+    carpeta = carpeta_del_proyecto(posicionales[0])
+    if not carpeta.exists():
+        morir(f"no hay despliegues de «{posicionales[0]}»")
+    shutil.rmtree(carpeta)
+    print(f"Success! Removed {posicionales[0]}")
+
+
 def main(argumentos: list[str]) -> None:
     if not argumentos:
-        morir("falta el subcomando (este vercel de QA solo sabe project add, link, deploy, inspect y domains add)")
+        morir("falta el subcomando (este vercel de QA solo sabe project add, link, deploy, inspect, remove y domains add)")
     comando, resto = argumentos[0], argumentos[1:]
     posicionales, opciones = leer_opciones(resto)
     if comando == "project" and posicionales[:1] == ["add"]:
@@ -181,11 +193,13 @@ def main(argumentos: list[str]) -> None:
         deploy(opciones)
     elif comando == "inspect":
         inspect(posicionales)
+    elif comando in ("remove", "rm"):
+        remove(posicionales)
     elif comando == "domains" and posicionales[:1] == ["add"]:
         domains_add(posicionales[1:])
     else:
         morir(f"«{' '.join(argumentos)}» no existe en el vercel de QA "
-              "(solo project add, link, deploy, inspect y domains add)")
+              "(solo project add, link, deploy, inspect, remove y domains add)")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@
  */
 import { $, $$, avisar, estado, pedir, ruta } from './comun.js';
 import { pintarBackOffice, pintarFicha, pintarLoteadoras, prepararBackOffice } from './backoffice.js';
-import { pintarConfiguracion, prepararConfiguracion } from './configuracion.js';
+import { pintarConfiguracion, pintarPlan, prepararConfiguracion } from './configuracion.js';
 import { pintarCuenta, prepararCuenta, recordarClaveProvisional } from './cuenta.js';
 import { abrirNuevo, prepararNuevo } from './nuevo.js';
 import { abrirDiseno, pintarDisenos, prepararDisenos } from './disenos.js';
@@ -170,6 +170,7 @@ async function arrancar() {
   pintarCuenta();
   pintarBackOffice();
   pintarGuia();
+  pintarPlan();
   try {
     await refrescar();
     recordarClaveProvisional();

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  avisoAlQuitar, hayVistaPrevia, leerReferencias, medicionDelSol, nombreDeVista, notaDePublicar,
+  avisoAlBajar, avisoAlQuitar, hayVistaPrevia, leerReferencias, medicionDelSol, nombreDeVista, notaDePublicar,
   textoDeReferencias, urlDeVistaPrevia,
 } from './js/detalle.js';
 
@@ -115,4 +115,28 @@ test('una referencia guardada con coordenadas vuelve al campo con ellas', () => 
     textoDeReferencias(['Quillón 10 min', { nombre: 'Fundo El Peumo', lon: -72.3, lat: -35.9 }]),
     'Quillón 10 min, Fundo El Peumo (-35.9, -72.3)');
   assert.equal(textoDeReferencias(undefined), '');
+});
+
+test('bajar del aire dice qué se va y qué se queda', () => {
+  const aviso = avisoAlBajar({ nombre: 'Loteo', url: 'https://loteo.tumasterplan.cl' });
+
+  assert.match(aviso, /¿Bajar "Loteo" del aire\?/);
+  assert.match(aviso, /https:\/\/loteo\.tumasterplan\.cl deja de mostrarse/);
+  assert.match(aviso, /lo vuelves a publicar cuando quieras/);
+  assert.match(aviso, /Libera un cupo/);
+});
+
+test('con el plan vencido, la nota pide renovarlo', () => {
+  const nota = notaDePublicar({ habilitado: false, construido: true },
+    { plan: 'pro', nombre: 'Pro', loteos: 3, vencido: true, hasta: '2026-11-30' });
+
+  assert.match(nota, /Tu plan Pro venció el 30 de noviembre/);
+  assert.match(nota, /Renuévalo/);
+});
+
+test('con el plan lleno, la nota ofrece bajar uno', () => {
+  const nota = notaDePublicar({ habilitado: false, construido: true },
+    { plan: 'fly', nombre: 'Fly', loteos: 1, vencido: false });
+
+  assert.match(nota, /baja del aire uno/);
 });

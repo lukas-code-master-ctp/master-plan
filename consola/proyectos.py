@@ -387,7 +387,11 @@ class Registro:
         datos = _leer_json(archivo)
         datos.update(campos)
         datos["slug"] = slug
-        archivo.write_text(json.dumps(datos, ensure_ascii=False, indent=1), encoding="utf-8")
+        # Al lado y después `replace`: lo escribe el final de un trabajo mientras una
+        # petición puede estar leyéndolo, y a medio escribir sería un JSON vacío (500).
+        temporal = archivo.with_name(f".{archivo.name}.{os.getpid()}.{threading.get_ident()}")
+        temporal.write_text(json.dumps(datos, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(temporal, archivo)
 
     def _crm_de(self, carpeta: Path) -> Path | None:
         propio = carpeta / "crm.csv"
@@ -561,6 +565,14 @@ class Vista:
                                      {"vercel_proyecto": vercel_proyecto, "url_publicada": url})
         return self.ver(slug)
 
+    def anotar_bajada(self, slug: str) -> Proyecto:
+        """El loteo ya no está en línea. Se borra también de la copia en la carpeta:
+        si no, volver a adoptarlo lo daría por publicado."""
+        proyecto = self.ver(slug)
+        self.registro.base.anotar_bajada(slug)
+        self.registro._escribir_json(proyecto.fuentes, slug, {"url_publicada": None})
+        return self.ver(slug)
+
     def anotar_visor(self, slug: str, huella: str) -> Proyecto:
         """Con qué visor quedó publicado el loteo. Solo en la base: la carpeta no
         necesita saberlo para volver a adoptar el loteo."""
@@ -581,8 +593,7 @@ class Vista:
         # línea: con plan, publicar uno y quitarlo dejaría tener todos los que quiera.
         if not self.es_equipo and proyecto.publicado and not proyecto.pagado:
             raise LimiteAlcanzado(
-                "este loteo está en línea con tu plan: para bajarlo y liberar el cupo, "
-                "escríbenos")
+                "este loteo está en línea: bájalo del aire primero y después quítalo")
         self.registro.base.olvidar_proyecto(slug)
         if proyecto.subido and not proyecto.pagado:
             shutil.rmtree(proyecto.fuentes, ignore_errors=True)

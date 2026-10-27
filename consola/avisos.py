@@ -11,12 +11,18 @@ falle nunca tumba la acción que lo disparó: queda en el registro.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 
 from .cuentas import Correo
+from .planes import PLANES
 from .datos import Base, Usuario
 
 registro = logging.getLogger("consola.avisos")
+
+# Los correos salen de una dirección que no recibe respuestas: para coordinar un
+# pago hay que decir a quién escribir. El mismo de la landing.
+CONTACTO = os.environ.get("CONSOLA_CONTACTO", "eduardo@impulseai.cl")
 
 
 class Avisos:
@@ -27,7 +33,9 @@ class Avisos:
 
     def cuenta_nueva(self, usuario: Usuario, url_consola: str = "") -> None:
         """Al equipo de CTP, cuando alguien confirma una cuenta que se creó solo."""
-        loteadora = self.base.cliente(usuario.cliente_id).nombre
+        cliente = self.base.cliente(usuario.cliente_id)
+        loteadora = cliente.nombre
+        interes = PLANES.get(cliente.plan_interes or "")
         self._al_equipo(
             f"Cuenta nueva: {loteadora}",
             "\n".join([
@@ -37,6 +45,7 @@ class Avisos:
                 f"Nombre: {usuario.nombre}",
                 f"Correo: {usuario.email}",
                 "(Datos escritos al registrarse.)",
+                *([f"Llegó desde la landing eligiendo el plan {interes.nombre}."] if interes else []),
                 "",
                 _donde(url_consola, "Míralo en Loteadoras, en el menú de tu cuenta."),
             ]))
@@ -77,21 +86,81 @@ class Avisos:
             if usuario.activo and usuario.email_verificado:
                 self._enviar(usuario.email, f"Ya puedes publicar {loteo}", texto)
 
-    def plan_activo(self, *, cliente_id: int, plan: str, loteos: int | None,
+    def plan_activo(self, *, cliente_id: int, plan: str, loteos: int | None, hasta=None,
                     url_consola: str = "") -> None:
-        """A la loteadora, cuando CTP le asigna un plan y ya puede publicar."""
+        """A la loteadora, cuando CTP le asigna o le renueva un plan."""
         cupo = f"{loteos} {'loteo' if loteos == 1 else 'loteos'} en línea a la vez"
         texto = "\n".join([
             "Hola:",
             "",
-            f"Tu plan {plan} ya está activo: puedes tener {cupo}.",
+            f"Tu plan {plan} ya está activo"
+            + (f" y pagado hasta el {_dia(hasta)}" if hasta else "") + f": puedes tener {cupo}.",
             "",
             f"Abre tu master y aprieta Publicar: {url_consola.rstrip('/')}/#/planos" if url_consola
             else "Abre tu master en Mis 360° y aprieta Publicar.",
         ])
+        self._a_la_loteadora(cliente_id, f"Tu plan {plan} está activo", texto)
+
+    def plan_por_vencer(self, *, cliente_id: int, plan: str, hasta, url_consola: str = "") -> None:
+        """5 días antes del último día pagado (consola/vencimientos.py)."""
+        loteadora = self.base.cliente(cliente_id).nombre
+        dia = _dia(hasta)
+        self._a_la_loteadora(cliente_id, f"Tu plan {plan} vence el {dia}", "\n".join([
+            "Hola:",
+            "",
+            f"Tu plan {plan} está pagado hasta el {dia}. Para que tus loteos sigan en "
+            f"línea, escríbenos a {CONTACTO} y coordinamos la renovación.",
+            "",
+            "Si no se renueva, 7 días después del vencimiento los sitios se bajan del aire. "
+            "Tus masters quedan guardados y los puedes volver a publicar cuando renueves.",
+        ]))
+        self._al_equipo(f"Vence el plan {plan}: {loteadora}", "\n".join([
+            f"El plan {plan} de {loteadora} está pagado hasta el {dia}. Ya le avisamos.",
+            "",
+            "Cuando pague, renuévalo en su ficha (Loteadoras) con la nueva fecha.",
+            _donde(url_consola, "Búscala en Loteadoras, en el menú de tu cuenta."),
+        ]))
+
+    def plan_vencido(self, *, cliente_id: int, plan: str, hasta, bajada,
+                     url_consola: str = "") -> None:
+        """Al día siguiente del último pagado: cuándo se bajan los sitios."""
+        loteadora = self.base.cliente(cliente_id).nombre
+        self._a_la_loteadora(cliente_id, f"Venció tu plan {plan}", "\n".join([
+            "Hola:",
+            "",
+            f"Tu plan {plan} estaba pagado hasta el {_dia(hasta)}. Tus loteos siguen en "
+            f"línea hasta el {_dia(bajada)}; ese día se bajan del aire si no se renueva.",
+            "",
+            f"Para renovar, escríbenos a {CONTACTO} y coordinamos el pago.",
+        ]))
+        self._al_equipo(f"Venció el plan {plan}: {loteadora}", "\n".join([
+            f"El plan {plan} de {loteadora} venció (pagado hasta el {_dia(hasta)}).",
+            f"Sus sitios se bajan solos el {_dia(bajada)} si no lo renuevas en su ficha.",
+            _donde(url_consola, "Búscala en Loteadoras, en el menú de tu cuenta."),
+        ]))
+
+    def plan_bajado(self, *, cliente_id: int, plan: str, url_consola: str = "") -> None:
+        """Cuando ya se bajaron sus sitios y se le quitó el plan."""
+        loteadora = self.base.cliente(cliente_id).nombre
+        self._a_la_loteadora(cliente_id, "Tus loteos se bajaron del aire", "\n".join([
+            "Hola:",
+            "",
+            f"Tu plan {plan} venció hace una semana y no se renovó, así que tus loteos "
+            "ya no están en línea. Tus masters siguen guardados en la consola.",
+            "",
+            "Para volver a publicarlos, elige un plan desde cualquiera de ellos: "
+            + (f"{url_consola.rstrip('/')}/#/planos" if url_consola else "Mis 360°."),
+        ]))
+        self._al_equipo(f"Sitios bajados: {loteadora}", "\n".join([
+            f"El plan {plan} de {loteadora} llevaba 7 días vencido: sus sitios se "
+            "bajaron y quedó sin plan.",
+            _donde(url_consola, "Búscala en Loteadoras, en el menú de tu cuenta."),
+        ]))
+
+    def _a_la_loteadora(self, cliente_id: int, asunto: str, texto: str) -> None:
         for usuario in self.base.usuarios_de(cliente_id):
             if usuario.activo and usuario.email_verificado:
-                self._enviar(usuario.email, f"Tu plan {plan} está activo", texto)
+                self._enviar(usuario.email, asunto, texto)
 
     def _al_equipo(self, asunto: str, texto: str) -> None:
         for usuario in self.base.usuarios_de_plataforma():
@@ -109,6 +178,10 @@ class Avisos:
             self.correo.enviar(para, asunto, texto)
         except Exception:   # noqa: BLE001 — un correo caído no deshace lo que lo disparó
             registro.exception("no pude mandar el aviso a %s", para)
+
+
+def _dia(fecha) -> str:
+    return fecha.strftime("%d/%m/%Y")
 
 
 def _donde(url_consola: str, sin_enlace: str) -> str:

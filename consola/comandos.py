@@ -15,6 +15,7 @@ import sys
 from pipeline import config
 
 PUBLICAR = config.RAIZ / "publicar.sh"
+DESPUBLICAR = config.RAIZ / "despublicar.sh"
 
 
 class Comandos:
@@ -36,7 +37,8 @@ class Comandos:
         """Crea tu KMZ: de `entradas.json` a los lotes en píxeles del plano."""
         return [sys.executable, "-m", "pipeline.plano", "digitalizar", str(carpeta)]
 
-    def publicar(self, proyecto, vercel_proyecto: str, crear: bool = False) -> list[str]:
+    def publicar(self, proyecto, vercel_proyecto: str, crear: bool = False,
+                 crear_si_falta: bool = False) -> list[str]:
         """Copia el visor actual sobre el sitio y lo sube.
 
         Siempre con el visor de hoy: un loteo construido antes de un deploy y
@@ -46,10 +48,16 @@ class Comandos:
         subir = [str(PUBLICAR), str(proyecto.salida.web), vercel_proyecto]
         if crear:
             subir.append("--crear")
+        elif crear_si_falta:
+            subir.append("--crear-si-falta")
         dominio = dominio_propio(proyecto.slug)
         if dominio:
             subir += ["--dominio", dominio]
         return encadenar(self.copiar_visor(proyecto), subir)
+
+    def bajar(self, vercel_proyecto: str) -> list[str]:
+        """Saca de línea el sitio de un loteo; el proyecto del hosting queda."""
+        return [str(DESPUBLICAR), vercel_proyecto]
 
     def copiar_visor(self, proyecto) -> list[str]:
         return [sys.executable, "-m", "pipeline.visor", "--sitio", str(proyecto.salida.web)]

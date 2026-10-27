@@ -85,6 +85,6 @@ export function textoInterrumpido(clave, tipo) {
   if (String(clave).startsWith('kmz:') || tipo === 'digitalizar-plano') {
     return 'La lectura del plano se interrumpió (el servidor se reinició). Vuelve a intentarlo.';
   }
-  const nombre = { construir: 'La construcción', publicar: 'La publicación' }[tipo] ?? 'El trabajo';
+  const nombre = { construir: 'La construcción', publicar: 'La publicación', bajar: 'La bajada del aire' }[tipo] ?? 'El trabajo';
   return `${nombre} se interrumpió (el servidor se reinició). Vuelve a intentarlo.`;
 }

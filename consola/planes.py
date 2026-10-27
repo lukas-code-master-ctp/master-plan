@@ -13,6 +13,8 @@ se pueden publicar y actualizar sin plan y no ocupan cupo.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,19 @@ PLANES: dict[str, Plan] = {
 MAX_LOTEOS_A_MEDIDA = 500
 
 
+# Los días cuentan en Chile: un plan pagado hasta el 30 sirve todo el 30 de acá.
+ZONA = ZoneInfo("America/Santiago")
+
+
+def hoy() -> date:
+    return datetime.now(ZONA).date()
+
+
+def vencido(cliente, dia: date | None = None) -> bool:
+    """Ya pasó el último día pagado. Sin fecha no vence (los planes de antes)."""
+    return bool(cliente.plan and cliente.plan_hasta and (dia or hoy()) > cliente.plan_hasta)
+
+
 class PlanInvalido(ValueError):
     """El plan pedido no existe o le falta el cupo. El mensaje es para la persona."""
 
@@ -58,6 +73,31 @@ def validar(clave: str | None, loteos: object = None) -> tuple[str | None, int |
     if not 1 <= cupo <= MAX_LOTEOS_A_MEDIDA:
         raise PlanInvalido(f"el plan a la medida va de 1 a {MAX_LOTEOS_A_MEDIDA} loteos")
     return clave, cupo
+
+
+def leer_hasta(valor: object) -> date:
+    """El último día pagado, como lo manda la ficha (AAAA-MM-DD). Sin fecha, un mes
+    desde hoy: es lo que dura un pago mensual."""
+    if valor in (None, ""):
+        return _un_mes_despues(hoy())
+    try:
+        dia = date.fromisoformat(str(valor))
+    except ValueError:
+        raise PlanInvalido("la fecha de pago no se entiende (AAAA-MM-DD)") from None
+    if dia < hoy():
+        raise PlanInvalido("la fecha de pago ya pasó: pon hasta cuándo está pagado")
+    return dia
+
+
+def _un_mes_despues(dia: date) -> date:
+    """El mismo día del mes siguiente; si no existe (31 de enero), el último del mes."""
+    anio, mes = (dia.year + 1, 1) if dia.month == 12 else (dia.year, dia.month + 1)
+    for d in (dia.day, 30, 29, 28):
+        try:
+            return date(anio, mes, d)
+        except ValueError:
+            continue
+    raise AssertionError("inalcanzable")
 
 
 def cupo_de(cliente) -> int | None:
@@ -88,7 +128,12 @@ def por_que_no_publica(guardado, cliente, guardados) -> str | None:
     if cupo is None:
         return "elige un plan para publicar: armar y revisar el master es gratis"
     if guardado.url_publicada:
+        # Vencido sigue al día mientras dura la gracia: lo que está en línea no
+        # se congela con precios viejos antes de bajarse.
         return None
+    if vencido(cliente):
+        return (f"tu plan venció el {cliente.plan_hasta.strftime('%d/%m/%Y')}: renuévalo "
+                "para publicar este")
     usados = en_linea(guardados)
     if usados >= cupo:
         nombre = PLANES[cliente.plan].nombre
@@ -108,7 +153,11 @@ def como_json(cliente, guardados) -> dict:
         "en_linea": en_linea(guardados),
         "precio_mensual": plan.precio_mensual if plan else None,
         "desde": cliente.plan_desde.isoformat() if cliente.plan_desde else None,
+        "hasta": cliente.plan_hasta.isoformat() if plan and cliente.plan_hasta else None,
+        "vencido": vencido(cliente),
         "pedido": cliente.plan_pedido,
+        # El que eligió en la landing antes de registrarse: se sugiere al pedir.
+        "interes": cliente.plan_interes,
     }
 
 

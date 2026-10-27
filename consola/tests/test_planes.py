@@ -185,7 +185,9 @@ def test_un_loteo_en_linea_con_el_plan_no_se_quita_desde_la_consola(ana_y_ctp):
     respuesta = ana.delete(f"/api/proyectos/{slug}")
 
     # Quitarlo deja el sitio en línea y libera el cupo: sería tener loteos sin plan.
+    # Lo que corresponde es bajarlo del aire, y eso ya lo puede hacer ella.
     assert respuesta.status_code == 409
+    assert "bájalo del aire" in respuesta.json()["detail"]
     assert registro.base.proyecto(slug)
 
 

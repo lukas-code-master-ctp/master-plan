@@ -2325,3 +2325,15 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .planes .planes__cupo { grid-column: 2; color: var(--zinc-500); font-size: 0.8125rem; }
 .planes .planes__precio { grid-row: 1 / span 2; grid-column: 3; font-weight: 600; font-variant-numeric: tabular-nums; }
 .planes input { grid-row: 1 / span 2; margin: 0; }
+
+/* Ficha de una loteadora: el plan vencido se lee de un vistazo, y la fecha pagada
+   lleva su etiqueta al lado (un campo de fecha suelto no dice de qué es). */
+.nota--aviso { padding: 0.5rem 0.75rem; border-radius: 8px; background: var(--ambar-50); color: var(--ambar-800); font-size: 0.8125rem; }
+.campo-en-linea { display: inline-flex; align-items: center; gap: 0.5rem; }
+.campo-en-linea .ayuda { margin: 0; white-space: nowrap; }
+
+/* Tu plan, en Configuración: rótulo y valor en dos columnas. */
+.plan-datos { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1.25rem; margin: 0 0 0.75rem; font-size: 0.875rem; }
+.plan-datos dt { color: var(--zinc-500); }
+.plan-datos dd { margin: 0; font-weight: 600; }
+#titulo-config-plan .pastilla { margin-left: 0.5rem; vertical-align: middle; }

@@ -295,10 +295,13 @@ class Cuentas:
         """Registrarse y recuperar la contraseña piden un correo que llegue."""
         return getattr(self.correo, "puede_enviar", True)
 
-    def registrar(self, datos: Registro, url_base: str) -> None:
+    def registrar(self, datos: Registro, url_base: str, plan_interes: str | None = None) -> None:
         """Crea la cuenta sin verificar y manda el enlace. Si el correo ya tenía
         cuenta, no crea nada: si está sin confirmar le reenvía el enlace, y si no
-        le avisa que ya tiene una. La pantalla es la misma en los tres casos."""
+        le avisa que ya tiene una. La pantalla es la misma en los tres casos.
+
+        `plan_interes`: el plan que eligió en la landing, ya validado. Solo se anota
+        en una cuenta nueva: una existente no cambia por un enlace."""
         try:
             usuario = self.base.crear_cuenta_propia(
                 datos.loteadora, datos.email, datos.nombre, datos.clave, verificado=False)
@@ -316,6 +319,8 @@ class Cuentas:
                          f"¿No recuerdas la contraseña? Pide una nueva en {url_base}/olvide\n\n"
                          "Si no fuiste tú, no tienes que hacer nada.")
             return
+        if plan_interes:
+            self.base.anotar_interes(usuario.cliente_id, plan_interes)
         self.enviar_verificacion(usuario, url_base)
 
     def enviar_verificacion(self, usuario: Usuario, url_base: str) -> None:

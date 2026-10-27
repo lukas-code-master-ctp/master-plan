@@ -35,7 +35,7 @@ Todo vive en `.qa/` (fuera de git):
 | --- | --- |
 | `.qa/datos/` | `consola.db` (SQLite), loteos subidos, salidas, `cache/terreno` |
 | `.qa/buzon/` | un JSON por correo enviado |
-| `.qa/publicados/` | lo que "publicó" el `vercel` falso |
+| `.qa/publicados/` | lo que "publicó" el `vercel` falso (y lo que bajó del aire, borrado) |
 | `.qa/capturas/` | las capturas de `qa:captura` |
 | `.qa/logs/` | `consola.log`, `cierra_falsa.log`, `publicados.log` |
 | `.qa/pids/` | un `.pid` por proceso |

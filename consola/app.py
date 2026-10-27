@@ -64,7 +64,7 @@ from .inventario import poner_al_dia, poner_datos_del_loteo, revisar_cierra
 from .kmzs import NombreInvalido, RegistroKmz, VistaKmz, slug_de_clave
 from .kmzs import clave as clave_kmz
 from .plano import LotesSinNumero, Plano, PlanoInvalido, PlanoNoListo
-from . import planes
+from . import planes, vencimientos
 from .plantilla import MIME_XLSX, plantilla
 from .proyectos import KMZ as KMZ_DEL_MASTER
 from .proyectos import KmzExistente, LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
@@ -132,7 +132,7 @@ def url_propuesta(slug: str) -> str:
 # que necesita para verse.
 # La revisión periódica de Cierra la llama Cloud Scheduler, sin sesión: la ruta
 # exige su propia clave (`CONSOLA_TAREAS_CLAVE`) y sin ella no existe.
-TAREAS = ("/api/tareas/cierra",)
+TAREAS = ("/api/tareas/cierra", "/api/tareas/planes")
 # Lo que pide el sitio publicado de un loteo (reservas) y el formulario de la landing
 # (contacto): se cuidan solos, con origen, tope por IP y validación
 # (`consola/rutas_reservas.py`, `consola/rutas_contactos.py`).
@@ -595,14 +595,42 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         poner_datos_del_loteo(proyecto)
 
         # La primera vez hay que crear el proyecto en el hosting; después no, y
-        # pedirlo de nuevo sería intentar pisar uno existente.
+        # pedirlo de nuevo sería intentar pisar uno existente. Uno que se bajó del
+        # aire tiene nombre pero no sitio: el nombre es suyo, se crea solo si falta.
         primera_vez = proyecto.vercel_proyecto is None
         nombre = proyecto.vercel_proyecto or nombre_propuesto(proyecto.slug)
         lanzado = lanzar(proyecto, "publicar",
-                         comandos.publicar(proyecto, vercel_proyecto=nombre, crear=primera_vez),
+                         comandos.publicar(proyecto, vercel_proyecto=nombre, crear=primera_vez,
+                                           crear_si_falta=not primera_vez and not proyecto.publicado),
                          al_terminar=_anotar_publicacion(mios, proyecto, nombre), pesado=False)
         anotar(yo, "publicación", proyecto.nombre, cliente_id=proyecto.cliente_id)
         return lanzado
+
+    @app.post("/api/proyectos/{slug}/bajar", status_code=202)
+    def bajar(slug: str, opciones: dict = Body(default={}),
+              mios: Vista = Depends(vista), yo: Sesion = Depends(quien)) -> dict:
+        """Saca el sitio de línea y libera su cupo. Lo puede hacer la loteadora con
+        sus loteos, sin pasar por CTP: es la otra mitad de publicar.
+
+        Las reservas pendientes quedan como estaban; el sitio deja de aceptar nuevas
+        porque ya no existe. Publicar de nuevo lo trae de vuelta con el mismo nombre.
+        """
+        proyecto = mios.ver(slug)
+        if not proyecto.publicado:
+            raise HTTPException(409, "este loteo no está en línea")
+        if not opciones.get("confirmado"):
+            raise HTTPException(428, "hay que confirmar que se baja del aire")
+        lanzado = bajar_del_aire(proyecto, mios)
+        anotar(yo, "bajado del aire", proyecto.nombre, cliente_id=proyecto.cliente_id)
+        return lanzado
+
+    def bajar_del_aire(proyecto: Proyecto, mios: Vista) -> dict:
+        """Lo comparten el botón y el vencimiento del plan (consola/vencimientos.py)."""
+        def anotar_bajada(trabajo) -> None:
+            if trabajo.estado == "listo":
+                mios.anotar_bajada(proyecto.slug)
+        return lanzar(proyecto, "bajar", comandos.bajar(proyecto.vercel_proyecto),
+                      al_terminar=anotar_bajada, pesado=False)
 
     @app.post("/api/proyectos/{slug}/habilitacion")
     def pedir_habilitacion(slug: str, peticion: Request, campos: dict = Body(default={}),
@@ -1026,15 +1054,20 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         cobro = str(campos.get("nota_cobro") or "").strip()
         if plan and not cobro:
             raise HTTPException(400, "anota cómo se pagó el plan")
-        base.asignar_plan(cliente_id, plan, loteos=loteos, nota=cobro or None)
+        try:
+            hasta = planes.leer_hasta(campos.get("hasta")) if plan else None
+        except planes.PlanInvalido as error:
+            raise HTTPException(400, str(error)) from error
+        base.asignar_plan(cliente_id, plan, loteos=loteos, nota=cobro or None, hasta=hasta)
         if plan:
             nombre = planes.PLANES[plan].nombre
             base.anotar("plan asignado", cliente_id=cliente_id, usuario_id=yo.usuario_id,
-                        detalle=f"{nombre} · {cobro}")
-            # Solo si es un plan nuevo para ella: corregir la nota no amerita correo.
-            if plan != cliente.plan or loteos != cliente.plan_loteos:
+                        detalle=f"{nombre} hasta el {hasta.strftime('%d/%m/%Y')} · {cobro}")
+            # Un plan nuevo o una renovación; corregir la nota no amerita correo.
+            if (plan != cliente.plan or loteos != cliente.plan_loteos
+                    or hasta != cliente.plan_hasta):
                 avisos.plan_activo(cliente_id=cliente_id, plan=nombre,
-                                   loteos=planes.cupo_de(base.cliente(cliente_id)),
+                                   loteos=planes.cupo_de(base.cliente(cliente_id)), hasta=hasta,
                                    url_consola=url_para_avisos(peticion, acceso.local))
         elif cliente.plan:
             base.anotar("plan quitado", cliente_id=cliente_id, usuario_id=yo.usuario_id,
@@ -1114,16 +1147,45 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     @app.post("/api/tareas/cierra")
     def tarea_cierra(peticion: Request) -> dict:
         """Cada 15 minutos (Cloud Scheduler): los loteos conectados a Cierra y en
-        línea quedan al día. Sin `CONSOLA_TAREAS_CLAVE` la ruta no existe."""
+        línea quedan al día. Sin `CONSOLA_TAREAS_CLAVE` la ruta no existe.
+
+        De paso revisa los planes por vencer: es el único reloj que ya existe, y
+        así los vencimientos no esperan a que alguien cree otra tarea programada.
+        """
+        if cierra is None or conexiones is None:
+            raise HTTPException(404, "no existe")
+        revisar_clave_de_tarea(peticion)
+        planes_revisados = revisar_planes(peticion)
+        revisiones = revisar_cierra(registro.todos(), cierra, conexiones, trabajos.corriendo,
+                                    publicar_en_linea)
+        return {"loteos": [r.__dict__ for r in revisiones],
+                "planes": [r.__dict__ for r in planes_revisados]}
+
+    @app.post("/api/tareas/planes")
+    def tarea_planes(peticion: Request) -> dict:
+        """Los vencimientos solos, para cuando no hay Cierra que dé el reloj o para
+        correrlos a mano. Misma clave que la de Cierra."""
+        revisar_clave_de_tarea(peticion)
+        return {"planes": [r.__dict__ for r in revisar_planes(peticion)]}
+
+    def revisar_clave_de_tarea(peticion: Request) -> None:
         esperada = os.environ.get("CONSOLA_TAREAS_CLAVE", "")
-        if not esperada or cierra is None or conexiones is None:
+        if not esperada:
             raise HTTPException(404, "no existe")
         dada = peticion.headers.get("x-tarea-clave", "")
         if not hmac.compare_digest(dada.encode(), esperada.encode()):
             raise HTTPException(401, "clave de tarea inválida")
-        revisiones = revisar_cierra(registro.todos(), cierra, conexiones, trabajos.corriendo,
-                                    publicar_en_linea)
-        return {"loteos": [r.__dict__ for r in revisiones]}
+
+    def revisar_planes(peticion: Request) -> list:
+        todos = registro.todos()
+        try:
+            return vencimientos.revisar(
+                base, avisos, ocupado=trabajos.corriendo,
+                bajar=lambda slug: bajar_del_aire(todos.ver(slug), todos),
+                url_consola=url_para_avisos(peticion, acceso.local))
+        except Exception:  # noqa: BLE001 — que no tumbe la revisión de Cierra
+            logging.getLogger("consola.vencimientos").exception("falló la revisión de los planes")
+            return []
 
     @app.exception_handler(DisenoInvalido)
     async def diseno_invalido(peticion: Request, error: DisenoInvalido):
