@@ -81,6 +81,11 @@ from .rutas_cuentas import (
     url_para_avisos,
 )
 from .rutas_contactos import PUBLICAS as PUBLICAS_DE_CONTACTO
+from .cobros import Cobros
+from .flow import flow_del_entorno
+from .rutas_flow import PUBLICAS as PUBLICAS_DE_FLOW
+from .rutas_flow import TAREAS as TAREAS_DE_FLOW
+from .rutas_flow import rutas_de_flow
 from .rutas_contactos import rutas_de_contactos
 from .rutas_reservas import PUBLICAS as PUBLICAS_DE_RESERVAS
 from .rutas_actividad import eventos_json, rutas_de_actividad
@@ -98,7 +103,7 @@ WEB = Path(__file__).resolve().parent / "web"
 MODULOS = ("app.js", "barra.js", "comun.js", "detalle.js", "planos.js", "planes.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
            "vuelo.js", "configuracion.js", "equipo.js", "preferencias.js", "actividad.js", "esqueleto.js", "primeros.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
-           "mapa_kmz.js", "sondeo.js", "reservas.js", "contactos.js")
+           "mapa_kmz.js", "sondeo.js", "reservas.js", "contactos.js", "suscripcion.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
 MODULOS_DEL_VISOR = ("marca.js",)
@@ -132,12 +137,12 @@ def url_propuesta(slug: str) -> str:
 # que necesita para verse.
 # La revisión periódica de Cierra la llama Cloud Scheduler, sin sesión: la ruta
 # exige su propia clave (`CONSOLA_TAREAS_CLAVE`) y sin ella no existe.
-TAREAS = ("/api/tareas/cierra",)
-# Lo que pide el sitio publicado de un loteo (reservas) y el formulario de la landing
-# (contacto): se cuidan solos, con origen, tope por IP y validación
-# (`consola/rutas_reservas.py`, `consola/rutas_contactos.py`).
+TAREAS = ("/api/tareas/cierra", *TAREAS_DE_FLOW)
+# Lo que pide el sitio publicado de un loteo (reservas), el formulario de la landing
+# (contacto) y Flow (la vuelta de la tarjeta y los avisos de pago): se cuidan solos
+# (`consola/rutas_reservas.py`, `consola/rutas_contactos.py`, `consola/rutas_flow.py`).
 LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2", *LIBRES_DE_CUENTAS, *TAREAS,
-          *PUBLICAS_DE_RESERVAS, *PUBLICAS_DE_CONTACTO)
+          *PUBLICAS_DE_RESERVAS, *PUBLICAS_DE_CONTACTO, *PUBLICAS_DE_FLOW)
 
 
 def mostrar_registro() -> None:
@@ -166,7 +171,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
               retomar_lecturas_al_arrancar: bool = True,
               cierra: Cierra | None | bool = True, conexiones: Conexiones | None = None,
               kmzs: RegistroKmz | None = None, reservas: Reservas | None = None,
-              contactos: Contactos | None = None, avisos: Avisos | None = None) -> FastAPI:
+              contactos: Contactos | None = None, avisos: Avisos | None = None,
+              cobros: Cobros | None | bool = True) -> FastAPI:
     mostrar_registro()
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
@@ -181,6 +187,11 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     google = google_del_entorno() if google is True else (google or None)
     disenos = disenos or Disenos(base=base)
     cierra = cierra_del_entorno() if cierra is True else (cierra or None)
+    # Sin las claves de Flow no hay pago con tarjeta: el plan se pide y se anota a mano.
+    if cobros is True:
+        flow = flow_del_entorno(acceso.local)
+        cobros = Cobros(base=base, flow=flow) if flow else None
+    cobros = cobros or None
     if cierra is not None and conexiones is None:
         conexiones = Conexiones(base=base, cifrador=Cifrador(acceso.secreto))
     registro = registro or Registro(base=base, crm_por_defecto=config.csv_del_crm(),
@@ -402,6 +413,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
             "plan": planes.como_json(base.cliente(quien_es.cliente_id),
                                      base.proyectos(cliente_id=quien_es.cliente_id)),
             "planes": planes.catalogo(),
+            "pago_con_tarjeta": cobros is not None,
             "limites": None if quien_es.es_plataforma else {
                 "megas_por_loteo": registro.limites.megas_por_loteo,
                 "sin_pagar": registro.limites.sin_pagar,
@@ -1096,6 +1108,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     app.include_router(rutas_de_cuentas(acceso, cuentas, google, avisos=avisos))
     app.include_router(rutas_de_equipo(base, cuentas, quien, local=acceso.local))
     app.include_router(rutas_de_preferencias(base, quien))
+    app.include_router(rutas_de_flow(cobros, quien, local=acceso.local))
     app.include_router(rutas_de_actividad(base, quien))
     app.include_router(rutas_de_reservas(reservas, registro, vista, local=acceso.local))
     app.include_router(rutas_de_contactos(contactos, solo_plataforma, local=acceso.local))

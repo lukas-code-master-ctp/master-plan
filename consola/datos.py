@@ -75,6 +75,13 @@ clientes = Table(
     Column("plan_nota", Text, nullable=True),
     Column("plan_desde", DateTime(timezone=True), nullable=True),
     Column("plan_pedido", String(20), nullable=True),
+    # La suscripción en Flow (consola/cobros.py), cuando paga con tarjeta: el cliente
+    # y la suscripción de Flow, la tarjeta para mostrarla ("Visa ···· 4242") y, si
+    # pidió cancelar, hasta cuándo sigue el plan.
+    Column("flow_cliente", String(60), nullable=True),
+    Column("flow_suscripcion", String(60), nullable=True),
+    Column("flow_tarjeta", String(60), nullable=True),
+    Column("flow_hasta", String(20), nullable=True),
 )
 
 usuarios = Table(
@@ -316,6 +323,10 @@ class Cliente:
     plan_nota: str | None = None
     plan_desde: datetime | None = None
     plan_pedido: str | None = None
+    flow_cliente: str | None = None
+    flow_suscripcion: str | None = None
+    flow_tarjeta: str | None = None
+    flow_hasta: str | None = None
 
 
 @dataclass(frozen=True)
@@ -551,6 +562,19 @@ class Base:
             con.execute(update(clientes).where(clientes.c.id == cliente_id).values(
                 plan=plan, plan_loteos=loteos, plan_nota=nota,
                 plan_desde=_ahora() if plan else None, plan_pedido=None))
+
+    def guardar_flow(self, cliente_id: int, **campos) -> None:
+        """flow_cliente, flow_suscripcion, flow_tarjeta y flow_hasta: los que vengan."""
+        validos = {c: v for c, v in campos.items()
+                   if c in ("flow_cliente", "flow_suscripcion", "flow_tarjeta", "flow_hasta")}
+        if validos:
+            with self.motor.begin() as con:
+                con.execute(update(clientes).where(clientes.c.id == cliente_id).values(**validos))
+
+    def cliente_de_flow(self, flow_cliente: str) -> Cliente | None:
+        with self.motor.connect() as con:
+            fila = con.execute(select(clientes).where(clientes.c.flow_cliente == flow_cliente)).first()
+        return _cliente(fila) if fila else None
 
     def pedir_plan(self, cliente_id: int, plan: str) -> None:
         with self.motor.begin() as con:
@@ -1098,7 +1122,9 @@ def _migrar(motor) -> None:
     for columna, tipo in (("whatsapp", "VARCHAR(20)"), ("diseno_id", "INTEGER"),
                           ("horas_apartado", "INTEGER"), ("plan", "VARCHAR(20)"),
                           ("plan_loteos", "INTEGER"), ("plan_nota", "TEXT"),
-                          ("plan_desde", fecha), ("plan_pedido", "VARCHAR(20)")):
+                          ("plan_desde", fecha), ("plan_pedido", "VARCHAR(20)"),
+                          ("flow_cliente", "VARCHAR(60)"), ("flow_suscripcion", "VARCHAR(60)"),
+                          ("flow_tarjeta", "VARCHAR(60)"), ("flow_hasta", "VARCHAR(20)")):
         if columna not in columnas:
             with motor.begin() as con:
                 con.execute(text(f"ALTER TABLE clientes ADD COLUMN {columna} {tipo}"))
@@ -1144,7 +1170,9 @@ def _cliente(fila) -> Cliente:
                    diseno_id=fila.diseno_id, horas_apartado=fila.horas_apartado,
                    plan=fila.plan, plan_loteos=fila.plan_loteos, plan_nota=fila.plan_nota,
                    plan_desde=_utc(fila.plan_desde) if fila.plan_desde else None,
-                   plan_pedido=fila.plan_pedido)
+                   plan_pedido=fila.plan_pedido, flow_cliente=fila.flow_cliente,
+                   flow_suscripcion=fila.flow_suscripcion, flow_tarjeta=fila.flow_tarjeta,
+                   flow_hasta=fila.flow_hasta)
 
 
 def _invitacion(fila) -> Invitacion:

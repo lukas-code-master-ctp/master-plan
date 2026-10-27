@@ -24,8 +24,8 @@ npm run qa:correos                     # lo que la consola "mandó" por correo
 npm run qa:bajar                       # termina los procesos; .qa/ queda
 ```
 
-`qa:levantar` instala las dependencias de Python que falten, levanta la Cierra falsa y el
-servidor de lo publicado, siembra (construye y publica Praderas Demo, unos segundos),
+`qa:levantar` instala las dependencias de Python que falten, levanta la Cierra falsa, el
+Flow falso y el servidor de lo publicado, siembra (construye y publica Praderas Demo, unos segundos),
 levanta la consola y termina imprimiendo URLs, cuentas y comandos. Los procesos quedan en
 segundo plano. Si había algo arriba de una vez anterior, lo baja primero.
 
@@ -37,7 +37,7 @@ Todo vive en `.qa/` (fuera de git):
 | `.qa/buzon/` | un JSON por correo enviado |
 | `.qa/publicados/` | lo que "publicó" el `vercel` falso |
 | `.qa/capturas/` | las capturas de `qa:captura` |
-| `.qa/logs/` | `consola.log`, `cierra_falsa.log`, `publicados.log` |
+| `.qa/logs/` | `consola.log`, `cierra_falsa.log`, `flow_falso.log`, `publicados.log` |
 | `.qa/pids/` | un `.pid` por proceso |
 | `.qa/entorno.sh` | el entorno de la consola, para `source` |
 
@@ -76,6 +76,7 @@ Praderas Demo no se pudo construir o publicar, lo avisa con `⚠` y deja el rest
 | La consola | hypercorn | `http://127.0.0.1:8780` | `QA_PUERTO_CONSOLA` |
 | Resend / SendGrid | buzón en carpeta (`CorreoEnCarpeta`) | `.qa/buzon/` | `CONSOLA_BUZON`, `QA_BUZON` |
 | Cierra (API de integraciones) | `qa/cierra_falsa.py` | `http://127.0.0.1:8791` | `QA_PUERTO_CIERRA` |
+| Flow (pago con tarjeta) | `qa/flow_falsa.py` | `http://127.0.0.1:8793/api` | `QA_PUERTO_FLOW` |
 | Vercel (CLI) | `qa/bin/vercel`, primero en el `PATH` | `.qa/publicados/`, servido en `http://127.0.0.1:8792` | `QA_PUERTO_PUBLICADOS` |
 | Google (OAuth) | apagado | — | — |
 | Teselas de elevación (S3 público) | **ninguno: se bajan de verdad** | caché en `.qa/datos/cache/terreno/` | — |
@@ -83,11 +84,11 @@ Praderas Demo no se pudo construir o publicar, lo avisa con `⚠` y deja el rest
 Los puertos se cambian al levantar:
 
 ```bash
-QA_PUERTO_CONSOLA=9780 QA_PUERTO_CIERRA=9791 QA_PUERTO_PUBLICADOS=9792 npm run qa:levantar
+QA_PUERTO_CONSOLA=9780 QA_PUERTO_CIERRA=9791 QA_PUERTO_PUBLICADOS=9792 QA_PUERTO_FLOW=9793 npm run qa:levantar
 ```
 
 `qa:levantar` vacía antes las variables que podrían apuntar a algo real
-(`MASTERPLAN_BD`, `RESEND_API_KEY`, `SENDGRID_API_KEY`, `GOOGLE_CLIENT_*`, `VERCEL_TOKEN`, `CIERRA_API_URL`,
+(`MASTERPLAN_BD`, `RESEND_API_KEY`, `SENDGRID_API_KEY`, `GOOGLE_CLIENT_*`, `VERCEL_TOKEN`, `CIERRA_API_URL`, `FLOW_*`,
 `CONSOLA_URL`...) y fija `CONSOLA_ENTORNO=local`. Deja todo eso en `.qa/entorno.sh`:
 
 ```bash
@@ -103,6 +104,16 @@ curl -s -H 'X-API-Key: qa-cierra-clave-demo-0001' "$CIERRA_API_URL/integrations/
 con la clave en `X-API-Key`. Solo acepta **`qa-cierra-clave-demo-0001`**; cualquier otra
 da 401 (sirve para probar el error de clave). Trae "Praderas Demo Etapa 1" y "Etapa 2",
 seis parcelas cada una, en los cuatro estados, con precios en CLP y UF.
+
+**Flow falso.** Habla la API de Flow que usa la consola (clientes, registro de
+tarjeta, suscripciones, planes y estado de pagos) y revisa la firma `s` como el de
+verdad: solo acepta la apiKey `qa-flow-apikey-0001` con su secreto. Los tres planes
+ya existen. Registrar la tarjeta abre una página con dos botones, tarjeta aprobada
+(Visa 4242: se cobra el primer mes) o rechazada (queda impago). Cada cobro avisa a
+`/api/flow/pago` de la consola. Para probar lo que pasa después, sin firma:
+`POST /falsa/cobrar` o `POST /falsa/vencer` con `subscriptionId=sus_N` (un mes más
+pagado, o la suscripción morosa); luego `POST /api/tareas/flow` (con
+`CONSOLA_TAREAS_CLAVE`) o un aviso de pago hace que la consola lo note.
 
 **Vercel falso.** Imita `project add`, `link`, `deploy --prod` e `inspect`, lo justo para
 que corra el `publicar.sh` de verdad. `project add` falla si el proyecto ya existe, como
@@ -201,6 +212,18 @@ Como `duenio`, en Praderas Demo (`#/planos/praderas-demo`), sección Inventario:
 Con otra clave, el diálogo muestra "Cierra no aceptó esa clave...". Lo que pidió la
 consola queda en `.qa/logs/cierra_falsa.log`. Hay un script de ejemplo de estos pasos
 más abajo.
+
+### Pagar un plan con tarjeta
+
+Como `duenio`, en Configuración → Plan y pago (`#/configuracion`):
+
+1. **Elegir plan** → marca Pro → **Pagar con tarjeta**. El navegador va al Flow falso.
+2. **Usar tarjeta aprobada** → vuelve a Configuración con "Tu tarjeta quedó registrada y
+   tu plan Pro ya está activo." La tarjeta del plan muestra cuántos loteos tiene en línea y la Visa 4242.
+3. **Cambiar de plan** → Master: se cambia sin volver a Flow, con la tarjeta registrada.
+4. **Cancelar suscripción**: el plan sigue hasta fin de mes y la pastilla dice "Cancelado".
+
+Con **Tarjeta rechazada** vuelve con "La tarjeta no quedó registrada" y sin plan.
 
 ### Construir "Loteo sin construir"
 

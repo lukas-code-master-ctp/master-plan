@@ -21,6 +21,8 @@ const FRASES = {
   'habilitación pedida': ['pidió habilitar {d}', 'publicado'],
   'plan asignado': ['dejó la loteadora en el plan {d}', 'cuenta'],
   'plan quitado': ['quitó el plan {d}', 'cuenta'],
+  'suscripción en Flow': ['activó el pago con tarjeta del plan {d}', 'cuenta'],
+  'suscripción cancelada': ['canceló el pago con tarjeta: el plan {d}', 'cuenta'],
   'reserva confirmada': ['confirmó la reserva de la {d}', 'reserva'],
   'reserva liberada': ['liberó la {d}', 'reserva'],
   'diseño creado': ['creó el diseño {d}', 'marca'],
