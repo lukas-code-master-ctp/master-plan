@@ -53,6 +53,11 @@ AZUL_AGUA = (0.23, 0.61, 1.0)
 TINTA = (0.11, 0.10, 0.09)
 TINTA_SUAVE = (0.42, 0.40, 0.35)
 TEXTO_SOBRE_CELESTE = (0.05, 0.13, 0.25)
+# Rótulos de los lotes: a lo más 5 pt, y holgados dentro del lote (la mitad del largo
+# y un tercio del ancho) para que no tapen bordes ni satélite.
+TAMANO_ROTULO_MAX = 5.0
+PROPORCION_LARGO = 0.5
+PROPORCION_ANCHO = 0.33
 
 Teselas = Callable[[int, int, int], bytes | None]
 
@@ -109,9 +114,13 @@ def generar(datos: dict, destino: Path, teselas: Teselas | None) -> Path:
         forma.finish(color=borde, width=0.6, closePath=True)
     forma.commit()
 
-    for parcela in con_forma:
-        _rotular(pagina, [a_pagina(p) for p in parcela["poligono"]], _nombre(parcela),
-                 TEXTO_SOBRE_CELESTE if parcela.get("estado") == "disponible" else rotulo)
+    rotulos = [(_ubicar([a_pagina(p) for p in parcela["poligono"]],
+                        _nombre(parcela)), parcela) for parcela in con_forma]
+    tamano = _tamano_comun([ubicacion for ubicacion, _ in rotulos if ubicacion])
+    for ubicacion, parcela in rotulos:
+        if ubicacion:
+            _rotular(pagina, ubicacion, _nombre(parcela), tamano,
+                     TEXTO_SOBRE_CELESTE if parcela.get("estado") == "disponible" else rotulo)
 
     _encabezado(pagina, datos, len(disponibles), len(con_forma) - len(disponibles))
     pagina.insert_text((12, pagina.rect.height - 4.5),
@@ -184,17 +193,18 @@ def _satelite(zoom: int, caja, teselas: Teselas) -> bytes | None:
     return salida.getvalue()
 
 
-def _rotular(pagina, puntos: list, texto: str, color) -> None:
-    """El nombre dentro del lote, a lo largo de su lado largo y del tamaño que quepa.
+def _ubicar(puntos: list, texto: str):
+    """Dónde y cuánto cabe el nombre dentro del lote: (centro, ángulo, tamaño máximo).
 
-    En los lotes angostos el texto queda chico, pero es vectorial: se lee acercando.
+    El tamaño máximo es lo que entra holgado, no lo que llena el lote: un rótulo que
+    ocupa todo el lote tapa los bordes y el satélite, que es lo que se vino a mirar.
     """
     try:
         poligono = Polygon([(p.x, p.y) for p in puntos]).buffer(0)
     except ValueError:
-        return
+        return None
     if poligono.is_empty or poligono.area <= 0:
-        return
+        return None
     rect = list(poligono.minimum_rotated_rectangle.exterior.coords)[:4]
     lados = [(rect[i], rect[(i + 1) % 4]) for i in range(2)]
     largos = [math.dist(a, b) for a, b in lados]
@@ -206,13 +216,35 @@ def _rotular(pagina, puntos: list, texto: str, color) -> None:
         angulo -= 180
     elif angulo <= -90:
         angulo += 180
-
     ancho_unitario = pymupdf.get_text_length(texto, fontname="helv", fontsize=1)
-    tamano = min(corto * 0.5, largo * 0.8 / ancho_unitario, 9.0)
-    if tamano < 0.6:
-        return
+    maximo = min(corto * PROPORCION_ANCHO, largo * PROPORCION_LARGO / ancho_unitario)
     centro = poligono.representative_point() if not poligono.centroid.within(poligono) \
         else poligono.centroid
+    return centro, angulo, maximo
+
+
+def _tamano_comun(ubicaciones: list) -> float:
+    """Un solo tamaño de letra para todo el loteo, como en un plano dibujado a mano.
+
+    Sale de los lotes chicos (el percentil 25 de lo que cabe), así casi todos los
+    rótulos quedan iguales y solo los lotes más angostos achican el suyo.
+    """
+    maximos = sorted(maximo for _, _, maximo in ubicaciones)
+    if not maximos:
+        return TAMANO_ROTULO_MAX
+    return min(maximos[len(maximos) // 4], TAMANO_ROTULO_MAX)
+
+
+def _rotular(pagina, ubicacion, texto: str, tamano_comun: float, color) -> None:
+    """El nombre en el centro del lote, a lo largo de su lado largo.
+
+    En los lotes angostos el texto queda chico, pero es vectorial: se lee acercando.
+    """
+    centro, angulo, maximo = ubicacion
+    tamano = min(tamano_comun, maximo)
+    if tamano < 0.6:
+        return
+    ancho_unitario = pymupdf.get_text_length(texto, fontname="helv", fontsize=1)
     fijo = pymupdf.Point(centro.x, centro.y)
     inicio = pymupdf.Point(centro.x - ancho_unitario * tamano / 2, centro.y + tamano * 0.35)
     # En la página la y crece hacia abajo, así que el giro va con el signo cambiado.

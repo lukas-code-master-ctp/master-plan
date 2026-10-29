@@ -74,3 +74,23 @@ def test_un_geo_que_falla_no_corta_la_publicacion(tmp_path, capsys):
 
     assert geo_pintado.main([str(tmp_path), "--sin-satelite"]) == 0
     assert "No se pudo hacer el geo" in capsys.readouterr().err
+
+
+def test_los_rotulos_son_chicos_y_del_mismo_tamano_aunque_un_lote_sea_enorme(tmp_path):
+    # Antes cada rótulo llenaba su lote: el lote grande salía con letras enormes.
+    lado = 0.001
+    chicos = [{"id": f"A{i + 1}", "estado": "vendido",
+               "poligono": [[x + 0.0012 * i, y] for x, y in CUADRADO]} for i in range(6)]
+    grande = {"id": "A7", "estado": "disponible",
+              "poligono": [[-72.0, -36.01], [-72.0 + 10 * lado, -36.01],
+                           [-72.0 + 10 * lado, -36.01 + 6 * lado], [-72.0, -36.01 + 6 * lado]]}
+    ruta = geo_pintado.generar({"proyecto": "Hacienda Demo", "parcelas": chicos + [grande]},
+                               tmp_path / "geo.pdf", None)
+
+    tamanos = {span["text"]: span["size"]
+               for bloque in pymupdf.open(ruta)[0].get_text("dict")["blocks"]
+               for linea in bloque.get("lines", []) for span in linea["spans"]
+               if span["text"].startswith("LOTE")}
+    assert len(tamanos) == 7
+    assert max(tamanos.values()) <= geo_pintado.TAMANO_ROTULO_MAX + 0.01
+    assert abs(tamanos["LOTE A7"] - tamanos["LOTE A1"]) < 0.01
