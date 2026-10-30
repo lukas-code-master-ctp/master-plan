@@ -276,6 +276,27 @@ eventos = Table(
     Column("cuando", DateTime(timezone=True), nullable=False),
 )
 
+# Las construcciones, lecturas del plano y publicaciones que corren en un Cloud Run
+# Job (`consola/trabajos_remotos.py`). Van acá y no en la memoria de la consola
+# porque la consola se apaga sola cuando nadie la usa, y el trabajo sigue en otra
+# máquina: el avance tiene que estar donde lo vean las dos.
+trabajos = Table(
+    "trabajos", metadatos,
+    Column("id", String(12), primary_key=True),
+    Column("proyecto", String(120), nullable=False, index=True),
+    Column("accion", String(40), nullable=False),
+    Column("estado", String(20), nullable=False),
+    Column("codigo", Integer, nullable=True),
+    Column("pesado", Boolean, nullable=False),
+    Column("vencido", Boolean, nullable=False, default=False),
+    Column("comando", Text, nullable=False),          # JSON: la lista del subproceso
+    Column("cierres", Text, nullable=False),          # JSON: lo que se guarda al terminar
+    Column("lineas", Text, nullable=False),           # JSON: el avance que ve la pantalla
+    Column("comenzo", DateTime(timezone=True), nullable=False),
+    # Lo anota la máquina del trabajo cada pocos segundos: si deja de latir, murió.
+    Column("latido", DateTime(timezone=True), nullable=True),
+)
+
 
 class ClienteYaExiste(Exception):
     """Ya hay una loteadora con ese nombre."""

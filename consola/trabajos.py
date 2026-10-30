@@ -99,8 +99,10 @@ class Trabajos:
 
     def lanzar(self, proyecto: str, accion: str, comando: list[str],
                al_terminar=None, lineas: list[str] | None = None, al_lanzar=None,
-               pesado: bool = True) -> str:
-        """`lineas`: las primeras del avance, antes de lo que imprima el comando.
+               pesado: bool = True, identificador: str | None = None) -> str:
+        """`identificador`: el que ya trae el trabajo, cuando lo corre `consola.obrero`
+        por encargo de la consola (lo que el trabajo anotó con su id tiene que calzar).
+        `lineas`: las primeras del avance, antes de lo que imprima el comando.
         `al_lanzar(trabajo)` corre bajo el candado, ya visto que no hay otro en curso y
         antes de partir el proceso: lo que anote ahí no lo pisa otro lanzamiento ni lo
         adelanta el `al_terminar` de este. Si revienta, el trabajo no se lanza.
@@ -110,8 +112,9 @@ class Trabajos:
             if self._corriendo(proyecto):
                 raise RuntimeError(f"{proyecto} ya está en algo; espera a que termine")
             # Nace esperando: no cuenta como uno que ya tiene turno hasta que lo toma.
-            trabajo = Trabajo(id=uuid.uuid4().hex[:12], proyecto=proyecto, accion=accion,
-                              estado="en_cola", lineas=list(lineas or []), pesado=pesado)
+            trabajo = Trabajo(id=identificador or uuid.uuid4().hex[:12], proyecto=proyecto,
+                              accion=accion, estado="en_cola", lineas=list(lineas or []),
+                              pesado=pesado)
             if al_lanzar is not None:
                 al_lanzar(trabajo)
             self._trabajos[trabajo.id] = trabajo

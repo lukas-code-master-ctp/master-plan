@@ -263,6 +263,23 @@ Run con `--use-http2` no tiene ese tope, aguanta una hora por petición y monta 
 bucket de datos como volumen en `/datos`, así que el pipeline escribe igual que en
 este computador.
 
+**Dónde corren los trabajos.** La consola es un servicio de Cloud Run que tiene CPU
+solo mientras atiende una petición y se apaga sola cuando nadie la usa: sin visitas
+no cobra. Construir, leer un plano y publicar no corren ahí sino en dos **Cloud Run
+Jobs** (`tumasterplan-construir`, 2 vCPU y 8 GiB, y `tumasterplan-publicar`, 1 vCPU y
+2 GiB), cada trabajo en su propia máquina que se paga solo mientras corre. La consola
+anota el trabajo en la tabla `trabajos` de la base y enciende el job con su id;
+`python -m consola.obrero <id>` lo corre y anota el avance cada pocos segundos, que es
+lo que lee la pantalla (`consola/trabajos_remotos.py`). Lo que el trabajo guarda al
+terminar viaja como descriptor y el obrero lo vuelve a armar (`cierre_desde` en
+`consola/app.py`). Una máquina que muere sin avisar (por memoria, típicamente) deja de
+latir y a los 3 minutos el trabajo se da por caído. Así, un despliegue o que la
+consola se apague ya no corta una construcción. Hasta octubre de 2026 todo corría en
+la consola con `--no-cpu-throttling`, que la dejaba cobrando las 24 horas (~CLP
+150.000 al mes). En este computador y en las pruebas los trabajos siguen corriendo en
+la misma consola (`consola/trabajos.py`): lo remoto se enciende con
+`CONSOLA_TRABAJOS=cloudrun`, que pone `cloudbuild.yaml`.
+
 Lo que hay que dejar puesto antes del primer despliegue:
 
 | Qué | Dónde |
@@ -273,6 +290,7 @@ Lo que hay que dejar puesto antes del primer despliegue:
 | `masterplan-bd` | Secret Manager — la Postgres de las cuentas, `postgresql+psycopg://<usuario>:<clave>@/<base>?host=/cloudsql/<proyecto>:southamerica-east1:tumasterplan-bd`. **Sin esto no arranca**: la carpeta de datos es un bucket montado y SQLite sobre GCS no tiene bloqueo de archivos, así que la base —con los correos y los hashes de clave— se corrompería |
 | `vercel-token` | Secret Manager — para publicar los loteos ([vercel.com/account/tokens](https://vercel.com/account/tokens)) |
 | `crm.csv` | en la carpeta de cada loteo que tenga export comercial |
+| `roles/run.developer` | para la cuenta de servicio de la consola: enciende los jobs de los trabajos con el id como argumento |
 
 **Entrar.** Una cuenta por persona: correo y contraseña con bcrypt, y una galleta
 firmada con HMAC (`consola/acceso.py`, `consola/datos.py`). La galleta lleva solo el
@@ -857,16 +875,16 @@ con el KMZ que tenía. Tampoco se cambia mientras el master construye o publica.
 - La imagen de trabajo se reduce a **8 px/mm** (entre 6 y 8). Un A0 a 300 dpi son
   ~140 MP: sin el tope pasaba de 4 GiB; con él, el pico queda en ~2 GiB de RAM. La
   exactitud casi no cambia con la resolución.
-- En Cloud Run (4 GiB, 2 vCPU) digitalizar corre como subproceso en un trabajo de
-  fondo, igual que construir, y una digitalización o construcción a la vez por
+- En Cloud Run digitalizar corre en el job `tumasterplan-construir` (8 GiB, 2 vCPU),
+  igual que construir, y una digitalización o construcción a la vez por
   loteadora. La geometría toma
   menos de un minuto; el lector es lo que pesa: corre tantas pasadas a la vez como
   núcleos tenga el contenedor (`LECTOR_HEBRAS` lo acota) y las que quepan en la
   memoria libre. Medido en la imagen con `--cpus=2 --memory=4g`: Puente Negro con
   lector toma ~4,6 min (3,6 de ellos, el lector) y el proceso llega a ~2,1 GiB
 (antes de las teselas, el plano grande de producción se caía).
-  `--no-cpu-throttling` del cloudbuild es lo que deja avanzar el trabajo con la
-  pestaña cerrada; `--timeout` no aplica, porque no hay petición abierta.
+  Corre en su propia máquina, así que avanza igual con la pestaña cerrada y aunque la
+  consola se apague; el tope es el del trabajo (45 min) y el `--task-timeout` del job.
 
 ### El set de regresión
 
