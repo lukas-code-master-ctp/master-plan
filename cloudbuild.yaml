@@ -29,12 +29,68 @@
 #   # API de Resend (permiso "Sending access"), con el dominio de EMAIL_FROM
 #   # (tumasterplan.cl) verificado allá. Sin este secreto el despliegue falla: créalo antes.
 #   printf '%s' "<clave de resend>" | gcloud secrets create resend-api-key --data-file=-
+#   # La consola enciende los Cloud Run Jobs de los trabajos con el id como argumento:
+#   # su cuenta de servicio necesita ejecutarlos con argumentos propios. Y la cuenta de
+#   # Cloud Build necesita desplegar jobs (roles/run.admin, que ya usa para el servicio).
+#   gcloud projects add-iam-policy-binding <proyecto> \
+#     --member=serviceAccount:<cuenta de servicio de la consola> --role=roles/run.developer
 steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', '${_IMAGEN}:$BUILD_ID', '-t', '${_IMAGEN}:latest', '.']
 
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', '--all-tags', '${_IMAGEN}']
+
+  # Los trabajos (construir, leer un plano, publicar) corren en Cloud Run Jobs, cada uno
+  # en su propia máquina, que se paga solo mientras corre (`consola/trabajos_remotos.py`).
+  # Se despliegan antes que la consola: la consola nueva ya los lanza.
+  # El pesado es lo que antes era la consola entera: una panorámica son 104 megapíxeles,
+  # y con 4Gi la máquina moría en silencio al generar los niveles de imagen de un vuelo
+  # de 29 fotos; con 8Gi la misma construcción termina. Una construcción es trabajo de
+  # CPU: 2 la terminan bien. `--task-timeout` deja margen sobre el tope del propio trabajo
+  # (TOPE_PESADO, 45 min), y sin reintentos: el obrero no corre dos veces lo mismo.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'jobs'
+      - 'deploy'
+      - '${_JOB_PESADO}'
+      - '--image=${_IMAGEN}:$BUILD_ID'
+      - '--region=${_REGION}'
+      - '--command=/usr/bin/tini'
+      - '--args=--,python,-m,consola.obrero'
+      - '--memory=8Gi'
+      - '--cpu=2'
+      - '--task-timeout=3000'
+      - '--max-retries=0'
+      - '--add-volume=name=datos,type=cloud-storage,bucket=${_BUCKET}'
+      - '--add-volume-mount=volume=datos,mount-path=/datos'
+      - '--set-cloudsql-instances=${PROJECT_ID}:${_REGION}:${_INSTANCIA_BD}'
+      - '--set-secrets=MASTERPLAN_BD=masterplan-bd:latest,VERCEL_TOKEN=vercel-token:latest'
+      - '--set-env-vars=^|^CONSOLA_ENTORNO=produccion|MASTERPLAN_DATOS=/datos|VERCEL_SCOPE=${_VERCEL_SCOPE}|MASTERPLAN_DOMINIO=${_DOMINIO}'
+
+  # Publicar y poner al día el visor solo suben archivos con el CLI de Vercel.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'jobs'
+      - 'deploy'
+      - '${_JOB_LIVIANO}'
+      - '--image=${_IMAGEN}:$BUILD_ID'
+      - '--region=${_REGION}'
+      - '--command=/usr/bin/tini'
+      - '--args=--,python,-m,consola.obrero'
+      - '--memory=2Gi'
+      - '--cpu=1'
+      - '--task-timeout=1500'
+      - '--max-retries=0'
+      - '--add-volume=name=datos,type=cloud-storage,bucket=${_BUCKET}'
+      - '--add-volume-mount=volume=datos,mount-path=/datos'
+      - '--set-cloudsql-instances=${PROJECT_ID}:${_REGION}:${_INSTANCIA_BD}'
+      - '--set-secrets=MASTERPLAN_BD=masterplan-bd:latest,VERCEL_TOKEN=vercel-token:latest'
+      - '--set-env-vars=^|^CONSOLA_ENTORNO=produccion|MASTERPLAN_DATOS=/datos|VERCEL_SCOPE=${_VERCEL_SCOPE}|MASTERPLAN_DOMINIO=${_DOMINIO}'
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'gcloud'
@@ -48,22 +104,21 @@ steps:
       - '--allow-unauthenticated'          # la puerta es la contraseña de la consola
       - '--use-http2'                      # sin esto, 32 MiB por petición
       - '--min-instances=0'
-      # Una sola instancia a propósito: el estado de los trabajos vive en memoria
-      # del proceso, así que con dos el seguimiento cae en la instancia que no
-      # lanzó el build y devuelve 404 con la construcción corriendo bien. Una
-      # construcción es trabajo de CPU: repartirla no la acelera.
+      # Una sola instancia: los topes por IP de las rutas públicas viven en memoria.
+      # El avance de los trabajos ya no (va en la base), así que esto se puede soltar
+      # el día que esos topes también vayan a la base.
       - '--max-instances=1'
-      # Sin esto Cloud Run estrangula la CPU fuera del manejo de peticiones, y la
-      # construcción corre en un hilo de fondo: solo avanza a velocidad plena
-      # mientras el navegador sondea. Al cerrar la pestaña se arrastraría, y
-      # --timeout no la rescata porque no hay petición que expire.
-      - '--no-cpu-throttling'
-      # Una panorámica son 104 megapíxeles. Con 4Gi la instancia moría en silencio
-      # (sin "Memory limit exceeded" en los logs) al generar los niveles de imagen
-      # de un vuelo de 29 fotos; con 8Gi la misma construcción termina.
-      - '--memory=8Gi'
+      # CPU solo mientras atiende (facturación por petición): sin visitas no cobra.
+      # Antes iba con --no-cpu-throttling porque la construcción corría acá, en un hilo
+      # de fondo; eso dejaba la instancia cobrando cada segundo que estaba prendida,
+      # unos CLP 150.000 al mes. Ahora los trabajos corren en los jobs de arriba.
+      - '--cpu-throttling'
+      # Sin construcciones adentro no necesita 8Gi, pero sigue recibiendo panorámicas de
+      # 60 MB y armando las páginas del plano. Por petición, el tamaño casi no pesa en
+      # la cuenta: se paga solo el rato que atiende.
+      - '--memory=4Gi'
       - '--cpu=2'
-      - '--timeout=1800'                   # construir un loteo con imágenes
+      - '--timeout=1800'                   # subir un vuelo entero por una conexión lenta
       - '--port=8080'
       - '--add-volume=name=datos,type=cloud-storage,bucket=${_BUCKET}'
       - '--add-volume-mount=volume=datos,mount-path=/datos'
@@ -75,12 +130,15 @@ steps:
       # cabecera Host de la petición, que la escribe quien pide.
       # CONSOLA_REPUBLICAR_AL_ARRANCAR: al arrancar, la consola republica los loteos
       # publicados cuyo visor quedó atrás (ver "Despliegue continuo" en el README).
-      - '--set-env-vars=^|^CONSOLA_ENTORNO=produccion|MASTERPLAN_DATOS=/datos|VERCEL_SCOPE=${_VERCEL_SCOPE}|MASTERPLAN_DOMINIO=${_DOMINIO}|CONSOLA_REPUBLICAR_AL_ARRANCAR=1|CONSOLA_URL=${_CONSOLA_URL}|GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID}|CIERRA_API_URL=${_CIERRA_API_URL}'
+      # CONSOLA_TRABAJOS=cloudrun y lo que sigue: a qué jobs manda los trabajos.
+      - '--set-env-vars=^|^CONSOLA_ENTORNO=produccion|MASTERPLAN_DATOS=/datos|VERCEL_SCOPE=${_VERCEL_SCOPE}|MASTERPLAN_DOMINIO=${_DOMINIO}|CONSOLA_REPUBLICAR_AL_ARRANCAR=1|CONSOLA_URL=${_CONSOLA_URL}|GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID}|CIERRA_API_URL=${_CIERRA_API_URL}|CONSOLA_TRABAJOS=cloudrun|CONSOLA_GCP_PROYECTO=${PROJECT_ID}|CONSOLA_GCP_REGION=${_REGION}|CONSOLA_JOB_PESADO=${_JOB_PESADO}|CONSOLA_JOB_LIVIANO=${_JOB_LIVIANO}'
 
 substitutions:
   _REGION: southamerica-east1
   _REPO: tumasterplan                     # repositorio de Artifact Registry
   _SERVICIO: tumasterplan-consola
+  _JOB_PESADO: tumasterplan-construir     # Cloud Run Job: construir y leer planos
+  _JOB_LIVIANO: tumasterplan-publicar     # Cloud Run Job: publicar en Vercel
   _BUCKET: tumasterplan-datos
   _INSTANCIA_BD: tumasterplan-bd          # Cloud SQL, la Postgres de las cuentas
   _IMAGEN: southamerica-east1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/tumasterplan-consola

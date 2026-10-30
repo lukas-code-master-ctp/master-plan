@@ -36,7 +36,7 @@ def pendientes(vista: Vista, huella: str) -> list[Proyecto]:
 
 
 def republicar(vista: Vista, trabajos, comandos, disenos, huella: str,
-               avisar=print) -> dict:
+               avisar=print, anotar=None) -> dict:
     """Recorre los pendientes de a uno. Un loteo que falla no detiene a los demás.
 
     Devuelve cuántos quedaron hechos, cuántos fallaron y cuántos se saltaron:
@@ -50,7 +50,7 @@ def republicar(vista: Vista, trabajos, comandos, disenos, huella: str,
     decir(f"{len(lista)} loteo(s) con un visor distinto de {huella[:12]}")
     for proyecto in lista:
         try:
-            resultado = _uno(vista, trabajos, comandos, disenos, huella, proyecto, decir)
+            resultado = _uno(vista, trabajos, comandos, disenos, huella, proyecto, decir, anotar)
         except Exception as error:          # noqa: BLE001 - que siga con los demás
             decir(f"{proyecto.slug}: error inesperado ({error!r})")
             resultado = "fallidos"
@@ -61,7 +61,7 @@ def republicar(vista: Vista, trabajos, comandos, disenos, huella: str,
 
 
 def _uno(vista: Vista, trabajos, comandos, disenos, huella: str,
-         proyecto: Proyecto, decir) -> str:
+         proyecto: Proyecto, decir, anotar=None) -> str:
     slug = proyecto.slug
     # Sin el nombre en el hosting no hay a dónde subirlo, y adivinarlo con
     # `--crear` podría dejar un sitio nuevo en una URL que nadie conoce.
@@ -78,13 +78,18 @@ def _uno(vista: Vista, trabajos, comandos, disenos, huella: str,
         # Copiar el visor y subirlo es liviano: no espera en la cola de las construcciones.
         identificador = trabajos.lanzar(
             slug, "actualizar-visor",
-            comandos.actualizar_visor(proyecto, proyecto.vercel_proyecto), pesado=False)
+            comandos.actualizar_visor(proyecto, proyecto.vercel_proyecto), pesado=False,
+            al_terminar=anotar(proyecto) if anotar else None)
     except RuntimeError:
         # Alguien lanzó algo entre la pregunta de arriba y ahora.
         decir(f"{slug}: tiene un trabajo en curso; queda para el próximo arranque")
         return "saltados"
 
     decir(f"{slug}: actualizando el visor en {proyecto.vercel_proyecto}")
+    # En un Cloud Run Job no se espera: corre en su propia máquina, anota solo lo que
+    # deja (`anotar`), y esta consola puede apagarse antes de que termine.
+    if getattr(trabajos, "remoto", False):
+        return "hechos"
     trabajo = trabajos.esperar(identificador, tope=TOPE_POR_LOTEO)
     if trabajo.estado != "listo":
         ultima = trabajo.lineas[-1] if trabajo.lineas else ""

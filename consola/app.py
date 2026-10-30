@@ -89,6 +89,7 @@ from .rutas_preferencias import preferencias_de, rutas_de_preferencias, whatsapp
 from .rutas_reservas import rutas_de_reservas
 from .rutas_vista_previa import rutas_de_vista_previa
 from .trabajos import Trabajos
+from .trabajos_remotos import remotos_del_entorno
 
 WEB = Path(__file__).resolve().parent / "web"
 
@@ -170,11 +171,17 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     mostrar_registro()
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
+    # Desplegada, los trabajos corren en Cloud Run Jobs y la consola solo tiene CPU
+    # mientras atiende una petición (`consola/trabajos_remotos.py`).
+    trabajos = trabajos or remotos_del_entorno(base)
+    # Por eso ahí los correos salen dentro de la petición: un hilo que sigue después de
+    # responder se queda sin CPU, y el correo podría salir recién con la próxima visita.
+    al_fondo = not getattr(trabajos, "remoto", False)
     cuentas = cuentas or Cuentas(base=base, correo=correo_del_entorno(acceso.local),
-                                 en_segundo_plano=True)
+                                 en_segundo_plano=al_fondo)
     # Los avisos de reserva y de contacto salen por el mismo correo que los de las cuentas.
-    reservas = reservas or Reservas(base=base, correo=cuentas.correo)
-    contactos = contactos or Contactos(base=base, correo=cuentas.correo)
+    reservas = reservas or Reservas(base=base, correo=cuentas.correo, en_segundo_plano=al_fondo)
+    contactos = contactos or Contactos(base=base, correo=cuentas.correo, en_segundo_plano=al_fondo)
     avisos = avisos or Avisos(base=base, correo=cuentas.correo,
                               en_segundo_plano=cuentas.en_segundo_plano)
     # `True` = lo que diga el entorno; las pruebas pasan uno propio o `None`.
@@ -1199,6 +1206,16 @@ def _lanzar_lectura(plano: Plano, entradas: dict, clave: str, intento: int,
             escribir_json(archivo, {"intento": intento, "trabajo": trabajo.id,
                                     "comenzo": datetime.now(timezone.utc).isoformat()})
 
+    lineas = ([f"Se retoma la lectura del plano donde quedó (intento {intento} de "
+               f"{INTENTOS_LECTURA})."] if intento > 1 else None)
+    return trabajos.lanzar(clave, "digitalizar-plano", comandos.digitalizar_carpeta(plano.carpeta),
+                           al_terminar=_cerrar_lectura(plano, slug_de_clave(clave), entradas),
+                           lineas=lineas, al_lanzar=recordar)
+
+
+def _cerrar_lectura(plano: Plano, kmz: str, entradas: dict):
+    archivo = plano.carpeta / LECTURA
+
     def al_terminar(trabajo) -> None:
         # Listo o falló, ya no hay nada que retomar. Si el archivo es de un
         # lanzamiento posterior (este recién está cerrando), es de ese y se deja.
@@ -1213,10 +1230,7 @@ def _lanzar_lectura(plano: Plano, entradas: dict, clave: str, intento: int,
         if trabajo.estado == "listo":
             plano.anotar("digitalizado", plano.huella_al_terminar(entradas))
 
-    lineas = ([f"Se retoma la lectura del plano donde quedó (intento {intento} de "
-               f"{INTENTOS_LECTURA})."] if intento > 1 else None)
-    return trabajos.lanzar(clave, "digitalizar-plano", comandos.digitalizar_carpeta(plano.carpeta),
-                           al_terminar=al_terminar, lineas=lineas, al_lanzar=recordar)
+    return _con_cierre(al_terminar, tipo="lectura", kmz=kmz, entradas=entradas)
 
 
 def _lectura(archivo: Path) -> dict:
@@ -1290,7 +1304,9 @@ def _republicar_en_segundo_plano(registro: Registro, trabajos: Trabajos, comando
         try:
             # La huella se saca acá y no antes: hashear el visor no tiene por qué
             # demorar el arranque.
-            republicar(registro.todos(), trabajos, comandos, disenos, visor.huella())
+            vista = registro.todos()
+            republicar(vista, trabajos, comandos, disenos, visor.huella(),
+                       anotar=lambda p: _anotar_publicacion(vista, p, p.vercel_proyecto))
         except Exception:                   # noqa: BLE001 - nunca botar la consola
             print("[republicar] se cortó el recorrido:\n" + traceback.format_exc(),
                   flush=True)
@@ -1322,7 +1338,7 @@ def _aplicar_diseno(mios: Vista, disenos: Disenos, slug: str):
         if proyecto.construido:
             disenos.escribir_en_sitio(proyecto.diseno_id, proyecto.salida.datos)
 
-    return aplicar
+    return _con_cierre(aplicar, tipo="diseno", slug=slug)
 
 
 def _en_orden(*avisos):
@@ -1330,7 +1346,38 @@ def _en_orden(*avisos):
     def todos(trabajo) -> None:
         for aviso in avisos:
             aviso(trabajo)
+    cierres = [getattr(aviso, "cierres", None) for aviso in avisos]
+    if all(c is not None for c in cierres):
+        todos.cierres = [d for c in cierres for d in c]
     return todos
+
+
+def _con_cierre(funcion, **descriptor):
+    """Le cuelga a un `al_terminar` cómo volver a armarlo en otra máquina: un Cloud
+    Run Job no recibe la función, recibe esto (`trabajos_remotos`, `obrero`)."""
+    funcion.cierres = [descriptor]
+    return funcion
+
+
+def cierre_desde(descriptores: list[dict], registro: Registro, disenos: Disenos,
+                 kmzs: RegistroKmz):
+    """El `al_terminar` que describen `descriptores`, armado de nuevo con lo que hay
+    en esta máquina. Lo usa `consola.obrero` al correr un trabajo en un Cloud Run Job."""
+    vista = registro.todos()
+    avisos = []
+    for descriptor in descriptores:
+        tipo = descriptor["tipo"]
+        if tipo == "diseno":
+            avisos.append(_aplicar_diseno(vista, disenos, descriptor["slug"]))
+        elif tipo == "publicacion":
+            avisos.append(_anotar_publicacion(vista, vista.ver(descriptor["slug"]),
+                                              descriptor["nombre"]))
+        elif tipo == "lectura":
+            plano = kmzs.plano_de(kmzs.base.kmz(descriptor["kmz"]))
+            avisos.append(_cerrar_lectura(plano, descriptor["kmz"], descriptor["entradas"]))
+        else:
+            raise ValueError(f"no sé cerrar un trabajo de tipo {tipo!r}")
+    return _en_orden(*avisos)
 
 
 def _anotar_publicacion(mios: Vista, proyecto: Proyecto, nombre: str):
@@ -1351,7 +1398,7 @@ def _anotar_publicacion(mios: Vista, proyecto: Proyecto, nombre: str):
         # Es la del visor que acaba de subir: `comandos.publicar` lo copia antes.
         mios.anotar_visor(proyecto.slug, visor.huella())
 
-    return guardar
+    return _con_cierre(guardar, tipo="publicacion", slug=proyecto.slug, nombre=nombre)
 
 
 def _descarga(contenido: bytes, nombre: str) -> Response:
