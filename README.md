@@ -507,6 +507,14 @@ pero no seguro: en Praderas de Cauquenes despegó bajo la última, y la diferenc
 (16 m de cota) corría los lotes lejanos unos 40 m. La forma de comprobarlo es el
 control de calce: los polígonos tienen que caer sobre los caminos.
 
+Si el loteo se voló desde más de un lugar, las fotos que salieron de otro despegue
+lo llevan aparte en `"despegues": {"DJI_0494_D": [-71.60291, -33.34860]}` (el nombre
+del archivo sin extensión, lon y lat); las demás usan `despegue`. En la consola es el
+campo "Fotos que despegaron de otro lugar". En Parque Algarrobo los dos despegues
+tenían 20 m de desnivel, y medir la tercera foto desde el primero la subía 20 m. Un
+nombre que no calza con ninguna foto, o un punto a kilómetros de la suya (lat y lon
+al revés), se avisa al construir.
+
 ## El nivel de la foto
 
 El sol fija el rumbo pero no dice si la panorámica quedó horizontal, y DJI a veces la

@@ -282,3 +282,28 @@ export function textoDeReferencias(referencias) {
     return `${r.nombre}${coordenadas}${r.tiempo ? ` ${r.tiempo}` : ''}`;
   }).join(', ');
 }
+
+/**
+ * Los despegues por foto como se escriben en el campo: "DJI_0494_D: -71.60, -33.34",
+ * separados por punto y coma. Van como lon, lat, igual que el despegue del loteo.
+ * Vacío es quitarlos ({}). Una entrada que no se entiende corta con un error que la
+ * nombra: guardarla a medias dejaría esa foto con el despegue equivocado sin aviso.
+ */
+export function leerDespegues(texto) {
+  const despegues = {};
+  for (const entrada of (texto ?? '').split(/[;\n]/).map((t) => t.trim()).filter(Boolean)) {
+    const partes = entrada.match(/^(.+?)\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+    if (!partes) {
+      throw new Error(`No entiendo el despegue "${entrada}": va como "foto: lon, lat", `
+        + 'por ejemplo DJI_0494_D: -71.60291, -33.34860');
+    }
+    despegues[partes[1].trim()] = [Number(partes[2]), Number(partes[3])];
+  }
+  return despegues;
+}
+
+/** Lo inverso, para mostrarlos en el campo. */
+export function textoDeDespegues(despegues) {
+  return Object.entries(despegues ?? {}).map(([foto, [lon, lat]]) => `${foto}: ${lon}, ${lat}`)
+    .join('; ');
+}

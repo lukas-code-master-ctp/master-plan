@@ -49,6 +49,8 @@ TOPE_AREA_POR_PARCELA = 50.0
 DISTANCIA_MINIMA_ENTRE_PUNTOS_M = 15.0
 # Cada cuánto se toma un punto de un estero para que siga el terreno.
 PASO_AGUA_M = 8.0
+# Un despegue por foto más lejos que esto de la foto está mal escrito.
+LEJOS_DEL_DESPEGUE = 5000.0
 
 
 @dataclass
@@ -146,7 +148,16 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
               + " m según el GPS del dron): se supone que todos salieron del mismo punto")
 
     hitos = _resolver_referencias(proyecto, geometrias, avisos)
-    cota_despegue = relieve.cota(despegue) if relieve else None
+    despegue_de = _despegues_por_vista(proyecto, vistas, despegue, avisos)
+    if relieve:
+        for _, _, vista in vistas:
+            propio = despegue_de(vista)
+            if propio != despegue:
+                print(f"  {vista.id}: despegue propio en ({propio[0]:.5f}, {propio[1]:.5f}), "
+                      f"cota DEM {relieve.cota(propio):.0f} m")
+
+    def cota_de(vista) -> float | None:
+        return relieve.cota(despegue_de(vista)) if relieve else None
 
     ajustes: dict[str, Ajuste] = {}
     niveles: dict[str, horizonte.Nivelacion] = {}
@@ -158,7 +169,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             print("Nivelando cada panorámica con el horizonte...")
             niveladas = []
             for panorama, rumbo, vista in vistas:
-                por_desnivel = _nivelar(panorama, vista, cota_despegue, avisos)
+                por_desnivel = _nivelar(panorama, vista, cota_de(vista), avisos)
                 nivel = por_desnivel.get(0.0, horizonte.SIN_NIVELAR)
                 niveles[vista.id] = nivel
                 if nivel.aplicada:
@@ -183,7 +194,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
                 print(f"  {vista.id}: solo foto, sin calibrar")
                 calibradas.append((panorama, rumbo, vista))
                 continue
-            modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
+            modelo = terreno.modelo_para_vista(relieve, vista, despegue_de(vista)) if relieve else None
             mapa = mapa_de_caminos(panorama.ruta)
             if vista.id in inclinaciones:
                 # Nivelada: la altura del dron se elige con los caminos y la
@@ -199,7 +210,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
                 avisos.añadir(f"{vista.id}: el ajuste fino se fue al tope ({ajuste.tope}) y se "
                               f"descartó; la vista queda con la pose de antes. Revisa su calce.")
             calibradas.append((panorama, rumbo, aplicar(vista, ajuste)))
-        vistas = _cruzar_vistas(calibradas, ajustes, inclinaciones, relieve, despegue, lineas, avisos)
+        vistas = _cruzar_vistas(calibradas, ajustes, inclinaciones, relieve, despegue_de, lineas, avisos)
         # Lo que queda en la vista es la suma de los dos pasos.
         for _, _, vista in vistas:
             print(f"  {vista.id} queda con giro {vista.giro:+.2f}°, inclinación E "
@@ -222,7 +233,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         (g.etapa if g.etapa is not None else getattr(fichas.get(g.id), "etapa", None), g.anillo)
         for g in con_id.values()])
     for panorama, rumbo, vista in vistas:
-        modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
+        modelo = terreno.modelo_para_vista(relieve, vista, despegue_de(vista)) if relieve else None
         # Un punto solo foto no dibuja nada del loteo y tampoco cuenta como la vista
         # de ninguna parcela: "ver desde el aire" la lleva a un punto con líneas.
         dibuja = vista.posicion not in solo_foto
@@ -236,7 +247,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
 
         _escribir_json(salida.vistas / f"{vista.id}.json", {
             "id": vista.id,
-            "referencias": _proyectar_referencias(vista, hitos, cota_despegue),
+            "referencias": _proyectar_referencias(vista, hitos, cota_de(vista)),
             # Los accesos del KMZ, para que se vea por dónde se llega a cada lote.
             "caminos": _proyectar_caminos(vista, caminos, modelo) if dibuja else [],
             # Los esteros y canales que la loteadora marcó en el KMZ.
@@ -256,7 +267,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             ],
         })
         resumen = _resumen_vista(panorama, rumbo, vista, proyectadas,
-                                 "dem" if relieve else "plano", despegue,
+                                 "dem" if relieve else "plano", despegue_de(vista),
                                  ajustes.get(vista.id, Ajuste()),
                                  niveles.get(vista.id, horizonte.SIN_NIVELAR))
         if not dibuja:
@@ -537,6 +548,30 @@ def _vuelos(panoramas: list[Panorama]) -> list[float]:
     return [sum(g) / len(g) for g in grupos]
 
 
+def _despegues_por_vista(proyecto, vistas: list, despegue: geo.Punto, avisos: Avisos):
+    """De qué despegue se mide cada vista: el de su foto en `despegues`, o el del
+    proyecto. Una foto nombrada que no está entre las panorámicas se avisa, porque
+    lo más probable es un nombre mal copiado y la foto quedaría con el otro despegue."""
+    # Sin distinguir mayúsculas: el dron escribe .JPG y quien copia el nombre, a veces no.
+    propios = {nombre.lower(): (nombre, punto) for nombre, punto in proyecto.despegues}
+    por_vista = {}
+    for panorama, _, vista in vistas:
+        nombre = Path(panorama.ruta).stem.lower()
+        if nombre in propios:
+            _, punto = propios.pop(nombre)
+            por_vista[vista.id] = punto
+            # Un dron no despega a kilómetros de donde toma la foto: lo más común es
+            # haber pegado "lat, lon" (como lo da el celular) en vez de "lon, lat".
+            if geo.distancia(punto, vista.origen) > LEJOS_DEL_DESPEGUE:
+                avisos.añadir(f"{vista.id}: su despegue queda a "
+                              f"{geo.distancia(punto, vista.origen) / 1000:.0f} km de la foto; "
+                              f"revisa que esté como lon, lat y no al revés")
+    for nombre, _ in sorted(propios.values()):
+        avisos.añadir(f"el despegue de {nombre} no corresponde a ninguna panorámica del "
+                      f"loteo; revisa el nombre de la foto")
+    return lambda vista: por_vista.get(vista.id, despegue)
+
+
 def _despegue_por_defecto(panoramas: list[Panorama]) -> geo.Punto:
     """Bajo la primera toma: el piloto sube en vertical y dispara antes de moverse."""
     primera = min(panoramas, key=lambda p: p.momento)
@@ -741,7 +776,7 @@ def _puntaje_encuadre(proyectadas: list) -> float:
 
 def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
                    inclinaciones: dict[str, dict[float, tuple[float, float]]],
-                   relieve, despegue, lineas, avisos: Avisos) -> list:
+                   relieve, despegue_de, lineas, avisos: Avisos) -> list:
     """Las vistas niveladas cuya búsqueda con los caminos quedó en el tope se calibran
     contra la vista que mejor calibró (ver cruce.py). Si eso tampoco resulta, toman
     el desnivel de las que calibraron: sale casi todo de la cota del despegue, que
@@ -759,7 +794,7 @@ def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
         return vistas
     _, panorama_ref, referencia = max(buenas, key=lambda b: b[0])
     imagen_ref = cruce.cargar_panorama(panorama_ref.ruta)
-    modelo_ref = terreno.modelo_para_vista(relieve, referencia, despegue) if relieve else None
+    modelo_ref = terreno.modelo_para_vista(relieve, referencia, despegue_de(referencia)) if relieve else None
     puntos = [p for linea in lineas for p in linea]
     zona = (min(p[0] for p in puntos), min(p[1] for p in puntos),
             max(p[0] for p in puntos), max(p[1] for p in puntos))
@@ -768,7 +803,7 @@ def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
     for panorama, rumbo, vista in vistas:
         if vista.id in pendientes:
             tope = ajustes[vista.id].tope
-            modelo = terreno.modelo_para_vista(relieve, vista, despegue) if relieve else None
+            modelo = terreno.modelo_para_vista(relieve, vista, despegue_de(vista)) if relieve else None
             resultado = cruce.calibrar_contra(vista, cruce.cargar_panorama(panorama.ruta), modelo,
                                               referencia, imagen_ref, modelo_ref, zona,
                                               inclinaciones[vista.id])

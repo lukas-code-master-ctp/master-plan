@@ -250,3 +250,45 @@ def test_el_sitio_abre_en_un_punto_con_el_loteo_dibujado():
     assert _vista_inicial(vistas) == "p01"
     # Si todos son solo foto, igual abre en alguno.
     assert _vista_inicial([vistas[1]]) == "p03"
+
+
+# --- un despegue por foto ------------------------------------------------------
+
+def _vista_de(tmp_path, nombre, lon, lat):
+    from types import SimpleNamespace
+    ruta = tmp_path / nombre
+    return (SimpleNamespace(ruta=ruta), None,
+            SimpleNamespace(id=f"vista-{ruta.stem}", origen=(lon, lat)))
+
+
+def test_cada_vista_se_mide_desde_el_despegue_de_su_foto(tmp_path):
+    from pipeline import config
+    from pipeline.construir import Avisos, _despegues_por_vista
+
+    vistas = [_vista_de(tmp_path, "DJI_0487_D.JPG", -71.5970, -33.3500),
+              _vista_de(tmp_path, "DJI_0494_D.JPG", -71.6030, -33.3487)]
+    proyecto = config.Proyecto(nombre="X", despegues=(("dji_0494_d", (-71.602915, -33.348602)),))
+    avisos = Avisos([])
+
+    despegue_de = _despegues_por_vista(proyecto, vistas, (-71.596974, -33.350092), avisos)
+
+    assert despegue_de(vistas[0][2]) == (-71.596974, -33.350092)   # el del proyecto
+    assert despegue_de(vistas[1][2]) == (-71.602915, -33.348602)   # el suyo
+    assert avisos.lineas == []
+
+
+def test_avisa_la_foto_que_no_esta_y_el_despegue_al_reves(tmp_path):
+    from pipeline import config
+    from pipeline.construir import Avisos, _despegues_por_vista
+
+    vistas = [_vista_de(tmp_path, "DJI_0494_D.JPG", -71.6030, -33.3487)]
+    proyecto = config.Proyecto(nombre="X", despegues=(
+        ("DJI_0494_D", (-33.348602, -71.602915)),   # lat, lon: al revés
+        ("DJI_9999_D", (-71.6, -33.35)),
+    ))
+    avisos = Avisos([])
+
+    _despegues_por_vista(proyecto, vistas, (-71.596974, -33.350092), avisos)
+
+    assert any("al revés" in linea for linea in avisos.lineas)
+    assert any("DJI_9999_D" in linea and "ninguna panorámica" in linea for linea in avisos.lineas)

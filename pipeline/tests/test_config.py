@@ -1,6 +1,6 @@
 import pytest
 
-from pipeline.config import cargar_proyecto, descubrir_fuentes, normalizar_whatsapp
+from pipeline.config import cargar_proyecto, descubrir_fuentes, leer_despegues, normalizar_whatsapp
 
 
 def armar(carpeta, kmz="loteo.kmz", excel="parcelas.xlsx", fotos=("fotos/a.JPG",)):
@@ -167,6 +167,31 @@ def test_el_punto_de_despegue_se_lee_de_proyecto_json(tmp_path):
 
 def test_sin_despegue_el_proyecto_no_lo_inventa(tmp_path):
     assert cargar_proyecto(tmp_path, nombre="X").despegue is None
+
+
+def test_cada_foto_puede_tener_su_propio_despegue(tmp_path):
+    (tmp_path / "proyecto.json").write_text(
+        '{"nombre": "X", "despegues": {"DJI_0494_D.JPG": [-71.6029, -33.3486], " DJI_0487_D ": ["-71.597", "-33.35"]}}',
+        encoding="utf-8")
+
+    # Sin extensión ni espacios: así se compara con el nombre de la panorámica.
+    assert cargar_proyecto(tmp_path).despegues == (("DJI_0487_D", (-71.597, -33.35)),
+                                                   ("DJI_0494_D", (-71.6029, -33.3486)))
+
+
+def test_sin_despegues_por_foto_quedan_vacios(tmp_path):
+    assert cargar_proyecto(tmp_path, nombre="X").despegues == ()
+
+
+@pytest.mark.parametrize("valor", [
+    [[-71.6, -33.3]],                 # una lista, no foto → punto
+    {"foto": [-71.6]},                # le falta la latitud
+    {"foto": ["oeste", -33.3]},
+    {"foto": [-33.3, -271.6]},        # fuera de rango
+])
+def test_un_despegue_por_foto_mal_escrito_corta(valor):
+    with pytest.raises(ValueError):
+        leer_despegues(valor)
 
 
 def test_las_referencias_se_leen_de_proyecto_json(tmp_path):

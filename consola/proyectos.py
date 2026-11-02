@@ -38,8 +38,9 @@ EXTENSIONES_FOTO = (".jpg", ".jpeg")
 
 # Lo que se guarda en `proyecto.json`, que es lo que lee el pipeline. El resto
 # —de quién es, dónde quedó publicado— vive en la base y no se duplica acá.
-CAMPOS_DEL_PIPELINE = ("nombre", "etapa", "whatsapp", "parcelacion", "despegue", "referencias",
-                       "link_reserva", "monto_reserva", "numeros_fijos", "puntos_solo_foto")
+CAMPOS_DEL_PIPELINE = ("nombre", "etapa", "whatsapp", "parcelacion", "despegue", "despegues",
+                       "referencias", "link_reserva", "monto_reserva", "numeros_fijos",
+                       "puntos_solo_foto")
 
 
 MEGA = 1024 * 1024
@@ -189,6 +190,8 @@ class Proyecto:
     numeros_fijos: bool = False
     # Los puntos de vuelo sin nada dibujado encima (config.Proyecto).
     puntos_solo_foto: tuple[int, ...] = ()
+    # Las fotos que salieron de otro despegue (config.Proyecto).
+    despegues: tuple = ()
     # Subido desde el navegador (sus archivos son nuestros) o carpeta vinculada
     # del disco (no lo son).
     subido: bool = False
@@ -360,6 +363,7 @@ class Registro:
             puntos_solo_foto=datos.puntos_solo_foto,
             parcelacion=str(_leer_json(carpeta / "proyecto.json").get("parcelacion") or ""),
             despegue=datos.despegue,
+            despegues=datos.despegues,
             referencias=datos.referencias,
             fuentes=carpeta,
             salida=config.Salida(self.salidas / guardado.slug),
@@ -529,6 +533,11 @@ class Vista:
         if "puntos_solo_foto" in limpios:
             # Se guarda limpio ("3, 4 y 5" → [3, 4, 5]) para que la consola lo muestre igual.
             limpios["puntos_solo_foto"] = list(config.leer_puntos(limpios["puntos_solo_foto"]))
+        if "despegues" in limpios:
+            # Se revisa antes de guardar: uno mal escrito haría fallar la construcción
+            # entera, y es mejor que el error salga acá, junto al campo.
+            limpios["despegues"] = {foto: list(punto) for foto, punto
+                                    in config.leer_despegues(limpios["despegues"])}
         if "nombre" in limpios:
             self.registro.base.renombrar_proyecto(slug, str(limpios["nombre"]))
         self.registro._escribir_json(proyecto.fuentes, slug, limpios)
