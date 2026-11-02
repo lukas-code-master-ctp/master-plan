@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 import {
   avisoAlQuitar, hayVistaPrevia, leerReferencias, medicionDelSol, nombreDeVista, notaDePublicar,
-  textoDeReferencias, urlDeVistaPrevia,
+  leerDespegues, textoDeDespegues, textoDeReferencias, urlDeVistaPrevia,
 } from './js/detalle.js';
 
 test('cada vista se nombra como en el visor: punto en romanos y altura', () => {
@@ -115,4 +115,15 @@ test('una referencia guardada con coordenadas vuelve al campo con ellas', () => 
     textoDeReferencias(['Quillón 10 min', { nombre: 'Fundo El Peumo', lon: -72.3, lat: -35.9 }]),
     'Quillón 10 min, Fundo El Peumo (-35.9, -72.3)');
   assert.equal(textoDeReferencias(undefined), '');
+});
+
+test('los despegues por foto van y vuelven del campo', () => {
+  const despegues = leerDespegues('DJI_0494_D.JPG: -71.602915, -33.348602 ;  DJI_0487_D = -71.596974,-33.350092; ');
+  assert.deepEqual(despegues, {
+    'DJI_0494_D.JPG': [-71.602915, -33.348602], DJI_0487_D: [-71.596974, -33.350092],
+  });
+  assert.equal(textoDeDespegues({ DJI_0494_D: [-71.602915, -33.348602] }), 'DJI_0494_D: -71.602915, -33.348602');
+  assert.deepEqual(leerDespegues(''), {});
+  assert.equal(textoDeDespegues(undefined), '');
+  assert.throws(() => leerDespegues('DJI_0494_D -71.6'), /DJI_0494_D -71.6/);
 });

@@ -1487,6 +1487,7 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "puntos_solo_foto": list(proyecto.puntos_solo_foto),
         "parcelacion": proyecto.parcelacion,
         "despegue": list(proyecto.despegue) if proyecto.despegue else None,
+        "despegues": {foto: list(punto) for foto, punto in proyecto.despegues},
         "referencias": list(proyecto.referencias),
         "fuentes": str(proyecto.fuentes),
         "fuentes_encontradas": proyecto.fuentes_encontradas(),

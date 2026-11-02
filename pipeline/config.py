@@ -198,6 +198,11 @@ class Proyecto:
     # (lon, lat) desde donde despegó el dron. Ancla las alturas al terreno; sin él
     # se asume que despegó bajo la primera toma.
     despegue: tuple[float, float] | None = None
+    # Las fotos que salieron de otro despegue: nombre del archivo sin extensión →
+    # (lon, lat). Un loteo volado desde dos lugares no puede anclar todas sus fotos
+    # al mismo: en Parque Algarrobo los despegues estaban a 20 m de desnivel, y la
+    # foto del segundo quedaba calculada 20 m más arriba de lo que estaba.
+    despegues: tuple = ()
     # Pueblos u otros hitos que se rotulan en el horizonte: nombres a geocodificar
     # ("Cauquenes") o dicts con nombre, lon y lat.
     referencias: tuple = ()
@@ -295,6 +300,7 @@ def cargar_proyecto(carpeta: Path, **valores) -> Proyecto:
         whatsapp=normalizar_whatsapp(str(datos.get("whatsapp") or "")),
         parcelacion=str(datos.get("parcelacion") or nombre.upper()),
         despegue=(float(despegue[0]), float(despegue[1])) if despegue else None,
+        despegues=leer_despegues(datos.get("despegues")),
         referencias=tuple(datos.get("referencias") or ()),
         link_reserva=str(datos.get("link_reserva") or "").strip(),
         monto_reserva=leer_monto(datos.get("monto_reserva")),
@@ -302,6 +308,27 @@ def cargar_proyecto(carpeta: Path, **valores) -> Proyecto:
         puntos_solo_foto=leer_puntos(datos.get("puntos_solo_foto")),
         slug_guardado=str(datos.get("slug") or ""),
     )
+
+
+def leer_despegues(valor) -> tuple:
+    """`{"<foto>": [lon, lat]}` como pares ordenados (foto, (lon, lat)). La foto va sin
+    extensión, como el nombre del archivo que entregó el dron. Uno malo corta: un
+    despegue mal escrito movería todos los lotes de esa vista sin decir nada."""
+    if not valor:
+        return ()
+    if not isinstance(valor, dict):
+        raise ValueError("los despegues por foto van como {\"<foto>\": [lon, lat]}")
+    pares = []
+    for foto, punto in valor.items():
+        nombre = Path(str(foto).strip()).stem
+        try:
+            lon, lat = (float(v) for v in punto)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"el despegue de {foto} va como [lon, lat]") from error
+        if not (-180 <= lon <= 180 and -90 <= lat <= 90):
+            raise ValueError(f"el despegue de {foto} no es una coordenada (lon, lat)")
+        pares.append((nombre, (lon, lat)))
+    return tuple(sorted(pares))
 
 
 # --- Salida ------------------------------------------------------------------

@@ -12,7 +12,7 @@ import { abrirElegirKmz } from './kmzs.js';
 import { abrirPlanes, botonDePlan } from './planes.js';
 import {
   avisoAlQuitar, hayVistaPrevia, leerReferencias, meta, notaDePublicar, pintarCalce, pintarCifras,
-  pintarEstado, textoDeReferencias, urlDeVistaPrevia,
+  leerDespegues, pintarEstado, textoDeDespegues, textoDeReferencias, urlDeVistaPrevia,
 } from './detalle.js';
 import { pintarVuelo } from './vuelo.js';
 import { tituloEsqueleto } from './esqueleto.js';
@@ -215,6 +215,7 @@ function rellenarAjustes(proyecto) {
   // Vacío es "el nombre en mayúsculas": se muestra como sugerencia, no como valor.
   form.elements.parcelacion.placeholder = (proyecto.nombre ?? '').toUpperCase();
   form.elements.despegue.value = proyecto.despegue ? proyecto.despegue.join(', ') : '';
+  form.elements.despegues.value = textoDeDespegues(proyecto.despegues);
   form.elements.referencias.value = textoDeReferencias(proyecto.referencias);
   form.elements.numeros_fijos.checked = Boolean(proyecto.numeros_fijos);
   form.elements.puntos_solo_foto.value = (proyecto.puntos_solo_foto ?? []).join(', ');
@@ -229,6 +230,7 @@ async function guardar(proyecto) {
   if (numeros.length && (numeros.length !== 2 || numeros.some(Number.isNaN))) {
     throw new Error('El despegue va como "lon, lat", por ejemplo -72.27591, -35.86774');
   }
+  const despegues = leerDespegues(form.elements.despegues.value);
   await pedir(`/api/proyectos/${proyecto.slug}`, json({
     nombre: form.elements.nombre.value.trim() || null,
     etapa: form.elements.etapa.value.trim(),
@@ -237,6 +239,7 @@ async function guardar(proyecto) {
     monto_reserva: form.elements.monto_reserva.value.trim(),
     parcelacion: form.elements.parcelacion.value.trim(),
     despegue: numeros.length === 2 ? numeros : null,
+    despegues,
     referencias: leerReferencias(form.elements.referencias.value),
     numeros_fijos: form.elements.numeros_fijos.checked,
     // El servidor lo deja en números ("3, 4 y 5" → [3, 4, 5]).
@@ -248,11 +251,12 @@ async function guardar(proyecto) {
   const despues = proyectoActual();
   rellenarAjustes(despues);
   // El diseño, el nombre, la etapa, el WhatsApp y la reserva se aplican al publicar. La
-  // parcelación, el despegue, los hitos y los puntos solo foto cambian el cálculo:
+  // parcelación, los despegues, los hitos y los puntos solo foto cambian el cálculo:
   // esos piden reconstruir.
   const igual = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   const pideReconstruir = !igual(proyecto.parcelacion, despues.parcelacion)
-    || !igual(proyecto.despegue, despues.despegue) || !igual(proyecto.referencias, despues.referencias)
+    || !igual(proyecto.despegue, despues.despegue) || !igual(proyecto.despegues, despues.despegues)
+    || !igual(proyecto.referencias, despues.referencias)
     || !igual(proyecto.puntos_solo_foto, despues.puntos_solo_foto);
   const alPublicar = !igual(antes, despues.diseno_id)
     || ['nombre', 'etapa', 'whatsapp', 'link_reserva', 'monto_reserva', 'numeros_fijos']

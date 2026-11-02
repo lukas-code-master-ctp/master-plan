@@ -191,6 +191,20 @@ def test_ajustar_reescribe_proyecto_json(ana, tmp_path):
     assert actualizado.etapa == "Etapa 1"
 
 
+def test_los_despegues_por_foto_se_guardan_limpios_y_se_revisan(ana, tmp_path):
+    proyecto = ana.vincular(carpeta_de_loteo(tmp_path))
+
+    actualizado = ana.ajustar(proyecto.slug, {"despegues": {"DJI_0494_D.JPG": ["-71.6", "-33.3"]}})
+
+    guardado = json.loads((proyecto.fuentes / "proyecto.json").read_text(encoding="utf-8"))
+    assert guardado["despegues"] == {"DJI_0494_D": [-71.6, -33.3]}
+    assert actualizado.despegues == (("DJI_0494_D", (-71.6, -33.3)),)
+    with pytest.raises(ValueError):
+        ana.ajustar(proyecto.slug, {"despegues": {"DJI_0494_D": [-71.6]}})
+    # Vacío es quitarlos.
+    assert ana.ajustar(proyecto.slug, {"despegues": {}}).despegues == ()
+
+
 def test_cambiar_el_nombre_no_cambia_el_slug_del_proyecto_ya_creado(ana, tmp_path):
     """El slug es la carpeta de salida y la URL: renombrar no debe dejar huérfano el sitio."""
     proyecto = ana.vincular(carpeta_de_loteo(tmp_path))
