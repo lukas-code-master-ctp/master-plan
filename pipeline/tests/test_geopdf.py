@@ -18,7 +18,7 @@ def _lonlat(x, y):
     return A_LONLAT.transform(ESTE + x, NORTE - y)
 
 
-def geo_pdf(destino=None, *, coordenadas=True, rotulos=True) -> bytes:
+def geo_pdf(destino=None, *, coordenadas=True, rotulos=True, servidumbre=False) -> bytes:
     """Dos lotes de 200 × 200 m con borde amarillo; el primero achurado en celeste
     (disponible), como en el geo hecho a mano."""
     documento = pymupdf.open()
@@ -30,6 +30,11 @@ def geo_pdf(destino=None, *, coordenadas=True, rotulos=True) -> bytes:
     # El achurado cruza el lote entero y lo partiría en tiras si se tomara como borde.
     for d in range(0, 400, 20):
         pagina.draw_line((100 + d, 100), (100, 100 + d), color=CELESTE, width=0.48)
+    if servidumbre:
+        # La servidumbre: dos orillas paralelas a 6 m, a trazos, del mismo color.
+        for y in (320, 326):
+            for x in range(100, 500, 4):
+                pagina.draw_line((x, y), (x + 3, y), color=AMARILLO, width=0.72)
     if rotulos:
         for numero, x0 in (("1", 100), ("2", 300)):
             pagina.insert_textbox(pymupdf.Rect(x0 + 60, 180, x0 + 160, 220), f"LOTE {numero}\n40000M2",
@@ -96,3 +101,19 @@ def test_la_linea_de_comandos_escribe_el_kmz(tmp_path, capsys):
     assert geopdf.main([str(tmp_path / "geo.pdf"), str(tmp_path / "loteo.kmz")]) == 0
     assert "2 lotes" in capsys.readouterr().out
     assert (tmp_path / "loteo.kmz").is_file()
+
+
+def test_las_servidumbres_van_al_kmz_como_franjas_sin_numero(tmp_path):
+    lectura = geopdf.a_kmz(geo_pdf(servidumbre=True), tmp_path / "loteo.kmz")
+
+    assert [l["numero"] for l in lectura.lotes] == ["1", "2"]
+    poligonos = leer_kmz(tmp_path / "loteo.kmz")
+    sin_numero = [g for g in poligonos if g.id is None]
+    # Las dos orillas a trazos quedan en una sola franja de ~400 × 7 m.
+    assert len(sin_numero) == 1
+    assert sin_numero[0].area_m2 == pytest.approx(400 * 7, rel=0.15)
+    assert {g.id for g in poligonos if g.id} == {"1", "2"}
+
+
+def test_sin_servidumbres_el_kmz_solo_trae_los_lotes(tmp_path):
+    assert geopdf.a_kmz(geo_pdf(), tmp_path / "loteo.kmz").servidumbres == []

@@ -1062,7 +1062,11 @@ KMZ cuando viene georreferenciado (GeoPDF: `/VP` con `/Measure /GEO`): la consol
 convierte al subirlo (`pipeline/geopdf.py`, `python -m pipeline.geopdf <geo.pdf>
 <destino.kmz>`). Los bordes son trazos sueltos que se cierran con `polygonize`, eligiendo
 el color que deja cada rótulo "LOTE n" solo en su cara, para que el achurado de las
-disponibles o el eje de un camino no partan los lotes.
+disponibles o el eje de un camino no partan los lotes. Lo que queda de ese dibujo fuera
+del borde de los lotes (las dobles líneas de las servidumbres) va al KMZ como polígonos
+"SERVIDUMBRE" sin número, y el geo y el mapa los dibujan como cualquier polígono sin
+identificar. Van como polígonos y no como líneas: una sola LineString pasaría el KMZ al
+modo CAD.
 
 **La plantilla.** La consola entrega el .xlsx listo para llenar (`consola/plantilla.py`):
 en Nuevo master sale con tres filas de ejemplo, y en el detalle de un master construido,

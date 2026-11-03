@@ -19,8 +19,10 @@ grupos) que deja más rótulos solos dentro de una cara: eso son los lotes.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import median
@@ -28,11 +30,12 @@ from statistics import median
 import numpy as np
 import pymupdf
 import shapely
+from pyproj import Transformer
 from shapely.geometry import LineString, Point
-from shapely.ops import polygonize
+from shapely.ops import polygonize, unary_union
 
 from .plano.georreferencia import Transformacion, a_utm, huso
-from .plano.salida import escribir_kmz
+from .plano.salida import kml
 
 # Por sobre esto (en metros) los puntos de control del PDF no calzan con una afín: el
 # mapa no está en una proyección plana o el PDF está mal escrito.
@@ -46,6 +49,18 @@ TRAZOS_MINIMOS = 3
 # Si las superficies escritas en el geo y las medidas difieren en mediana más que
 # esto, el PDF dice estar en un lugar con otra escala: se avisa.
 DIFERENCIA_AREA_AVISO = 0.05
+# Las servidumbres: lo que queda del dibujo de los deslindes al sacar el borde de los
+# lotes (las dobles líneas del camino, a trazos). Se engordan y se cierran en metros:
+# el cierre junta los trazos y las dos orillas en una sola franja, la servidumbre
+# (en Don Danilo las orillas van a unos 6 m). Lo que mide menos que el área mínima
+# son restos (un vértice que no calzó), no caminos.
+SERVIDUMBRE_ANCHO_M = 0.5
+SERVIDUMBRE_CIERRE_M = 4.0
+SERVIDUMBRE_AREA_MINIMA_M2 = 20.0
+SERVIDUMBRE_SIMPLIFICAR_M = 0.2
+# Franja (en puntos de página) alrededor del borde de un lote donde una línea es su
+# deslinde y no una servidumbre.
+FRANJA_DESLINDE_PT = 0.4
 
 ROTULO = re.compile(r"^\s*LOTE\s*[-:]?\s*([A-Z]?\s*-?\s*\d+(?:\s*-\s*\d+)?)\s*$", re.IGNORECASE)
 SUPERFICIE = re.compile(r"^\s*([\d.,]+)\s*M\s*[2²]\s*$", re.IGNORECASE)
@@ -62,6 +77,8 @@ class Lectura:
     # digitalizado de Crea tu KMZ, así sale por el mismo `escribir_kmz`.
     lotes: list[dict]
     avisos: list[str] = field(default_factory=list)
+    # Las franjas de las servidumbres, en UTM (el EPSG de la transformación).
+    servidumbres: list = field(default_factory=list)
 
     @property
     def digitalizado(self) -> dict:
@@ -88,10 +105,42 @@ def leer(origen: Path | bytes) -> Lectura:
 
 
 def a_kmz(origen: Path | bytes, destino: Path, nombre: str | None = None) -> Lectura:
-    """Escribe el KMZ de los lotes del geo y devuelve lo leído (con sus avisos)."""
+    """Escribe el KMZ de los lotes del geo y devuelve lo leído (con sus avisos).
+
+    Las servidumbres van como polígonos "SERVIDUMBRE" (sin número de lote): el lector
+    de KMZ las deja como polígonos sin identificar, y el geo y el mapa las dibujan.
+    No van como líneas porque una sola LineString pasa el KMZ al modo CAD, donde los
+    lotes se arman de nuevo con la red (`pipeline/kmz.py`).
+    """
     lectura = leer(origen)
-    escribir_kmz(Path(destino), lectura.digitalizado, lectura.transformacion, nombre)
+    destino = Path(destino)
+    texto = kml(lectura.digitalizado, lectura.transformacion, nombre or destino.stem)
+    texto = texto.replace("</Document></kml>", _placemarks_servidumbres(lectura) + "</Document></kml>")
+    temporal = destino.with_name(f".{destino.name}.{os.getpid()}")
+    try:
+        with zipfile.ZipFile(temporal, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("doc.kml", texto)
+        os.replace(temporal, destino)
+    finally:
+        temporal.unlink(missing_ok=True)
     return lectura
+
+
+def _placemarks_servidumbres(lectura: Lectura) -> str:
+    a_lonlat = Transformer.from_crs(lectura.transformacion.epsg, 4326, always_xy=True)
+
+    def anillo(coordenadas) -> str:
+        return " ".join("{:.8f},{:.8f},0".format(*a_lonlat.transform(x, y)) for x, y in coordenadas)
+
+    partes = []
+    for franja in lectura.servidumbres:
+        huecos = "".join(f"<innerBoundaryIs><LinearRing><coordinates>{anillo(h.coords)}</coordinates>"
+                         "</LinearRing></innerBoundaryIs>" for h in franja.interiors)
+        partes.append("<Placemark><name>SERVIDUMBRE</name><description>Servidumbre de paso, "
+                      "tomada del geo</description><styleUrl>#lote</styleUrl><Polygon><outerBoundaryIs>"
+                      f"<LinearRing><coordinates>{anillo(franja.exterior.coords)}</coordinates></LinearRing>"
+                      f"</outerBoundaryIs>{huecos}</Polygon></Placemark>")
+    return "\n".join(partes)
 
 
 # --- el marco georreferenciado -----------------------------------------------------
@@ -293,7 +342,7 @@ def _mejores_trazos(grupos: dict[tuple, list[LineString]], rotulos: list[_Rotulo
     """
     candidatos = [t for t in grupos.values() if len(t) >= TRAZOS_MINIMOS]
     if not candidatos:
-        return [], {}
+        return [], {}, []
     puntaje = []
     for trazos in candidatos:
         caras = _caras(trazos)
@@ -305,7 +354,7 @@ def _mejores_trazos(grupos: dict[tuple, list[LineString]], rotulos: list[_Rotulo
         cuantos = _solos(_asignar(prueba, rotulos))
         if cuantos > mejor:
             mejor, elegidos, caras = cuantos, elegidos + trazos, prueba
-    return caras, _asignar(caras, rotulos)
+    return caras, _asignar(caras, rotulos), elegidos
 
 
 def _leer_pagina(pagina: pymupdf.Page, marco: _Marco) -> Lectura:
@@ -313,7 +362,7 @@ def _leer_pagina(pagina: pymupdf.Page, marco: _Marco) -> Lectura:
     rotulos = _rotulos(pagina, marco.rect)
     if not rotulos:
         raise ValueError('el geo no trae rótulos "LOTE n" como texto: súbelo en Crea tu KMZ')
-    caras, asignados = _mejores_trazos(_trazos(pagina), rotulos)
+    caras, asignados, deslindes = _mejores_trazos(_trazos(pagina), rotulos)
 
     avisos = []
     lotes, vistos = [], set()
@@ -340,7 +389,24 @@ def _leer_pagina(pagina: pymupdf.Page, marco: _Marco) -> Lectura:
         raise ValueError("no se pudo cerrar ningún lote con el dibujo del PDF: súbelo en Crea tu KMZ")
     avisos += _revisar_superficies(lotes, transformacion)
     lotes.sort(key=lambda l: _orden(l["numero"]))
-    return Lectura(transformacion, lotes, avisos)
+    bordes = [caras[i].exterior for i, en in asignados.items() if len(en) == 1]
+    return Lectura(transformacion, lotes, avisos, _servidumbres(deslindes, bordes, transformacion))
+
+
+def _servidumbres(deslindes: list[LineString], bordes: list, t: Transformacion) -> list:
+    """Las franjas de las servidumbres, en UTM: los trazos del mismo dibujo de los
+    deslindes que no son el borde de ningún lote."""
+    if not deslindes or not bordes:
+        return []
+    sueltos = unary_union(deslindes).difference(unary_union(bordes).buffer(FRANJA_DESLINDE_PT))
+    lineas = [l for l in getattr(sueltos, "geoms", [sueltos]) if l.length > 0]
+    if not lineas:
+        return []
+    en_utm = [LineString(np.c_[t.a_utm(*np.asarray(l.coords, float).T)]) for l in lineas]
+    zona = unary_union([l.buffer(SERVIDUMBRE_ANCHO_M, cap_style="flat") for l in en_utm])
+    zona = zona.buffer(SERVIDUMBRE_CIERRE_M).buffer(-SERVIDUMBRE_CIERRE_M)
+    return [pieza.simplify(SERVIDUMBRE_SIMPLIFICAR_M) for pieza in getattr(zona, "geoms", [zona])
+            if pieza.area >= SERVIDUMBRE_AREA_MINIMA_M2]
 
 
 def _orden(numero: str) -> tuple:
