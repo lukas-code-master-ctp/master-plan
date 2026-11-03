@@ -1,6 +1,6 @@
 /** Orquestador: conecta datos, visor, mapa, ficha y filtros. */
 import { rumboCardinal, rumboCorto } from './camara.js';
-import { Catalogo, ErrorDeDatos, buscar, conteoPorEstado, filtrar, romano } from './datos.js';
+import { Catalogo, ErrorDeDatos, buscar, conteoPorEstado, esSoloGeo, filtrar, romano } from './datos.js';
 import { aplicarMarca, ponerLogo } from './marca.js';
 import { mensajeWhatsapp, renderizarFicha } from './ficha.js';
 import { agruparParcelas, resumenDeGrupo } from './grupos.js';
@@ -60,6 +60,8 @@ arrancar().catch(mostrarErrorFatal);
 async function arrancar() {
   estado.catalogo = await Catalogo.cargar();
   const catalogo = estado.catalogo;
+  // replace y no assign: volver atrás desde el PDF no tiene que caer de nuevo acá.
+  if (esSoloGeo(catalogo)) { location.replace('geo.pdf'); return; }
 
   $('#marca-nombre').textContent = catalogo.meta.proyecto;
   $('#marca-etapa').textContent = catalogo.meta.etapa ?? '';

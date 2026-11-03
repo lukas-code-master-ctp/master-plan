@@ -49,6 +49,17 @@ def test_sin_imagenes_se_pasa_como_bandera(comandos, tmp_path):
     assert "--sin-imagenes" not in comandos.construir(proyecto_de_prueba(tmp_path))
 
 
+def test_sin_fotos_se_construye_solo_el_geo(comandos, tmp_path):
+    proyecto = proyecto_de_prueba(tmp_path)
+    (proyecto.fuentes).mkdir()
+    (proyecto.fuentes / "loteo.kmz").write_bytes(b"kmz")
+
+    assert "--solo-geo" in comandos.construir(proyecto)
+    (proyecto.fuentes / "POSICION 01").mkdir()
+    (proyecto.fuentes / "POSICION 01" / "DJI_0001.JPG").write_bytes(b"jpg")
+    assert "--solo-geo" not in comandos.construir(proyecto)
+
+
 def test_publicar_recibe_el_nombre_del_proyecto_del_hosting(comandos, tmp_path):
     """No se deduce del slug en el script: se lo dice la consola, que es quien lo
     tiene guardado. Así un loteo ya publicado conserva su nombre."""

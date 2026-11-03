@@ -161,6 +161,27 @@ def test_subir_sin_kmz_avisa(base, registro, ana):
         ana.subir("x", [Subida("fotos/a.JPG", b"jpg")])
 
 
+def test_el_geo_en_pdf_de_arcmap_se_sube_como_el_kmz_del_loteo(base, registro, ana):
+    """Sin KMZ ni vuelo: el geo con coordenadas trae los lotes, y el loteo queda solo geo."""
+    from pipeline.tests.test_geopdf import geo_pdf
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "Don Danilo", nota_cobro="ok")
+
+    proyecto = ana.subir("don-danilo", [Subida("GEO DON DANILO.pdf", geo_pdf())])
+
+    assert proyecto.fuentes_encontradas()["kmz"] == "GEO DON DANILO.kmz"
+    assert proyecto.sin_vuelo
+    ana.subir("don-danilo", [Subida("POSICION 01/DJI_0001.JPG", b"jpg")])
+    assert not ana.ver("don-danilo").sin_vuelo
+
+
+def test_un_pdf_sin_coordenadas_no_cuenta_como_kmz(base, registro, ana):
+    from pipeline.tests.test_geopdf import geo_pdf
+    registro.habilitar(id_de(base, "ana@losrobles.cl"), "X", nota_cobro="ok")
+
+    with pytest.raises(ValueError, match="KMZ"):
+        ana.subir("x", [Subida("plano.pdf", geo_pdf(coordenadas=False))])
+
+
 def test_no_se_puede_subir_a_un_loteo_que_no_es_suyo(base, registro, ana, luis):
     registro.habilitar(id_de(base, "ana@losrobles.cl"), "De Ana", nota_cobro="ok")
 

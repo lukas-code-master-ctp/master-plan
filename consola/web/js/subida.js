@@ -9,6 +9,8 @@
 export const UTILES = /\.(kmz|jpe?g|xlsx|csv|json)$/i;
 export const esKmz = (ruta) => /\.kmz$/i.test(ruta);
 export const esFoto = (ruta) => /\.jpe?g$/i.test(ruta);
+/** El geo en PDF de ArcMap: si trae coordenadas, el servidor saca de ahí el KMZ. */
+export const esGeoPdf = (ruta) => /\.pdf$/i.test(ruta);
 export const esPlanilla = (ruta) => /\.(xlsx|csv)$/i.test(ruta);
 
 /** Quita el nombre de la carpeta que se eligió: dentro del proyecto no aporta. */
@@ -69,8 +71,9 @@ export const megas = (lista) => lista.reduce((total, { archivo }) => total + arc
 // rechaza los de más de 512 MB (MAX_CUERPO_MB en consola/app.py).
 const TANDA_MB = 256;
 
-// El KMZ primero: la subida exige que el loteo ya lo tenga. Después lo chico.
-const prioridad = ({ ruta }) => (esKmz(ruta) ? 0 : esFoto(ruta) ? 2 : 1);
+// El KMZ (o el geo del que sale) primero: la subida exige que el loteo ya lo tenga.
+// Después lo chico.
+const prioridad = ({ ruta }) => (esKmz(ruta) || esGeoPdf(ruta) ? 0 : esFoto(ruta) ? 2 : 1);
 
 /**
  * Los archivos repartidos en tandas de hasta `topeMb`, con el KMZ en la primera.

@@ -47,6 +47,10 @@ class ComandosDePrueba:
         self.pedidos.append(("calce", proyecto.slug, None))
         return self._guion(f"calce de {proyecto.slug}")
 
+    def geo(self, proyecto):
+        self.pedidos.append(("geo", proyecto.slug, None))
+        return self._guion(f"geo de {proyecto.slug}")
+
     def digitalizar_carpeta(self, carpeta):
         """Un KMZ de Mis KMZ: la carpeta se llama como su slug. Con tildes y símbolos:
         el avance del plano los trae."""
@@ -223,6 +227,20 @@ def test_construir_lanza_el_pipeline_y_deja_ver_el_avance(entorno, tmp_path):
     # de publicar, y pedirlo aparte se olvida.
     assert trabajo["lineas"] == ["construyendo loteo", "calce de loteo"]
     assert comandos.pedidos == [("construir", "loteo", True), ("calce", "loteo", None)]
+
+
+def test_sin_vuelo_construir_deja_el_geo_en_vez_del_calce(entorno, tmp_path):
+    """Un loteo sin panorámicas no tiene fotos que calzar: su sitio es el geo."""
+    cliente, _, comandos = entorno
+    carpeta = carpeta_de_loteo(tmp_path)
+    (carpeta / "fotos" / "a.JPG").unlink()
+    cliente.post("/api/proyectos/vincular", json={"ruta": str(carpeta)})
+
+    respuesta = cliente.post("/api/proyectos/loteo/construir", json={})
+
+    assert esperar_trabajo(cliente, respuesta.json()["id"])["lineas"] == [
+        "construyendo loteo", "geo de loteo"]
+    assert ("calce", "loteo", None) not in comandos.pedidos
 
 
 def test_las_lineas_se_piden_por_tramos(entorno, tmp_path):

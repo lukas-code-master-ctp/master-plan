@@ -97,7 +97,9 @@ export function meta(proyecto) {
   const hallado = proyecto.fuentes_encontradas;
   const textos = [];
   if (proyecto.etapa) textos.push(proyecto.etapa);
-  textos.push(`${hallado.panoramicas} panorámicas · ${hallado.megas} MB`);
+  textos.push(hallado.panoramicas || !hallado.kmz
+    ? `${hallado.panoramicas} panorámicas · ${hallado.megas} MB`
+    : 'Sin vuelo: solo el geo');
   textos.push(hallado.planilla ? `Planilla ${hallado.planilla}` : proyecto.con_crm ? 'Precios del CRM' : 'Sin planilla');
   if (proyecto.construido && proyecto.resumen.generado) textos.push(`Construido el ${fecha(proyecto.resumen.generado)}`);
   return textos.map((texto) => {

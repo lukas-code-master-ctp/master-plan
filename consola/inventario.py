@@ -33,8 +33,9 @@ def poner_al_dia(proyecto: Proyecto) -> Resultado:
     if not proyecto.construido:
         raise ValueError("todavía no está construido")
     try:
+        # Los estados no miran las fotos: un loteo solo geo no tiene.
         fuentes = config.descubrir_fuentes(proyecto.fuentes, crm=proyecto.crm,
-                                           sin_crm=proyecto.crm is None)
+                                           sin_crm=proyecto.crm is None, sin_panoramas=True)
     except FileNotFoundError as error:
         raise ValueError(str(error)) from error
     datos = config.cargar_proyecto(proyecto.fuentes)

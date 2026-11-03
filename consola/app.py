@@ -577,10 +577,12 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         # inventario por debajo a la que está leyendo.
         aviso = (None if trabajos.corriendo(slug)
                  else sincronizar_antes_de_construir(cierra, conexiones, proyecto))
-        pasos = [comandos.construir(proyecto, sin_imagenes=sin_imagenes),
-                 # El control de calce va pegado a la construcción: es lo que hay
-                 # que mirar antes de publicar, y pedirlo aparte se olvida.
-                 comandos.control_de_calce(proyecto)]
+        pasos = [comandos.construir(proyecto, sin_imagenes=sin_imagenes)]
+        # El control de calce va pegado a la construcción: es lo que hay que mirar
+        # antes de publicar, y pedirlo aparte se olvida. Sin vuelo no hay fotos que calzar.
+        # Sin vuelo, en cambio, el sitio es el geo: queda hecho para la vista previa.
+        pasos.append(comandos.geo(proyecto) if proyecto.sin_vuelo
+                     else comandos.control_de_calce(proyecto))
         al_terminar = _aplicar_diseno(mios, disenos, slug)
         accion = "construir"
         # Con `publicar`, un loteo que ya está en línea queda al día en el sitio

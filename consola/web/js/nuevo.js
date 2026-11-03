@@ -14,7 +14,7 @@ import { opcionesDeDiseno } from './disenos.js';
 import { elegirParaNuevo, estadoDeCierra } from './cierra.js';
 import { comoInventario } from './inventario.js';
 import { cuantosLotes, terminados } from './kmzs.js';
-import { desdeEntrada, esFoto, esKmz, esPlanilla, megas, soltadero, subir } from './subida.js';
+import { desdeEntrada, esFoto, esGeoPdf, esKmz, esPlanilla, megas, soltadero, subir } from './subida.js';
 
 // `mio`: el slug de un KMZ de Mis KMZ elegido en vez de subir el archivo.
 const eleccion = { kmz: null, mio: '', fotos: [], inventario: null, cierra: null, fuente: 'planilla' };
@@ -135,7 +135,8 @@ function opcionesDeMisKmz(select, listos, elegido) {
  */
 function tomar(encontrados) {
   const fotos = encontrados.filter(({ ruta }) => esFoto(ruta));
-  const kmz = encontrados.find(({ ruta }) => esKmz(ruta));
+  // Un KMZ le gana al geo en PDF: de un PDF no se sabe si trae coordenadas hasta subirlo.
+  const kmz = encontrados.find(({ ruta }) => esKmz(ruta)) ?? encontrados.find(({ ruta }) => esGeoPdf(ruta));
   const planilla = encontrados.find(({ ruta }) => esPlanilla(ruta) && !ruta.split('/').pop().startsWith('~$'));
   // Con uno de Mis KMZ elegido, el KMZ que traiga la carpeta no lo pisa.
   if (kmz && !eleccion.mio) eleccion.kmz = { archivo: kmz.archivo, ruta: kmz.archivo.name };
@@ -152,10 +153,10 @@ function pintar() {
     $(`#texto-${caja}`).textContent = texto;
     $(`#caja-${caja}`).classList.toggle('archivo--lleno', lleno);
   };
-  marcar('kmz', eleccion.kmz ? eleccion.kmz.archivo.name : 'Subir el plano (.kmz)', Boolean(eleccion.kmz));
+  marcar('kmz', eleccion.kmz ? eleccion.kmz.archivo.name : 'Subir el plano (.kmz o el geo en PDF)', Boolean(eleccion.kmz));
   marcar('fotos', eleccion.fotos.length
     ? `${eleccion.fotos.length} panorámicas · ${megas(eleccion.fotos).toFixed(0)} MB`
-    : 'Arrastra la carpeta del vuelo o elige las fotos', eleccion.fotos.length > 0);
+    : 'Arrastra la carpeta del vuelo o elige las fotos (sin fotos, solo el geo)', eleccion.fotos.length > 0);
   // Inventario: o una planilla, o lo de Cierra. Las dos a la vez se pisarían.
   $('#nuevo-fuente').hidden = !cierra.disponible;
   const desdeCierra = cierra.disponible && eleccion.fuente === 'cierra';
@@ -196,10 +197,10 @@ function faltante() {
       : 'Conecta Cierra en Configuración, o cambia a "Subir planilla".', '#nuevo-fuente button'];
   }
   if (!eleccion.kmz && !eleccion.mio) {
-    return ['Falta el KMZ del loteo: es el plano que se dibuja sobre las fotos. Súbelo o elige uno de Mis KMZ.',
+    return ['Falta el KMZ del loteo: es el plano que se dibuja sobre las fotos. Súbelo (o el geo en PDF de ArcMap) o elige uno de Mis KMZ.',
       $('#nuevo-mio-caja').hidden ? '#nuevo-kmz' : '#nuevo-mio'];
   }
-  if (!eleccion.fotos.length) return ['Faltan las panorámicas del dron.', '#nuevo-fotos'];
+  // Sin panorámicas no falta nada: el loteo sale solo con el geo pintado con las ventas.
   // El servidor lo rechaza igual, pero después de recibir todo: mejor decirlo
   // antes de mandar un giga.
   const tope = estado.sesion?.limites?.megas_por_loteo;
