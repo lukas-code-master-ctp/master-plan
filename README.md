@@ -565,6 +565,14 @@ altura del GPS. En Fundo Atalaya las líneas del KMZ eran deslindes que en el po
 no se ven; el punto III eligió el suelo 73 m más arriba y, repartido a los tres
 puntos, el loteo quedaba estirado hacia afuera con las parcelas encima de la casa.
 
+Cuando ninguna vista calibra con los caminos (o la única se descartó), queda el giro:
+el rumbo sale del sol, y una nube pegada al sol lo corre. Las vistas niveladas se
+cruzan de a pares, de ida y de vuelta, y un par vale solo si los dos giros salen
+opuestos (±0,3°). De ese par, la del sol peor medido (más error de elevación) toma
+el giro de la otra; el desnivel y la posición no se tocan, porque el sol no dice nada
+de ellos. En Fundo Atalaya el sol del punto I salió 1,2° corrido y su dibujo, 2° girado
+(30 m en la casa del fundo); cruzado con el III, que tenía el sol a 0,5°, queda a 0,2°.
+
 ## El KMZ
 
 Llega de dos formas y las dos sirven:
