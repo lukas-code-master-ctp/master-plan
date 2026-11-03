@@ -36,6 +36,8 @@ DISTANCIA_MAXIMA_ETIQUETA_M = 150.0
 # esta distancia el extremo se pega a la línea vecina; más allá es un hueco real y
 # los lotes quedan fusionados.
 TOLERANCIA_RED_M = 0.5
+# Cuánto se pasa de la otra línea un extremo pegado (ver _pasado).
+SOBREPASO_M = 0.05
 
 # Franja alrededor del contorno de un lote dentro de la cual una línea cuenta como
 # borde suyo, para decidir de qué color (etapa) es.
@@ -481,9 +483,25 @@ def _pegar_extremos(lineas: list[LineString]) -> list[LineString]:
             cercana = min(vecinas, key=lambda j: lineas[j].distance(punta))
             distancia = lineas[cercana].distance(punta)
             if 0 < distancia <= TOLERANCIA_RED_M:
-                puntos[extremo] = nearest_points(lineas[cercana], punta)[0].coords[0]
+                puntos[extremo] = _pasado(puntos[extremo - 1 if extremo else 1],
+                                          nearest_points(lineas[cercana], punta)[0].coords[0])
         pegadas.append(LineString(puntos))
     return pegadas
+
+
+def _pasado(desde: tuple[float, float], hasta: tuple[float, float]) -> tuple[float, float]:
+    """`hasta`, corrido un poco más allá en la dirección desde `desde`.
+
+    El punto más cercano sobre la otra línea cae a una millonésima de ella, no
+    encima, y la red no corta ahí: el deslinde queda colgando y los dos lotes que
+    separa salen como uno solo, sin número (en Fundo Atalaya, 87 y 88, 53 y 59,
+    92 y 95, 25 y 26, 28 y 29). Pasándose unos centímetros la cruza de verdad, y
+    la punta que sobra no encierra nada."""
+    dx, dy = hasta[0] - desde[0], hasta[1] - desde[1]
+    largo = math.hypot(dx, dy)
+    if largo < 1e-9:
+        return hasta
+    return hasta[0] + dx / largo * SOBREPASO_M, hasta[1] + dy / largo * SOBREPASO_M
 
 
 def _color_dominante(cara: Polygon, bordes: list[tuple[LineString, str | None]]) -> str | None:
