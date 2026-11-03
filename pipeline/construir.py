@@ -820,14 +820,20 @@ def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
     zona = (min(p[0] for p in puntos), min(p[1] for p in puntos),
             max(p[0] for p in puntos), max(p[1] for p in puntos))
     comun = statistics.median(v.desnivel for _, _, v in buenas)
+    cruces = {}
+    for panorama, _, vista in vistas:
+        if vista.id in pendientes:
+            modelo = terreno.modelo_para_vista(relieve, vista, despegue_de(vista)) if relieve else None
+            cruces[vista.id] = cruce.calibrar_contra(vista, cruce.cargar_panorama(panorama.ruta), modelo,
+                                                     referencia, imagen_ref, modelo_ref, zona,
+                                                     inclinaciones[vista.id])
+    if len(buenas) == 1 and not any(r.ajuste for r in cruces.values()):
+        return _sin_confirmar(vistas, ajustes, inclinaciones, referencia, cruces, avisos)
     salida = []
     for panorama, rumbo, vista in vistas:
         if vista.id in pendientes:
             tope = ajustes[vista.id].tope
-            modelo = terreno.modelo_para_vista(relieve, vista, despegue_de(vista)) if relieve else None
-            resultado = cruce.calibrar_contra(vista, cruce.cargar_panorama(panorama.ruta), modelo,
-                                              referencia, imagen_ref, modelo_ref, zona,
-                                              inclinaciones[vista.id])
+            resultado = cruces[vista.id]
             if resultado.ajuste:
                 ajuste = resultado.ajuste
                 de, dn = resultado.corrimiento
@@ -844,6 +850,35 @@ def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
                               f"vistas ({comun:+.1f} m), sin giro. Revisa su calce.")
                 vista = aplicar(vista, ajuste)
             ajustes[vista.id] = ajuste
+        salida.append((panorama, rumbo, vista))
+    return salida
+
+
+def _sin_confirmar(vistas: list, ajustes: dict[str, Ajuste],
+                   inclinaciones: dict[str, dict[float, tuple[float, float]]],
+                   referencia: Vista, cruces: dict, avisos: Avisos) -> list:
+    """Una sola vista calibró con los caminos y ninguna otra calza contra ella: su
+    ajuste no lo confirma nadie, y repartirlo es peor que no ajustar.
+
+    En Fundo Atalaya las líneas del KMZ eran deslindes que en el potrero no existen.
+    El punto III buscó píxeles claros y eligió +73 m (el suelo 73 m más arriba), los
+    otros dos se fueron al tope y tampoco calzaron contra él, y al tomar su desnivel
+    todo el loteo quedaba estirado hacia afuera: contra la casa del fundo, ubicada
+    cruzando los rumbos de las tres fotos, de 3° a 10° corrido. Con el desnivel del
+    GPS (cero) queda a 0,5°–1° en dos puntos y a 4,5° en el más cercano.
+    Todas quedan niveladas con el horizonte, sin giro ni desnivel."""
+    propio = ajustes[referencia.id]
+    avisos.añadir(f"{referencia.id}: el ajuste fino con los caminos (desnivel {propio.desnivel:+.1f} m, "
+                  f"giro {propio.giro:+.2f}°) no lo confirma ninguna otra vista ("
+                  + "; ".join(f"{v}: {r.motivo}" for v, r in sorted(cruces.items()))
+                  + "); se descarta y todas quedan con la altura del GPS. Revisa el calce.")
+    salida = []
+    for panorama, rumbo, vista in vistas:
+        if vista.id in inclinaciones and (vista.id in cruces or vista.id == referencia.id):
+            hecho = ajustes.get(vista.id, Ajuste())
+            ajuste = replace(ajuste_a_desnivel(vista, inclinaciones[vista.id], 0.0), giro=-vista.giro)
+            vista = aplicar(vista, ajuste)
+            ajustes[vista.id] = replace(Ajuste(), tope=hecho.tope)
         salida.append((panorama, rumbo, vista))
     return salida
 

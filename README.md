@@ -558,6 +558,12 @@ de Quillón los caminos lo dejaban 60 m corrido respecto de Google Earth; el cru
 el punto I encontró el dron 20 m más al norte de lo que decía su GPS y lo deja a 3-4 m. Si el cruce tampoco resulta, la vista
 toma el desnivel de las que sí calibraron.
 
+Salvo cuando calibró una sola y ninguna otra calza contra ella: entonces su ajuste no
+lo confirma nadie y se descarta, y todas quedan niveladas con el horizonte y con la
+altura del GPS. En Fundo Atalaya las líneas del KMZ eran deslindes que en el potrero
+no se ven; el punto III eligió el suelo 73 m más arriba y, repartido a los tres
+puntos, el loteo quedaba estirado hacia afuera con las parcelas encima de la casa.
+
 ## El KMZ
 
 Llega de dos formas y las dos sirven:

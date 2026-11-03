@@ -324,3 +324,64 @@ def test_sin_vuelo_y_solo_geo_arma_las_parcelas_sin_vistas(tmp_path):
         "inicial": None, "vistas": []}
     # Lleva el visor igual: es el que manda al geo, y republicar lo pone al día.
     assert (salida.web / "index.html").is_file()
+
+
+# --- un ajuste con los caminos que ninguna otra vista confirma ------------------
+
+from types import SimpleNamespace
+
+from pipeline import construir
+from pipeline.calibracion import Ajuste
+from pipeline.cruce import Cruce
+from pipeline.proyeccion import Vista
+
+INCLINACIONES_CRUCE = {-80.0: (0.0, 0.0), 0.0: (0.3, 0.1), 80.0: (0.6, 0.2)}
+
+
+def _tres_vistas(desnivel_referencia: float):
+    def vista(nombre, posicion, desnivel=0.0, giro=0.0):
+        return Vista(nombre, posicion, -71.66, -33.73, 400.0, 480.0, 0.0, giro=giro,
+                     inclinacion_este=0.3 + 0.3 * desnivel / 80.0,
+                     inclinacion_norte=0.1 + 0.1 * desnivel / 80.0, desnivel=desnivel)
+    panorama = SimpleNamespace(ruta="foto.JPG")
+    return [(panorama, None, vista("p01", 1)), (panorama, None, vista("p02", 2)),
+            (panorama, None, vista("p03", 3, desnivel_referencia, giro=-0.3))]
+
+
+def _cruzar(monkeypatch, cruces):
+    monkeypatch.setattr(construir.cruce, "cargar_panorama", lambda ruta: None)
+    monkeypatch.setattr(construir.cruce, "calibrar_contra",
+                        lambda vista, *resto: cruces[vista.id])
+    monkeypatch.setattr(construir.terreno, "modelo_para_vista", lambda *a: None)
+    ajustes = {"p01": Ajuste(tope="giro +1.5°"), "p02": Ajuste(tope="giro +1.5°"),
+               "p03": Ajuste(giro=-0.3, desnivel=73.0, puntaje_antes=1.0, puntaje_despues=1.44)}
+    avisos = construir.Avisos([])
+    vistas = construir._cruzar_vistas(_tres_vistas(73.0), ajustes,
+                                      {v: INCLINACIONES_CRUCE for v in ajustes}, object(),
+                                      lambda v: (-71.66, -33.73), [[(-71.66, -33.73), (-71.65, -33.72)]],
+                                      avisos)
+    return {v.id: v for _, _, v in vistas}, avisos
+
+
+def test_un_desnivel_que_nadie_confirma_no_se_reparte(monkeypatch):
+    """Fundo Atalaya: los deslindes del KMZ no se ven en el potrero, el punto III
+    eligió +73 m y los otros dos no calzaron contra él. Todo queda sin desnivel."""
+    vistas, avisos = _cruzar(monkeypatch, {"p01": Cruce(None, motivo="quedó en el borde de lo probado"),
+                                           "p02": Cruce(None, 37, motivo="solo 37 coincidencias")})
+
+    for vista in vistas.values():
+        assert vista.desnivel == pytest.approx(0.0)
+        assert vista.giro == pytest.approx(0.0)
+        assert (vista.inclinacion_este, vista.inclinacion_norte) == pytest.approx((0.3, 0.1))
+    assert any("no lo confirma ninguna otra vista" in a for a in avisos.lineas)
+
+
+def test_si_otra_vista_calza_contra_la_referencia_su_desnivel_vale(monkeypatch):
+    """Lomas de Quillón: el punto II calzó contra el I, así que el I queda como estaba."""
+    vistas, _ = _cruzar(monkeypatch, {
+        "p01": Cruce(Ajuste(desnivel=70.0), 120, 30.0, 4.0),
+        "p02": Cruce(None, 37, motivo="solo 37 coincidencias")})
+
+    assert vistas["p03"].desnivel == pytest.approx(73.0)
+    assert vistas["p01"].desnivel == pytest.approx(70.0)
+    assert vistas["p02"].desnivel == pytest.approx(73.0)
