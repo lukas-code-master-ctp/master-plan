@@ -801,24 +801,25 @@ def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
     """Las vistas niveladas cuya búsqueda con los caminos quedó en el tope se calibran
     contra la vista que mejor calibró (ver cruce.py). Si eso tampoco resulta, toman
     el desnivel de las que calibraron: sale casi todo de la cota del despegue, que
-    comparten (ver `calibracion.ajuste_a_desnivel`)."""
+    comparten (ver `calibracion.ajuste_a_desnivel`). Si ninguna calibró, solo el giro
+    se ajusta, cruzándolas entre ellas (ver `_rumbo_por_cruces`)."""
     pendientes = [v.id for _, _, v in vistas
                   if v.id in inclinaciones and ajustes.get(v.id, Ajuste()).tope]
     buenas = [(ajustes[v.id].mejora, p, v) for p, _, v in vistas
               if v.id in inclinaciones and ajustes.get(v.id, Ajuste()).aplicado]
     if not pendientes:
         return vistas
+    puntos = [p for linea in lineas for p in linea]
+    zona = (min(p[0] for p in puntos), min(p[1] for p in puntos),
+            max(p[0] for p in puntos), max(p[1] for p in puntos))
     if not buenas:
         for vista_id in pendientes:
             avisos.añadir(f"{vista_id}: el ajuste fino se fue al tope ({ajustes[vista_id].tope}) y "
                           f"se descartó; la vista queda con la pose de antes. Revisa su calce.")
-        return vistas
+        return _rumbo_por_cruces(vistas, pendientes, inclinaciones, relieve, despegue_de, zona, avisos)
     _, panorama_ref, referencia = max(buenas, key=lambda b: b[0])
     imagen_ref = cruce.cargar_panorama(panorama_ref.ruta)
     modelo_ref = terreno.modelo_para_vista(relieve, referencia, despegue_de(referencia)) if relieve else None
-    puntos = [p for linea in lineas for p in linea]
-    zona = (min(p[0] for p in puntos), min(p[1] for p in puntos),
-            max(p[0] for p in puntos), max(p[1] for p in puntos))
     comun = statistics.median(v.desnivel for _, _, v in buenas)
     cruces = {}
     for panorama, _, vista in vistas:
@@ -828,7 +829,9 @@ def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
                                                      referencia, imagen_ref, modelo_ref, zona,
                                                      inclinaciones[vista.id])
     if len(buenas) == 1 and not any(r.ajuste for r in cruces.values()):
-        return _sin_confirmar(vistas, ajustes, inclinaciones, referencia, cruces, avisos)
+        vistas = _sin_confirmar(vistas, ajustes, inclinaciones, referencia, cruces, avisos)
+        return _rumbo_por_cruces(vistas, [*cruces, referencia.id], inclinaciones, relieve,
+                                 despegue_de, zona, avisos)
     salida = []
     for panorama, rumbo, vista in vistas:
         if vista.id in pendientes:
@@ -879,6 +882,68 @@ def _sin_confirmar(vistas: list, ajustes: dict[str, Ajuste],
             ajuste = replace(ajuste_a_desnivel(vista, inclinaciones[vista.id], 0.0), giro=-vista.giro)
             vista = aplicar(vista, ajuste)
             ajustes[vista.id] = replace(Ajuste(), tope=hecho.tope)
+        salida.append((panorama, rumbo, vista))
+    return salida
+
+
+# Cuánto pueden diferir los giros de un cruce de ida y el de vuelta, que deberían ser
+# opuestos. En Fundo Atalaya los puntos I y III dieron +1,94° y -1,92°.
+SIMETRIA_GIRO_CRUCE = 0.3
+
+
+def _rumbo_por_cruces(vistas: list, candidatas: list[str],
+                      inclinaciones: dict[str, dict[float, tuple[float, float]]],
+                      relieve, despegue_de, zona, avisos: Avisos) -> list:
+    """Sin una vista calibrada con los caminos, el giro de cada vista se toma del cruce
+    con la que tiene el sol mejor medido.
+
+    El rumbo sale del sol, y el sol se mide peor cuando hay nubes pegadas a él: los
+    píxeles saturados de la nube se suman al disco y lo corren. En Fundo Atalaya el
+    sol del punto I salió 1,2° más alto de lo que estaba y su rumbo quedó ~2°
+    corrido (unos 30 m en la casa del fundo); el del punto III, a 0,5°, calzaba con
+    la casa. Cruzados, I y III dicen exactamente esos 2°.
+
+    Un cruce solo dice cuánto difieren dos vistas, no cuál está bien, y uno solo se
+    puede ir por el error del GPS (el punto I contra el II dio 2,9° con el dron
+    corrido 38 m). Por eso se cruzan de ida y de vuelta y se cree solo un par cuyos
+    giros salen opuestos. De ese par, la vista con el sol peor medido toma el giro;
+    el desnivel no, porque el sol no dice nada de la altura."""
+    sol = {v.id: r.error_elevacion for _, r, v in vistas
+           if v.id in candidatas and v.id in inclinaciones and r is not None}
+    if len(sol) < 2:
+        return vistas
+    por_id = {v.id: (p, v) for p, _, v in vistas}
+    cruces = {}
+    for ref in sorted(sol, key=sol.get):
+        panorama_ref, referencia = por_id[ref]
+        imagen_ref = cruce.cargar_panorama(panorama_ref.ruta)
+        modelo_ref = terreno.modelo_para_vista(relieve, referencia, despegue_de(referencia)) if relieve else None
+        for otra in sol:
+            if otra != ref:
+                panorama, vista = por_id[otra]
+                modelo = terreno.modelo_para_vista(relieve, vista, despegue_de(vista)) if relieve else None
+                cruces[otra, ref] = cruce.calibrar_contra(vista, cruce.cargar_panorama(panorama.ruta), modelo,
+                                                          referencia, imagen_ref, modelo_ref, zona,
+                                                          inclinaciones[otra])
+    giros = {}
+    for vista_id in sol:
+        # La que se corrige es la del sol peor medido; se queda con la mejor de sus pares.
+        for ref in sorted((r for r in sol if sol[r] < sol[vista_id]), key=sol.get):
+            ida, vuelta = cruces[vista_id, ref], cruces[ref, vista_id]
+            if (ida.ajuste and vuelta.ajuste
+                    and abs(ida.ajuste.giro + vuelta.ajuste.giro) <= SIMETRIA_GIRO_CRUCE):
+                giros[vista_id] = (ref, ida)
+                break
+    salida = []
+    for panorama, rumbo, vista in vistas:
+        if vista.id in giros:
+            ref, ida = giros[vista.id]
+            print(f"  {vista.id}: giro {ida.ajuste.giro:+.2f}° del cruce con {ref}, que tiene el sol "
+                  f"mejor medido ({sol[ref]:.1f}° contra {sol[vista.id]:.1f}°; de "
+                  f"{ida.error_antes_m:.0f} m a {ida.error_despues_m:.0f} m)")
+            avisos.añadir(f"{vista.id}: el rumbo del sol no calzaba con {ref}; toma {ida.ajuste.giro:+.2f}° "
+                          f"de giro del cruce con esa vista. Revisa su calce.")
+            vista = replace(vista, giro=round(vista.giro + ida.ajuste.giro, 3))
         salida.append((panorama, rumbo, vista))
     return salida
 

@@ -338,25 +338,35 @@ from pipeline.proyeccion import Vista
 INCLINACIONES_CRUCE = {-80.0: (0.0, 0.0), 0.0: (0.3, 0.1), 80.0: (0.6, 0.2)}
 
 
-def _tres_vistas(desnivel_referencia: float):
+def _tres_vistas(desnivel_referencia: float, soles=None):
     def vista(nombre, posicion, desnivel=0.0, giro=0.0):
         return Vista(nombre, posicion, -71.66, -33.73, 400.0, 480.0, 0.0, giro=giro,
                      inclinacion_este=0.3 + 0.3 * desnivel / 80.0,
                      inclinacion_norte=0.1 + 0.1 * desnivel / 80.0, desnivel=desnivel)
     panorama = SimpleNamespace(ruta="foto.JPG")
-    return [(panorama, None, vista("p01", 1)), (panorama, None, vista("p02", 2)),
-            (panorama, None, vista("p03", 3, desnivel_referencia, giro=-0.3))]
+    # El rumbo solo importa por el error de elevación del sol (ver _rumbo_por_cruces).
+    soles = soles or {}
+    rumbo = {v: SimpleNamespace(error_elevacion=e) for v, e in soles.items()}
+    return [(panorama, rumbo.get("p01"), vista("p01", 1)), (panorama, rumbo.get("p02"), vista("p02", 2)),
+            (panorama, rumbo.get("p03"), vista("p03", 3, desnivel_referencia, giro=-0.3))]
 
 
-def _cruzar(monkeypatch, cruces):
+def _cruzar(monkeypatch, cruces, ajustes=None, soles=None):
+    """`cruces` va de la vista, de (vista, referencia) o de (vista, referencia, desnivel
+    de la referencia) al resultado del cruce."""
+    def calibrar_contra(vista, panorama, cota, referencia, *resto):
+        for clave in ((vista.id, referencia.id, referencia.desnivel), (vista.id, referencia.id), vista.id):
+            if clave in cruces:
+                return cruces[clave]
+        return Cruce(None, motivo="no calza")
     monkeypatch.setattr(construir.cruce, "cargar_panorama", lambda ruta: None)
-    monkeypatch.setattr(construir.cruce, "calibrar_contra",
-                        lambda vista, *resto: cruces[vista.id])
+    monkeypatch.setattr(construir.cruce, "calibrar_contra", calibrar_contra)
     monkeypatch.setattr(construir.terreno, "modelo_para_vista", lambda *a: None)
-    ajustes = {"p01": Ajuste(tope="giro +1.5°"), "p02": Ajuste(tope="giro +1.5°"),
-               "p03": Ajuste(giro=-0.3, desnivel=73.0, puntaje_antes=1.0, puntaje_despues=1.44)}
+    ajustes = ajustes or {"p01": Ajuste(tope="giro +1.5°"), "p02": Ajuste(tope="giro +1.5°"),
+                          "p03": Ajuste(giro=-0.3, desnivel=73.0, puntaje_antes=1.0, puntaje_despues=1.44)}
     avisos = construir.Avisos([])
-    vistas = construir._cruzar_vistas(_tres_vistas(73.0), ajustes,
+    desnivel = 73.0 if ajustes["p03"].aplicado else 0.0
+    vistas = construir._cruzar_vistas(_tres_vistas(desnivel, soles), ajustes,
                                       {v: INCLINACIONES_CRUCE for v in ajustes}, object(),
                                       lambda v: (-71.66, -33.73), [[(-71.66, -33.73), (-71.65, -33.72)]],
                                       avisos)
@@ -385,3 +395,52 @@ def test_si_otra_vista_calza_contra_la_referencia_su_desnivel_vale(monkeypatch):
     assert vistas["p03"].desnivel == pytest.approx(73.0)
     assert vistas["p01"].desnivel == pytest.approx(70.0)
     assert vistas["p02"].desnivel == pytest.approx(73.0)
+
+
+TODAS_AL_TOPE = {"p01": Ajuste(tope="giro +1.5°"), "p02": Ajuste(tope="giro +1.5°"),
+                 "p03": Ajuste(tope="desnivel +80 m")}
+# Fundo Atalaya: el sol del punto I se midió 1,2° corrido, el del III 0,5° y el del II 0,1°.
+SOLES_ATALAYA = {"p01": 1.2, "p02": 0.1, "p03": 0.5}
+
+
+def _par(giro_ida, giro_vuelta):
+    return {("p01", "p03"): Cruce(Ajuste(giro=giro_ida, desnivel=-27.0), 240, 45.0, 2.0),
+            ("p03", "p01"): Cruce(Ajuste(giro=giro_vuelta, desnivel=26.0), 230, 48.0, 2.0)}
+
+
+def test_sin_caminos_el_giro_lo_pone_la_vista_con_el_sol_mejor_medido(monkeypatch):
+    """Fundo Atalaya con el despegue real: ninguna vista calibra con los caminos, I y
+    III se cruzan bien de ida y de vuelta, y el II no calza con nadie. El I, con el sol
+    peor medido, toma el giro; el desnivel no se toca."""
+    vistas, avisos = _cruzar(monkeypatch, _par(1.94, -1.92), TODAS_AL_TOPE, SOLES_ATALAYA)
+
+    assert vistas["p01"].giro == pytest.approx(1.94)
+    assert vistas["p01"].desnivel == pytest.approx(0.0)
+    assert vistas["p03"].giro == pytest.approx(-0.3)
+    assert vistas["p02"].giro == pytest.approx(0.0)
+    assert any("p01: el rumbo del sol no calzaba con p03" in a for a in avisos.lineas)
+
+
+def test_un_cruce_que_no_sale_igual_de_vuelta_no_se_cree(monkeypatch):
+    """El punto I contra el II dio 2,9° con el dron corrido 38 m, y el II contra el I no
+    calzó: ese giro no se aplica."""
+    cruces = _par(1.94, -1.0)
+    cruces[("p01", "p02")] = Cruce(Ajuste(giro=2.89), 243, 58.0, 5.0)
+    vistas, _ = _cruzar(monkeypatch, cruces, TODAS_AL_TOPE, SOLES_ATALAYA)
+
+    assert vistas["p01"].giro == pytest.approx(0.0)
+    assert vistas["p03"].giro == pytest.approx(-0.3)
+
+
+def test_tras_descartar_un_desnivel_sin_confirmar_tambien_se_cruzan(monkeypatch):
+    """Fundo Atalaya con el despegue supuesto: el +73 m del punto III se descarta y
+    después el I toma el giro del cruce con el III."""
+    cruces = _par(1.94, -1.92)
+    # Contra el III con +73 m no calza ninguna.
+    cruces[("p01", "p03", 73.0)] = Cruce(None, motivo="quedó en el borde de lo probado")
+    cruces["p02"] = Cruce(None, 37, motivo="solo 37 coincidencias")
+    vistas, _ = _cruzar(monkeypatch, cruces, soles=SOLES_ATALAYA)
+
+    assert vistas["p01"].giro == pytest.approx(1.94)
+    assert vistas["p03"].desnivel == pytest.approx(0.0)
+    assert vistas["p03"].giro == pytest.approx(0.0)
