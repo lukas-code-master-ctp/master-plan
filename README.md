@@ -524,7 +524,8 @@ cose caída uno o dos grados. Desde 500 m eso corre los lotes decenas de metros:
 Lomas de Quillón la foto venía 1,3° caída y el camino del KMZ quedaba 30–40 m al sur
 del real en el lado lejano del dron. `horizonte.py` calcula con el DEM dónde debería
 verse la línea del horizonte (cerros a pocos km y cordillera a 100–200 km, con la
-curvatura de la Tierra), busca en la foto el borde entre el cielo azul y la tierra, y
+curvatura de la Tierra, y el mar a cota 0 aunque el DEM traiga su fondo: en Fundo
+Atalaya, frente a Santo Domingo, el fondo inclinaba la foto 2,9°), busca en la foto el borde entre el cielo azul y la tierra, y
 ajusta las dos inclinaciones que los superponen. No usa el KMZ. El horizonte a menos
 de 2,5 km no cuenta (son árboles y casas que el DEM no tiene), y si no se distingue
 (nubes, bruma) la vista queda sin nivelar y lo dice. Queda en `vistas.json`

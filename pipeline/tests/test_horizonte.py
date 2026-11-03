@@ -126,3 +126,15 @@ def test_nivela_para_cada_desnivel():
     assert niveles[40.0].inclinacion_este == pytest.approx(0.6, abs=0.08)
     assert niveles[40.0].inclinacion_norte == pytest.approx(1.2, abs=0.08)
     assert niveles[0.0].aplicada
+
+
+def test_el_mar_cuenta_como_agua_y_no_como_fondo(tmp_path):
+    """El DEM trae el fondo del mar. Lo que se ve desde el dron es el agua a cota 0,
+    así que el horizonte sobre el mar es el de una llanura a cota 0."""
+    anillos = ((10, 150.0, 15000.0, 300.0), (8, 15000.0, 120000.0, 2000.0))
+    sobre_el_mar = perfil(-72.0, -36.0, 500.0, tmp_path / "mar",
+                          descarga=lambda url: png_terrarium(-1800.0), anillos=anillos)
+    sobre_tierra = perfil(-72.0, -36.0, 500.0, tmp_path / "tierra",
+                          descarga=lambda url: png_terrarium(0.0), anillos=anillos)
+
+    assert sobre_el_mar.elevacion == pytest.approx(sobre_tierra.elevacion, abs=0.01)

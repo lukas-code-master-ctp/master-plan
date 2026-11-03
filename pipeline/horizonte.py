@@ -111,7 +111,10 @@ def perfil(lon: float, lat: float, altura: float, cache: Path,
         distancias = np.arange(desde, hasta, paso)
         este = seno[:, None] * distancias[None, :]
         norte = coseno[:, None] * distancias[None, :]
-        cotas = modelo.cotas_en(lon + este / grado_lon, lat + norte / geo.METROS_POR_GRADO_LAT)
+        # El DEM trae el fondo del mar (frente a Santo Domingo, -1.800 m), pero lo que
+        # se ve es el agua: sin esto el horizonte del mar quedaba más abajo que el de
+        # tierra y la foto se inclinaba para seguirlo (Fundo Atalaya, 2,9° al este).
+        cotas = np.maximum(modelo.cotas_en(lon + este / grado_lon, lat + norte / geo.METROS_POR_GRADO_LAT), 0.0)
         # La Tierra se curva y el aire dobla un poco la luz hacia abajo.
         caida = distancias ** 2 / (2 * RADIO_TERRESTRE_M) * (1 - REFRACCION)
         elevaciones = np.degrees(np.arctan2(cotas - caida[None, :] - altura, distancias[None, :]))

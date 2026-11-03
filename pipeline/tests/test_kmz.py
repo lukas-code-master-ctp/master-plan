@@ -477,3 +477,22 @@ def test_un_estero_del_kmz_se_lee_aparte_y_no_parte_los_lotes(tmp_path):
 def test_que_nombres_cuentan_como_agua(nombre, es_agua):
     from pipeline.kmz import NOMBRE_DE_AGUA
     assert bool(NOMBRE_DE_AGUA.match(nombre)) is es_agua
+
+
+@pytest.mark.parametrize("pendiente", [0.05 + i * 0.0371 for i in range(14)])
+def test_una_divisoria_que_llega_a_un_borde_inclinado_separa_los_lotes(pendiente):
+    """Fundo Atalaya: la divisoria termina a décimas de milímetro de un borde en
+    diagonal. Pegada al punto más cercano quedaba a una millonésima, la red no
+    cortaba ahí y los dos lotes salían como uno solo sin número."""
+    import math
+    x = 70 + (pendiente - 0.05) / 0.0371 * 0.173
+    y = x * pendiente
+    largo = math.hypot(1, pendiente)
+    fin = desplazar(x - pendiente / largo * 0.0004, y + 1 / largo * 0.0004)
+    a, c = desplazar(0, 0), desplazar(140, 140 * pendiente)
+    d, f = desplazar(0, 90), desplazar(140, 90)
+    contenido = kml(linea([a, c]) + linea([c, f]) + linea([f, d]) + linea([d, a])
+                    + linea([desplazar(x, 90), fin])
+                    + punto("LOTE 1", desplazar(30, 60)) + punto("LOTE 2", desplazar(110, 75)))
+
+    assert {p.id for p in _parsear(contenido)} == {"1", "2"}
