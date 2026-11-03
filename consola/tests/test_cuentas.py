@@ -55,6 +55,9 @@ class ComandosDePrueba:
     def control_de_calce(self, proyecto):
         return [sys.executable, "-c", "print('ok')"]
 
+    def geo(self, proyecto):
+        return [sys.executable, "-c", "print('ok')"]
+
 
 def montar(tmp_path, http=None, local=True):
     base = Base(f"sqlite:///{tmp_path / 'consola.db'}")

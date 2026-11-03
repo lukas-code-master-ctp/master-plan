@@ -129,3 +129,11 @@ def test_no_quedan_temporales_de_la_portada(tmp_path):
     portada(salida)
 
     assert [p.name for p in salida.base.iterdir() if p.name.startswith(".")] == []
+
+
+def test_un_loteo_solo_geo_no_tiene_portada(tmp_path):
+    salida = config.Salida(tmp_path)
+    salida.datos.mkdir(parents=True)
+    (salida.datos / "vistas.json").write_text(json.dumps({"inicial": None, "vistas": []}))
+
+    assert portada(salida) is None

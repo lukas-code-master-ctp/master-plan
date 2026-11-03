@@ -48,9 +48,9 @@ def portada(salida: config.Salida) -> Path | None:
         imagen = _dibujar(salida, json.loads(vistas.read_text(encoding="utf-8")))
         imagen.save(temporal, "JPEG", quality=82, optimize=True, progressive=True)
         os.replace(temporal, destino)
-    except (FileNotFoundError, KeyError, ValueError, OSError):
-        # Una construcción a medias o sin imágenes (`--sin-imagenes`) no tiene
-        # de dónde sacar la portada. No es un error: la lista muestra un hueco.
+    except (FileNotFoundError, KeyError, IndexError, ValueError, OSError):
+        # Una construcción a medias, sin imágenes (`--sin-imagenes`) o sin vuelo
+        # (solo geo) no tiene de dónde sacar la portada. No es un error: la lista muestra un hueco.
         temporal.unlink(missing_ok=True)
         return None
     return destino

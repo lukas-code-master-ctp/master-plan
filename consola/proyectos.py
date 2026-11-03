@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
 
-from pipeline import config
+from pipeline import config, geopdf
 
 from . import planes
 from .acceso import Sesion
@@ -220,6 +220,14 @@ class Proyecto:
     @property
     def construido(self) -> bool:
         return (self.salida.datos / "parcelas.json").is_file()
+
+    @property
+    def sin_vuelo(self) -> bool:
+        """Sin panorámicas: se construye solo el geo (ver `pipeline.construir`)."""
+        if not self.fuentes.is_dir():
+            return True
+        return not any(ruta.suffix.lower() in EXTENSIONES_FOTO and not config.del_plano(ruta, self.fuentes)
+                       for ruta in self.fuentes.rglob("*"))
 
     def parcelas(self) -> list[dict]:
         """Las parcelas de la última construcción; ninguna si no se ha construido."""
@@ -467,9 +475,21 @@ class Vista:
         if len(llegados) == 1:
             for otro in set(config.INVENTARIOS) - llegados:
                 (carpeta / otro).unlink(missing_ok=True)
+        # Un geo en PDF con coordenadas (el de ArcMap) trae los lotes: se deja como
+        # el KMZ del loteo. Un PDF sin coordenadas se queda ahí y no cuenta.
+        de_geos = []
+        for _, destino in destinos:
+            if destino.suffix.lower() == ".pdf" and geopdf.es_geopdf(destino):
+                kmz_del_geo = destino.with_suffix(".kmz")
+                try:
+                    geopdf.a_kmz(destino, kmz_del_geo, nombre=proyecto.nombre)
+                except ValueError as error:
+                    raise ValueError(f"no se pudieron leer los lotes de {destino.name}: {error}") from error
+                de_geos.append(kmz_del_geo)
         # Lo mismo con el KMZ: con dos en las fuentes, construir toma el primero por
         # orden alfabético sin avisar. El anterior se aparta como en `poner_kmz`.
         kmz_nuevos = {destino.resolve() for _, destino in destinos if destino.suffix.lower() == ".kmz"}
+        kmz_nuevos |= {kmz.resolve() for kmz in de_geos}
         if kmz_nuevos:
             for viejo in config.kmz_en(carpeta):
                 if viejo.resolve() not in kmz_nuevos:
@@ -477,7 +497,7 @@ class Vista:
         # El KMZ puede venir en esta tanda o de una anterior; lo que no puede es
         # faltar, porque sin él no hay nada que proyectar.
         if not any(carpeta.rglob("*.kmz")):
-            raise ValueError("falta el KMZ del loteo entre los archivos")
+            raise ValueError("falta el KMZ del loteo (o su geo en PDF con coordenadas) entre los archivos")
         return self.ver(slug)
 
     def usar_kmz(self, slug: str, origen: Path, confirmar_reemplazo: bool = False) -> list[str]:

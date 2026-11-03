@@ -25,6 +25,10 @@ class Comandos:
         orden += ["--crm", str(proyecto.crm)] if proyecto.crm else ["--sin-crm"]
         if sin_imagenes:
             orden.append("--sin-imagenes")
+        # Sin fotos no es un error: es un loteo sin vuelo de dron, que igual tiene
+        # su geo pintado con las ventas.
+        if proyecto.sin_vuelo:
+            orden.append("--solo-geo")
         return orden
 
     def control_de_calce(self, proyecto) -> list[str]:

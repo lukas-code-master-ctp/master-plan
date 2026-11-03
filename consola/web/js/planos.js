@@ -236,9 +236,9 @@ function cifrasDe(proyecto) {
   };
   if (!proyecto.construido) {
     const hallado = proyecto.fuentes_encontradas;
-    return [dato('Vuelo', hallado.kmz
-      ? `${hallado.panoramicas} panorámicas · ${hallado.megas} MB`
-      : 'sin subir')];
+    return [dato('Vuelo', !hallado.kmz ? 'sin subir'
+      : hallado.panoramicas ? `${hallado.panoramicas} panorámicas · ${hallado.megas} MB`
+        : 'sin vuelo, solo el geo')];
   }
   const desde = resumen.precio_desde;
   return [

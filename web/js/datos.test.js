@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Catalogo, conteoPorEstado, filtrar, romano, textoReferencia, lejaniaReferencia } from './datos.js';
+import { Catalogo, conteoPorEstado, esSoloGeo, filtrar, romano, textoReferencia, lejaniaReferencia } from './datos.js';
 
 const vista = (id, posicion, altura_m) => ({ id, posicion, altura_m, lat: -35, lon: -72 });
 
@@ -126,4 +126,12 @@ test('elegir una etapa deja solo sus parcelas, y sin etapa pasan todas', () => {
   assert.deepEqual([...filtrar(parcelas, { ...base, etapa: 1 })], ['1-1', '1-2']);
   assert.deepEqual([...filtrar(parcelas, { ...base, etapa: 1, estados: new Set(['disponible']) })], ['1-1']);
   assert.equal(filtrar(parcelas, base).size, 3);
+});
+
+test('un loteo sin vistas 360 es solo geo', () => {
+  const sinVistas = new Catalogo({ parcelas: [], solo_geo: true }, { vistas: [] });
+  assert.equal(esSoloGeo(sinVistas), true);
+  assert.equal(esSoloGeo(new Catalogo({ parcelas: [] }, { vistas: [] })), true);
+  const conVistas = new Catalogo({ parcelas: [] }, { vistas: [{ id: 'P1' }], inicial: 'P1' });
+  assert.equal(esSoloGeo(conVistas), false);
 });

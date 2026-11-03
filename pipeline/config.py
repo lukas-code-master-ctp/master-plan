@@ -73,13 +73,16 @@ class Fuentes:
 
 
 def descubrir_fuentes(carpeta: Path, crm: Path | None = None,
-                      sin_crm: bool = False) -> Fuentes:
+                      sin_crm: bool = False, sin_panoramas: bool = False) -> Fuentes:
     """Encuentra el KMZ, la planilla y las panorámicas dentro de una carpeta.
 
     Se descubren por tipo y no por nombre: cada proyecto llega con los archivos
     llamados como los haya dejado el topógrafo o el piloto, y no tiene sentido
     editar código para eso. La planilla es opcional: sin ella los datos comerciales
     salen del CRM, y sin CRM las parcelas quedan como no disponibles.
+
+    Con `sin_panoramas` (un loteo solo geo, o lo que no mira las fotos) que no haya
+    panorámicas no es un error: `panoramas` queda en la misma carpeta, sin fotos.
     """
     carpeta = Path(carpeta)
     if not carpeta.is_dir():
@@ -90,7 +93,7 @@ def descubrir_fuentes(carpeta: Path, crm: Path | None = None,
     csv_crm = None if sin_crm else (Path(crm) if crm else csv_del_crm())
     return Fuentes(
         kmz=_unico(carpeta, "*.kmz", "el KMZ del loteo"),
-        panoramas=_carpeta_de_panoramas(carpeta),
+        panoramas=_carpeta_de_panoramas(carpeta, opcional=sin_panoramas),
         excel=planilla_en(carpeta),
         crm=csv_crm if csv_crm and Path(csv_crm).is_file() else None,
     )
@@ -168,13 +171,15 @@ def _opcional(carpeta: Path, patron: str) -> Path | None:
     return encontrados[0] if encontrados else None
 
 
-def _carpeta_de_panoramas(carpeta: Path) -> Path:
+def _carpeta_de_panoramas(carpeta: Path, opcional: bool = False) -> Path:
     """La carpeta que contiene las fotos. Las panorámicas suelen venir separadas
     por posición de vuelo, así que se toma el ancestro común de todas."""
     fotos = [p for p in carpeta.rglob("*")
              if p.suffix.lower() in (".jpg", ".jpeg") and not _es_nuestro(p)
              and not del_plano(p, carpeta)]
     if not fotos:
+        if opcional:
+            return carpeta
         raise FileNotFoundError(f"no encontré panorámicas (.jpg) dentro de {carpeta}")
 
     comun = fotos[0].parent

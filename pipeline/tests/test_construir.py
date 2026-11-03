@@ -292,3 +292,35 @@ def test_avisa_la_foto_que_no_esta_y_el_despegue_al_reves(tmp_path):
 
     assert any("al revés" in linea for linea in avisos.lineas)
     assert any("DJI_9999_D" in linea and "ninguna panorámica" in linea for linea in avisos.lineas)
+
+
+def test_sin_vuelo_y_solo_geo_arma_las_parcelas_sin_vistas(tmp_path):
+    """Un loteo sin dron: las parcelas con su forma y estado, y ninguna vista 360."""
+    import json
+    import zipfile
+
+    from pipeline import construir as modulo
+    from pipeline.config import Proyecto, Salida, descubrir_fuentes
+    kmz = tmp_path / "fuentes" / "loteo.kmz"
+    kmz.parent.mkdir()
+    with zipfile.ZipFile(kmz, "w") as archivo:
+        archivo.writestr("doc.kml", (
+            '<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>LOTE 1</name>'
+            '<Polygon><outerBoundaryIs><LinearRing><coordinates>-72,-36 -72.001,-36 '
+            '-72.001,-36.001 -72,-36.001 -72,-36</coordinates></LinearRing></outerBoundaryIs>'
+            '</Polygon></Placemark></Document></kml>'))
+    salida = Salida(tmp_path / "salida")
+
+    with pytest.raises(FileNotFoundError, match="panorámicas"):
+        descubrir_fuentes(kmz.parent, sin_crm=True)
+    fuentes = descubrir_fuentes(kmz.parent, sin_crm=True, sin_panoramas=True)
+    resultado = modulo.construir(fuentes, Proyecto(nombre="Don Danilo"), salida, solo_geo=True)
+
+    assert resultado["parcelas"] == 1 and resultado["vistas"] == 0
+    datos = json.loads((salida.datos / "parcelas.json").read_text(encoding="utf-8"))
+    assert datos["solo_geo"] is True
+    assert datos["parcelas"][0]["id"] == "1" and datos["parcelas"][0]["poligono"]
+    assert json.loads((salida.datos / "vistas.json").read_text(encoding="utf-8")) == {
+        "inicial": None, "vistas": []}
+    # Lleva el visor igual: es el que manda al geo, y republicar lo pone al día.
+    assert (salida.web / "index.html").is_file()

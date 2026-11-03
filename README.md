@@ -63,10 +63,12 @@ Una carpeta con:
 1. **Un KMZ** del loteo. Sirven los dos formatos que exporta Global Mapper: polígonos
    con un punto por lote (`LOTE A123`), o el dibujo CAD tal cual, como red de líneas
    con un punto por lote. Ver [El KMZ](#el-kmz). Si no lo tienes, sale del plano
-   aprobado con [Crea tu KMZ](#crea-tu-kmz).
+   aprobado con [Crea tu KMZ](#crea-tu-kmz), o del geo en PDF que exporta ArcMap si
+   trae coordenadas (ver "Loteos sin vuelo" en [La planilla](#la-planilla)).
 2. **Las panorámicas del dron**, equirectangulares y con el XMP intacto. Da lo mismo
    en qué subcarpetas vengan o si la misma foto está dos veces: las tomas se agrupan
-   por GPS y se numeran en orden de captura.
+   por GPS y se numeran en orden de captura. Sin panorámicas el loteo sale **solo
+   geo** (`--solo-geo`): las parcelas y su geo, sin vistas 360.
 3. **`proyecto.json`** con el nombre del loteo (opcional; sin él se usa el nombre de la
    carpeta). Es lo mismo que editan los datos del loteo en la consola:
 
@@ -1050,6 +1052,21 @@ Inventario → **Descargar geo** lo entrega con los estados de ese momento, publ
 El satélite (teselas de Esri) se guarda en `<datos>/cache/satelite`; si no llega, el geo
 sale sobre fondo liso y la publicación sigue. `MASTERPLAN_SATELITE=0` lo apaga (las
 pruebas lo hacen).
+
+**Loteos sin vuelo (solo geo).** Un loteo sin panorámicas se construye igual
+(`python -m pipeline.construir --solo-geo`, que la consola pasa sola cuando no hay
+fotos): `parcelas.json` con los lotes y sus estados, ninguna vista, y el sitio publicado
+abre directo su `geo.pdf`. Se conecta a Cierra y se pinta solo como cualquier otro. Si
+la loteadora no tiene el KMZ pero sí el geo hecho a mano en ArcMap, ese PDF sirve como
+KMZ cuando viene georreferenciado (GeoPDF: `/VP` con `/Measure /GEO`): la consola lo
+convierte al subirlo (`pipeline/geopdf.py`, `python -m pipeline.geopdf <geo.pdf>
+<destino.kmz>`). Los bordes son trazos sueltos que se cierran con `polygonize`, eligiendo
+el color que deja cada rótulo "LOTE n" solo en su cara, para que el achurado de las
+disponibles o el eje de un camino no partan los lotes. Lo que queda de ese dibujo fuera
+del borde de los lotes (las dobles líneas de las servidumbres) va al KMZ como polígonos
+"SERVIDUMBRE" sin número, y el geo y el mapa los dibujan como cualquier polígono sin
+identificar. Van como polígonos y no como líneas: una sola LineString pasaría el KMZ al
+modo CAD.
 
 **La plantilla.** La consola entrega el .xlsx listo para llenar (`consola/plantilla.py`):
 en Nuevo master sale con tres filas de ejemplo, y en el detalle de un master construido,

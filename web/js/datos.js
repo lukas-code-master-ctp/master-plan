@@ -23,6 +23,14 @@ export function lejaniaReferencia(referencia) {
   return referencia.tiempo ?? `${Math.round(referencia.distancia_km)} km`;
 }
 
+/**
+ * Un loteo sin vuelo de dron no tiene nada que mostrar en 360: su sitio es el geo
+ * con las disponibles pintadas (`geo.pdf`, que deja la publicación).
+ */
+export function esSoloGeo(catalogo) {
+  return Boolean(catalogo.meta.solo_geo) || catalogo.vistas.length === 0;
+}
+
 export class Catalogo {
   constructor(parcelas, vistas, diseno = null) {
     this.meta = parcelas;

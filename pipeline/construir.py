@@ -77,7 +77,10 @@ class SinPanoramas(ValueError):
 
 def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config.Salida,
               sin_imagenes: bool = False, forzar_imagenes: bool = False,
-              sin_calibrar: bool = False) -> dict:
+              sin_calibrar: bool = False, solo_geo: bool = False) -> dict:
+    """`solo_geo`: sin panorámicas. El sitio lleva las parcelas y el geo pintado,
+    no el visor 360: es para los loteos sin vuelo de dron que igual quieren su geo al
+    día con las ventas (ver `pipeline/geo_pintado.py`)."""
     avisos = Avisos([])
 
     print(f"Proyecto: {proyecto.nombre}"
@@ -106,6 +109,13 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
     for cruce in cruces:
         print(f"  {cruce}")
     _revisar_cobertura(fichas, con_id, avisos)
+
+    if solo_geo:
+        print("Sin panorámicas: solo las parcelas y el geo, sin vistas 360.")
+        visor.copiar(salida.web)
+        parcelas = _armar_parcelas(fichas, con_id, {})
+        _escribir_datos(salida, proyecto, etapas, [], parcelas, aguas, geometrias, [], solo_geo=True)
+        return _terminar(parcelas, 0, avisos, salida)
 
     print("Leyendo las panorámicas...")
     panoramas = buscar_panoramas(fuentes.panoramas)
@@ -282,8 +292,15 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             generar_niveles(panorama.ruta, destino, forzar=forzar_imagenes)
             print(f"  {vista.id} listo")
 
-    print("Escribiendo los datos...")
     parcelas = _armar_parcelas(fichas, con_id, apariciones)
+    _escribir_datos(salida, proyecto, etapas, hitos, parcelas, aguas, geometrias, resumen_vistas)
+    return _terminar(parcelas, len(resumen_vistas), avisos, salida)
+
+
+def _escribir_datos(salida: config.Salida, proyecto: config.Proyecto, etapas: list[int],
+                    hitos: list, parcelas: list[dict], aguas, geometrias: list[ParcelaGeometrica],
+                    resumen_vistas: list[dict], solo_geo: bool = False) -> None:
+    print("Escribiendo los datos...")
     publicacion = _datos_de_la_publicacion(salida.datos / "parcelas.json")
     _escribir_json(salida.datos / "parcelas.json", {
         **publicacion,
@@ -295,6 +312,8 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         "link_reserva": proyecto.link_reserva,
         "monto_reserva": proyecto.monto_reserva,
         "numeros_fijos": proyecto.numeros_fijos,
+        # Sin vistas 360 el sitio abre el geo (web/js/app.js).
+        **({"solo_geo": True} if solo_geo else {}),
         "referencias": [{"nombre": h.nombre, "lon": h.lon, "lat": h.lat,
                          **({"tiempo": h.tiempo} if h.tiempo else {})} for h in hitos],
         "estados": config.ESTADOS,
@@ -314,10 +333,12 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         "vistas": resumen_vistas,
     })
 
+
+def _terminar(parcelas: list[dict], vistas: int, avisos: Avisos, salida: config.Salida) -> dict:
     resultado = {
         "parcelas": len(parcelas),
         "con_geometria": sum(1 for p in parcelas if p["poligono"]),
-        "vistas": len(resumen_vistas),
+        "vistas": vistas,
         "avisos": avisos.lineas,
         "sitio": salida.web,
     }
@@ -904,7 +925,8 @@ def agregar_argumentos_de_proyecto(parser: argparse.ArgumentParser) -> None:
 
 def resolver(argumentos, crm: Path | None = None) -> tuple[config.Fuentes, config.Proyecto, config.Salida]:
     fuentes = config.descubrir_fuentes(argumentos.proyecto, crm=crm,
-                                       sin_crm=getattr(argumentos, "sin_crm", False))
+                                       sin_crm=getattr(argumentos, "sin_crm", False),
+                                       sin_panoramas=getattr(argumentos, "solo_geo", False))
     despegue = None
     if getattr(argumentos, "despegue", None):
         lon, lat = (float(v) for v in argumentos.despegue.split(","))
@@ -933,6 +955,8 @@ def main(argv=None) -> int:
                         help="regenera las panorámicas aunque ya estén al día")
     parser.add_argument("--sin-calibrar", action="store_true",
                         help="no afina la pose de cada vista contra la foto")
+    parser.add_argument("--solo-geo", action="store_true",
+                        help="sin panorámicas: solo las parcelas y el geo, sin vistas 360")
     argumentos = parser.parse_args(argv)
 
     try:
@@ -945,7 +969,8 @@ def main(argv=None) -> int:
         construir(fuentes, proyecto, salida,
                   sin_imagenes=argumentos.sin_imagenes,
                   forzar_imagenes=argumentos.forzar_imagenes,
-                  sin_calibrar=argumentos.sin_calibrar)
+                  sin_calibrar=argumentos.sin_calibrar,
+                  solo_geo=argumentos.solo_geo)
     except SinPanoramas as error:
         # "error:" es lo que la consola busca para mostrar la causa en la tarjeta.
         print(f"error: {error}", file=sys.stderr)

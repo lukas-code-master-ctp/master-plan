@@ -154,8 +154,8 @@
         <span class="renglon__rotulo" id="rotulo-kmz">KMZ</span>
         <div>
           <label class="archivo" id="caja-kmz">
-            <input id="nuevo-kmz" type="file" accept=".kmz" aria-labelledby="rotulo-kmz">
-            <span class="archivo__texto" id="texto-kmz">Subir el plano (.kmz)</span>
+            <input id="nuevo-kmz" type="file" accept=".kmz,.pdf,application/pdf" aria-labelledby="rotulo-kmz">
+            <span class="archivo__texto" id="texto-kmz">Subir el plano (.kmz o el geo en PDF)</span>
           </label>
           <label class="nota nuevo-mio" id="nuevo-mio-caja" hidden>
             <span id="nuevo-mio-rotulo">o elige uno de Mis KMZ</span>
@@ -178,7 +178,8 @@
             <span class="archivo__texto" id="texto-fotos">Arrastra la carpeta del vuelo o elige las fotos</span>
           </label>
           <p class="nota">Las 360° del dron, tal como salen de la cámara. Si la carpeta
-            trae el KMZ o la planilla, se toman solos.
+            trae el KMZ o la planilla, se toman solos. Sin vuelo de dron, el loteo sale
+            solo con su geo, pintado con las disponibles.
             <label class="enlace">o elige la carpeta entera<input id="nuevo-carpeta" type="file" webkitdirectory hidden></label></p>
         </div>
       </div>
