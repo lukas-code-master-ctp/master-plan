@@ -15,7 +15,7 @@ import { Gesto } from './gesto.js';
 import { debeColapsar } from './grupos.js';
 import { estaInsertado, ruedaAcerca } from './insertado.js';
 import { apoyoDelGlobo } from './globo.js';
-import { rotulosSinChoques, acomodarReferencias } from './rotulos.js';
+import { rotulosSinChoques, acomodarReferencias, centroVisible } from './rotulos.js';
 
 const VERTICE = `
 attribute vec2 aPos;
@@ -124,6 +124,9 @@ export class Visor {
     this.aguas = [];
     this.nodosAgua = [];
     this.capaAguas = null;
+    this.zonas = [];
+    this.nodosZona = [];
+    this.capaZonas = null;
     this.capaPuntos = document.createElement('div');
     this.capaPuntos.className = 'puntos-360';
     elemento.append(this.capaPuntos);
@@ -233,7 +236,7 @@ export class Visor {
    * mientras tanto se pidió otra vista.
    */
   async mostrarVista(vista, overlay, {
-    avisar, referencias = [], caminos = [], puntos = [], aguas = [], etapas = [],
+    avisar, referencias = [], caminos = [], puntos = [], aguas = [], etapas = [], zonas = [],
   } = {}) {
     const token = ++this.cargaEnCurso;
     const niveles = this._nivelesUtiles(vista.imagenes);
@@ -253,6 +256,7 @@ export class Visor {
     this.caminos = caminos;
     this.puntos = puntos;
     this.aguas = aguas;
+    this.zonas = zonas;
     this.contornosEtapa = etapas;
     this._detener();
     this._limpiarNodos();
@@ -517,6 +521,7 @@ export class Visor {
     this._dibujarReferencias(ancho, alto);
     this._dibujarCaminos(ancho, alto);
     this._dibujarAguas(ancho, alto);
+    this._dibujarZonas(ancho, alto);
     this._dibujarPuntos(ancho, alto);
 
     const candidatas = [];
@@ -819,6 +824,8 @@ export class Visor {
     this.capaCaminos = null;
     this.nodosAgua = [];
     this.capaAguas = null;
+    this.nodosZona = [];
+    this.capaZonas = null;
     this.nodosEtapa = new Map();
     this.nodosContorno = [];
     this.capaEtapas = null;
@@ -1018,6 +1025,51 @@ export class Visor {
       nodo.nombre.style.display = mejor ? '' : 'none';
       if (mejor) nodo.nombre.setAttribute('transform', `translate(${mejor.x.toFixed(1)} ${(mejor.y - 8).toFixed(1)})`);
     });
+  }
+
+  /**
+   * Las zonas con nombre del KMZ (la de conservación): un velo verde con borde
+   * punteado y su nombre en lo que se ve de ella, bajo todo lo demás y sin
+   * interacción, para que se lea como parte del paisaje y no como un lote más.
+   */
+  _dibujarZonas(ancho, alto) {
+    this.zonas.forEach((zona, indice) => {
+      const nodo = this._nodoZona(indice, zona.nombre);
+      const contorno = this.camara.proyectarAnillo(zona.anillo, ancho, alto);
+      if (!contorno || fueraDePantalla(contorno, ancho, alto)) {
+        nodo.grupo.style.display = 'none';
+        return;
+      }
+      nodo.grupo.style.display = '';
+      nodo.area.setAttribute('d', aRuta(contorno));
+      const donde = centroVisible(contorno, ancho, alto);
+      nodo.nombre.style.display = donde ? '' : 'none';
+      if (donde) nodo.nombre.setAttribute('transform', `translate(${donde[0].toFixed(1)} ${donde[1].toFixed(1)})`);
+    });
+  }
+
+  _nodoZona(indice, nombre) {
+    let nodo = this.nodosZona[indice];
+    if (nodo) return nodo;
+    const grupo = document.createElementNS(SVG_NS, 'g');
+    grupo.setAttribute('class', 'zona');
+    const area = document.createElementNS(SVG_NS, 'path');
+    area.setAttribute('class', 'zona__area');
+    const texto = document.createElementNS(SVG_NS, 'text');
+    texto.setAttribute('class', 'zona__nombre');
+    texto.setAttribute('dy', '0.35em');
+    texto.textContent = nombre.toUpperCase();
+    grupo.append(area, texto);
+    // Al fondo de todo: los caminos, el agua y las parcelas que la tocan van encima.
+    if (!this.capaZonas) {
+      this.capaZonas = document.createElementNS(SVG_NS, 'g');
+      this.capaZonas.setAttribute('class', 'zonas');
+      this.svg.prepend(this.capaZonas);
+    }
+    this.capaZonas.append(grupo);
+    nodo = { grupo, area, nombre: texto };
+    this.nodosZona[indice] = nodo;
+    return nodo;
   }
 
   _nodoAgua(indice, nombre) {

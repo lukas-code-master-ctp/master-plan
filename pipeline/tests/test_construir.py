@@ -444,3 +444,29 @@ def test_tras_descartar_un_desnivel_sin_confirmar_tambien_se_cruzan(monkeypatch)
     assert vistas["p01"].giro == pytest.approx(1.94)
     assert vistas["p03"].desnivel == pytest.approx(0.0)
     assert vistas["p03"].giro == pytest.approx(0.0)
+
+
+def test_un_camino_que_rodea_el_punto_de_vuelo_se_dibuja():
+    """Fundo Atalaya: la red de caminos es una sola franja que pasa por detrás del dron
+    y se aleja por delante. Abarca más de media vuelta de azimut, su área angular sale
+    nula y el filtro de las parcelas la botaba entera aunque se ve justo abajo."""
+    import math
+    from pipeline import geo
+    from pipeline.construir import _proyectar_caminos
+    from pipeline.proyeccion import Vista, es_visible, proyectar_parcela
+    vista = Vista(id="p01-400", posicion=1, lon=-72.0, lat=-35.0, altura_relativa=400.0,
+                  altura_absoluta=400.0, rumbo0=0.0)
+
+    def punto(este, norte):
+        return (-72.0 + este / (geo.METROS_POR_GRADO_LAT * math.cos(math.radians(35.0))),
+                -35.0 + norte / geo.METROS_POR_GRADO_LAT)
+
+    # Una U de 6 m de ancho: pasa 300 m al norte del dron y sus brazos bajan 1,8 km al sur.
+    u = [punto(-100, -1800), punto(-94, -1800), punto(-94, 294), punto(94, 294),
+         punto(94, -1800), punto(100, -1800), punto(100, 300), punto(-100, 300)]
+    lejos = [punto(5000, 5000), punto(5006, 5000), punto(5006, 5300), punto(5000, 5300)]
+    assert not es_visible(proyectar_parcela(vista, "u", u))   # lo que pasaba antes
+
+    proyectados = _proyectar_caminos(vista, [[u], [lejos]], None)
+
+    assert len(proyectados) == 1

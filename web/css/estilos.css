@@ -2163,6 +2163,36 @@ button { cursor: pointer; }
   stroke-width: 3.5px;
 }
 
+/* Las zonas con nombre del KMZ (visor.js, _dibujarZonas): un velo verde con borde
+   punteado, para que se lea como paisaje protegido y no como un lote. */
+.zona { pointer-events: none; }
+.zona__area {
+  fill: rgb(63 174 90 / 0.22);
+  stroke: #8fe3a2;
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+  stroke-linejoin: round;
+}
+.zona__nombre {
+  font: 700 0.8125rem var(--sans);
+  letter-spacing: 0.08em;
+  fill: #e9ffe9;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgb(10 50 20 / 0.8);
+  stroke-width: 3.5px;
+}
+.zona-mapa__nombre {
+  background: rgb(20 80 35 / 0.85);
+  border: none;
+  box-shadow: none;
+  color: #fff;
+  font: 700 0.75rem var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.zona-mapa__nombre::before { display: none; }
+
 /* "Volver al masterplan": solo en los puntos solo foto (app.js, cambiarVista).
    Arriba al centro, donde no lo tapa la barra de abajo ni la ficha del teléfono. */
 .volver-masterplan {

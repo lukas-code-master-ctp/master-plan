@@ -150,3 +150,61 @@ function unidadDeCostado(grupo, { anchoPantalla, alto, alfiler, altoPildora, mar
     },
   };
 }
+
+/**
+ * Dónde va el nombre de una zona grande ("ZONA DE CONSERVACIÓN") que se ve en
+ * parte: en el centro de lo que queda en pantalla, no en el de toda la zona, que
+ * puede caer fuera. Devuelve null si no se ve nada.
+ *
+ * @param {number[][]} pixeles el contorno de la zona en pantalla.
+ * @param {number} ancho
+ * @param {number} alto
+ * @param {number} margen aire contra el borde de la pantalla, en píxeles.
+ */
+export function centroVisible(pixeles, ancho, alto, margen = 40) {
+  const recortado = recortarARectangulo(pixeles, margen, margen, ancho - margen, alto - margen);
+  if (recortado.length < 3) return null;
+  let area = 0;
+  let cx = 0;
+  let cy = 0;
+  recortado.forEach(([x0, y0], i) => {
+    const [x1, y1] = recortado[(i + 1) % recortado.length];
+    const cruz = x0 * y1 - x1 * y0;
+    area += cruz;
+    cx += (x0 + x1) * cruz;
+    cy += (y0 + y1) * cruz;
+  });
+  if (Math.abs(area) < 1e-6) return null;
+  return [cx / (3 * area), cy / (3 * area)];
+}
+
+// Sutherland–Hodgman contra cada lado del rectángulo.
+function recortarARectangulo(puntos, x0, y0, x1, y1) {
+  const lados = [
+    [(p) => p[0] >= x0, (a, b) => cortar(a, b, 0, x0)],
+    [(p) => p[0] <= x1, (a, b) => cortar(a, b, 0, x1)],
+    [(p) => p[1] >= y0, (a, b) => cortar(a, b, 1, y0)],
+    [(p) => p[1] <= y1, (a, b) => cortar(a, b, 1, y1)],
+  ];
+  let resultado = puntos;
+  for (const [dentro, corte] of lados) {
+    const entrada = resultado;
+    resultado = [];
+    entrada.forEach((actual, i) => {
+      const previo = entrada[(i + entrada.length - 1) % entrada.length];
+      if (dentro(actual)) {
+        if (!dentro(previo)) resultado.push(corte(previo, actual));
+        resultado.push(actual);
+      } else if (dentro(previo)) {
+        resultado.push(corte(previo, actual));
+      }
+    });
+    if (!resultado.length) return [];
+  }
+  return resultado;
+}
+
+function cortar(a, b, eje, valor) {
+  const t = (valor - a[eje]) / (b[eje] - a[eje]);
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+}

@@ -37,6 +37,7 @@ export class Mapa {
     L.tileLayer(TESELAS, { maxZoom: 19, attribution: ATRIBUCION }).addTo(this.mapa);
 
     this._dibujarOtrosPoligonos();
+    this._dibujarZonas();
     this._dibujarAguas();
     this._dibujarParcelas();
     this._dibujarPuntosDeVuelo();
@@ -49,6 +50,19 @@ export class Mapa {
       L.polygon(aLatLng(otro.poligono), {
         color: '#6b6559', weight: 0.8, opacity: 0.5,
         fillColor: '#6b6559', fillOpacity: 0.1, interactive: false,
+      }).addTo(this.mapa);
+    }
+  }
+
+  // Las zonas con nombre (la de conservación): verdes y con el nombre siempre a la
+  // vista, porque en el plano es lo que explica por qué ahí no hay lotes.
+  _dibujarZonas() {
+    for (const zona of this.catalogo.meta.zonas ?? []) {
+      L.polygon(aLatLng(zona.poligono), {
+        className: 'zona-mapa', color: '#3fae5a', weight: 2, dashArray: '6 5',
+        fillColor: '#3fae5a', fillOpacity: 0.22, interactive: false,
+      }).bindTooltip(escaparHtml(zona.nombre), {
+        permanent: true, direction: 'center', className: 'zona-mapa__nombre',
       }).addTo(this.mapa);
     }
   }

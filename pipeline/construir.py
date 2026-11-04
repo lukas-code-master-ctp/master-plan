@@ -24,7 +24,7 @@ from .etapas import contornos as contornos_de_etapas
 from .calibracion import (DESNIVELES_PROBADOS, Ajuste, ajuste_a_desnivel, aplicar, calibrar,
                           calibrar_altura, mapa_de_caminos)
 from .imagenes import generar_niveles
-from .kmz import ParcelaGeometrica, leer_aguas, leer_caminos, leer_kmz, leer_lineas
+from .kmz import ParcelaGeometrica, leer_aguas, leer_caminos, leer_kmz, leer_lineas, leer_zonas
 from .panoramas import (Panorama, RumboResuelto, a_vista, buscar_panoramas, por_que_no_sirven,
                         resolver_rumbo)
 from .proyeccion import ModeloTerreno, Vista, proyectar_parcela, proyectar_punto, proyectar_vista
@@ -102,6 +102,9 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
     aguas = leer_aguas(fuentes.kmz)
     if aguas:
         print(f"  agua: {', '.join(sorted({nombre for nombre, _ in aguas}))}")
+    zonas = leer_zonas(fuentes.kmz)
+    if zonas:
+        print(f"  zonas: {', '.join(sorted({nombre for nombre, _ in zonas}))}")
 
     fichas = _leer_fichas(fuentes, proyecto, avisos)
     cruces: list[str] = []
@@ -114,7 +117,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         print("Sin panorámicas: solo las parcelas y el geo, sin vistas 360.")
         visor.copiar(salida.web)
         parcelas = _armar_parcelas(fichas, con_id, {})
-        _escribir_datos(salida, proyecto, etapas, [], parcelas, aguas, geometrias, [], solo_geo=True)
+        _escribir_datos(salida, proyecto, etapas, [], parcelas, aguas, zonas, geometrias, [], solo_geo=True)
         return _terminar(parcelas, 0, avisos, salida)
 
     print("Leyendo las panorámicas...")
@@ -262,6 +265,8 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             "caminos": _proyectar_caminos(vista, caminos, modelo) if dibuja else [],
             # Los esteros y canales que la loteadora marcó en el KMZ.
             "aguas": _proyectar_aguas(vista, aguas, modelo) if dibuja else [],
+            # Las zonas que no se venden pero se muestran (la de conservación).
+            "zonas": _proyectar_zonas(vista, zonas, modelo) if dibuja else [],
             "etapas": _proyectar_etapas(vista, contornos_etapa, modelo) if dibuja else [],
             # Los otros puntos de vuelo, para saltar a su 360 tocándolos en la foto.
             "puntos": _proyectar_puntos(vista, [v for _, _, v in vistas], modelo),
@@ -293,12 +298,12 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             print(f"  {vista.id} listo")
 
     parcelas = _armar_parcelas(fichas, con_id, apariciones)
-    _escribir_datos(salida, proyecto, etapas, hitos, parcelas, aguas, geometrias, resumen_vistas)
+    _escribir_datos(salida, proyecto, etapas, hitos, parcelas, aguas, zonas, geometrias, resumen_vistas)
     return _terminar(parcelas, len(resumen_vistas), avisos, salida)
 
 
 def _escribir_datos(salida: config.Salida, proyecto: config.Proyecto, etapas: list[int],
-                    hitos: list, parcelas: list[dict], aguas, geometrias: list[ParcelaGeometrica],
+                    hitos: list, parcelas: list[dict], aguas, zonas, geometrias: list[ParcelaGeometrica],
                     resumen_vistas: list[dict], solo_geo: bool = False) -> None:
     print("Escribiendo los datos...")
     publicacion = _datos_de_la_publicacion(salida.datos / "parcelas.json")
@@ -322,6 +327,7 @@ def _escribir_datos(salida: config.Salida, proyecto: config.Proyecto, etapas: li
         # Para el plano: el trazo de cada estero en lon/lat.
         "aguas": [{"nombre": nombre, "linea": [_redondear_punto(p) for p in puntos]}
                   for nombre, puntos in aguas],
+        "zonas": [{"nombre": nombre, "poligono": _redondear_anillo(anillo)} for nombre, anillo in zonas],
         "otros_poligonos": [
             {"poligono": _redondear_anillo(g.anillo),
              "motivo": "no_en_venta" if not g.en_venta else "sin_identificar"}
@@ -380,11 +386,24 @@ def _proyectar_caminos(vista: Vista, caminos: list[list[geo.Anillo]],
     """Cada camino como sus anillos (contorno y huecos) en azimut y elevación."""
     proyectados = []
     for anillos in caminos:
-        if not proyectar_vista(vista, [("camino", anillos[0])], terreno=modelo):
-            continue   # lejos, al ras del horizonte o fuera de vista, como una parcela
+        # Solo se descarta por lejano. El filtro de las parcelas (área y ancho
+        # angular) no sirve para un camino: en Fundo Atalaya la red entera es una sola
+        # franja que abarca más de media vuelta de azimut alrededor del dron, su
+        # área angular sale nula y se descartaba completa aunque se ve justo abajo.
+        if not _camino_cerca(vista, anillos[0], modelo):
+            continue
         partes = [proyectar_parcela(vista, "camino", anillo, modelo) for anillo in anillos]
         proyectados.append([[list(v) for v in parte.anillo] for parte in partes if parte])
     return proyectados
+
+
+def _camino_cerca(vista: Vista, anillo: geo.Anillo, modelo: ModeloTerreno | None) -> bool:
+    """Si algún vértice del camino queda a la distancia que el visor muestra."""
+    for punto in anillo:
+        cota = modelo(punto) if modelo else None
+        if proyectar_punto(vista, punto, cota)[2] <= config.DISTANCIA_MAXIMA_M:
+            return True
+    return False
 
 
 def _proyectar_etapas(vista: Vista, contornos: list[tuple[int, list[geo.Anillo]]],
@@ -395,6 +414,17 @@ def _proyectar_etapas(vista: Vista, contornos: list[tuple[int, list[geo.Anillo]]
         visibles = _proyectar_caminos(vista, [[anillo] for anillo in anillos], modelo)
         if visibles:
             proyectadas.append({"etapa": etapa, "anillos": [partes[0] for partes in visibles]})
+    return proyectadas
+
+
+def _proyectar_zonas(vista: Vista, zonas: list[tuple[str, geo.Anillo]],
+                     modelo: ModeloTerreno | None) -> list[dict]:
+    """El contorno de cada zona con nombre en azimut y elevación, como las etapas."""
+    proyectadas = []
+    for nombre, anillo in zonas:
+        visibles = _proyectar_caminos(vista, [[anillo]], modelo)
+        if visibles:
+            proyectadas.append({"nombre": nombre, "anillo": visibles[0][0]})
     return proyectadas
 
 

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { rotulosSinChoques, acomodarReferencias } from './rotulos.js';
+import { rotulosSinChoques, acomodarReferencias, centroVisible } from './rotulos.js';
 
 const pastilla = (id, x, y, prioridad = 0, ancho = 40, alto = 26) => ({ id, x, y, ancho, alto, prioridad });
 
@@ -106,4 +106,24 @@ test('la columna nunca se sale de la pantalla', () => {
     const x0 = p.lado === 'derecha' ? p.cx : p.cx - 290;
     assert.ok(x0 >= 8 && x0 + 290 <= 390 - 8 + 1e-9);
   }
+});
+
+// --- Nombre de una zona ----------------------------------------------------
+
+test('el nombre de una zona que se ve entera va en su centro', () => {
+  const [x, y] = centroVisible([[100, 100], [300, 100], [300, 200], [100, 200]], 1000, 800);
+
+  assert.ok(Math.abs(x - 200) < 1e-9 && Math.abs(y - 150) < 1e-9);
+});
+
+test('el nombre de una zona que se sale de la pantalla va en lo que se ve de ella', () => {
+  // La zona sigue 2000 px a la izquierda: su centro real queda fuera.
+  const [x, y] = centroVisible([[-2000, 100], [500, 100], [500, 300], [-2000, 300]], 1000, 800, 40);
+
+  assert.ok(Math.abs(x - 270) < 1e-9);
+  assert.ok(Math.abs(y - 200) < 1e-9);
+});
+
+test('una zona fuera de la pantalla no lleva nombre', () => {
+  assert.equal(centroVisible([[-500, 100], [-100, 100], [-100, 300]], 1000, 800), null);
 });
