@@ -116,3 +116,11 @@ def test_las_cotas_de_muchos_puntos_son_las_mismas_que_de_a_uno():
     juntas = terreno.cotas_en(np.array([p[0] for p in puntos]), np.array([p[1] for p in puntos]))
 
     assert juntas == pytest.approx([terreno.cota(p) for p in puntos], abs=1e-6)
+
+
+def test_nada_queda_bajo_el_nivel_del_mar(tmp_path):
+    """El fondo del mar y los hoyos del DEM en la costa quedan en cero."""
+    terreno = cargar((-71.674, -33.724, -71.673, -33.723), tmp_path,
+                     descarga=lambda url: png_terrarium(-610.0))
+
+    assert terreno.cota((-71.6737, -33.7235)) == pytest.approx(0.0)
