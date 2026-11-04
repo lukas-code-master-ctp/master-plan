@@ -913,18 +913,23 @@ def _rumbo_por_cruces(vistas: list, candidatas: list[str],
     if len(sol) < 2:
         return vistas
     por_id = {v.id: (p, v) for p, _, v in vistas}
+    # Cada foto entra en varios cruces: leerla una vez ahorra minutos en la máquina de
+    # construcción, que la lee del bucket. Son ~80 MB por foto.
+    imagenes = {vista_id: cruce.cargar_panorama(por_id[vista_id][0].ruta) for vista_id in sol}
+    modelos = {vista_id: terreno.modelo_para_vista(relieve, por_id[vista_id][1],
+                                                   despegue_de(por_id[vista_id][1])) if relieve else None
+               for vista_id in sol}
+    pares = [(otra, ref) for ref in sorted(sol, key=sol.get) for otra in sol if otra != ref]
+    print(f"  ninguna vista calibró con los caminos: se cruzan de a pares para el giro "
+          f"({len(pares)} cruces, unos minutos)", flush=True)
     cruces = {}
-    for ref in sorted(sol, key=sol.get):
-        panorama_ref, referencia = por_id[ref]
-        imagen_ref = cruce.cargar_panorama(panorama_ref.ruta)
-        modelo_ref = terreno.modelo_para_vista(relieve, referencia, despegue_de(referencia)) if relieve else None
-        for otra in sol:
-            if otra != ref:
-                panorama, vista = por_id[otra]
-                modelo = terreno.modelo_para_vista(relieve, vista, despegue_de(vista)) if relieve else None
-                cruces[otra, ref] = cruce.calibrar_contra(vista, cruce.cargar_panorama(panorama.ruta), modelo,
-                                                          referencia, imagen_ref, modelo_ref, zona,
-                                                          inclinaciones[otra])
+    for numero, (otra, ref) in enumerate(pares, 1):
+        cruces[otra, ref] = resultado = cruce.calibrar_contra(
+            por_id[otra][1], imagenes[otra], modelos[otra], por_id[ref][1], imagenes[ref], modelos[ref],
+            zona, inclinaciones[otra])
+        # Uno por línea, para que en la consola se vea que la construcción avanza.
+        detalle = (f"giro {resultado.ajuste.giro:+.2f}°" if resultado.ajuste else resultado.motivo)
+        print(f"    cruce {numero}/{len(pares)}: {otra} contra {ref}: {detalle}", flush=True)
     giros = {}
     for vista_id in sol:
         # La que se corrige es la del sol peor medido; se queda con la mejor de sus pares.
