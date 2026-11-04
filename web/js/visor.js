@@ -1116,21 +1116,63 @@ export class Visor {
       nodo.hidden = false;
       // El ancho se mide una vez: leerlo en cada cuadro forzaría a recalcular la página.
       if (!nodo.anchoMedido) nodo.anchoMedido = nodo.offsetWidth;
-      visibles.push({ id: String(indice), nodo, x: px, y: py, ancho: nodo.anchoMedido,
-        distancia: referencia.distancia_km ?? 0 });
+      visibles.push({ id: String(indice), nodo, tapada: Boolean(referencia.tapada), x: px, y: py, ancho: nodo.anchoMedido });
     });
-    // Los que apuntan al mismo sitio se juntan en una columna con un solo alfiler;
-    // las columnas que chocan suben de escalón (ver acomodarReferencias).
-    const puestos = acomodarReferencias(visibles, { alto: ALTO_ESCALON_REFERENCIA });
-    for (const { id, nodo } of visibles) {
-      const { x, y, escalon, conAlfiler } = puestos.get(id);
-      nodo.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
-      nodo.style.setProperty('--alfiler', `${ALFILER_REFERENCIA + escalon * ALTO_ESCALON_REFERENCIA}px`);
-      nodo.classList.toggle('referencia--apilada', !conAlfiler);
-      // El de más abajo queda encima: el alfiler de uno más alto pasa por detrás
-      // de las píldoras que tiene debajo en vez de cruzarles el texto.
-      nodo.style.zIndex = String(20 - escalon);
+    // Los sueltos llevan su alfiler derecho (CSS); los de un grupo en la misma
+    // dirección se apilan a un costado con un alfiler en codo hasta su propio
+    // punto, dibujado en el SVG de abajo para que pase por detrás de las píldoras.
+    const puestos = acomodarReferencias(visibles, {
+      anchoPantalla: ancho, alto: ALTO_ESCALON_REFERENCIA, alfiler: ALFILER_REFERENCIA,
+    });
+    const guias = this._guiasReferencias();
+    let usadas = 0;
+    for (const { id, nodo, tapada } of visibles) {
+      const { cx, cy, lado, guia, anchoMaximo } = puestos.get(id);
+      nodo.style.maxWidth = anchoMaximo ? `${anchoMaximo.toFixed(0)}px` : '';
+      nodo.classList.toggle('referencia--costado', lado !== 'centro');
+      nodo.classList.toggle('referencia--izquierda', lado === 'izquierda');
+      if (lado === 'centro') {
+        const [[x, y]] = guia;
+        nodo.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+        nodo.style.setProperty('--alfiler', `${(y - cy).toFixed(1)}px`);
+        continue;
+      }
+      nodo.style.transform = `translate(${cx.toFixed(1)}px, ${cy.toFixed(1)}px)`;
+      const [[x, y], [, yCodo], [xFin]] = guia;
+      const g = guias.children[usadas] ?? guias.appendChild(this._guiaReferencia());
+      usadas += 1;
+      g.removeAttribute('hidden');
+      g.classList.toggle('guia-referencia--detras', tapada);
+      const d = `M${x.toFixed(1)} ${y.toFixed(1)}V${yCodo.toFixed(1)}H${xFin.toFixed(1)}`;
+      g.children[0].setAttribute('d', d);
+      g.children[1].setAttribute('d', d);
+      g.children[2].setAttribute('cx', x.toFixed(1));
+      g.children[2].setAttribute('cy', y.toFixed(1));
     }
+    for (let i = usadas; i < guias.children.length; i += 1) guias.children[i].setAttribute('hidden', '');
+  }
+
+  /** El SVG de los alfileres en codo, debajo de las píldoras. */
+  _guiasReferencias() {
+    if (!this.svgGuias || !this.svgGuias.isConnected) {
+      this.svgGuias = document.createElementNS(SVG_NS, 'svg');
+      this.svgGuias.setAttribute('class', 'guias-referencias');
+      this.svgGuias.setAttribute('aria-hidden', 'true');
+      this.capaReferencias.prepend(this.svgGuias);
+    }
+    return this.svgGuias;
+  }
+
+  _guiaReferencia() {
+    const g = document.createElementNS(SVG_NS, 'g');
+    g.setAttribute('class', 'guia-referencia');
+    for (const [etiqueta, clase] of [['path', 'guia-referencia__sombra'], ['path', 'guia-referencia__linea'], ['circle', 'guia-referencia__punto']]) {
+      const parte = document.createElementNS(SVG_NS, etiqueta);
+      parte.setAttribute('class', clase);
+      if (etiqueta === 'circle') parte.setAttribute('r', '3.5');
+      g.append(parte);
+    }
+    return g;
   }
 
   _nodoReferencia(indice, referencia) {
