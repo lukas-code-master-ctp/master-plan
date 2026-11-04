@@ -718,6 +718,10 @@ button { cursor: pointer; }
   box-shadow: none;
 }
 .referencia--detras::before { display: none; }
+/* En una columna de lugares que apuntan al mismo sitio solo el de abajo lleva
+   alfiler y punto; los de arriba conservan el alto (para quedar en su piso) pero
+   sin dibujarlo, así ninguna línea cruza el texto de otra píldora. */
+.referencia--apilada::after, .referencia--apilada::before { visibility: hidden; }
 .referencia__detras {
   align-self: center;
   width: 18px;

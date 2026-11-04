@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { rotulosSinChoques } from './rotulos.js';
+import { rotulosSinChoques, acomodarReferencias } from './rotulos.js';
 
 const pastilla = (id, x, y, prioridad = 0, ancho = 40, alto = 26) => ({ id, x, y, ancho, alto, prioridad });
 
@@ -37,4 +37,48 @@ test('a igual prioridad gana la que vino primero', () => {
 
 test('sin pastillas no hay nada que dibujar', () => {
   assert.equal(rotulosSinChoques([]).size, 0);
+});
+
+// --- Rótulos del horizonte -------------------------------------------------
+
+const lugar = (id, x, y, distancia, ancho = 120) => ({ id, x, y, ancho, distancia });
+
+test('lugares en la misma dirección se juntan en una columna con un solo alfiler', () => {
+  // Fundo Atalaya: cinco lugares hacia la costa, con sus puntos a un par de px.
+  const puestos = acomodarReferencias([
+    lugar('puerto', 501, 300, 15), lugar('centro', 500, 301, 11.2), lugar('golf', 502, 300, 11.4),
+    lugar('humedal', 499, 302, 13), lugar('playa', 500, 300, 11),
+  ]);
+
+  const orden = [...puestos].sort((a, b) => a[1].escalon - b[1].escalon).map(([id]) => id);
+  assert.deepEqual(orden, ['playa', 'centro', 'golf', 'humedal', 'puerto']);
+  assert.deepEqual([...puestos.values()].map((p) => p.escalon).sort(), [0, 1, 2, 3, 4]);
+  assert.deepEqual([...puestos].filter(([, p]) => p.conAlfiler).map(([id]) => id), ['playa']);
+  // Todos se paran en el punto del más cercano, para que la columna quede derecha.
+  assert.ok([...puestos.values()].every((p) => p.x === 500 && p.y === 300));
+});
+
+test('dos lugares que no se tocan quedan cada uno en su sitio', () => {
+  const puestos = acomodarReferencias([lugar('a', 100, 300, 3), lugar('b', 600, 300, 5)]);
+
+  assert.deepEqual(puestos.get('a'), { x: 100, y: 300, escalon: 0, conAlfiler: true, columna: 0 });
+  assert.deepEqual(puestos.get('b'), { x: 600, y: 300, escalon: 0, conAlfiler: true, columna: 0 });
+});
+
+test('un lugar cuyo punto cae bajo la píldora de otro se suma a su columna', () => {
+  // A 55 px, con píldoras de 120: sin juntarlos, el alfiler de b cruzaría la de a.
+  const puestos = acomodarReferencias([lugar('a', 300, 300, 3), lugar('b', 355, 299, 7)]);
+
+  assert.deepEqual(puestos.get('b'), { x: 300, y: 300, escalon: 1, conAlfiler: false, columna: 1 });
+});
+
+test('una columna que choca con otra sube por sobre toda ella', () => {
+  // a y b apuntan al mismo sitio; c está 80 px al lado (fuera de la píldora de a)
+  // pero su píldora igual pisa las de ellos.
+  const puestos = acomodarReferencias([lugar('a', 300, 300, 3), lugar('b', 302, 301, 4), lugar('c', 380, 298, 9)]);
+
+  assert.equal(puestos.get('a').escalon, 0);
+  assert.equal(puestos.get('b').escalon, 1);
+  assert.equal(puestos.get('c').escalon, 2);
+  assert.ok(puestos.get('c').conAlfiler);
 });

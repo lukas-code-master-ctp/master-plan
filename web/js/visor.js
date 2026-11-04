@@ -15,7 +15,7 @@ import { Gesto } from './gesto.js';
 import { debeColapsar } from './grupos.js';
 import { estaInsertado, ruedaAcerca } from './insertado.js';
 import { apoyoDelGlobo } from './globo.js';
-import { rotulosSinChoques } from './rotulos.js';
+import { rotulosSinChoques, acomodarReferencias } from './rotulos.js';
 
 const VERTICE = `
 attribute vec2 aPos;
@@ -1114,22 +1114,22 @@ export class Visor {
       }
       const [px, py] = this.camara.aPantalla([x, y, z], ancho, alto);
       nodo.hidden = false;
-      nodo.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px)`;
       // El ancho se mide una vez: leerlo en cada cuadro forzaría a recalcular la página.
       if (!nodo.anchoMedido) nodo.anchoMedido = nodo.offsetWidth;
-      visibles.push({ nodo, x: px, y: py, ancho: nodo.anchoMedido });
+      visibles.push({ id: String(indice), nodo, x: px, y: py, ancho: nodo.anchoMedido,
+        distancia: referencia.distancia_km ?? 0 });
     });
-    // Dos lugares en la misma dirección (Bulnes y Los Ángeles) se pisaban: el más
-    // lejano sube un escalón, con un alfiler más largo, hasta que no choque.
-    const puestos = [];
-    for (const rotulo of visibles.sort((a, b) => b.y - a.y)) {
-      let escalon = 0;
-      const choca = (otro) => otro.escalon === escalon
-        && Math.abs(otro.x - rotulo.x) < (otro.ancho + rotulo.ancho) / 2 + 6
-        && Math.abs(otro.y - rotulo.y) < ALTO_ESCALON_REFERENCIA;
-      while (escalon < 4 && puestos.some(choca)) escalon += 1;
-      puestos.push({ ...rotulo, escalon });
-      rotulo.nodo.style.setProperty('--alfiler', `${ALFILER_REFERENCIA + escalon * ALTO_ESCALON_REFERENCIA}px`);
+    // Los que apuntan al mismo sitio se juntan en una columna con un solo alfiler;
+    // las columnas que chocan suben de escalón (ver acomodarReferencias).
+    const puestos = acomodarReferencias(visibles, { alto: ALTO_ESCALON_REFERENCIA });
+    for (const { id, nodo } of visibles) {
+      const { x, y, escalon, conAlfiler } = puestos.get(id);
+      nodo.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+      nodo.style.setProperty('--alfiler', `${ALFILER_REFERENCIA + escalon * ALTO_ESCALON_REFERENCIA}px`);
+      nodo.classList.toggle('referencia--apilada', !conAlfiler);
+      // El de más abajo queda encima: el alfiler de uno más alto pasa por detrás
+      // de las píldoras que tiene debajo en vez de cruzarles el texto.
+      nodo.style.zIndex = String(20 - escalon);
     }
   }
 
