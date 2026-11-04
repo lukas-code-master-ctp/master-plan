@@ -96,7 +96,11 @@ def cargar(caja: tuple[float, float, float, float], cache: Path, margen_m: float
         fila = [decodificar(_tesela(tx, ty, zoom, Path(cache), descarga))
                 for tx in range(tx0, tx1 + 1)]
         filas.append(np.hstack(fila))
-    return Terreno(zoom=zoom, x0=tx0, y0=ty0, cotas=np.vstack(filas))
+    # Nada de lo que se ve queda bajo el nivel del mar: el mar es su superficie, no el
+    # fondo que trae el DEM, y en la costa el DEM además tiene hoyos. En Fundo Atalaya,
+    # en plena playa, dos píxeles a -450 y -610 m tiraban un punto del deslinde del
+    # lote 365 hacia abajo de la foto y lo dibujaban con una punta de 200 m tierra adentro.
+    return Terreno(zoom=zoom, x0=tx0, y0=ty0, cotas=np.maximum(np.vstack(filas), 0.0))
 
 
 def cota_en(punto: geo.Punto, cache: Path, zoom: int = ZOOM) -> float:
