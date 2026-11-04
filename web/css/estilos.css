@@ -718,6 +718,23 @@ button { cursor: pointer; }
   box-shadow: none;
 }
 .referencia--detras::before { display: none; }
+/* Un grupo de lugares en la misma dirección se apila a un costado: la píldora se
+   ancla por su borde y el alfiler en codo hasta su punto lo dibuja el SVG. */
+.referencia--costado { translate: 0 -50%; }
+.referencia--costado.referencia--izquierda { translate: -100% -50%; }
+.referencia--costado::after, .referencia--costado::before { display: none; }
+/* Si no cabe al costado (celular), se corta el nombre y la distancia queda entera. */
+.referencia--costado .referencia__pildora { max-width: 100%; box-sizing: border-box; }
+.referencia--costado .referencia__pildora b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.referencia--costado .referencia__lejania { flex-shrink: 0; }
+.guias-referencias { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.guia-referencia[hidden] { display: none; }
+.guia-referencia path { fill: none; stroke-linejoin: round; }
+.guia-referencia__sombra { stroke: rgb(0 0 0 / 0.35); stroke-width: 4; }
+.guia-referencia__linea { stroke: rgb(255 255 255 / 0.9); stroke-width: 2; }
+.guia-referencia__punto { fill: #fff; stroke: rgb(0 0 0 / 0.35); stroke-width: 2; }
+.guia-referencia--detras .guia-referencia__linea { stroke-dasharray: 3 3; }
+.guia-referencia--detras .guia-referencia__sombra, .guia-referencia--detras .guia-referencia__punto { display: none; }
 .referencia__detras {
   align-self: center;
   width: 18px;
