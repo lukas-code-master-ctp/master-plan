@@ -75,6 +75,13 @@ CAMINO_SIMPLIFICAR_M = 0.5
 NOMBRE_DE_AGUA = re.compile(r"^\s*(estero|r[ií]o|quebrada|canal|arroyo|acequia|vertiente)\b",
                             re.IGNORECASE)
 
+# Zonas que no se venden pero el comprador quiere ver: la de conservación de Fundo
+# Atalaya, un área verde, una reserva. Van en el KMZ como un polígono con ese nombre
+# y se pintan aparte (leer_zonas); no son lotes ni entran en la red de deslindes.
+NOMBRE_DE_ZONA = re.compile(
+    r"^\s*(zona\s+(de|protegida)\b|[aá]reas?\s+(verdes?|de)\b|reserva\b|conservaci[oó]n\b|bosque\s+nativo\b)",
+    re.IGNORECASE)
+
 
 @dataclass
 class ParcelaGeometrica:
@@ -238,6 +245,27 @@ def leer_aguas(ruta: Path) -> list[tuple[str, list[geo.Punto]]]:
     return [(nombre, puntos) for nombre, puntos in aguas if len(puntos) >= 2]
 
 
+def leer_zonas(ruta: Path) -> list[tuple[str, geo.Anillo]]:
+    """Las zonas con nombre del KMZ (ver NOMBRE_DE_ZONA): su nombre y su contorno."""
+    with zipfile.ZipFile(ruta) as archivo:
+        nombres = [n for n in archivo.namelist() if n.lower().endswith(".kml")]
+        if not nombres:
+            raise ValueError(f"{ruta.name} no contiene ningún .kml")
+        kml = archivo.read(nombres[0]).decode("utf-8", "ignore")
+    zonas = []
+    for marca in ET.fromstring(kml).iter(NS + "Placemark"):
+        nombre = " ".join(_texto(marca.find(NS + "name")).split())
+        if not NOMBRE_DE_ZONA.match(nombre):
+            continue
+        for anillo in marca.iter(f"{NS}outerBoundaryIs"):
+            coordenadas = anillo.find(f".//{NS}coordinates")
+            if coordenadas is not None and coordenadas.text:
+                puntos = _coordenadas(coordenadas.text, cerrado=True)
+                if len(puntos) >= 3:
+                    zonas.append((nombre, puntos))
+    return zonas
+
+
 def _parsear(kml: str) -> list[ParcelaGeometrica]:
     raiz = ET.fromstring(kml)
     dibujo = _leer_dibujo(raiz, _colores_de_estilo(raiz))
@@ -263,6 +291,8 @@ def _leer_dibujo(raiz: ET.Element, colores: dict[str, str]) -> _Dibujo:
         nombre = _texto(marca.find(NS + "name"))
         if NOMBRE_DE_AGUA.match(nombre):
             continue   # un estero no es lote ni camino (leer_aguas)
+        if NOMBRE_DE_ZONA.match(nombre) and marca.find(f".//{NS}Polygon") is not None:
+            continue   # una zona de conservación tampoco (leer_zonas)
         descripcion = _texto(marca.find(NS + "description"))
         color = _color_de(marca, colores)
         etapa = numero_de_etapa(nombre)

@@ -614,6 +614,13 @@ rutas no cuentan como deslindes ni como caminos: se leen aparte (`leer_aguas`), 
 vista las trae en `aguas` y el visor las dibuja en azul con su nombre, también en el
 plano.
 
+**Zonas con nombre.** Una zona que no se vende pero el comprador quiere ver (la de
+conservación de Fundo Atalaya, un área verde, una reserva) va en el KMZ como un polígono
+cuyo nombre empieza por "Zona de", "Zona protegida", "Área verde", "Área de",
+"Reserva", "Conservación" o "Bosque nativo". No es lote ni deslinde: se lee aparte
+(`leer_zonas`), cada vista la trae en `zonas` y el visor la pinta como un velo verde
+con borde punteado y su nombre en lo que se ve de ella; el plano y el geo también.
+
 **Referencias tras un cerro.** Si el relieve entre el dron y el pueblo lo tapa
 (`referencias.cresta`, con el mismo DEM del horizonte), la vista lo marca `tapada` con
 la elevación de la cumbre (`el_cumbre`). El visor pone el rótulo sobre esa cumbre, con

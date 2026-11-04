@@ -94,3 +94,13 @@ def test_los_rotulos_son_chicos_y_del_mismo_tamano_aunque_un_lote_sea_enorme(tmp
     assert len(tamanos) == 7
     assert max(tamanos.values()) <= geo_pintado.TAMANO_ROTULO_MAX + 0.01
     assert abs(tamanos["LOTE A7"] - tamanos["LOTE A1"]) < 0.01
+
+
+def test_la_zona_de_conservacion_sale_con_su_nombre(tmp_path):
+    con_zona = {**datos("disponible", "disponible"),
+                "zonas": [{"nombre": "Zona de conservación",
+                           "poligono": [[x - 0.003, y] for x, y in
+                                        [[-72.0, -36.0], [-71.9985, -36.0], [-71.9985, -35.998], [-72.0, -35.998]]]}]}
+    ruta = geo_pintado.generar(con_zona, tmp_path / "geo.pdf", None)
+
+    assert "ZONA DE CONSERVACIÓN" in texto(ruta)

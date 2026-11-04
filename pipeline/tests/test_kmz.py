@@ -479,6 +479,41 @@ def test_que_nombres_cuentan_como_agua(nombre, es_agua):
     assert bool(NOMBRE_DE_AGUA.match(nombre)) is es_agua
 
 
+def test_una_zona_de_conservacion_se_lee_aparte_y_no_es_lote(tmp_path):
+    """Fundo Atalaya: la zona de conservación va como un polígono con ese nombre al
+    lado de los lotes. Se pinta, pero no es un lote ni parte la red de deslindes."""
+    from pipeline.kmz import leer_zonas
+    zona = [desplazar(-200, 0), desplazar(-10, 0), desplazar(-10, 70), desplazar(-200, 70)]
+    ruta = guardar_kmz(tmp_path, kml(rejilla_de_dos() + punto("LOTE 1", desplazar(35, 35))
+                                     + punto("LOTE 2", desplazar(105, 35))
+                                     + poligono(zona, nombre="Zona de conservación")))
+
+    [(nombre, anillo)] = leer_zonas(ruta)
+    assert nombre == "Zona de conservación"
+    assert anillo == [pytest.approx(p, abs=1e-9) for p in zona]
+    assert sorted(p.id for p in leer_kmz(ruta)) == ["1", "2"]
+
+
+def test_una_zona_entre_poligonos_no_sale_como_lote_sin_numero(tmp_path):
+    from pipeline.kmz import leer_zonas
+    lote = [desplazar(0, 0), desplazar(50, 0), desplazar(50, 50), desplazar(0, 50)]
+    zona = [desplazar(60, 0), desplazar(200, 0), desplazar(200, 50), desplazar(60, 50)]
+    ruta = guardar_kmz(tmp_path, kml(poligono(lote, nombre="LOTE 1") + poligono(zona, nombre="Área verde")))
+
+    assert [p.id for p in leer_kmz(ruta)] == ["1"]
+    assert [nombre for nombre, _ in leer_zonas(ruta)] == ["Área verde"]
+
+
+@pytest.mark.parametrize("nombre, es_zona", [
+    ("Zona de conservación", True), ("ZONA DE CONSERVACION", True), ("Área verde", True),
+    ("Areas verdes", True), ("Reserva", True), ("Conservación", True), ("Bosque nativo", True),
+    ("Zona protegida", True), ("LOTE 7", False), ("A214", False), ("Zonal", False), ("Estero", False),
+])
+def test_que_nombres_cuentan_como_zona(nombre, es_zona):
+    from pipeline.kmz import NOMBRE_DE_ZONA
+    assert bool(NOMBRE_DE_ZONA.match(nombre)) is es_zona
+
+
 @pytest.mark.parametrize("pendiente", [0.05 + i * 0.0371 for i in range(14)])
 def test_una_divisoria_que_llega_a_un_borde_inclinado_separa_los_lotes(pendiente):
     """Fundo Atalaya: la divisoria termina a décimas de milímetro de un borde en

@@ -50,6 +50,9 @@ AMARILLO = (1.0, 0.92, 0.0)
 DORADO = (0.72, 0.56, 0.0)
 CELESTE = (0.0, 0.9, 1.0)
 AZUL_AGUA = (0.23, 0.61, 1.0)
+VERDE_ZONA = (0.25, 0.68, 0.35)
+# El nombre de una zona (la de conservación) se lee de lejos: más grande que un lote.
+TAMANO_ROTULO_ZONA = 9.0
 TINTA = (0.11, 0.10, 0.09)
 TINTA_SUAVE = (0.42, 0.40, 0.35)
 TEXTO_SOBRE_CELESTE = (0.05, 0.13, 0.25)
@@ -73,6 +76,8 @@ def generar(datos: dict, destino: Path, teselas: Teselas | None) -> Path:
         raise ValueError("el loteo no tiene parcelas con polígono")
     anillos = [p["poligono"] for p in con_forma]
     anillos += [o["poligono"] for o in datos.get("otros_poligonos", []) if o.get("poligono")]
+    # La zona de conservación entra en el encuadre: si no, el geo la dejaba afuera.
+    anillos += [z["poligono"] for z in datos.get("zonas", []) if z.get("poligono")]
 
     zoom, caja = _encuadre(anillos)
     x0, y0, x1, y1 = caja
@@ -99,6 +104,10 @@ def generar(datos: dict, destino: Path, teselas: Teselas | None) -> Path:
     for otro in datos.get("otros_poligonos", []):
         forma.draw_polyline([a_pagina(p) for p in otro["poligono"]] + [a_pagina(otro["poligono"][0])])
     forma.finish(color=borde, width=0.5, closePath=True, stroke_opacity=0.8)
+    for zona in datos.get("zonas", []):
+        forma.draw_polyline(_cerrado([a_pagina(p) for p in zona["poligono"]]))
+        forma.finish(color=VERDE_ZONA, fill=VERDE_ZONA, fill_opacity=0.25, width=0.9,
+                     dashes="[3 2] 0", closePath=True)
     for agua in datos.get("aguas", []):
         if len(agua.get("linea", [])) > 1:
             forma.draw_polyline([a_pagina(p) for p in agua["linea"]])
@@ -121,6 +130,12 @@ def generar(datos: dict, destino: Path, teselas: Teselas | None) -> Path:
         if ubicacion:
             _rotular(pagina, ubicacion, _nombre(parcela), tamano,
                      TEXTO_SOBRE_CELESTE if parcela.get("estado") == "disponible" else rotulo)
+
+    for zona in datos.get("zonas", []):
+        nombre = zona["nombre"].upper()
+        ubicacion = _ubicar([a_pagina(p) for p in zona["poligono"]], nombre)
+        if ubicacion:
+            _rotular(pagina, ubicacion, nombre, TAMANO_ROTULO_ZONA, (1.0, 1.0, 1.0) if satelite is not None else TINTA)
 
     _encabezado(pagina, datos, len(disponibles), len(con_forma) - len(disponibles))
     pagina.insert_text((12, pagina.rect.height - 4.5),
