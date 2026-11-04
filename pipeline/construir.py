@@ -386,11 +386,24 @@ def _proyectar_caminos(vista: Vista, caminos: list[list[geo.Anillo]],
     """Cada camino como sus anillos (contorno y huecos) en azimut y elevación."""
     proyectados = []
     for anillos in caminos:
-        if not proyectar_vista(vista, [("camino", anillos[0])], terreno=modelo):
-            continue   # lejos, al ras del horizonte o fuera de vista, como una parcela
+        # Solo se descarta por lejano. El filtro de las parcelas (área y ancho
+        # angular) no sirve para un camino: en Fundo Atalaya la red entera es una sola
+        # franja que abarca más de media vuelta de azimut alrededor del dron, su
+        # área angular sale nula y se descartaba completa aunque se ve justo abajo.
+        if not _camino_cerca(vista, anillos[0], modelo):
+            continue
         partes = [proyectar_parcela(vista, "camino", anillo, modelo) for anillo in anillos]
         proyectados.append([[list(v) for v in parte.anillo] for parte in partes if parte])
     return proyectados
+
+
+def _camino_cerca(vista: Vista, anillo: geo.Anillo, modelo: ModeloTerreno | None) -> bool:
+    """Si algún vértice del camino queda a la distancia que el visor muestra."""
+    for punto in anillo:
+        cota = modelo(punto) if modelo else None
+        if proyectar_punto(vista, punto, cota)[2] <= config.DISTANCIA_MAXIMA_M:
+            return True
+    return False
 
 
 def _proyectar_etapas(vista: Vista, contornos: list[tuple[int, list[geo.Anillo]]],

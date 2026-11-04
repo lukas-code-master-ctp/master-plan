@@ -197,7 +197,10 @@ def leer_caminos(ruta: Path) -> list[list[geo.Anillo]]:
     def en_metros(puntos):
         return [geo.a_metros(p, origen) for p in puntos]
 
-    deslindes = unary_union([Polygon(en_metros(p.anillo)).exterior for p in lotes]).buffer(TOLERANCIA_RED_M)
+    # El borde de una zona con nombre (la de conservación) también es deslinde: el
+    # cerco del predio que la rodea no es un camino.
+    bordes = [p.anillo for p in lotes] + [anillo for _, anillo in _zonas_del_kml(kml)]
+    deslindes = unary_union([Polygon(en_metros(a)).exterior for a in bordes]).buffer(TOLERANCIA_RED_M)
     prepare(deslindes)
     trazos = [LineString(en_metros(puntos)) for puntos, _ in dibujo.lineas if len(puntos) >= 2]
     sueltos = [t for t in trazos
@@ -252,6 +255,10 @@ def leer_zonas(ruta: Path) -> list[tuple[str, geo.Anillo]]:
         if not nombres:
             raise ValueError(f"{ruta.name} no contiene ningún .kml")
         kml = archivo.read(nombres[0]).decode("utf-8", "ignore")
+    return _zonas_del_kml(kml)
+
+
+def _zonas_del_kml(kml: str) -> list[tuple[str, geo.Anillo]]:
     zonas = []
     for marca in ET.fromstring(kml).iter(NS + "Placemark"):
         nombre = " ".join(_texto(marca.find(NS + "name")).split())

@@ -504,6 +504,20 @@ def test_una_zona_entre_poligonos_no_sale_como_lote_sin_numero(tmp_path):
     assert [nombre for nombre, _ in leer_zonas(ruta)] == ["Área verde"]
 
 
+def test_el_borde_de_una_zona_no_es_camino(tmp_path):
+    """El cerco del predio corre por el borde de la zona de conservación: como no es
+    deslinde de ningún lote, salía pintado de camino."""
+    from pipeline.kmz import leer_caminos
+    zona = [desplazar(-200, 0), desplazar(0, 0), desplazar(0, 70), desplazar(-200, 70)]
+    cerco = [desplazar(0, 0), desplazar(-200, 0), desplazar(-200, 70), desplazar(0, 70)]
+    ruta = guardar_kmz(tmp_path, kml(rejilla_de_dos() + punto("LOTE 1", desplazar(35, 35))
+                                     + punto("LOTE 2", desplazar(105, 35))
+                                     + estero("Cerco", cerco).replace("Cerco", "cerco poniente")
+                                     + poligono(zona, nombre="Zona de conservación")))
+
+    assert leer_caminos(ruta) == []
+
+
 @pytest.mark.parametrize("nombre, es_zona", [
     ("Zona de conservación", True), ("ZONA DE CONSERVACION", True), ("Área verde", True),
     ("Areas verdes", True), ("Reserva", True), ("Conservación", True), ("Bosque nativo", True),
