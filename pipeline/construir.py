@@ -825,6 +825,13 @@ def _puntaje_encuadre(proyectadas: list) -> float:
     return sum(min(p.area_angular, TOPE_AREA_POR_PARCELA) for p in proyectadas)
 
 
+# Cuánto pueden diferir los desniveles de las vistas que calibraron para que el de
+# una que no calibró se saque de ellas. En Fundo Atalaya el punto I dio +11 m y el
+# III +69 m: el II heredaba +40 m y todo el sector sur le quedaba corrido un lote,
+# cuando con la altura del GPS caía sobre los caminos.
+DESNIVELES_EN_ACUERDO_M = 25.0
+
+
 def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
                    inclinaciones: dict[str, dict[float, tuple[float, float]]],
                    relieve, despegue_de, lineas, avisos: Avisos) -> list:
@@ -850,7 +857,12 @@ def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
     _, panorama_ref, referencia = max(buenas, key=lambda b: b[0])
     imagen_ref = cruce.cargar_panorama(panorama_ref.ruta)
     modelo_ref = terreno.modelo_para_vista(relieve, referencia, despegue_de(referencia)) if relieve else None
-    comun = statistics.median(v.desnivel for _, _, v in buenas)
+    desniveles = [v.desnivel for _, _, v in buenas]
+    comun = statistics.median(desniveles)
+    # Heredar el desnivel tiene sentido si las que calibraron coinciden: sale casi
+    # todo de la cota del despegue, que comparten. Si no coinciden, al menos una
+    # siguió líneas que no se ven en la foto, y la mediana no es de nadie.
+    acuerdo = max(desniveles) - min(desniveles) <= DESNIVELES_EN_ACUERDO_M
     cruces = {}
     for panorama, _, vista in vistas:
         if vista.id in pendientes:
@@ -877,10 +889,16 @@ def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],
                       f"{resultado.error_despues_m:.0f} m)")
                 vista = resultado.aplicar(vista)
             else:
-                ajuste = ajuste_a_desnivel(vista, inclinaciones[vista.id], comun)
+                if acuerdo:
+                    ajuste = ajuste_a_desnivel(vista, inclinaciones[vista.id], comun)
+                    que = f"toma el desnivel de las otras vistas ({comun:+.1f} m)"
+                else:
+                    ajuste = ajuste_a_desnivel(vista, inclinaciones[vista.id], 0.0)
+                    que = ("las otras no coinciden en el desnivel ("
+                           + ", ".join(f"{v.id} {v.desnivel:+.0f} m" for _, _, v in buenas)
+                           + "); queda con la altura del GPS")
                 avisos.añadir(f"{vista.id}: el ajuste fino se fue al tope ({tope}) y no calzó contra "
-                              f"{referencia.id} ({resultado.motivo}); toma el desnivel de las otras "
-                              f"vistas ({comun:+.1f} m), sin giro. Revisa su calce.")
+                              f"{referencia.id} ({resultado.motivo}); {que}, sin giro. Revisa su calce.")
                 vista = aplicar(vista, ajuste)
             ajustes[vista.id] = ajuste
         salida.append((panorama, rumbo, vista))
