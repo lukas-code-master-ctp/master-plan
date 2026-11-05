@@ -1,3 +1,5 @@
+import dataclasses
+
 import pytest
 
 from pipeline.construir import _revisar_ids_de_vista
@@ -351,7 +353,7 @@ def _tres_vistas(desnivel_referencia: float, soles=None):
             (panorama, rumbo.get("p03"), vista("p03", 3, desnivel_referencia, giro=-0.3))]
 
 
-def _cruzar(monkeypatch, cruces, ajustes=None, soles=None):
+def _cruzar(monkeypatch, cruces, ajustes=None, soles=None, entrada=None):
     """`cruces` va de la vista, de (vista, referencia) o de (vista, referencia, desnivel
     de la referencia) al resultado del cruce."""
     def calibrar_contra(vista, panorama, cota, referencia, *resto):
@@ -366,7 +368,7 @@ def _cruzar(monkeypatch, cruces, ajustes=None, soles=None):
                           "p03": Ajuste(giro=-0.3, desnivel=73.0, puntaje_antes=1.0, puntaje_despues=1.44)}
     avisos = construir.Avisos([])
     desnivel = 73.0 if ajustes["p03"].aplicado else 0.0
-    vistas = construir._cruzar_vistas(_tres_vistas(desnivel, soles), ajustes,
+    vistas = construir._cruzar_vistas(entrada or _tres_vistas(desnivel, soles), ajustes,
                                       {v: INCLINACIONES_CRUCE for v in ajustes}, object(),
                                       lambda v: (-71.66, -33.73), [[(-71.66, -33.73), (-71.65, -33.72)]],
                                       avisos)
@@ -395,6 +397,35 @@ def test_si_otra_vista_calza_contra_la_referencia_su_desnivel_vale(monkeypatch):
     assert vistas["p03"].desnivel == pytest.approx(73.0)
     assert vistas["p01"].desnivel == pytest.approx(70.0)
     assert vistas["p02"].desnivel == pytest.approx(73.0)
+
+
+def test_si_las_que_calibraron_no_coinciden_la_otra_no_hereda(monkeypatch):
+    """Fundo Atalaya con 129 lotes: el I calibró +11 m y el III +69 m, y el II, que no
+    calzó con nadie, heredaba +40 m. Con la altura del GPS queda sobre los caminos."""
+    ajustes = {"p01": Ajuste(desnivel=11.0, puntaje_antes=1.0, puntaje_despues=1.04),
+               "p02": Ajuste(tope="desnivel -80 m"),
+               "p03": Ajuste(giro=-0.3, desnivel=69.0, puntaje_antes=1.0, puntaje_despues=1.63)}
+    entrada = _tres_vistas(69.0)
+    entrada[0] = (entrada[0][0], None, dataclasses.replace(entrada[0][2], desnivel=11.0))
+    vistas, avisos = _cruzar(monkeypatch, {"p02": Cruce(None, 36, motivo="solo 36 coincidencias")}, ajustes,
+                             entrada=entrada)
+
+    assert vistas["p02"].desnivel == pytest.approx(0.0)
+    assert vistas["p01"].desnivel == pytest.approx(11.0)
+    assert vistas["p03"].desnivel == pytest.approx(69.0)
+    assert any("no coinciden en el desnivel" in a for a in avisos.lineas)
+
+
+def test_si_las_que_calibraron_coinciden_la_otra_hereda(monkeypatch):
+    ajustes = {"p01": Ajuste(desnivel=60.0, puntaje_antes=1.0, puntaje_despues=1.2),
+               "p02": Ajuste(tope="desnivel -80 m"),
+               "p03": Ajuste(giro=-0.3, desnivel=69.0, puntaje_antes=1.0, puntaje_despues=1.63)}
+    entrada = _tres_vistas(69.0)
+    entrada[0] = (entrada[0][0], None, dataclasses.replace(entrada[0][2], desnivel=60.0))
+    vistas, _ = _cruzar(monkeypatch, {"p02": Cruce(None, 36, motivo="solo 36 coincidencias")}, ajustes,
+                             entrada=entrada)
+
+    assert vistas["p02"].desnivel == pytest.approx(64.5)
 
 
 TODAS_AL_TOPE = {"p01": Ajuste(tope="giro +1.5°"), "p02": Ajuste(tope="giro +1.5°"),
