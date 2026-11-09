@@ -37,6 +37,7 @@ export class Mapa {
     L.tileLayer(TESELAS, { maxZoom: 19, attribution: ATRIBUCION }).addTo(this.mapa);
 
     this._dibujarOtrosPoligonos();
+    this._dibujarCaminos();
     this._dibujarZonas();
     this._dibujarAguas();
     this._dibujarParcelas();
@@ -50,6 +51,17 @@ export class Mapa {
       L.polygon(aLatLng(otro.poligono), {
         color: '#6b6559', weight: 0.8, opacity: 0.5,
         fillColor: '#6b6559', fillOpacity: 0.1, interactive: false,
+      }).addTo(this.mapa);
+    }
+  }
+
+  // Los caminos y servidumbres, en el mismo amarillo que en el 360. Los huecos son
+  // los lotes que encierra un camino que da la vuelta.
+  _dibujarCaminos() {
+    for (const anillos of this.catalogo.meta.caminos ?? []) {
+      L.polygon(anillos.map(aLatLng), {
+        className: 'camino-mapa', color: '#f2c230', weight: 1, opacity: 0.9,
+        fillColor: '#f2c230', fillOpacity: 0.35, interactive: false,
       }).addTo(this.mapa);
     }
   }
