@@ -24,6 +24,7 @@ from sqlalchemy import and_, insert, select, update
 
 from .cuentas import Correo, limpiar_texto
 from .datos import Base, NoEncontrado, solicitudes_reserva
+from .datos import proyectos as tabla_proyectos
 from .proyectos import Proyecto
 
 registro = logging.getLogger("consola.reservas")
@@ -202,6 +203,18 @@ class Reservas:
                 select(solicitudes_reserva)
                 .where(solicitudes_reserva.c.proyecto_id == self._id(proyecto))
                 .order_by(solicitudes_reserva.c.creada_en.desc()).limit(200))]
+
+    def de_todos(self, cliente_id: int | None) -> list[tuple[Solicitud, str, str]]:
+        """Las de todos los loteos de una loteadora (o de todas, con None), con el slug
+        y el nombre de su loteo, en una sola consulta (ver Interesados.de_todos)."""
+        consulta = (select(solicitudes_reserva, tabla_proyectos.c.slug.label("slug_loteo"),
+                           tabla_proyectos.c.nombre.label("nombre_loteo"))
+                    .join(tabla_proyectos, tabla_proyectos.c.id == solicitudes_reserva.c.proyecto_id)
+                    .order_by(solicitudes_reserva.c.creada_en.desc()).limit(500))
+        if cliente_id is not None:
+            consulta = consulta.where(tabla_proyectos.c.cliente_id == cliente_id)
+        with self.base.motor.connect() as con:
+            return [(_solicitud(f), f.slug_loteo, f.nombre_loteo) for f in con.execute(consulta)]
 
     def resolver(self, proyecto: Proyecto, identificador: int, estado: str) -> Solicitud:
         """Confirmar (se pagó) o liberar (no se pagó). Una de otro loteo: NoEncontrado."""

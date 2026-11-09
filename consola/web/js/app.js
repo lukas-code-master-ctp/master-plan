@@ -120,9 +120,9 @@ function mostrar() {
 async function refrescar() {
   [estado.proyectos, estado.disenos, estado.kmzs] = await Promise.all([
     pedir('/api/proyectos'), pedir('/api/disenos'), pedir('/api/kmz')]);
-  // Después de los loteos: se piden las de cada uno publicado.
+  // Las reservas y los interesados de todos los loteos, un pedido cada uno.
   [estado.reservas, estado.interesados] = await Promise.all([
-    cargarReservas(estado.proyectos), cargarInteresados(estado.proyectos)]);
+    cargarReservas(), cargarInteresados()]);
   pintarContador();
   pintarContadorInteresados();
   estado.contactos = await cargarContactos();

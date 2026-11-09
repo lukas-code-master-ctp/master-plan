@@ -107,13 +107,9 @@ export function enlaceWhatsapp(solicitud) {
  * Las solicitudes de todos los loteos publicados de quien mira. Un loteo que
  * falla no deja sin las demás: se cuenta y se sigue.
  */
-export async function cargarReservas(proyectos) {
-  const publicados = proyectos.filter((p) => p.publicado);
-  const listas = await Promise.all(publicados.map((p) =>
-    pedir(`/api/proyectos/${encodeURIComponent(p.slug)}/reservas`)
-      .then((lista) => lista.map((s) => ({ ...s, slug: p.slug, loteo: p.nombre })))
-      .catch(() => [])));
-  return listas.flat();
+export async function cargarReservas() {
+  // Un solo pedido con las de todos los loteos (cada una trae su slug y su loteo).
+  return pedir('/api/reservas').catch(() => []);
 }
 
 // --- La pantalla ---------------------------------------------------------------------

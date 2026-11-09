@@ -164,6 +164,14 @@ def rutas_de_reservas(reservas: Reservas, registro: Registro, vista, *, local: b
 
     # --- en la consola, con sesión ------------------------------------------------------
 
+    @rutas.get("/api/reservas")
+    def de_todos(mios: Vista = Depends(vista)) -> list[dict]:
+        """Las solicitudes de todos sus loteos, con el loteo de cada una: un pedido en
+        vez de uno por loteo publicado."""
+        ahora = reservas.ahora()
+        return [{**s.como_json(ahora), "slug": slug, "loteo": nombre}
+                for s, slug, nombre in reservas.de_todos(mios.filtro)]
+
     @rutas.get("/api/proyectos/{slug}/reservas")
     def solicitudes(slug: str, mios: Vista = Depends(vista)) -> list[dict]:
         proyecto = mios.ver(slug)

@@ -580,6 +580,10 @@ RUTAS = {
     # El formulario de la landing: solo acepta tumasterplan.cl, con tope por IP y
     # campo trampa (test_contactos.py).
     ("POST", "/api/publico/contacto"): SIN_SESION,
+    # La bandeja de reservas y la de interesados, de todos los loteos de quien pide en
+    # un solo pedido (test_reservas.py y test_interesados.py prueban que no hay ajenos).
+    ("GET", "/api/reservas"): SOLO_SUYO,
+    ("GET", "/api/interesados"): SOLO_SUYO,
     ("GET", "/api/proyectos/{slug}/reservas"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/reservas/{identificador}/confirmar"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/reservas/{identificador}/liberar"): AJENO_404,

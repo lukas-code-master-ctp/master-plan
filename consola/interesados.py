@@ -18,6 +18,7 @@ from sqlalchemy import and_, insert, select, update
 
 from .cuentas import Correo, limpiar_texto
 from .datos import Base, NoEncontrado, interesados
+from .datos import proyectos as tabla_proyectos
 from .proyectos import Proyecto
 from .reservas import CORREO, SolicitudInvalida, _estado_en_el_sitio
 
@@ -139,6 +140,19 @@ class Interesados:
             return [_interesado(f) for f in con.execute(
                 select(interesados).where(interesados.c.proyecto_id == self._id(proyecto))
                 .order_by(interesados.c.creado_en.desc()).limit(A_LA_VISTA))]
+
+    def de_todos(self, cliente_id: int | None) -> list[tuple[Interesado, str, str]]:
+        """Los de todos los loteos de una loteadora (o de todas, con None), con el slug
+        y el nombre de su loteo. Una sola consulta: la bandeja de la consola los pedía
+        loteo por loteo, y cada pedido leía el loteo del bucket."""
+        consulta = (select(interesados, tabla_proyectos.c.slug.label("slug_loteo"),
+                           tabla_proyectos.c.nombre.label("nombre_loteo"))
+                    .join(tabla_proyectos, tabla_proyectos.c.id == interesados.c.proyecto_id)
+                    .order_by(interesados.c.creado_en.desc()).limit(A_LA_VISTA))
+        if cliente_id is not None:
+            consulta = consulta.where(tabla_proyectos.c.cliente_id == cliente_id)
+        with self.base.motor.connect() as con:
+            return [(_interesado(f), f.slug_loteo, f.nombre_loteo) for f in con.execute(consulta)]
 
     def por_parcela(self, proyecto: Proyecto, desde: datetime) -> dict[str, int]:
         """Cuántos interesados llegaron por cada parcela desde `desde`."""

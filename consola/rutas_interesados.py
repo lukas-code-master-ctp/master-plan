@@ -94,6 +94,12 @@ def rutas_de_interesados(interesados: Interesados, estadisticas: Estadisticas, r
 
     # --- en la consola, con sesión ------------------------------------------------------
 
+    @rutas.get("/api/interesados")
+    def de_todos(mios: Vista = Depends(vista)) -> list[dict]:
+        """La bandeja entera, con el loteo de cada uno: un pedido en vez de uno por loteo."""
+        return [{**i.como_json(), "slug": slug, "loteo": nombre}
+                for i, slug, nombre in interesados.de_todos(mios.filtro)]
+
     @rutas.get("/api/proyectos/{slug}/interesados")
     def del_loteo(slug: str, mios: Vista = Depends(vista)) -> list[dict]:
         return [i.como_json() for i in interesados.del_loteo(mios.ver(slug))]
