@@ -49,7 +49,7 @@ function tarjetasConMiniatura() {
   ));
 }
 
-// Reservas y contactos: un rótulo de grupo y filas como las solicitudes.
+// Reservas, interesados y contactos: un rótulo de grupo y filas como las solicitudes.
 function filas() {
   const grupo = caja('reservas__grupo', hueso('9rem', 'esqueleto--titulo'));
   grupo.setAttribute('aria-hidden', 'true');
@@ -88,6 +88,7 @@ const FORMAS = {
   kmzs: tarjetasConMiniatura,
   disenos: tarjetasConMiniatura,
   reservas: filas,
+  interesados: filas,
   contactos: filas,
   'equipo-lista': miembros,
   'actividad-lista': actividad,

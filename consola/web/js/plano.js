@@ -17,6 +17,7 @@ import {
 import { pintarVuelo } from './vuelo.js';
 import { tituloEsqueleto } from './esqueleto.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
+import { pintarEstadisticas, prepararEstadisticas } from './estadisticas.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
 import { relevo, retomarRegistro, textoInterrumpido, trasFalloDeSondeo } from './sondeo.js';
 
@@ -25,6 +26,7 @@ let actual = null;          // el slug que se está mirando
 
 export function prepararPlano(opciones) {
   refrescar = opciones.refrescar;
+  prepararEstadisticas();
   $('#plano').addEventListener('click', (evento) => {
     const accion = evento.target.closest('[data-accion]')?.dataset.accion;
     const proyecto = proyectoActual();
@@ -96,6 +98,7 @@ export function pintarPlano(slug, { nuevo = false, buscando = false } = {}) {
     $('#plano-meta').replaceChildren();
     $('#plano-estado').replaceChildren();
     $('#plano').classList.add('plano-detalle--vacio');
+    $('#plano-estadisticas').hidden = true;
     return;
   }
   $('#plano').classList.remove('plano-detalle--vacio');
@@ -107,6 +110,7 @@ export function pintarPlano(slug, { nuevo = false, buscando = false } = {}) {
   pintarPortada(proyecto);
   // Las cifras cuentan al llegar; un refresco mientras construye no repite la cuenta.
   pintarCifras(proyecto, { animar: nuevo });
+  pintarEstadisticas(proyecto, { nuevo });
   pintarRegistro(slug);
   pintarInventario(proyecto);
   pintarCierra(proyecto);

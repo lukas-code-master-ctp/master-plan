@@ -583,6 +583,13 @@ RUTAS = {
     ("GET", "/api/proyectos/{slug}/reservas"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/reservas/{identificador}/confirmar"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/reservas/{identificador}/liberar"): AJENO_404,
+    # "Me interesa" y las cifras del sitio: igual que las reservas, solo aceptan el
+    # origen del sitio de ese loteo, con tope por IP (test_interesados.py).
+    ("POST", "/api/publico/interesados"): SIN_SESION,
+    ("POST", "/api/publico/eventos"): SIN_SESION,
+    ("GET", "/api/proyectos/{slug}/interesados"): AJENO_404,
+    ("PATCH", "/api/proyectos/{slug}/interesados/{identificador}"): AJENO_404,
+    ("GET", "/api/proyectos/{slug}/estadisticas"): AJENO_404,
 }
 
 

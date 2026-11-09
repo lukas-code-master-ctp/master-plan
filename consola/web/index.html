@@ -33,6 +33,11 @@
       <span class="pestanas__texto">Reservas</span>
       <span id="contador-reservas" class="contador" hidden></span>
     </a>
+    <a href="#/interesados" data-seccion="interesados">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/></svg>
+      <span class="pestanas__texto">Interesados</span>
+      <span id="contador-interesados" class="contador" hidden></span>
+    </a>
     <!-- Solo para el equipo de CTP: la muestra pintarBackOffice. -->
     <a href="#/contactos" data-seccion="contactos" id="pestana-contactos" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6"/></svg>
@@ -346,6 +351,48 @@
             <summary>Ver el registro</summary>
             <pre id="plano-registro" class="consola-log"></pre>
           </details>
+        </div>
+      </section>
+
+      <!-- Lo que pasa en el sitio publicado (js/estadisticas.js): sin datos de nadie. -->
+      <section id="plano-estadisticas" class="estadisticas" aria-labelledby="estadisticas-titulo" hidden>
+        <header class="estadisticas__cabecera">
+          <div>
+            <h2 id="estadisticas-titulo">Estadísticas del sitio</h2>
+            <p id="estadisticas-periodo" class="nota"></p>
+          </div>
+          <div id="estadisticas-dias" class="segmentos" role="group" aria-label="Período">
+            <button type="button" data-dias="7" aria-pressed="false">7 días</button>
+            <button type="button" data-dias="30" aria-pressed="true">30 días</button>
+            <button type="button" data-dias="90" aria-pressed="false">90 días</button>
+          </div>
+        </header>
+        <dl id="estadisticas-tarjetas" class="estadisticas__tarjetas"></dl>
+        <div class="estadisticas__cuerpo">
+          <section class="estadisticas__panel" aria-labelledby="estadisticas-grafico-titulo">
+            <h3 id="estadisticas-grafico-titulo">Visitas por día</h3>
+            <div class="grafico">
+              <span id="estadisticas-maximo" class="grafico__maximo"></span>
+              <div id="estadisticas-grafico" class="grafico__barras"></div>
+            </div>
+            <p id="estadisticas-vacio" class="nota" hidden>Todavía no hay visitas en este período. Comparte
+              el enlace del sitio y las cifras empiezan a llegar.</p>
+          </section>
+          <section class="estadisticas__panel" aria-labelledby="estadisticas-parcelas-titulo">
+            <h3 id="estadisticas-parcelas-titulo">Parcelas que más se miran</h3>
+            <p id="estadisticas-lectura" class="estadisticas__lectura" hidden></p>
+            <div class="estadisticas__tabla">
+              <table hidden>
+                <thead>
+                  <tr><th scope="col">Parcela</th><th scope="col">Estado</th><th scope="col" class="num">Abierta</th>
+                    <th scope="col" class="num">WhatsApp</th><th scope="col" class="num" title="Dejaron sus datos con «Me interesa»">Interesa</th>
+                    <th scope="col" class="num" title="Clics en Reservar">Reservar</th><th scope="col" class="num" title="Solicitudes de reserva">Reservas</th></tr>
+                </thead>
+                <tbody id="estadisticas-parcelas"></tbody>
+              </table>
+            </div>
+            <p id="estadisticas-sin-parcelas" class="nota">Cuando alguien abra una parcela en el sitio, aparece acá.</p>
+          </section>
         </div>
       </section>
 
@@ -1201,6 +1248,37 @@
     </section>
     <nav id="reservas-filtro" class="filtro-loteos" aria-label="Filtrar por loteo" hidden></nav>
     <div id="reservas" class="reservas" aria-live="polite"></div>
+  </section>
+
+  <!-- Interesados: quienes tocaron "Me interesa" en una parcela (js/interesados.js) -->
+  <section id="pantalla-interesados" class="pantalla" aria-labelledby="titulo-interesados" hidden>
+    <header class="pantalla__cabecera">
+      <div>
+        <span class="antetitulo">Quién pregunta por tus parcelas</span>
+        <h1 id="titulo-interesados">Interesados</h1>
+        <p class="guia">Quienes tocaron «Me interesa esta parcela» en tus sitios publicados. No apartan
+          nada: llámalos, anota cómo va y quién lo atiende, para que el equipo sepa en qué está cada uno.</p>
+      </div>
+      <div class="pantalla__acciones interesados__acciones">
+        <label class="interesados__estado" aria-label="Filtrar por estado">
+          <select id="interesados-estado">
+            <option value="">Todos los estados</option>
+            <option value="nuevo">Nuevos</option>
+            <option value="contactado">Contactados</option>
+            <option value="visita">Visita agendada</option>
+            <option value="reservo">Reservaron</option>
+            <option value="descartado">Descartados</option>
+          </select>
+        </label>
+        <button id="interesados-actualizar" class="boton boton--texto" type="button">Actualizar</button>
+        <button id="interesados-planilla" class="boton boton--contorno" type="button">Descargar planilla</button>
+      </div>
+    </header>
+    <nav id="interesados-filtro" class="filtro-loteos" aria-label="Filtrar por loteo" hidden></nav>
+    <div class="interesados-cuerpo">
+      <div id="interesados" class="interesados" aria-live="polite"></div>
+      <aside id="interesado" class="interesado" aria-label="El interesado elegido" hidden></aside>
+    </div>
   </section>
 
   <!-- Contactos: el formulario de la landing, solo para el equipo de CTP -->

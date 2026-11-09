@@ -330,6 +330,21 @@ cualquier ruta con slug; lleva una marca "Vista previa", `noindex` y la CSP del 
 no ofrece reservar, porque sin publicar no hay sitio que reciba la reserva y el link de
 pago sería un cobro de verdad.
 
+**Interesados y estadísticas.** En un sitio publicado, la ficha de una parcela en venta
+ofrece "Me interesa esta parcela" además de reservar: el comprador deja nombre, teléfono,
+correo opcional y si prefiere que lo llamen en la mañana o en la tarde, sin apartar nada
+ni pagar. Le llega un correo a cada cuenta de la loteadora y queda en la pestaña
+**Interesados**, donde se le pone estado (nuevo, contactado, visita agendada, reservó,
+descartado), quién lo atiende y una nota, y se baja todo en una planilla para Excel. El
+mismo teléfono por la misma parcela dentro de 24 horas no se duplica. El visor además
+cuenta visitas, fichas abiertas y clics en WhatsApp y en Reservar (una visita y cada ficha
+una vez por sesión); el detalle del loteo publicado las muestra sumadas por día y por
+parcela, junto con los interesados y las reservas, en 7, 30 o 90 días. Se guardan solo
+cifras, sin IP ni nada que diga quién fue. Como las reservas, las rutas públicas
+(`/api/publico/interesados` y `/api/publico/eventos`) solo aceptan el origen del sitio
+del loteo y tienen tope por IP; en la vista previa no hay ni lo uno ni lo otro. Detalle
+en `docs/specs/2026-11-09-interesados-y-estadisticas.md`.
+
 **Cuentas propias.** Cualquiera se registra en `/registro` (su loteadora, su nombre,
 correo y contraseña) o entra con Google. Quien se registra con correo confirma que es
 suyo con un enlace (y un botón) antes de poder entrar: sin eso, cualquiera registraría

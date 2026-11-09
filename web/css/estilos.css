@@ -1533,6 +1533,22 @@ button { cursor: pointer; }
 }
 .reserva__campo input:focus { border-color: var(--marca-700); box-shadow: 0 0 0 3px var(--marca-anillo); }
 /* Fuera de la vista y del tabulador, pero no display:none: algunos robots se saltan lo oculto. */
+.reserva__antetitulo {
+  display: block; margin-bottom: 0.35rem;
+  font: 700 0.6875rem/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--tinta-tenue);
+}
+.reserva__campo small { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--tinta-tenue); }
+/* "Mañana / Tarde / Da igual": tres pastillas, una elegida. */
+.reserva__horario { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; border: 0; }
+.reserva__horario legend { width: 100%; margin-bottom: 0.4rem; padding: 0; font-size: 0.8125rem; font-weight: 600; color: var(--tinta-suave); }
+.reserva__horario label { flex: 1; position: relative; }
+.reserva__horario input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.reserva__horario span {
+  display: grid; place-items: center; height: 40px; border: 1px solid var(--linea-fuerte); border-radius: var(--radio-sm);
+  font-size: 0.875rem; font-weight: 600; color: var(--tinta);
+}
+.reserva__horario input:checked + span { border-color: var(--marca-700); background: var(--marca-700); color: #fff; }
+.reserva__horario input:focus-visible + span { box-shadow: 0 0 0 3px var(--marca-anillo); }
 .reserva__trampa { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 .reserva__privacidad { margin: 1rem 0 0; font-size: 0.75rem; line-height: 1.45; color: var(--tinta-tenue); }
 .reserva__error, .reserva__listo {

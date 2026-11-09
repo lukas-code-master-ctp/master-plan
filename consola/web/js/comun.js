@@ -17,6 +17,8 @@ export const estado = {
   kmzs: [],
   // Las solicitudes de reserva de los loteos publicados (js/reservas.js).
   reservas: [],
+  // Quienes tocaron "Me interesa" en una parcela (js/interesados.js).
+  interesados: [],
   // Los mensajes del formulario de la landing, solo para el equipo de CTP (js/contactos.js).
   contactos: [],
   // Las líneas del último trabajo de cada loteo, y el temporizador que las sondea.
@@ -121,6 +123,7 @@ export function ruta(hash) {
   if (partes[0] === 'disenos' && partes[1]) return { pantalla: 'diseno', id: partes[1] };
   if (partes[0] === 'disenos') return { pantalla: 'disenos' };
   if (partes[0] === 'reservas') return { pantalla: 'reservas' };
+  if (partes[0] === 'interesados') return { pantalla: 'interesados' };
   if (partes[0] === 'contactos') return { pantalla: 'contactos' };
   if (partes[0] === 'loteadoras' && partes[1]) return { pantalla: 'loteadora', id: partes[1] };
   if (partes[0] === 'loteadoras') return { pantalla: 'loteadoras' };

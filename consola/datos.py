@@ -24,8 +24,10 @@ from passlib.context import CryptContext
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     MetaData,
     String,
@@ -244,6 +246,42 @@ solicitudes_reserva = Table(
     Column("creada_en", DateTime(timezone=True), nullable=False),
     Column("vence_en", DateTime(timezone=True), nullable=False),
     Column("resuelta_en", DateTime(timezone=True), nullable=True),
+)
+
+# Lo que deja un comprador al tocar "Me interesa esta parcela" en el sitio publicado
+# (`consola/interesados.py`). No aparta nada: es un contacto que la loteadora sigue
+# en la consola. Datos personales del comprador: solo los ve la loteadora del loteo.
+interesados = Table(
+    "interesados", metadatos,
+    Column("id", Integer, primary_key=True),
+    Column("proyecto_id", Integer, ForeignKey("proyectos.id"), nullable=False, index=True),
+    Column("parcela", String(40), nullable=False),
+    Column("nombre", String(120), nullable=False),
+    Column("telefono", String(20), nullable=False),
+    Column("email", String(160), nullable=False),     # "" si no lo dejó
+    Column("horario", String(20), nullable=False),    # manana | tarde | "" (da igual)
+    # nuevo | contactado | visita | reservo | descartado
+    Column("estado", String(20), nullable=False),
+    # Texto libre y no una cuenta: quien vende muchas veces no entra a la consola.
+    Column("responsable", String(60), nullable=False),
+    Column("nota", Text, nullable=False),
+    Column("creado_en", DateTime(timezone=True), nullable=False),
+    Column("actualizado_en", DateTime(timezone=True), nullable=False),
+)
+
+# Lo que pasa en el sitio publicado, contado por día (`consola/estadisticas.py`):
+# visitas, parcelas abiertas y clics en WhatsApp y en Reservar. Solo cifras: ni IP
+# ni nada que diga quién fue. `parcela` va vacía en lo que es del loteo entero.
+estadisticas = Table(
+    "estadisticas", metadatos,
+    Column("id", Integer, primary_key=True),
+    Column("proyecto_id", Integer, ForeignKey("proyectos.id"), nullable=False),
+    Column("dia", Date, nullable=False),
+    Column("parcela", String(40), nullable=False),
+    Column("tipo", String(20), nullable=False),
+    Column("cantidad", Integer, nullable=False),
+    UniqueConstraint("proyecto_id", "dia", "parcela", "tipo", name="estadisticas_unica"),
+    Index("estadisticas_por_loteo_y_dia", "proyecto_id", "dia"),
 )
 
 # Lo que alguien escribe en el formulario de contacto de la landing (tumasterplan.cl,
@@ -979,6 +1017,8 @@ class Base:
             con.execute(delete(cierra_loteos).where(cierra_loteos.c.proyecto_id.in_(ids)))
             # Las solicitudes apuntan al loteo: en Postgres, si quedan, no deja borrarlo.
             con.execute(delete(solicitudes_reserva).where(solicitudes_reserva.c.proyecto_id.in_(ids)))
+            con.execute(delete(interesados).where(interesados.c.proyecto_id.in_(ids)))
+            con.execute(delete(estadisticas).where(estadisticas.c.proyecto_id.in_(ids)))
             con.execute(delete(proyectos).where(proyectos.c.slug == slug))
 
     # --- registro de lo que pasó ------------------------------------------------------
