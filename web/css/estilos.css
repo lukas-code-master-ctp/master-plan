@@ -257,6 +257,8 @@ button { cursor: pointer; }
   transform: translateY(-50%);
   color: var(--zinc-400);
   pointer-events: none;
+  /* Sobre el campo: con el campo de vidrio (backdrop-filter) quedaba tapada. */
+  z-index: 1;
 }
 
 .buscador input {
@@ -1798,7 +1800,14 @@ body[data-plano="completo"] .whatsapp-flotante { display: none; }
     height: var(--alto-hud);
     width: auto;
   }
-  body.buscando .buscador input { height: 100%; box-shadow: var(--sombra-hud); }
+  body.buscando .buscador input {
+    height: 100%; border-color: var(--isla-borde); border-radius: var(--radio-full);
+    background: var(--isla-firme); -webkit-backdrop-filter: var(--isla-desenfoque); backdrop-filter: var(--isla-desenfoque);
+    box-shadow: var(--sombra-isla);
+  }
+  body.buscando .buscador input::placeholder { color: var(--tinta-suave); }
+  /* Es de vidrio: lo de abajo se trasluciría. Los puntos de vuelo se apartan mientras tanto. */
+  body.buscando .puntos { visibility: hidden; }
   /* Abierto, el buscador tapa la fila: se esconden los botones, no él (está
      dentro de las herramientas y heredaría el hidden). */
   body.buscando .cabecera__herramientas > :not(.buscador) { visibility: hidden; }
@@ -2029,8 +2038,11 @@ body:has(.ficha:not([hidden])) .whatsapp-flotante { display: none; }
   .marca { flex: none; padding: 0.375rem 1.25rem 0.375rem 0.375rem; border-radius: var(--radio-full); }
   .marca__hito { border-radius: 50%; }
   .cabecera__herramientas { gap: 0.25rem; padding: 0.375rem; border-radius: var(--radio-full); }
-  .buscador input { height: 2.5rem; border-color: transparent; border-radius: var(--radio-full); background: var(--zinc-100); }
-  .buscador input:focus { background: var(--papel); }
+  /* El buscador también es vidrio: un blanco apenas más marcado que la isla, y casi
+     opaco mientras se escribe, para que lo escrito se lea. */
+  .buscador input { height: 2.5rem; border-color: transparent; border-radius: var(--radio-full); background: rgb(255 255 255 / 0.35); }
+  .buscador input::placeholder { color: var(--tinta-suave); }
+  .buscador input:focus { background: rgb(255 255 255 / 0.85); }
   .cabecera .pastillon { height: 2.5rem; border-color: transparent; border-radius: var(--radio-full); background: transparent; }
   .cabecera .pastillon:hover, .cabecera .pastillon[aria-expanded="true"] { background: var(--zinc-100); }
 
