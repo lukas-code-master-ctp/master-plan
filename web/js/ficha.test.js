@@ -195,6 +195,23 @@ test('sin consola, reservar sigue yendo directo al link de pago', () => {
   assert.equal(pago.formulario, false);
 });
 
+test('con consola, una parcela en venta ofrece "Me interesa" después de reservar', () => {
+  const p = parcela();
+  const reserva = { ...RESERVA, consola: 'https://consola.cl', loteo: 'praderas' };
+
+  const tipos = accionesDe(p, catalogoCon(p, { reserva })).map((a) => a.tipo);
+
+  assert.deepEqual(tipos.slice(-3), ['pago', 'interes', 'aire']);
+});
+
+test('sin consola o vendida no hay "Me interesa": no habría adónde mandarlo o no hay qué vender', () => {
+  const reserva = { ...RESERVA, consola: 'https://consola.cl', loteo: 'praderas' };
+  const vendida = parcela({ estado: 'vendido' });
+
+  assert.ok(!accionesDe(parcela(), catalogoCon(parcela(), { reserva: RESERVA })).some((a) => a.tipo === 'interes'));
+  assert.ok(!accionesDe(vendida, catalogoCon(vendida, { reserva })).some((a) => a.tipo === 'interes'));
+});
+
 test('una parcela vendida no ofrece la reserva del loteo', () => {
   const p = parcela({ estado: 'vendido' });
 

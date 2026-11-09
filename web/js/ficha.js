@@ -25,6 +25,7 @@ const ICONOS = {
   pago: `<rect x="4" y="9" width="12" height="8.5" rx="1.5" ${TRAZO}/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" ${TRAZO}/>`,
   deslindes: `<path d="M2.5 5 7.5 3l5 2 5-2v12l-5 2-5-2-5 2Z M7.5 3v12 M12.5 5v12" ${TRAZO}/>`,
   enlace: `<path d="M8.5 11.5a3 3 0 0 0 4.2 0l2.6-2.6a3 3 0 0 0-4.2-4.2l-.8.8 M11.5 8.5a3 3 0 0 0-4.2 0l-2.6 2.6a3 3 0 0 0 4.2 4.2l.8-.8" ${TRAZO}/>`,
+  interes: `<path d="M10 16.8s-6.5-3.9-6.5-8.6A3.6 3.6 0 0 1 10 6a3.6 3.6 0 0 1 6.5 2.2c0 4.7-6.5 8.6-6.5 8.6Z" ${TRAZO}/>`,
   compartir: `<circle cx="14.5" cy="4.5" r="2" ${TRAZO}/><circle cx="5.5" cy="10" r="2" ${TRAZO}/><circle cx="14.5" cy="15.5" r="2" ${TRAZO}/><path d="m7.3 9 5.4-3.4 M7.3 11l5.4 3.4" ${TRAZO}/>`,
   // El logo de WhatsApp: el botón tiene su color y su marca, como en el diseño.
   contacto: '<path fill="currentColor" d="M10 1.7a8.3 8.3 0 0 0-7.2 12.4L1.7 18.3l4.3-1.1A8.3 8.3 0 1 0 10 1.7Zm0 15.1a6.8 6.8 0 0 1-3.5-1l-.3-.1-2.5.6.7-2.4-.2-.3A6.8 6.8 0 1 1 10 16.8Zm3.7-5.1c-.2-.1-1.2-.6-1.4-.7-.2-.1-.3-.1-.5.1l-.6.8c-.1.1-.2.2-.4.1a5.6 5.6 0 0 1-2.8-2.4c-.2-.4.2-.3.6-1.1.1-.1 0-.3 0-.4l-.6-1.5c-.2-.4-.3-.3-.5-.3h-.4a.8.8 0 0 0-.6.3 2.4 2.4 0 0 0-.7 1.8 4.2 4.2 0 0 0 .9 2.2 9.5 9.5 0 0 0 3.6 3.2c1.4.6 1.9.6 2.6.5.4-.1 1.2-.5 1.4-1 .2-.5.2-.9.1-1l-.3-.2Z"/>',
@@ -112,7 +113,8 @@ function tarjetaServidumbre({ servidumbre_m: ancho, servidumbre_m2: superficie }
 
 /**
  * Las acciones, en el orden del diseño: escribir por WhatsApp (el canal con que
- * se vende en Chile), después reservar o comprar, y al final verla en 360°. Una
+ * se vende en Chile), después reservar o comprar, dejar los datos ("Me interesa")
+ * y al final verla en 360°. Una
  * parcela que no está a la venta solo se puede mirar. `url` es el enlace a la
  * parcela, que va en el mensaje de WhatsApp.
  */
@@ -132,6 +134,10 @@ export function accionesDe(parcela, catalogo, { url = '' } = {}) {
     // Con consola, el botón abre el formulario que aparta la parcela antes de pagar.
     acciones.push({ tipo: 'pago', texto: catalogo.diseno?.texto_pago || pago.texto, href: pago.href,
                     formulario: conReservas(catalogo.meta) });
+  }
+  // Para quien todavía no está listo para pagar: deja sus datos y lo contactan.
+  if (vendible && conReservas(catalogo.meta)) {
+    acciones.push({ tipo: 'interes', texto: 'Me interesa esta parcela' });
   }
   if (parcela.mejor_vista) acciones.push({ tipo: 'aire', texto: 'Ver en 360°' });
   return acciones;
@@ -263,7 +269,10 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
     .addEventListener('click', () => compartir(contenedor, parcela, `${titulo} · ${catalogo.meta.proyecto}`));
 
   const lista = accionesDe(parcela, catalogo, { url: urlDeParcela(parcela) });
-  pintarBotones(contenedor.querySelector('.acciones'), lista, () => acciones.alReservar?.(parcela));
+  pintarBotones(contenedor.querySelector('.acciones'), lista, {
+    alReservar: () => acciones.alReservar?.(parcela),
+    alInteresar: () => acciones.alInteresar?.(parcela),
+  });
   pintarEnlaces(contenedor, parcela, catalogo, lista.find((a) => a.tipo === 'aire'), acciones);
   // En el celular, cada parcela abre a media altura, aunque la anterior haya quedado
   // entera o asomada.
@@ -279,13 +288,17 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
   }
 }
 
-/** WhatsApp con su verde y, debajo, reservar o comprar en el color de la marca. */
-function pintarBotones(zona, lista, alReservar) {
+/**
+ * WhatsApp con su verde, debajo reservar o comprar en el color de la marca y al
+ * final "Me interesa" con borde, que pesa menos que pagar.
+ */
+function pintarBotones(zona, lista, { alReservar, alInteresar }) {
   for (const accion of lista) {
     if (accion.tipo === 'contacto') zona.append(enlace(accion, 'boton boton--whatsapp'));
     if (accion.tipo === 'pago') {
       zona.append(accion.formulario ? boton(accion.texto, 'boton', alReservar, 'pago') : enlace(accion, 'boton'));
     }
+    if (accion.tipo === 'interes') zona.append(boton(accion.texto, 'boton boton--contorno', alInteresar, 'interes'));
   }
 }
 

@@ -291,6 +291,43 @@
     </form>
   </dialog>
 
+  <!-- "Me interesa esta parcela": deja sus datos sin apartar ni pagar (js/interes.js). -->
+  <dialog id="interes" class="reserva" aria-labelledby="interes-titulo">
+    <form id="interes-formulario" novalidate>
+      <span id="interes-parcela" class="reserva__antetitulo"></span>
+      <h2 id="interes-titulo" class="reserva__titulo">Me interesa esta parcela</h2>
+      <p class="reserva__explicacion">Déjanos tus datos y la loteadora te contacta. No es una
+        reserva y no tiene costo.</p>
+      <div class="reserva__campos">
+        <label class="reserva__campo"><span>Nombre</span>
+          <input name="nombre" autocomplete="name" required minlength="2" maxlength="120"></label>
+        <label class="reserva__campo"><span>Teléfono</span>
+          <input name="telefono" type="tel" inputmode="tel" autocomplete="tel" required
+                 placeholder="+56 9 1234 5678" maxlength="20"></label>
+        <label class="reserva__campo"><span>Correo <small>(opcional)</small></span>
+          <input name="email" type="email" autocomplete="email" maxlength="160"
+                 placeholder="tu@correo.cl"></label>
+        <fieldset class="reserva__horario">
+          <legend>¿Cuándo te acomoda que te llamen?</legend>
+          <label><input type="radio" name="horario" value="manana"><span>Mañana</span></label>
+          <label><input type="radio" name="horario" value="tarde"><span>Tarde</span></label>
+          <label><input type="radio" name="horario" value="" checked><span>Da igual</span></label>
+        </fieldset>
+        <div class="reserva__trampa" aria-hidden="true">
+          <label>Sitio web <input name="sitio" tabindex="-1" autocomplete="off"></label>
+        </div>
+      </div>
+      <p class="reserva__privacidad">Al enviar aceptas que la loteadora use estos datos para
+        contactarte.</p>
+      <p id="interes-error" class="reserva__error" role="alert" hidden></p>
+      <p id="interes-listo" class="reserva__listo" role="status" hidden></p>
+      <div class="reserva__acciones">
+        <button type="button" class="boton boton--texto" data-accion="cancelar">Cancelar</button>
+        <button type="submit" class="boton" id="interes-enviar">Enviar</button>
+      </div>
+    </form>
+  </dialog>
+
 </main>
 
 <script src="vendor/leaflet.js"></script>

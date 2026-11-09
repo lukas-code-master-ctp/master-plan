@@ -70,6 +70,8 @@ from .proyectos import KMZ as KMZ_DEL_MASTER
 from .proyectos import KmzExistente, LimiteAlcanzado, Limites, Proyecto, Registro, Subida, Vista
 from .republicar import republicar
 from .reservas import Reservas
+from .interesados import Interesados
+from .estadisticas import Estadisticas
 from .rutas_cierra import rutas_de_cierra, sincronizar_antes_de_construir
 from .rutas_cuentas import (
     LIBRES_DE_CUENTAS,
@@ -87,6 +89,7 @@ from .rutas_actividad import eventos_json, rutas_de_actividad
 from .rutas_equipo import ADMINISTRAN, rutas_de_equipo
 from .rutas_preferencias import preferencias_de, rutas_de_preferencias, whatsapp_valido
 from .rutas_reservas import rutas_de_reservas
+from .rutas_interesados import PUBLICAS as PUBLICAS_DE_INTERESADOS, rutas_de_interesados
 from .rutas_vista_previa import rutas_de_vista_previa
 from .trabajos import Trabajos
 from .trabajos_remotos import remotos_del_entorno
@@ -99,7 +102,8 @@ WEB = Path(__file__).resolve().parent / "web"
 MODULOS = ("app.js", "barra.js", "comun.js", "detalle.js", "planos.js", "planes.js", "nuevo.js", "plano.js", "subida.js",
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
            "vuelo.js", "configuracion.js", "equipo.js", "preferencias.js", "actividad.js", "esqueleto.js", "primeros.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
-           "mapa_kmz.js", "sondeo.js", "reservas.js", "contactos.js")
+           "mapa_kmz.js", "sondeo.js", "reservas.js", "contactos.js", "interesados.js",
+           "estadisticas.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
 MODULOS_DEL_VISOR = ("marca.js",)
@@ -138,7 +142,7 @@ TAREAS = ("/api/tareas/cierra",)
 # (contacto): se cuidan solos, con origen, tope por IP y validación
 # (`consola/rutas_reservas.py`, `consola/rutas_contactos.py`).
 LIBRES = ("/entrar", "/salir", "/consola.css", "/fuente.woff2", *LIBRES_DE_CUENTAS, *TAREAS,
-          *PUBLICAS_DE_RESERVAS, *PUBLICAS_DE_CONTACTO)
+          *PUBLICAS_DE_RESERVAS, *PUBLICAS_DE_INTERESADOS, *PUBLICAS_DE_CONTACTO)
 
 
 def mostrar_registro() -> None:
@@ -167,7 +171,9 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
               retomar_lecturas_al_arrancar: bool = True,
               cierra: Cierra | None | bool = True, conexiones: Conexiones | None = None,
               kmzs: RegistroKmz | None = None, reservas: Reservas | None = None,
-              contactos: Contactos | None = None, avisos: Avisos | None = None) -> FastAPI:
+              contactos: Contactos | None = None, avisos: Avisos | None = None,
+              interesados: Interesados | None = None,
+              estadisticas: Estadisticas | None = None) -> FastAPI:
     mostrar_registro()
     acceso = acceso if acceso is not None else desde_el_entorno(base)
     base = base if base is not None else acceso.base
@@ -181,6 +187,8 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
                                  en_segundo_plano=al_fondo)
     # Los avisos de reserva y de contacto salen por el mismo correo que los de las cuentas.
     reservas = reservas or Reservas(base=base, correo=cuentas.correo, en_segundo_plano=al_fondo)
+    interesados = interesados or Interesados(base=base, correo=cuentas.correo, en_segundo_plano=al_fondo)
+    estadisticas = estadisticas or Estadisticas(base=base)
     contactos = contactos or Contactos(base=base, correo=cuentas.correo, en_segundo_plano=al_fondo)
     avisos = avisos or Avisos(base=base, correo=cuentas.correo,
                               en_segundo_plano=cuentas.en_segundo_plano)
@@ -1107,6 +1115,7 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
     app.include_router(rutas_de_preferencias(base, quien))
     app.include_router(rutas_de_actividad(base, quien))
     app.include_router(rutas_de_reservas(reservas, registro, vista, local=acceso.local))
+    app.include_router(rutas_de_interesados(interesados, estadisticas, registro, vista, local=acceso.local))
     app.include_router(rutas_de_contactos(contactos, solo_plataforma, local=acceso.local))
     app.include_router(rutas_de_vista_previa(vista, disenos, trabajos))
     def publicar_en_linea(proyecto: Proyecto) -> dict:

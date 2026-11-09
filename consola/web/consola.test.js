@@ -127,7 +127,7 @@ test('Nuevo master puede llegar con un KMZ de Mis KMZ ya elegido', () => {
 
 test('la navegación tiene la pestaña Mis KMZ, entre Mis planos y Mis diseños', () => {
   const pestanas = [...html.matchAll(/<a href="#\/(\w+)" data-seccion="(\w+)">/g)].map((c) => c[2]);
-  assert.deepEqual(pestanas, ['planos', 'kmz', 'disenos', 'reservas']);
+  assert.deepEqual(pestanas, ['planos', 'kmz', 'disenos', 'reservas', 'interesados']);
 });
 
 test('Nuevo KMZ está solo en Mis KMZ, no en Mis planos', () => {

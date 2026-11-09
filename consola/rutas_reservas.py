@@ -21,7 +21,7 @@ import re
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from .cuentas import Limitador
 from .datos import NoEncontrado
@@ -41,6 +41,62 @@ CUERPO_MAXIMO = 4096
 LOCALHOST = re.compile(r"https?://(localhost|127\.0\.0\.1|\[::1\]|[\w.-]+\.localhost)(:\d+)?")
 
 
+def loteo_publicado(registro: Registro, slug: str) -> Proyecto:
+    """El loteo, si está publicado. Sin sesión no hay `registro.para`: se busca entre
+    todos, y solo vale si está publicado, que es cuando su sitio puede estar pidiendo."""
+    proyecto = registro.todos().ver(str(slug or ""))
+    if not proyecto.publicado:
+        raise NoEncontrado(f"el loteo {slug} no está publicado")
+    return proyecto
+
+
+def origen_valido(origen: str, proyecto: Proyecto, local: bool) -> bool:
+    """¿Viene del sitio publicado de este loteo? En este computador, también localhost."""
+    validos = set()
+    if proyecto.url_publicada:
+        partes = urlsplit(proyecto.url_publicada)
+        validos.add(f"{partes.scheme}://{partes.netloc}")
+    if proyecto.vercel_proyecto:
+        validos.add(f"https://{proyecto.vercel_proyecto}.vercel.app")
+    return origen in validos or (local and bool(LOCALHOST.fullmatch(origen)))
+
+
+async def leer_cuerpo(peticion: Request, maximo: int = CUERPO_MAXIMO) -> bytes | None:
+    """El cuerpo, si no pasa del tope. Se lee por partes: Content-Length puede faltar o mentir."""
+    if int(peticion.headers.get("content-length") or 0) > maximo:
+        return None
+    cuerpo = b""
+    async for parte in peticion.stream():
+        cuerpo += parte
+        if len(cuerpo) > maximo:
+            return None
+    return cuerpo
+
+
+def leer_json(cuerpo: bytes) -> dict | None:
+    """Un objeto JSON, o None si no lo es."""
+    try:
+        datos = json.loads(cuerpo or b"{}")
+    except ValueError:
+        return None
+    return datos if isinstance(datos, dict) else None
+
+
+def respuesta(estado: int, contenido, origen: str | None = None) -> Response:
+    """Con permiso para que la lea `origen`, si se da: los errores de antes de saber
+    de qué loteo es salen sin él, y el visor muestra uno genérico."""
+    encabezados = {"Vary": "Origin"}
+    if origen:
+        encabezados["Access-Control-Allow-Origin"] = origen
+    if estado == 204:
+        return Response(status_code=204, headers=encabezados)
+    return JSONResponse(status_code=estado, content=contenido, headers=encabezados)
+
+
+def url_de_la_consola(peticion: Request, local: bool) -> str:
+    return os.environ.get("CONSOLA_URL", "").strip() or (str(peticion.base_url) if local else "")
+
+
 def rutas_de_reservas(reservas: Reservas, registro: Registro, vista, *, local: bool,
                       solicitudes_por_ip: Limitador | None = None,
                       consultas_por_ip: Limitador | None = None) -> APIRouter:
@@ -51,41 +107,7 @@ def rutas_de_reservas(reservas: Reservas, registro: Registro, vista, *, local: b
     consultas_por_ip = consultas_por_ip or Limitador(maximo=120, segundos=60)
 
     def publicado(slug: str) -> Proyecto:
-        # Sin sesión no hay `registro.para`: el loteo se busca entre todos, y solo
-        # vale si está publicado, que es cuando su sitio puede estar pidiendo.
-        proyecto = registro.todos().ver(str(slug or ""))
-        if not proyecto.publicado:
-            raise NoEncontrado(f"el loteo {slug} no está publicado")
-        return proyecto
-
-    def origen_valido(origen: str, proyecto: Proyecto) -> bool:
-        validos = set()
-        if proyecto.url_publicada:
-            partes = urlsplit(proyecto.url_publicada)
-            validos.add(f"{partes.scheme}://{partes.netloc}")
-        if proyecto.vercel_proyecto:
-            validos.add(f"https://{proyecto.vercel_proyecto}.vercel.app")
-        return origen in validos or (local and bool(LOCALHOST.fullmatch(origen)))
-
-    async def leer_cuerpo(peticion: Request) -> bytes | None:
-        """El cuerpo, si no pasa del tope. Se lee por partes: Content-Length puede faltar o mentir."""
-        if int(peticion.headers.get("content-length") or 0) > CUERPO_MAXIMO:
-            return None
-        cuerpo = b""
-        async for parte in peticion.stream():
-            cuerpo += parte
-            if len(cuerpo) > CUERPO_MAXIMO:
-                return None
-        return cuerpo
-
-    def respuesta(estado: int, contenido, origen: str | None = None) -> JSONResponse:
-        encabezados = {"Vary": "Origin"}
-        if origen:
-            encabezados["Access-Control-Allow-Origin"] = origen
-        return JSONResponse(status_code=estado, content=contenido, headers=encabezados)
-
-    def url_de_la_consola(peticion: Request) -> str:
-        return os.environ.get("CONSOLA_URL", "").strip() or (str(peticion.base_url) if local else "")
+        return loteo_publicado(registro, slug)
 
     @rutas.post("/api/publico/reservas")
     async def pedir_reserva(peticion: Request) -> JSONResponse:
@@ -97,17 +119,14 @@ def rutas_de_reservas(reservas: Reservas, registro: Registro, vista, *, local: b
         cuerpo = await leer_cuerpo(peticion)
         if cuerpo is None:
             return respuesta(413, {"detail": "La solicitud es demasiado grande."})
-        try:
-            datos = json.loads(cuerpo or b"{}")
-            if not isinstance(datos, dict):
-                raise ValueError
-        except ValueError:
+        datos = leer_json(cuerpo)
+        if datos is None:
             return respuesta(400, {"detail": "La solicitud llegó incompleta."})
         try:
             proyecto = publicado(str(datos.get("loteo") or "")[:80])
         except NoEncontrado:
             return respuesta(404, {"detail": "Este loteo no recibe reservas."})
-        if not origen_valido(origen, proyecto):
+        if not origen_valido(origen, proyecto, local):
             return respuesta(403, {"detail": "La solicitud tiene que venir del sitio del loteo."})
         parcela = str(datos.get("parcela") or "")[:40]
         # El campo trampa: una persona no lo ve, un robot lo llena. Se le contesta
@@ -117,7 +136,7 @@ def rutas_de_reservas(reservas: Reservas, registro: Registro, vista, *, local: b
                                    "apartada_hasta": None}, origen)
         try:
             comprador = leer_comprador(datos)
-            solicitud = reservas.solicitar(proyecto, parcela, comprador, url_de_la_consola(peticion))
+            solicitud = reservas.solicitar(proyecto, parcela, comprador, url_de_la_consola(peticion, local))
         except SolicitudInvalida as error:
             return respuesta(400, {"detail": str(error)}, origen)
         except NoEncontrado:
@@ -137,7 +156,7 @@ def rutas_de_reservas(reservas: Reservas, registro: Registro, vista, *, local: b
             proyecto = publicado(loteo[:80])
         except NoEncontrado:
             return respuesta(404, {"detail": "Este loteo no está publicado."})
-        if origen and not origen_valido(origen, proyecto):
+        if origen and not origen_valido(origen, proyecto, local):
             return respuesta(403, {"detail": "Solo para el sitio del loteo."})
         hasta = reservas.apartadas(proyecto)
         return respuesta(200, {parcela: (momento.isoformat() if momento else None)

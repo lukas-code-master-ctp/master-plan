@@ -5,6 +5,8 @@ import { aplicarMarca, ponerLogo } from './marca.js';
 import { mensajeWhatsapp, renderizarFicha } from './ficha.js';
 import { agruparParcelas, resumenDeGrupo } from './grupos.js';
 import { abrirFormulario } from './reserva.js';
+import { Cifras } from './cifras.js';
+import { abrirInteres } from './interes.js';
 import { estaInsertado, pistaDelVisor } from './insertado.js';
 import { Mapa } from './mapa.js';
 import {
@@ -44,6 +46,8 @@ const estado = {
   catalogo: null,
   visor: null,
   mapa: null,
+  /** Lo que se le cuenta a la consola (cifras.js): visitas, fichas y clics. */
+  cifras: null,
   vista: null,
   /** Hacia dónde mira la vista aérea: lo que muestra la miniatura de Entrar a 360°. */
   camara: null,
@@ -74,6 +78,7 @@ async function arrancar() {
   document.title = diseno ? catalogo.meta.proyecto : `${catalogo.meta.proyecto} — Tu Masterplan`;
 
   estado.visibles = new Set(catalogo.parcelas.map((p) => p.id));
+  contarCifras(catalogo.meta);
 
   // Con varias etapas y los números fijos, cada pastilla dice solo su número ("28"
   // y no "3-28") y la etapa se rotula una vez sobre su sector, como en el plano.
@@ -245,6 +250,27 @@ function irAAltura(altura) {
   if (destino) cambiarVista(destino);
 }
 
+// --- Cifras para la consola ----------------------------------------------------
+
+/**
+ * Cuenta la visita y, desde la ficha, los clics en WhatsApp y en Reservar. Lo que
+ * quede pendiente sale al esconder la pestaña: en el celular, cerrar la pestaña o
+ * cambiar de app no siempre avisa de otra forma.
+ */
+function contarCifras(meta) {
+  estado.cifras = new Cifras(meta);
+  estado.cifras.anotar('visita');
+  $('#ficha').addEventListener('click', (evento) => {
+    const boton = evento.target.closest('[data-tipo]');
+    const tipo = { contacto: 'whatsapp', pago: 'reservar' }[boton?.dataset.tipo];
+    if (tipo && estado.seleccionada) estado.cifras.anotar(tipo, estado.seleccionada);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') estado.cifras.enviar();
+  });
+  window.addEventListener('pagehide', () => estado.cifras.enviar());
+}
+
 // --- Selección ----------------------------------------------------------------
 
 function seleccionar(id, { enfocarEnVisor = false, silencioso = false } = {}) {
@@ -261,6 +287,7 @@ function seleccionar(id, { enfocarEnVisor = false, silencioso = false } = {}) {
     return;
   }
 
+  estado.cifras?.anotar('ficha', parcela.id);
   renderizarFicha($('#ficha'), parcela, estado.catalogo, {
     alCerrar: () => seleccionar(null),
     alVerDesdeAire: () => verDesdeElAire(parcela),
@@ -270,6 +297,7 @@ function seleccionar(id, { enfocarEnVisor = false, silencioso = false } = {}) {
       // Apartada: al pago. Sin link, el formulario ya le dijo que la contactarán.
       alTerminar: (link) => { if (link) location.assign(link); },
     }),
+    alInteresar: (elegida) => abrirInteres($('#interes'), { catalogo: estado.catalogo, parcela: elegida }),
   });
   estado.mapa.refrescar();
 

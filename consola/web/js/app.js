@@ -3,7 +3,7 @@
  *
  * Las pantallas viven en la misma página y se cambian con el hash de la URL
  * (`#/planos`, `#/planos/nuevo`, `#/planos/<slug>`, `#/kmz`, `#/kmz/<slug>[/<paso>]`,
- * `#/disenos`, `#/reservas`, `#/contactos`, `#/loteadoras[/<id>]`). Así el botón
+ * `#/disenos`, `#/reservas`, `#/interesados`, `#/contactos`, `#/loteadoras[/<id>]`). Así el botón
  * atrás funciona, un enlace a un loteo se puede mandar, y no hace falta que el
  * servidor conozca más rutas que la de la página.
  */
@@ -20,10 +20,13 @@ import { marcarSeccion } from './barra.js';
 import { pintarCifrasEsqueleto, pintarEsqueleto } from './esqueleto.js';
 import { pintarPlanos } from './planos.js';
 import { cargarReservas, pintarContador, pintarReservas, prepararReservas } from './reservas.js';
+import {
+  cargarInteresados, pintarContadorInteresados, pintarInteresados, prepararInteresados,
+} from './interesados.js';
 import { cargarContactos, pintarContactos, pintarContadorContactos, prepararContactos } from './contactos.js';
 
-const PANTALLAS = ['planos', 'nuevo', 'plano', 'kmzs', 'kmz', 'disenos', 'diseno', 'reservas', 'contactos',
-  'loteadoras', 'loteadora', 'configuracion'];
+const PANTALLAS = ['planos', 'nuevo', 'plano', 'kmzs', 'kmz', 'disenos', 'diseno', 'reservas', 'interesados',
+  'contactos', 'loteadoras', 'loteadora', 'configuracion'];
 
 let anterior = null;
 // Se llegó a un loteo que no estaba en la lista y se está trayendo: al pintarlo
@@ -33,7 +36,7 @@ let refrescarAlLlegar = false;
 // Las pantallas que, mientras llega la primera carga, muestran su propia forma en gris.
 // El resto (un master nuevo, un diseño, un KMZ) espera en una pantalla genérica:
 // sus formularios no deben quedar a mano antes de tener con qué llenarse.
-const CON_ESQUELETO = ['planos', 'kmzs', 'disenos', 'reservas', 'contactos'];
+const CON_ESQUELETO = ['planos', 'kmzs', 'disenos', 'reservas', 'interesados', 'contactos'];
 
 /**
  * Mientras llega la primera carga: la pantalla a la que se va, con su esqueleto.
@@ -97,7 +100,7 @@ function mostrar() {
   }
   document.title = {
     planos: 'Mis 360°', nuevo: 'Nuevo master', kmzs: 'Mis KMZ', disenos: 'Mis diseños', diseno: 'Diseño',
-    reservas: 'Reservas', contactos: 'Contactos', configuracion: 'Configuración',
+    reservas: 'Reservas', interesados: 'Interesados', contactos: 'Contactos', configuracion: 'Configuración',
     loteadoras: 'Loteadoras', loteadora: 'Loteadora',
   }[destino.pantalla] + ' — Tu Masterplan';
   if (destino.pantalla === 'planos') pintarPlanos({ animar: llegando });
@@ -105,6 +108,7 @@ function mostrar() {
   if (destino.pantalla === 'nuevo' && llegando) abrirNuevo({ kmz: destino.kmz });
   if (destino.pantalla === 'disenos') pintarDisenos({ animar: llegando });
   if (destino.pantalla === 'reservas') pintarReservas({ animar: llegando });
+  if (destino.pantalla === 'interesados') pintarInteresados();
   if (destino.pantalla === 'contactos') pintarContactos();
   if (destino.pantalla === 'loteadoras') pintarLoteadoras({ llegando });
   if (destino.pantalla === 'loteadora') pintarFicha(destino.id, { llegando });
@@ -117,8 +121,10 @@ async function refrescar() {
   [estado.proyectos, estado.disenos, estado.kmzs] = await Promise.all([
     pedir('/api/proyectos'), pedir('/api/disenos'), pedir('/api/kmz')]);
   // Después de los loteos: se piden las de cada uno publicado.
-  estado.reservas = await cargarReservas(estado.proyectos);
+  [estado.reservas, estado.interesados] = await Promise.all([
+    cargarReservas(estado.proyectos), cargarInteresados(estado.proyectos)]);
   pintarContador();
+  pintarContadorInteresados();
   estado.contactos = await cargarContactos();
   pintarContadorContactos();
   estado.cargado = true;
@@ -147,6 +153,7 @@ async function arrancar() {
   prepararBackOffice({ refrescar });
   prepararDisenos({ refrescar });
   prepararReservas({ refrescar });
+  prepararInteresados({ refrescar });
   prepararContactos({ refrescar });
   prepararConfiguracion();
   prepararKmz({ refrescar });
