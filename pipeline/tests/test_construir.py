@@ -501,3 +501,60 @@ def test_un_camino_que_rodea_el_punto_de_vuelo_se_dibuja():
     proyectados = _proyectar_caminos(vista, [[u], [lejos]], None)
 
     assert len(proyectados) == 1
+
+
+# --- puntos quitados ------------------------------------------------------------
+#
+# Olivos de Marchigue (noviembre de 2026): el punto IV no tenía que salir en el sitio.
+# La foto queda en la carpeta; la construcción la deja fuera.
+
+def _tres_puntos(carpeta):
+    for i, lon in enumerate((-72.0025, -71.9970, -71.9915)):
+        escribir_panorama(carpeta / f"{i}.JPG", lon=lon, relativa=118.0,
+                          momento=f"2026-03-05T19:0{i}:00-03:00")
+    return buscar_panoramas(carpeta)
+
+
+def test_los_puntos_quitados_no_quedan_y_los_demas_conservan_su_numero(tmp_path):
+    from pipeline.construir import Avisos, _sin_puntos_quitados
+
+    panoramas = _tres_puntos(tmp_path)
+    quedan = _sin_puntos_quitados(panoramas, (2,), Avisos([]))
+
+    assert [p.posicion for p in quedan] == [1, 3]
+
+
+def test_un_punto_quitado_que_no_existe_avisa(tmp_path):
+    from pipeline.construir import Avisos, _sin_puntos_quitados
+
+    avisos = Avisos([])
+    quedan = _sin_puntos_quitados(_tres_puntos(tmp_path), (7,), avisos)
+
+    assert len(quedan) == 3
+    assert any("7" in linea for linea in avisos.lineas)
+
+
+def test_no_se_pueden_quitar_todos_los_puntos(tmp_path):
+    from pipeline.construir import Avisos, _sin_puntos_quitados
+
+    with pytest.raises(ValueError, match="al menos uno"):
+        _sin_puntos_quitados(_tres_puntos(tmp_path), (1, 2, 3), Avisos([]))
+
+
+def test_lo_que_dejo_una_construccion_anterior_del_punto_quitado_se_borra(tmp_path):
+    from pipeline.config import Salida
+    from pipeline.construir import _borrar_salida_de
+
+    quitada = _tres_puntos(tmp_path / "fotos")[2]
+    salida = Salida(tmp_path / "salida")
+    (salida.panoramas / quitada.id).mkdir(parents=True)
+    (salida.panoramas / quitada.id / "0.jpg").write_bytes(b"x")
+    salida.vistas.mkdir(parents=True)
+    (salida.vistas / f"{quitada.id}.json").write_text("{}")
+    (salida.vistas / "otra.json").write_text("{}")
+
+    _borrar_salida_de(salida, [quitada])
+
+    assert not (salida.panoramas / quitada.id).exists()
+    assert not (salida.vistas / f"{quitada.id}.json").exists()
+    assert (salida.vistas / "otra.json").exists()

@@ -40,7 +40,7 @@ EXTENSIONES_FOTO = (".jpg", ".jpeg")
 # —de quién es, dónde quedó publicado— vive en la base y no se duplica acá.
 CAMPOS_DEL_PIPELINE = ("nombre", "etapa", "whatsapp", "parcelacion", "despegue", "despegues",
                        "referencias", "link_reserva", "monto_reserva", "numeros_fijos",
-                       "puntos_solo_foto")
+                       "puntos_solo_foto", "puntos_quitados")
 
 
 MEGA = 1024 * 1024
@@ -190,6 +190,8 @@ class Proyecto:
     numeros_fijos: bool = False
     # Los puntos de vuelo sin nada dibujado encima (config.Proyecto).
     puntos_solo_foto: tuple[int, ...] = ()
+    # Los puntos de vuelo que no salen en el sitio (config.Proyecto).
+    puntos_quitados: tuple[int, ...] = ()
     # Las fotos que salieron de otro despegue (config.Proyecto).
     despegues: tuple = ()
     # Subido desde el navegador (sus archivos son nuestros) o carpeta vinculada
@@ -369,6 +371,7 @@ class Registro:
             monto_reserva=datos.monto_reserva,
             numeros_fijos=datos.numeros_fijos,
             puntos_solo_foto=datos.puntos_solo_foto,
+            puntos_quitados=datos.puntos_quitados,
             parcelacion=str(_leer_json(carpeta / "proyecto.json").get("parcelacion") or ""),
             despegue=datos.despegue,
             despegues=datos.despegues,
@@ -550,9 +553,10 @@ class Vista:
         proyecto = self.ver(slug)
         limpios = {c: v for c, v in campos.items() if v is not None and c in CAMPOS_DEL_PIPELINE}
         _revisar_reserva(limpios)
-        if "puntos_solo_foto" in limpios:
-            # Se guarda limpio ("3, 4 y 5" → [3, 4, 5]) para que la consola lo muestre igual.
-            limpios["puntos_solo_foto"] = list(config.leer_puntos(limpios["puntos_solo_foto"]))
+        for campo in ("puntos_solo_foto", "puntos_quitados"):
+            if campo in limpios:
+                # Se guarda limpio ("3, 4 y 5" → [3, 4, 5]) para que la consola lo muestre igual.
+                limpios[campo] = list(config.leer_puntos(limpios[campo]))
         if "despegues" in limpios:
             # Se revisa antes de guardar: uno mal escrito haría fallar la construcción
             # entera, y es mejor que el error salga acá, junto al campo.

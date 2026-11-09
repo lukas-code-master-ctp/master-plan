@@ -224,6 +224,10 @@ class Proyecto:
     # esteros dibujados. Un punto volado bajo ve las parcelas tan de cerca y de lado
     # que las líneas confunden más de lo que ubican; ahí sirve la foto sola.
     puntos_solo_foto: tuple[int, ...] = ()
+    # Los puntos de vuelo que no salen en el sitio. La foto queda en la carpeta
+    # (borrarla del bucket no se deshace), pero la construcción la deja fuera:
+    # en Olivos de Marchigue el punto IV no aportaba y había que sacarlo del sitio.
+    puntos_quitados: tuple[int, ...] = ()
 
     # El slug se ASIGNA, no se deriva. Es la identidad del loteo: su carpeta de
     # salida, su proyecto en el hosting y su URL. Dos clientes pueden llamar igual
@@ -311,6 +315,7 @@ def cargar_proyecto(carpeta: Path, **valores) -> Proyecto:
         monto_reserva=leer_monto(datos.get("monto_reserva")),
         numeros_fijos=bool(datos.get("numeros_fijos")),
         puntos_solo_foto=leer_puntos(datos.get("puntos_solo_foto")),
+        puntos_quitados=leer_puntos(datos.get("puntos_quitados")),
         slug_guardado=str(datos.get("slug") or ""),
     )
 
