@@ -241,7 +241,7 @@ h1 {
 .acciones { display: flex; flex-wrap: wrap; gap: 12px; }
 .hero .acciones { justify-content: center; margin-top: 36px; }
 /* Para quien ya tiene el vuelo y quiere probar sin hablar con nadie. Debajo de los
-   botones y en texto: la conversación sigue siendo el camino principal. */
+   botones y en texto: primero se mira el demo, después se arma el propio. */
 .hero__cuenta {
   margin: 20px 0 0; max-width: 46ch;
   font-size: 15px; line-height: 1.5; color: rgb(255 255 255 / 0.8);
@@ -323,6 +323,20 @@ h1 {
 .producto__pie b { color: var(--tinta); font-weight: 600; }
 .producto__pie a { color: var(--tinta); font-weight: 600; text-underline-offset: 3px; white-space: nowrap; }
 .producto__pie a:focus-visible { outline: 2px solid var(--tinta); outline-offset: 3px; border-radius: 2px; }
+
+/* --- Contraste: cuatro tarjetas bajo el visor ------------------------------------ */
+
+.contraste { padding-top: clamp(40px, 6vw, 72px); }
+.contraste__lista {
+  display: grid; gap: 12px; margin: 0; padding: 0; list-style: none;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+.contraste__lista li {
+  display: grid; align-content: start; gap: 8px; padding: 22px;
+  border: 1px solid var(--zinc-200); border-radius: var(--radio); background: #fff;
+}
+.contraste__lista b { font: 700 18px/1.25 var(--sans); letter-spacing: -0.015em; }
+.contraste__lista span { color: var(--zinc-600); font-size: 15px; line-height: 1.5; }
 
 /* --- Lo que recibe ------------------------------------------------------------ */
 
@@ -671,7 +685,7 @@ h1 {
       <a class="barra__enlace barra__enlace--secundario" href="#como">Cómo funciona</a>
       <a class="barra__enlace" href="https://consola.tumasterplan.cl/entrar">Entrar</a>
       <a class="barra__enlace barra__enlace--secundario" href="https://consola.tumasterplan.cl/registro">Crear cuenta</a>
-      <a class="barra__boton" href="#contacto">Cotizar</a>
+      <a class="barra__boton" href="#contacto">Planes</a>
     </div>
   </div>
 </nav>
@@ -688,12 +702,14 @@ h1 {
     <h1>Un plano no muestra la vista. Esto sí.</h1>
     <p class="bajada">
       Tus parcelas dibujadas sobre la foto real del terreno, en 360° desde el aire.
-      El comprador busca su número y ve precio, superficie y estado —desde el
-      teléfono, sin llamar a nadie.
+      El comprador busca su número y ve precio, superficie y estado desde el
+      teléfono, y tú ves quién se interesó en cada parcela.
     </p>
     <div class="acciones">
-      <a class="boton boton--claro" href="#contacto">Cotizar mi loteo</a>
-      <a class="boton boton--fantasma" href="#producto">Ver un loteo publicado</a>
+      <!-- Primero el demo: el producto se entiende tocándolo, no leyendo una cotización. -->
+      <a class="boton boton--claro" href="https://masterplan-praderas-de-cauquenes.vercel.app/"
+         target="_blank" rel="noopener">Probar el demo</a>
+      <a class="boton boton--fantasma" href="#contacto">Ver planes y precios</a>
     </div>
     <p class="hero__cuenta">¿Ya tienes el vuelo del dron?
       <a href="https://consola.tumasterplan.cl/registro">Crea tu cuenta gratis</a> y arma tu master: pagas recién cuando lo publicas.</p>
@@ -734,6 +750,28 @@ h1 {
     <b>Praderas de Cauquenes</b> · 88 parcelas en 4 etapas · en vivo, pruébalo ·
     <a href="https://masterplan-praderas-de-cauquenes.vercel.app/" target="_blank" rel="noopener">Abrir en pantalla completa ↗</a>
   </p>
+</section>
+
+<!-- Lo que nos separa de los demás, en cuatro frases que se puedan comprobar. -->
+<section class="contraste ancho" aria-label="Por qué Tu Masterplan">
+  <ul class="contraste__lista">
+    <li>
+      <b>Sin cotizar</b>
+      <span>Desde $30.000 al mes, con el precio a la vista. Pagas recién cuando publicas.</span>
+    </li>
+    <li>
+      <b>Publicado en el día</b>
+      <span>Las parcelas se calzan solas sobre la foto. No esperas una semana a que alguien las dibuje.</span>
+    </li>
+    <li>
+      <b>Tu sitio, no un portal</b>
+      <span>Tu loteo en su propia dirección, con tu marca. Sin otros proyectos al lado compitiendo por el mismo comprador.</span>
+    </li>
+    <li>
+      <b>Sabes quién pregunta</b>
+      <span>Interesados por parcela y las parcelas que más se miran, incluidos en todos los planes.</span>
+    </li>
+  </ul>
 </section>
 
 <section class="seccion ancho" aria-labelledby="recibe-titulo">
@@ -777,7 +815,7 @@ h1 {
       </li>
       <li>
         <b>Contacto directo</b>
-        <span>Un botón de WhatsApp que llega a tu vendedor con la parcela ya escrita.</span>
+        <span>Un botón de WhatsApp que llega a tu vendedor con la parcela ya escrita, y «Me interesa» para quien prefiere dejar sus datos y que lo llamen.</span>
       </li>
       <li>
         <b>El entorno rotulado</b>
