@@ -77,7 +77,7 @@ export function aplicarMarca(nodo, diseno) {
   if (familia) nodo.style.setProperty('--sans', familia);
 }
 
-/** El logo en lugar de la brújula de Tu Masterplan. */
+/** El logo de la loteadora en lugar de la "m" de Tu Masterplan. */
 export function ponerLogo(hito, src, alt) {
   if (!hito || !src) return;
   const imagen = document.createElement('img');

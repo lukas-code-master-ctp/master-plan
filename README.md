@@ -472,16 +472,25 @@ deja cargar de Google Fonts), superficies blancas sobre grises zinc, verde de ma
 
 La fotografía manda. Arriba va una barra fija con el nombre del loteo, la etapa como
 "eyebrow" verde, el buscador y los filtros; el resto de la pantalla es la panorámica,
-y el cromado —ficha, plano, leyenda, instrumentos— son tarjetas blancas con borde que
-se apoyan encima sin taparla.
+y el cromado —plano, leyenda, puntos de vuelo, WhatsApp— son islas de vidrio
+semitransparente que dejan ver la foto detrás. Lo que no hace falta para mirar no está:
+no hay brújula ni coordenadas, en el teléfono no hay + y − (se acerca con dos dedos) y
+hay un solo WhatsApp general, flotante; el de cada parcela va en su ficha. Al abrir una
+ficha se van la leyenda, la barra de abajo, los instrumentos y el WhatsApp general, y
+vuelven al cerrarla.
 
 Cada parcela se marca con un contorno blanco fino y un disco numerado, que es el
 objetivo de clic: un número redondo se acierta mucho mejor que el borde de un
-polígono, sobre todo con el dedo. El estado lo lleva el disco, con los mismos tonos
-que las pills de Cierra —verde disponible, ámbar reservado, azul vendido, oscuro no
-disponible—; al ser un color sólido se lee igual sobre bosque, tierra o cielo. Se
-definen en `pipeline/config.py` (`ESTADOS`), el sitio los lee del JSON, y la ficha,
-la leyenda y los filtros los muestran como pills.
+polígono, sobre todo con el dedo. Solo las que se venden llevan número; reservadas,
+vendidas y no disponibles son un punto chico de su color. Los colores son los mismos
+tonos que las pills de Cierra —verde disponible, ámbar reservado, azul vendido, oscuro
+no disponible—; al ser sólidos se leen igual sobre bosque, tierra o cielo. Se definen
+en `pipeline/config.py` (`ESTADOS`) y el sitio los lee del JSON. Sobre la vista aérea
+la leyenda solo dice cuántas quedan disponibles y abre Filtros, donde se eligen los
+estados; sobre el plano, que se pinta por estado, lista todos.
+
+En la ficha, Compartir abre un menú con la hoja del sistema (donde existe), copiar el
+enlace y los deslindes en KML.
 
 ### La marca de cada loteadora (Mis diseños)
 
@@ -493,7 +502,7 @@ de la consola, con una vista previa, y se elige al crear el master o en su detal
   (`web/js/marca.js`). Si es muy claro para llevar texto blanco, el tono del botón se
   oscurece hasta llegar a 4,5:1. Los colores de estado no cambian: el verde de
   "disponible" significa lo mismo en todos los sitios.
-- **Logo:** PNG, JPG, WebP o SVG de hasta 512 KB, en lugar de la brújula. Un SVG que
+- **Logo:** PNG, JPG, WebP o SVG de hasta 512 KB, en lugar de la "m" de Tu Masterplan. Un SVG que
   traiga código o enlaces externos se rechaza.
 - **Tipografía:** Plus Jakarta Sans, una serif clásica o la del sistema. Ninguna se
   baja de afuera.

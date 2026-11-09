@@ -273,3 +273,9 @@ export class ErrorDeDatos extends Error {
     this.causa = causa;
   }
 }
+
+/** "6 disponibles", "1 disponible" o "Sin parcelas disponibles". */
+export function textoDisponibles(cuantas) {
+  if (!cuantas) return 'Sin parcelas disponibles';
+  return `${cuantas} ${cuantas === 1 ? 'disponible' : 'disponibles'}`;
+}

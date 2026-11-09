@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Catalogo, conteoPorEstado, esSoloGeo, filtrar, romano, textoReferencia, lejaniaReferencia } from './datos.js';
+import { Catalogo, conteoPorEstado, esSoloGeo, filtrar, romano, textoDisponibles, textoReferencia, lejaniaReferencia } from './datos.js';
 
 const vista = (id, posicion, altura_m) => ({ id, posicion, altura_m, lat: -35, lon: -72 });
 
@@ -134,4 +134,10 @@ test('un loteo sin vistas 360 es solo geo', () => {
   assert.equal(esSoloGeo(new Catalogo({ parcelas: [] }, { vistas: [] })), true);
   const conVistas = new Catalogo({ parcelas: [] }, { vistas: [{ id: 'P1' }], inicial: 'P1' });
   assert.equal(esSoloGeo(conVistas), false);
+});
+
+test('la leyenda de la vista aérea dice cuántas quedan disponibles', () => {
+  assert.equal(textoDisponibles(6), '6 disponibles');
+  assert.equal(textoDisponibles(1), '1 disponible');
+  assert.equal(textoDisponibles(0), 'Sin parcelas disponibles');
 });
