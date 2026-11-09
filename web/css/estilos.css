@@ -76,10 +76,16 @@
      negro puro: sobre el pasto o la tierra el negro ensucia. */
   --sombra-hud: 0 4px 12px -2px rgb(24 24 27 / 0.08), 0 2px 6px -1px rgb(24 24 27 / 0.04);
   --sombra-panel: 0 10px 25px -5px rgb(24 24 27 / 0.15), 0 2px 6px -1px rgb(24 24 27 / 0.06);
-  /* Las islas flotantes de escritorio, las mismas de la consola: vidrio claro y
-     una sombra larga que las despega de la foto. */
-  --isla: rgb(255 255 255 / 0.82);
-  --sombra-isla: 0 14px 34px -18px rgb(9 9 11 / 0.4), 0 2px 6px -2px rgb(9 9 11 / 0.08);
+  /* Las islas flotantes: vidrio. Semitransparentes y difuminadas, dejan ver la
+     foto detrás y pesan menos que un blanco opaco. Un filo claro arriba les da el
+     canto del vidrio. Las de abajo (--isla-firme) van más blancas: caen sobre
+     pasto y árboles, y ahí el texto tiene que seguir leyéndose. */
+  --isla: rgb(255 255 255 / 0.34);
+  --isla-firme: rgb(255 255 255 / 0.55);
+  --isla-borde: rgb(255 255 255 / 0.55);
+  --isla-desenfoque: blur(16px) saturate(170%);
+  --sombra-isla: inset 0 1px 0 rgb(255 255 255 / 0.75), inset 0 -1px 1px rgb(255 255 255 / 0.18),
+    0 10px 28px -14px rgb(9 9 11 / 0.45);
   --curva: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Lo que se aprieta. También en píxeles: el mínimo táctil (48 px, ver el
@@ -162,7 +168,7 @@ button { cursor: pointer; }
 .pastillon:hover { background: var(--papel-suave); }
 .pastillon:active, .pastillon[aria-expanded="true"] { background: var(--zinc-100); }
 .pastillon svg { width: 1rem; height: 1rem; flex: none; color: var(--zinc-500); }
-#abrir-buscador, #cabecera-whatsapp { display: none; }
+#abrir-buscador { display: none; }
 
 .cuenta {
   display: inline-grid;
@@ -196,12 +202,10 @@ button { cursor: pointer; }
 .marca__hito {
   width: 2.25rem; height: 2.25rem;
   flex: none;
-  padding: 0.4rem;
-  background: var(--marca-700);
+  background: #27272a;
   border-radius: var(--radio-md);
-  color: #fff;
 }
-/* El logo de la loteadora, en lugar de la brújula. Alto fijo; ancho el que
+/* El logo de la loteadora, en lugar de la "m" de Tu Masterplan. Alto fijo; ancho el que
    pida el dibujo, con tope para que un logo apaisado no se coma la barra. */
 .marca__logo {
   flex: none;
@@ -234,8 +238,6 @@ button { cursor: pointer; }
   text-transform: uppercase;
   color: var(--tinta-tenue);
 }
-.marca__coord { font-variant-numeric: tabular-nums; }
-#marca-etapa:not(:empty) + .marca__coord { padding-left: 0.5rem; border-left: 1px solid var(--linea-fuerte); }
 
 .cabecera__herramientas {
   display: flex;
@@ -524,6 +526,11 @@ button { cursor: pointer; }
 
 .parcela:hover .parcela__forma { fill-opacity: 0.18; stroke-width: 2; }
 .parcela:hover .parcela__disco { transform: scale(1.15); }
+/* Reservadas, vendidas y no disponibles: un punto de su color, sin número
+   (visor.js, ESCALA_PUNTO). Al pasar encima crece un poco para que se note que se toca. */
+.parcela--punto .parcela__numero { display: none; }
+.parcela--punto .parcela__disco { transform: scale(0.32); stroke-width: 3; }
+.parcela--punto:hover .parcela__disco { transform: scale(0.45); }
 
 .parcela--seleccionada .parcela__forma {
   fill-opacity: 0.28;
@@ -767,19 +774,6 @@ button { cursor: pointer; }
   gap: 0.5rem;
 }
 
-.rosa {
-  width: 3rem; height: 3rem;
-  pointer-events: none;
-  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.18));
-}
-.rosa svg { width: 100%; height: 100%; }
-.rosa__anillo { fill: var(--papel); stroke: var(--linea); stroke-width: 2; }
-.rosa__ticks line { stroke: var(--zinc-400); stroke-width: 2.5; }
-.rosa__norte { fill: var(--marca-700); }
-.rosa__sur { fill: var(--zinc-300); }
-.rosa__centro { fill: var(--tinta); }
-.rosa__letra { fill: var(--tinta); font: 700 14px var(--sans); text-anchor: middle; }
-
 .altimetro {
   display: grid;
   justify-items: center;
@@ -882,9 +876,6 @@ button { cursor: pointer; }
 }
 .accion svg { width: 1rem; height: 1rem; flex: none; color: var(--zinc-500); }
 .accion:hover { background: var(--zinc-100); color: var(--tinta); }
-.accion--whatsapp { color: var(--tinta); }
-.accion--whatsapp svg { color: var(--tinta); }
-.accion--whatsapp:hover { background: var(--zinc-100); color: var(--tinta); }
 
 .puntos {
   display: flex;
@@ -892,12 +883,6 @@ button { cursor: pointer; }
   gap: 0.5rem;
   padding: 0.25rem 0.25rem 0.25rem 0.75rem;
   border-radius: var(--radio-md);
-}
-.puntos__rotulo {
-  font: 600 0.625rem/1 var(--sans);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--tinta-tenue);
 }
 .puntos__fila { display: flex; gap: 0.125rem; }
 .puntos__fila button {
@@ -945,6 +930,52 @@ button { cursor: pointer; }
   background: currentColor;
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
 }
+/* Sobre la vista aérea, "6 disponibles" y nada más: abre Filtros, donde se eligen
+   los estados. La lista de estados solo aparece sobre el plano (más abajo). */
+.leyenda__resumen {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: 600 0.75rem/1 var(--sans);
+  color: var(--tinta);
+  cursor: pointer;
+}
+.leyenda__estado { display: none !important; }
+body[data-plano="completo"] .leyenda__resumen,
+body[data-panel="mapa"] .leyenda__resumen { display: none; }
+body[data-plano="completo"] .leyenda__estado,
+body[data-panel="mapa"] .leyenda__estado { display: inline-flex !important; }
+
+/* --- WhatsApp ----------------------------------------------------------------- */
+
+/* Un solo botón general, redondo y flotante. El de cada parcela va en su ficha. */
+.whatsapp-flotante {
+  position: fixed;
+  z-index: 22;
+  right: 1.25rem;
+  bottom: calc(1.25rem + var(--alto-control) + 0.75rem);
+  display: grid;
+  place-items: center;
+  width: 3.25rem; height: 3.25rem;
+  border: 1px solid rgb(255 255 255 / 0.5);
+  border-radius: 50%;
+  background: rgb(37 211 102 / 0.78);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), 0 10px 26px -10px rgb(0 0 0 / 0.5);
+  color: var(--zinc-950);
+  transition: transform 160ms var(--curva), background 150ms;
+}
+.whatsapp-flotante[hidden] { display: none; }
+.whatsapp-flotante:hover { background: rgb(37 211 102 / 0.92); transform: translateY(-1px); }
+.whatsapp-flotante:focus-visible { outline: 2px solid var(--marca-700); outline-offset: 3px; }
+.whatsapp-flotante svg { width: 1.6rem; height: 1.6rem; }
+/* Con el minimapa abierto en la esquina, el botón pasa a su izquierda. */
+body[data-plano="mini"] .whatsapp-flotante { bottom: 1.25rem; right: calc(1.25rem + 17.5rem + 0.75rem); }
+body[data-plano="completo"] .whatsapp-flotante { display: none; }
 
 /* --- Pista ------------------------------------------------------------------ */
 
@@ -1261,28 +1292,9 @@ button { cursor: pointer; }
 }
 .leaflet-tooltip::before { display: none !important; }
 
-/* --- Cápsula de rumbo y Ver plano (vista aérea del teléfono) ------------------ */
+/* --- Ver plano (vista aérea del teléfono) ------------------------------------ */
 
-.capsula-rumbo, .ver-plano { display: none; }
-
-/* "Noreste 42°": la brújula dicha en palabras, que se lee de un vistazo al sol. */
-.capsula-rumbo {
-  position: fixed;
-  z-index: 25;
-  align-items: center;
-  gap: 0.5rem;
-  height: calc(var(--alto-control) + 0.5rem + 2px);
-  padding: 0 1.1rem 0 0.9rem;
-  background: var(--papel);
-  border: 1px solid var(--linea);
-  border-radius: var(--radio-full);
-  box-shadow: var(--sombra-hud);
-  font: 700 0.875rem/1 var(--sans);
-  font-variant-numeric: tabular-nums;
-  color: var(--tinta);
-  pointer-events: none;
-}
-.capsula-rumbo svg { width: 1.15rem; height: 1.15rem; color: var(--marca-700); }
+.ver-plano { display: none; }
 
 .ver-plano {
   position: fixed;
@@ -1463,7 +1475,45 @@ button { cursor: pointer; }
 .acciones .boton { width: 100%; height: 52px; border-radius: var(--radio-lg); font-size: 0.9375rem; font-weight: 700; }
 .acciones .boton svg { width: 1.25rem; height: 1.25rem; flex: none; }
 
-/* Enlaces chicos bajo los botones: verla en 360°, bajar los deslindes, copiar. */
+/* Compartir: un menú chico bajo su botón, con la hoja del sistema, copiar el
+   enlace y los deslindes en KML (ficha.js, pintarCompartir). */
+.ficha__compartir { position: relative; }
+.menu-compartir {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  display: grid;
+  min-width: 12.5rem;
+  padding: 0.35rem;
+  background: var(--papel);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio-lg);
+  box-shadow: var(--sombra-panel);
+  animation: aparecer 120ms ease-out;
+}
+.menu-compartir[hidden] { display: none; }
+.menu-compartir__opcion {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: var(--alto-control);
+  padding: 0 0.75rem;
+  background: none;
+  border: 0;
+  border-radius: var(--radio-md);
+  color: var(--tinta);
+  font: 500 0.875rem/1 var(--sans);
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.menu-compartir__opcion:hover, .menu-compartir__opcion:focus-visible { background: var(--zinc-100); outline: none; }
+.menu-compartir__opcion svg { width: 1.05rem; height: 1.05rem; flex: none; color: var(--tinta-suave); }
+
+/* Bajo los botones, "Ver en 360°". */
+.enlaces[hidden] { display: none; }
 .enlaces {
   display: flex;
   flex-wrap: wrap;
@@ -1729,7 +1779,7 @@ button { cursor: pointer; }
   .cabecera__herramientas { flex: none; gap: 0.375rem; }
   .cabecera .pastillon { border-color: var(--linea); box-shadow: var(--sombra-hud); }
   .buscador { display: none; }
-  #abrir-buscador, #cabecera-whatsapp { display: inline-flex; }
+  #abrir-buscador { display: inline-flex; }
   .pastillon--icono, #abrir-filtros {
     position: relative;
     justify-content: center;
@@ -1756,21 +1806,9 @@ button { cursor: pointer; }
   .pista { display: none; }
   .parcela__pastilla { transform-box: fill-box; }
 
-  /* La fila de abajo de la cabecera: brújula redonda y puntos de vuelo. Compartir
-     queda en la ficha y WhatsApp en la cabecera, así que la barra se disuelve. */
-  .capsula-rumbo {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 1px;
-    top: var(--fila-1);
-    left: 0.85rem;
-    width: var(--alto-hud); height: var(--alto-hud);
-    padding: 0;
-    border-radius: 50%;
-    font: 700 0.625rem/1 var(--sans);
-  }
-  .capsula-rumbo svg { width: 0.9rem; height: 0.9rem; }
+  /* Arriba a la izquierda, los puntos de vuelo como un selector chico "I · II":
+     todos a la vista, sin desplegar nada. Compartir queda en la ficha y WhatsApp
+     es el botón flotante, así que la barra se disuelve. */
   .barra-inferior { display: contents; }
   .acciones-rapidas { display: none; }
 
@@ -1778,54 +1816,27 @@ button { cursor: pointer; }
     position: fixed;
     z-index: 25;
     top: var(--fila-1);
-    left: calc(0.85rem + var(--alto-hud) + 0.5rem);
-    right: 0.85rem;
+    left: 0.85rem;
     height: var(--alto-hud);
-    padding: 2px;
+    padding: 3px;
   }
-  .puntos__rotulo { display: none; }
-  .puntos__fila { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; }
+  .puntos__fila { display: flex; gap: 2px; height: 100%; }
   .puntos__fila button {
     display: grid;
     place-content: center;
-    gap: 3px;
+    min-width: 2.75rem;
     height: 100%;
-    padding: 0 0.25rem;
-    font: 700 0.75rem/1 var(--sans);
+    padding: 0 0.9rem;
+    font: 700 0.8125rem/1 var(--sans);
     letter-spacing: 0;
     white-space: nowrap;
   }
-  .puntos__palabra { display: inline; }
-  .puntos__altura { display: block; font: 500 0.625rem/1 var(--sans); font-variant-numeric: tabular-nums; opacity: 0.8; }
-  /* Plegados en una pastilla con el punto actual, para que la foto respire; el
-     primer toque los despliega (app.js, desplegarPuntos). */
-  .puntos:not(.puntos--abierto) { right: auto; }
-  .puntos:not(.puntos--abierto) .puntos__fila button:not([aria-pressed="true"]) { display: none; }
-  .puntos:not(.puntos--abierto) .puntos__fila button[aria-pressed="true"] {
-    position: relative;
-    min-width: 7.25rem;
-    padding: 0 2rem 0 1rem;
-  }
-  .puntos:not(.puntos--abierto) .puntos__fila button[aria-pressed="true"]::after {
-    content: '';
-    position: absolute;
-    right: 0.85rem;
-    top: 50%;
-    width: 6px; height: 6px;
-    border-right: 1.5px solid currentColor;
-    border-bottom: 1.5px solid currentColor;
-    transform: translateY(-70%) rotate(45deg);
-  }
-  /* Desplegados ocupan la fila entera y los botones de la cabecera se apartan
-     mientras tanto: se pliegan solos al elegir un punto o tocar fuera. */
-  .puntos--abierto { animation: aparecer 140ms ease-out; }
-  body:has(.puntos--abierto) .cabecera__herramientas { visibility: hidden; }
 
-  /* Abajo: la leyenda delgada y, encima, Ver plano a la izquierda y el zoom a la
-     derecha (también se acerca con dos dedos, pero no todos lo saben). */
+  /* Abajo a la izquierda: "6 disponibles" y, encima, Ver plano. A la derecha, el
+     WhatsApp. Sin + y −: en el teléfono se acerca con dos dedos. */
   .leyenda {
     z-index: 23;
-    left: 0.85rem; right: 0.85rem;
+    left: 0.85rem;
     bottom: calc(0.85rem + env(safe-area-inset-bottom));
     height: var(--alto-leyenda);
     transform: none;
@@ -1835,13 +1846,16 @@ button { cursor: pointer; }
   }
   .leyenda span { font-size: 0.6875rem; font-weight: 600; }
   .leyenda span + span { padding-left: 0.5rem; }
+  .leyenda__resumen { font-size: 0.75rem; }
+  .whatsapp-flotante { right: 0.85rem; bottom: calc(0.85rem + env(safe-area-inset-bottom)); }
+  .zoom { display: none; }
 
   .ver-plano { display: flex; left: 0.85rem; bottom: var(--fondo-hud); gap: 0.5rem; padding: 0.25rem 0.85rem 0.25rem 0.25rem; }
   .ver-plano__miniatura { width: 36px; height: 36px; }
   .ver-plano__textos span { display: none; }
 
-  .instrumentos { top: auto; bottom: var(--fondo-hud); right: 0.85rem; transform: none; gap: 0.45rem; }
-  .rosa { display: none; }
+  /* El altímetro, cuando hay más de una altura, sobre el WhatsApp. */
+  .instrumentos { top: auto; bottom: calc(0.85rem + 3.25rem + 0.75rem + env(safe-area-inset-bottom)); right: 0.85rem; transform: none; gap: 0.45rem; }
   .zoom button { position: relative; width: var(--alto-hud); height: var(--alto-hud); font-size: 1.25rem; }
   .altimetro { padding: 0.5rem 0.45rem 0.4rem; }
   .altimetro__escala button { padding: 0.2rem 0.35rem 0.2rem 0.2rem; font-size: 0.75rem; }
@@ -1872,7 +1886,7 @@ button { cursor: pointer; }
   body[data-panel="mapa"] .mapa { flex: 1; }
   body[data-panel="mapa"] .perspectivas { display: block; }
   body[data-panel="mapa"] .entrar-360 { display: flex; }
-  body[data-panel="mapa"] .capsula-rumbo,
+  body[data-panel="mapa"] .whatsapp-flotante,
   body[data-panel="mapa"] .barra-inferior,
   body[data-panel="mapa"] .ver-plano,
   body[data-panel="mapa"] .instrumentos { display: none; }
@@ -1979,10 +1993,21 @@ button { cursor: pointer; }
   }
 }
 
+/* --- Con una ficha abierta ---------------------------------------------------- */
+
+/* La ficha toma el foco: se va todo lo que no sirve para decidir por esa parcela
+   y vuelve al cerrarla. Quedan la ficha, la parcela, la búsqueda y los filtros. */
+body:has(.ficha:not([hidden])) .leyenda,
+body:has(.ficha:not([hidden])) .pista,
+body:has(.ficha:not([hidden])) .barra-inferior,
+body:has(.ficha:not([hidden])) .instrumentos,
+body:has(.ficha:not([hidden])) .plano-flotante,
+body:has(.ficha:not([hidden])) .whatsapp-flotante { display: none; }
+
 /* --- Escritorio: islas flotantes, como en la consola -------------------------- */
 
-/* La píldora de los puntos solo existe en escritorio; en el teléfono los puntos
-   van plegados en su pastilla. */
+/* La píldora de los puntos solo existe en escritorio; en el teléfono el punto
+   elegido se marca en su propio botón. */
 .puntos__pildora { display: none; }
 
 @media (min-width: 62.0625rem) {
@@ -1996,9 +2021,11 @@ button { cursor: pointer; }
   .escena { inset: 0; }
 
   .marca, .cabecera__herramientas, .acciones-rapidas, .puntos, .leyenda, .zoom, .altimetro, .plano-flotante {
-    background: var(--isla); backdrop-filter: blur(14px);
-    border: 1px solid var(--linea); box-shadow: var(--sombra-isla);
+    background: var(--isla); -webkit-backdrop-filter: var(--isla-desenfoque); backdrop-filter: var(--isla-desenfoque);
+    border: 1px solid var(--isla-borde); box-shadow: var(--sombra-isla);
   }
+  .acciones-rapidas, .puntos, .leyenda, .plano-flotante { background: var(--isla-firme); }
+  .accion, .accion svg, .plano-flotante { color: var(--tinta); }
   .marca { flex: none; padding: 0.375rem 1.25rem 0.375rem 0.375rem; border-radius: var(--radio-full); }
   .marca__hito { border-radius: 50%; }
   .cabecera__herramientas { gap: 0.25rem; padding: 0.375rem; border-radius: var(--radio-full); }
@@ -2010,22 +2037,23 @@ button { cursor: pointer; }
   .acciones-rapidas { padding: 0.375rem; border-radius: var(--radio-full); }
   .accion { height: 2.5rem; padding: 0 1rem; border-radius: var(--radio-full); font-weight: 600; }
 
-  .puntos { position: relative; padding: 0.375rem 0.375rem 0.375rem 1.1rem; border-radius: var(--radio-full); }
+  .puntos { position: relative; padding: 0.375rem; border-radius: var(--radio-full); }
   .puntos__pildora {
     display: block; position: absolute; top: 0.375rem; left: 0; height: 2.5rem;
     width: var(--pildora-ancho, 0); transform: translateX(var(--pildora-x, 0));
-    border-radius: var(--radio-full); background: var(--marca-700);
-    box-shadow: 0 8px 18px -8px rgb(9 9 11 / 0.6);
+    border-radius: var(--radio-full); background: rgb(255 255 255 / 0.92);
+    box-shadow: 0 2px 8px -2px rgb(9 9 11 / 0.3);
     transition: transform 320ms var(--curva), width 320ms var(--curva);
   }
   .puntos__pildora--quieta { transition: none; }
   .puntos__fila button { position: relative; min-width: 2.75rem; height: 2.5rem; border-radius: var(--radio-full); font-size: 0.8125rem; transition: color 200ms, background 150ms; }
-  .puntos__fila button[aria-pressed="true"], .puntos__fila button[aria-pressed="true"]:hover { background: transparent; color: #fff; }
+  .puntos__fila button { color: var(--tinta-suave); }
+  .puntos__fila button[aria-pressed="true"], .puntos__fila button[aria-pressed="true"]:hover { background: transparent; color: var(--tinta); }
 
   .leyenda { padding: 0.75rem 1.25rem; border-radius: var(--radio-full); }
 
   .zoom { gap: 0.125rem; padding: 0.3rem; border-radius: var(--radio-full); }
-  .zoom button { border: 0; border-radius: 50%; background: transparent; box-shadow: none; }
+  .zoom button { border: 0; border-radius: 50%; background: transparent; box-shadow: none; color: var(--tinta); }
   .zoom button:hover { background: var(--zinc-100); }
   .altimetro { border-radius: 1.25rem; }
   .plano-flotante { border-radius: var(--radio-full); }
@@ -2034,7 +2062,8 @@ button { cursor: pointer; }
   body[data-plano="completo"] .carta__barra {
     position: absolute; z-index: 1001; top: 4.75rem; right: 1.25rem;
     padding: 0.3rem; gap: 0.125rem; border: 1px solid var(--linea); border-radius: var(--radio-full);
-    background: var(--isla); backdrop-filter: blur(14px); box-shadow: var(--sombra-isla);
+    background: var(--isla); -webkit-backdrop-filter: var(--isla-desenfoque); backdrop-filter: var(--isla-desenfoque);
+    box-shadow: var(--sombra-isla);
   }
   body[data-plano="completo"] .carta__titulo { display: none; }
   body[data-plano="completo"] .carta__accion { width: 2.5rem; height: 2.5rem; border-radius: 50%; }
@@ -2048,24 +2077,25 @@ button { cursor: pointer; }
 /* Los botones y cápsulas del teléfono toman el vidrio y las formas redondas de
    las islas de escritorio: botones redondos, cápsulas de punta redonda. */
 @media (max-width: 62rem) {
-  .cabecera .pastillon, .capsula-rumbo, .puntos, .leyenda, .ver-plano, .zoom button {
-    background: var(--isla); backdrop-filter: blur(14px);
-    border: 1px solid var(--linea); box-shadow: var(--sombra-isla);
+  .cabecera .pastillon, .puntos, .leyenda, .ver-plano {
+    background: var(--isla); -webkit-backdrop-filter: var(--isla-desenfoque); backdrop-filter: var(--isla-desenfoque);
+    border: 1px solid var(--isla-borde); box-shadow: var(--sombra-isla);
   }
+  .leyenda, .ver-plano { background: var(--isla-firme); }
   .cabecera .pastillon { border-radius: 50%; }
   .puntos { border-radius: var(--radio-full); padding: 3px; }
-  .puntos__fila button { border-radius: var(--radio-full); }
-  .puntos__fila button[aria-pressed="true"] { background: var(--marca-700); color: #fff; }
-  /* La leyenda se desliza si no cabe: sin barra de desplazamiento y con el borde
-     derecho desvanecido, que avisa que hay más. */
-  .leyenda {
-    border-radius: var(--radio-full); padding: 0 0.9rem; scrollbar-width: none;
-    mask-image: linear-gradient(90deg, #000 calc(100% - 1.5rem), transparent);
+  .puntos__fila button { border-radius: var(--radio-full); color: var(--tinta); }
+  .puntos__fila button:hover { background: rgb(255 255 255 / 0.4); }
+  .puntos__fila button[aria-pressed="true"], .puntos__fila button[aria-pressed="true"]:hover {
+    background: rgb(255 255 255 / 0.92); color: var(--tinta); box-shadow: 0 2px 8px -2px rgb(9 9 11 / 0.3);
   }
+  .leyenda { border-radius: var(--radio-full); padding: 0 0.9rem; scrollbar-width: none; }
+  /* Sobre el plano la lista de estados puede no caber: se desliza sin barra, con el
+     borde derecho desvanecido, que avisa que hay más. */
+  body[data-panel="mapa"] .leyenda { mask-image: linear-gradient(90deg, #000 calc(100% - 1.5rem), transparent); }
   .leyenda::-webkit-scrollbar { display: none; }
   .ver-plano { border-radius: var(--radio-full); }
   .ver-plano__miniatura { border-radius: 50%; }
-  .zoom button { border-radius: 50%; }
 }
 
 /* Los otros puntos de vuelo, parados en el suelo bajo el dron (visor.js,

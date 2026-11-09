@@ -1,6 +1,5 @@
 /** Orquestador: conecta datos, visor, mapa, ficha y filtros. */
-import { rumboCardinal, rumboCorto } from './camara.js';
-import { Catalogo, ErrorDeDatos, buscar, conteoPorEstado, esSoloGeo, filtrar, romano } from './datos.js';
+import { Catalogo, ErrorDeDatos, buscar, conteoPorEstado, esSoloGeo, filtrar, romano, textoDisponibles } from './datos.js';
 import { aplicarMarca, ponerLogo } from './marca.js';
 import { mensajeWhatsapp, renderizarFicha } from './ficha.js';
 import { agruparParcelas, resumenDeGrupo } from './grupos.js';
@@ -26,21 +25,6 @@ const PRECARGA_MS = 2500;
 const ELEVACION_SOLO_FOTO = -12;
 // Al salir hacia otro punto se mira, como mucho, así de abajo.
 const ELEVACION_SALIDA_MINIMA = -30;
-
-/** Centro del loteo en grados y minutos, para el rótulo de la marca. */
-function coordenadasDelLoteo(vistas) {
-  if (!vistas.length) return '';
-  const media = (valores) => valores.reduce((a, b) => a + b, 0) / valores.length;
-  const lat = media(vistas.map((v) => v.lat));
-  const lon = media(vistas.map((v) => v.lon));
-  const gm = (valor) => {
-    const absoluto = Math.abs(valor);
-    const grados = Math.floor(absoluto);
-    const minutos = Math.round((absoluto - grados) * 60);
-    return minutos === 60 ? `${grados + 1}°00′` : `${grados}°${String(minutos).padStart(2, '0')}′`;
-  };
-  return `${gm(lat)}${lat < 0 ? 'S' : 'N'} · ${gm(lon)}${lon < 0 ? 'O' : 'E'}`;
-}
 
 const estado = {
   catalogo: null,
@@ -69,7 +53,6 @@ async function arrancar() {
 
   $('#marca-nombre').textContent = catalogo.meta.proyecto;
   $('#marca-etapa').textContent = catalogo.meta.etapa ?? '';
-  $('#marca-coord').textContent = coordenadasDelLoteo(catalogo.vistas);
   // Con marca propia el sitio es de la loteadora: ni la brújula ni el nombre
   // de Tu Masterplan en la pestaña.
   const { diseno } = catalogo;
@@ -96,13 +79,7 @@ async function arrancar() {
     alElegirParcela: (id) => seleccionar(id),
     alPasarSobreParcela: (id) => destacar(id),
     alMoverCamara: (camara) => {
-      // Gira en torno al centro de la rosa (su viewBox es de 100 × 100).
-      $('#brujula-aguja').setAttribute('transform', `rotate(${-camara.azimut} 50 50)`);
       estado.camara = camara;
-      $('#capsula-aguja').setAttribute('transform', `rotate(${camara.azimut} 10 10)`);
-      // En el teléfono la brújula es un botón redondo: cabe "SO", no "Suroeste 211°".
-      $('#capsula-texto').textContent = rumboCorto(camara.azimut);
-      $('.capsula-rumbo').title = `${rumboCardinal(camara.azimut)} ${Math.round(camara.azimut)}°`;
       estado.mapa?.actualizarCono(estado.vista, camara);
     },
   });
@@ -338,6 +315,9 @@ function estiloDe(id) {
     atenuada: !estado.visibles.has(id),
     // Cuando no caben todos los números, primero los de lo que se vende.
     prioridad: estado.catalogo.estados[parcela?.estado]?.vendible ? 1 : 0,
+    // Lo que no se vende va como un punto de su color, sin número: el comprador
+    // busca las disponibles y el resto se lee como contexto.
+    punto: Boolean(parcela) && !estado.catalogo.estados[parcela.estado]?.vendible,
     // La planilla puede apagar el número de una parcela (una laguna, un área común).
     sinNumero: Boolean(parcela?.sin_numero),
   };
@@ -377,12 +357,6 @@ function marcarPunto(posicion) {
 addEventListener('resize', () => ubicarPildora({ animar: false }));
 document.fonts?.ready.then(() => ubicarPildora({ animar: false }));
 
-/** Despliega o pliega los puntos de vuelo (solo cambia algo en el teléfono). */
-function desplegarPuntos(abierto) {
-  $('.puntos').classList.toggle('puntos--abierto', abierto);
-  $('#controles-posicion').setAttribute('aria-expanded', String(abierto));
-}
-
 function construirControles() {
   const posiciones = estado.catalogo.posiciones();
   $('#controles-posicion').replaceChildren(...posiciones.map(({ posicion }) => {
@@ -400,13 +374,6 @@ function construirControles() {
     boton.append(nombre, altura);
     boton.title = `${estado.catalogo.nombrePunto(posicion)} · ${estado.catalogo.alturasDePunto(posicion)}`;
     boton.addEventListener('click', () => {
-      // En el teléfono los puntos van plegados en una pastilla con el actual: el
-      // primer toque los despliega y el segundo elige.
-      if (!ESCRITORIO.matches && !$('.puntos').classList.contains('puntos--abierto')) {
-        desplegarPuntos(true);
-        return;
-      }
-      desplegarPuntos(false);
       // La píldora va al punto elegido al tiro, sin esperar a que cargue su foto.
       marcarPunto(posicion);
       irAPosicion(posicion);
@@ -414,9 +381,6 @@ function construirControles() {
     boton.dataset.posicion = posicion;
     return boton;
   }));
-  document.addEventListener('pointerdown', (evento) => {
-    if (!evento.target.closest('.puntos')) desplegarPuntos(false);
-  });
 
   // El altímetro se lee de arriba hacia abajo, como un instrumento de vuelo.
   // Las alturas salen del vuelo, no de una lista fija: cada loteo se vuela a las
@@ -489,18 +453,13 @@ function conectarAccionesRapidas() {
     }
   });
 
-  // El de la barra (escritorio) y el de la cabecera (teléfono) llevan al mismo chat.
-  for (const whatsapp of [$('#accion-whatsapp'), $('#cabecera-whatsapp')]) {
-    if (estado.catalogo.meta.whatsapp) {
-      whatsapp.href = enlaceWhatsapp();
-      whatsapp.hidden = false;
-    } else {
-      whatsapp.hidden = true;
-    }
-  }
+  // Un solo botón general; el de cada parcela va en su ficha.
+  const whatsapp = $('#whatsapp-flotante');
+  whatsapp.hidden = !estado.catalogo.meta.whatsapp;
+  if (estado.catalogo.meta.whatsapp) whatsapp.href = enlaceWhatsapp();
 }
 
-/** El WhatsApp general del loteo (cabecera y barra), con el enlace al sitio sin parcela. */
+/** El WhatsApp general del loteo (el botón flotante), con el enlace al sitio sin parcela. */
 function enlaceWhatsapp() {
   const url = new URL(location.href);
   url.searchParams.delete('lote');
@@ -537,15 +496,34 @@ function porOrdenDeEstado(a, b) {
 
 function construirLeyenda() {
   const conteo = conteoPorEstado(estado.catalogo.parcelas);
-  $('#leyenda').replaceChildren(...[...conteo.keys()].sort(porOrdenDeEstado).map((clave) => {
+  const claves = [...conteo.keys()].sort(porOrdenDeEstado);
+  // Sobre la vista aérea solo importa cuántas quedan: los demás estados ya se leen
+  // como puntos chicos y se eligen en Filtros, que es lo que abre este botón.
+  const vendibles = claves.filter((clave) => estado.catalogo.estados[clave]?.vendible);
+  const cuantas = vendibles.reduce((suma, clave) => suma + conteo.get(clave), 0);
+  const resumen = document.createElement('button');
+  resumen.type = 'button';
+  resumen.className = 'leyenda__resumen';
+  resumen.setAttribute('aria-controls', 'filtros');
+  const puntoResumen = document.createElement('i');
+  puntoResumen.style.background = estado.catalogo.color(vendibles[0] ?? 'disponible');
+  resumen.append(puntoResumen, textoDisponibles(cuantas));
+  resumen.addEventListener('click', () => $('#abrir-filtros').click());
+
+  // Sobre el plano las parcelas se pintan enteras de su color: ahí sí hace falta
+  // saber qué es cada color (estilos.css muestra estos solo con el plano).
+  const estados = claves.map((clave) => {
     const span = document.createElement('span');
+    span.className = 'leyenda__estado';
     // El color va solo en el punto: "Disponible" es blanco y como texto no se vería.
     const punto = document.createElement('i');
     punto.style.background = estado.catalogo.color(clave);
     span.append(punto, `${estado.catalogo.etiquetaEstado(clave)} (${conteo.get(clave)})`);
     return span;
-  }));
+  });
+  $('#leyenda').replaceChildren(resumen, ...estados);
 }
+
 
 function construirFiltros() {
   const presentes = [...new Set(estado.catalogo.parcelas.map((p) => p.estado))]
@@ -741,6 +719,9 @@ function conectarPaneles() {
   document.documentElement.classList.toggle('insertado', insertado);
   const plataforma = navigator.userAgentData?.platform ?? navigator.platform ?? '';
   pista.textContent = pistaDelVisor(insertado, /mac|iphone|ipad/i.test(plataforma));
+  // Suelto, el visor se entiende solo y la pista era una cosa más sobre la foto.
+  // Insertado en otra página sí hace falta: ahí la rueda sola mueve esa página.
+  pista.hidden = !insertado;
   $('#visor').addEventListener('pointerdown', () => pista.classList.add('pista--oculta'),
                                { once: true });
 }

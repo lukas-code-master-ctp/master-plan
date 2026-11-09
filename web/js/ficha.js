@@ -32,6 +32,7 @@ const ICONOS = {
 };
 
 // El archivo de deslindes de la ficha abierta; se suelta al abrir otra.
+let escuchaDelMenu = null;
 let urlKml = null;
 
 const icono = (nombre) => `<svg viewBox="0 0 20 20" aria-hidden="true">${ICONOS[nombre]}</svg>`;
@@ -235,7 +236,11 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
         <h2 class="ficha__titulo">${escapar(titulo)} <span class="ficha__proyecto">• ${escapar(catalogo.meta.proyecto)}</span></h2>
       </div>
       <div class="ficha__herramientas">
-        <button class="ficha__redondo" type="button" data-accion="compartir" aria-label="Compartir esta parcela">${icono('compartir')}</button>
+        <div class="ficha__compartir">
+          <button class="ficha__redondo" type="button" data-accion="compartir" aria-label="Compartir esta parcela"
+                  aria-haspopup="true" aria-expanded="false" aria-controls="ficha-menu-compartir">${icono('compartir')}</button>
+          <div id="ficha-menu-compartir" class="menu-compartir" role="menu" hidden></div>
+        </div>
         <button class="ficha__redondo ficha__cerrar" type="button" aria-label="Cerrar ficha">✕</button>
       </div>
     </div>
@@ -265,15 +270,14 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
   `;
 
   contenedor.querySelector('.ficha__cerrar').addEventListener('click', acciones.alCerrar);
-  contenedor.querySelector('[data-accion="compartir"]')
-    .addEventListener('click', () => compartir(contenedor, parcela, `${titulo} · ${catalogo.meta.proyecto}`));
+  pintarCompartir(contenedor, parcela, catalogo, `${titulo} · ${catalogo.meta.proyecto}`);
 
   const lista = accionesDe(parcela, catalogo, { url: urlDeParcela(parcela) });
   pintarBotones(contenedor.querySelector('.acciones'), lista, {
     alReservar: () => acciones.alReservar?.(parcela),
     alInteresar: () => acciones.alInteresar?.(parcela),
   });
-  pintarEnlaces(contenedor, parcela, catalogo, lista.find((a) => a.tipo === 'aire'), acciones);
+  pintarEnlaces(contenedor, lista.find((a) => a.tipo === 'aire'), acciones);
   // En el celular, cada parcela abre a media altura, aunque la anterior haya quedado
   // entera o asomada.
   abrirHoja(contenedor, { venia });
@@ -302,35 +306,77 @@ function pintarBotones(zona, lista, { alReservar, alInteresar }) {
   }
 }
 
-/** La fila de enlaces chicos: verla en 360°, bajar los deslindes y copiar el enlace. */
-function pintarEnlaces(contenedor, parcela, catalogo, aire, { alVerDesdeAire }) {
+/** Debajo de los botones, solo "Ver en 360°": copiar el enlace y el KML van en Compartir. */
+function pintarEnlaces(contenedor, aire, { alVerDesdeAire }) {
   const zona = contenedor.querySelector('.enlaces');
   if (aire) zona.append(boton(aire.texto, 'enlace-ficha', alVerDesdeAire, 'aire'));
+  zona.hidden = !aire;
+}
+
+/**
+ * Compartir abre un menú chico: la hoja del sistema (donde existe), copiar el
+ * enlace y bajar los deslindes en KML. Antes eran tres enlaces sueltos al pie de
+ * la ficha, que la alargaban para algo que pocos usan.
+ */
+function pintarCompartir(contenedor, parcela, catalogo, titulo) {
+  const disparador = contenedor.querySelector('[data-accion="compartir"]');
+  const menu = contenedor.querySelector('.menu-compartir');
+  const cerrar = () => {
+    menu.hidden = true;
+    disparador.setAttribute('aria-expanded', 'false');
+  };
+  const opciones = [];
+  if (navigator.share) {
+    opciones.push(boton('Compartir…', 'menu-compartir__opcion', async () => {
+      cerrar();
+      await compartir(contenedor, parcela, titulo);
+    }, 'compartir'));
+  }
+  opciones.push(boton('Copiar enlace', 'menu-compartir__opcion', async () => {
+    cerrar();
+    try {
+      await navigator.clipboard.writeText(urlDeParcela(parcela));
+      mostrarNota(contenedor, 'Enlace copiado.');
+    } catch {
+      mostrarNota(contenedor, urlDeParcela(parcela));
+    }
+  }, 'enlace'));
 
   const kml = kmlDeParcela(parcela, catalogo.titulo(parcela), catalogo.meta.proyecto);
   if (kml) {
     const descarga = document.createElement('a');
-    descarga.className = 'enlace-ficha';
+    descarga.className = 'menu-compartir__opcion';
+    descarga.dataset.tipo = 'kml';
     if (urlKml) URL.revokeObjectURL(urlKml);
     urlKml = URL.createObjectURL(new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' }));
     descarga.href = urlKml;
     descarga.download = `parcela-${parcela.id}.kml`;
     descarga.insertAdjacentHTML('afterbegin', icono('deslindes'));
     descarga.append('Deslindes (KML)');
-    zona.append(descarga);
+    descarga.addEventListener('click', cerrar);
+    opciones.push(descarga);
   }
+  for (const opcion of opciones) opcion.setAttribute('role', 'menuitem');
+  menu.replaceChildren(...opciones);
 
-  zona.append(boton('Copiar enlace', 'enlace-ficha', async (evento) => {
-    const objetivo = evento.currentTarget;
-    const texto = objetivo.lastChild;
-    try {
-      await navigator.clipboard.writeText(urlDeParcela(parcela));
-      texto.textContent = 'Enlace copiado';
-      setTimeout(() => { texto.textContent = 'Copiar enlace'; }, 1800);
-    } catch {
-      mostrarNota(contenedor, urlDeParcela(parcela));
-    }
-  }, 'enlace'));
+  disparador.addEventListener('click', () => {
+    const abrir = menu.hidden;
+    menu.hidden = !abrir;
+    disparador.setAttribute('aria-expanded', String(abrir));
+    if (abrir) menu.querySelector('.menu-compartir__opcion')?.focus();
+  });
+  // La ficha se vuelve a pintar con cada parcela: el escucha de la anterior se suelta.
+  escuchaDelMenu?.abort();
+  escuchaDelMenu = new AbortController();
+  contenedor.addEventListener('pointerdown', (evento) => {
+    if (!evento.target.closest('.ficha__compartir')) cerrar();
+  }, { signal: escuchaDelMenu.signal });
+  menu.addEventListener('keydown', (evento) => {
+    if (evento.key !== 'Escape') return;
+    evento.stopPropagation();
+    cerrar();
+    disparador.focus();
+  });
 }
 
 function urlDeParcela(parcela) {

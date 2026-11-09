@@ -15,17 +15,17 @@
 
 <header class="cabecera">
   <div class="marca">
+    <!-- La "m" de Tu Masterplan, la misma del favicon. Si la loteadora subió su logo, va
+         ese (marca.js, ponerLogo). -->
     <svg class="marca__hito" viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.6"/>
-      <path d="M16 4v6M16 22v6M4 16h6M22 16h6" stroke="currentColor" stroke-width="1.6"
-            stroke-linecap="round"/>
-      <path d="M16 10.5 21.5 16 16 21.5 10.5 16Z" fill="currentColor"/>
+      <path d="M7.5 22.5v-9.5M7.5 16c0-2.3 1.3-3.4 3.1-3.4s3.1 1.1 3.1 3.4v6.5M13.7 16c0-2.3 1.3-3.4 3.1-3.4s3.1 1.1 3.1 3.4v6.5"
+            fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="24.6" cy="21.6" r="2.3" fill="#22c55e"/>
     </svg>
     <h1 class="marca__texto">
       <span class="marca__nombre" id="marca-nombre"></span>
       <span class="marca__meta">
         <span id="marca-etapa"></span>
-        <span class="marca__coord" id="marca-coord"></span>
       </span>
     </h1>
   </div>
@@ -58,16 +58,6 @@
       <span class="pastillon__texto">Filtros</span>
       <span id="filtros-activos" class="cuenta" hidden></span>
     </button>
-
-    <a id="cabecera-whatsapp" class="pastillon pastillon--icono pastillon--whatsapp" target="_blank"
-       rel="noopener" aria-label="Escribir por WhatsApp" hidden>
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M3 17l1-3.4A7 7 0 1 1 6.6 16L3 17Z" fill="none" stroke="currentColor"
-              stroke-width="1.5" stroke-linejoin="round"/>
-        <path d="M7.4 7.6c0 3 2 5 5 5 .6 0 1-.5 1-1l-1.4-.7-.8.8a5 5 0 0 1-2-2l.8-.8L9.3 7
-                 c-.5 0-1 .2-1.4.4a1 1 0 0 0-.5.9Z" fill="currentColor"/>
-      </svg>
-    </a>
   </div>
 </header>
 
@@ -108,12 +98,6 @@
 
 <main class="escena">
 
-  <!-- Hacia dónde mira la vista aérea, en palabras. En escritorio lo dice la brújula. -->
-  <div class="capsula-rumbo" aria-hidden="true">
-    <svg viewBox="0 0 20 20"><path id="capsula-aguja" d="M10 2.5 15.5 17 10 13.5 4.5 17Z" fill="currentColor"/></svg>
-    <span id="capsula-texto"></span>
-  </div>
-
   <section id="visor" class="visor" aria-label="Vista aérea 360">
     <canvas id="lienzo-360"></canvas>
     <svg id="overlay" class="overlay" xmlns="http://www.w3.org/2000/svg"
@@ -129,23 +113,6 @@
 
   <!-- Columna de instrumentos -->
   <div class="instrumentos">
-    <div class="rosa" id="brujula" aria-hidden="true">
-      <svg viewBox="0 0 100 100">
-        <circle cx="50" cy="50" r="46" class="rosa__anillo"/>
-        <g id="brujula-aguja">
-          <g class="rosa__ticks">
-            <line x1="93" y1="50" x2="85" y2="50"/>
-            <line x1="50" y1="93" x2="50" y2="85"/>
-            <line x1="7" y1="50" x2="15" y2="50"/>
-          </g>
-          <path class="rosa__norte" d="M50 29 L57 55 L50 50 L43 55 Z"/>
-          <path class="rosa__sur" d="M50 79 L43 50 L50 55 L57 50 Z"/>
-          <text class="rosa__letra" x="50" y="23">N</text>
-        </g>
-        <circle cx="50" cy="50" r="2.5" class="rosa__centro"/>
-      </svg>
-    </div>
-
     <div class="altimetro" role="group" aria-label="Altura de vuelo">
       <span class="altimetro__unidad">altura</span>
       <div id="controles-altura" class="altimetro__escala"></div>
@@ -168,20 +135,10 @@
         </svg>
         <span class="accion__texto">Compartir</span>
       </button>
-      <a id="accion-whatsapp" class="accion accion--whatsapp" target="_blank" rel="noopener">
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M3 17l1-3.4A7 7 0 1 1 6.6 16L3 17Z" fill="none" stroke="currentColor"
-                stroke-width="1.5" stroke-linejoin="round"/>
-          <path d="M7.4 7.6c0 3 2 5 5 5 .6 0 1-.5 1-1l-1.4-.7-.8.8a5 5 0 0 1-2-2l.8-.8L9.3 7
-                   c-.5 0-1 .2-1.4.4a1 1 0 0 0-.5.9Z" fill="currentColor"/>
-        </svg>
-        <span class="accion__texto">WhatsApp</span>
-      </a>
     </div>
 
     <div class="puntos" role="group" aria-label="Punto de vuelo">
       <span class="puntos__pildora" aria-hidden="true"></span>
-      <span class="puntos__rotulo">Punto</span>
       <div id="controles-posicion" class="puntos__fila"></div>
     </div>
   </div>
@@ -195,6 +152,19 @@
     <span>Volver al masterplan</span>
   </button>
 
+  <!-- Un solo WhatsApp general, flotando sobre la foto. El de cada parcela va en su ficha. -->
+  <a id="whatsapp-flotante" class="whatsapp-flotante" target="_blank" rel="noopener"
+     aria-label="Escribir por WhatsApp" hidden>
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M3 17l1-3.4A7 7 0 1 1 6.6 16L3 17Z" fill="none" stroke="currentColor"
+            stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M7.4 7.6c0 3 2 5 5 5 .6 0 1-.5 1-1l-1.4-.7-.8.8a5 5 0 0 1-2-2l.8-.8L9.3 7
+               c-.5 0-1 .2-1.4.4a1 1 0 0 0-.5.9Z" fill="currentColor"/>
+    </svg>
+  </a>
+
+  <!-- Sobre la vista aérea solo dice cuántas quedan disponibles (abre Filtros); sobre el
+       plano, que se pinta por estado, lista todos los estados (app.js, construirLeyenda). -->
   <div id="leyenda" class="leyenda"></div>
 
   <p class="pista" id="pista">Arrastra para mirar · rueda para acercar</p>

@@ -47,6 +47,9 @@ const ARRASTRE_MINIMO_PX = 5;
 const ALTO_PASTILLA = 20;
 // La elegida se dibuja agrandada (.parcela--seleccionada en estilos.css): ocupa más.
 const ESCALA_ELEGIDA = 1.22;
+// Lo que no se vende es un punto sin número: así de chico respecto de una pastilla
+// (estilos.css, .parcela--punto). Ocupa menos, así que choca menos con sus vecinas.
+const ESCALA_PUNTO = 0.32;
 // El globo de la elegida flota sobre la parcela, unido por una patita, para no
 // taparla: de lejos la parcela es más chica que su propio rótulo.
 const PATITA_PX = 16;
@@ -546,6 +549,8 @@ export class Visor {
       nodo.grupo.classList.toggle('parcela--atenuada', estilo.atenuada);
       const elegida = id === this.seleccionada;
       nodo.grupo.classList.toggle('parcela--seleccionada', elegida);
+      const punto = Boolean(estilo.punto) && !elegida;
+      nodo.grupo.classList.toggle('parcela--punto', punto);
       nodo.forma.setAttribute('d', aRuta(pixeles));
       ponerRotulo(nodo, elegida ? this.rotuloSeleccionadoDe(id) : this.rotuloDe(id));
       if (elegida) rutaElegida = { d: nodo.forma.getAttribute('d'), color: estilo.color };
@@ -575,7 +580,7 @@ export class Visor {
         nodo.disco.style.fill = estilo.color;
         nodo.numero.style.fill = estilo.texto;
         candidatas.push({
-          id, x: cx, y: cy, nodo, elegida, anchoEnPantalla,
+          id, x: cx, y: cy, nodo, elegida, anchoEnPantalla, punto,
           // Primero la elegida; después lo que se vende; después lo más cercano,
           // que es lo que se ve más grande.
           prioridad: (elegida ? 1e9 : 0) + (estilo.prioridad ?? 0) * 1e6 + anchoEnPantalla,
@@ -591,7 +596,7 @@ export class Visor {
       candidata.nodo.pastilla.setAttribute('transform',
         `translate(${candidata.x.toFixed(1)} ${candidata.y.toFixed(1)})`
         + (escala !== 1 ? ` scale(${escala.toFixed(3)})` : ''));
-      const ocupa = candidata.elegida ? ESCALA_ELEGIDA : escala;
+      const ocupa = candidata.elegida ? ESCALA_ELEGIDA : escala * (candidata.punto ? ESCALA_PUNTO : 1);
       candidata.ancho = Number(candidata.nodo.disco.getAttribute('width')) * ocupa;
       candidata.alto = ALTO_PASTILLA * ocupa;
     }
