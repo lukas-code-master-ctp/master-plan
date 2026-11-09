@@ -194,6 +194,18 @@ def test_la_loteadora_ve_sus_solicitudes_con_los_datos_del_comprador(consola):
             solicitud["estado"]) == ("1-7", "Pedro Pérez", "56987654321", "pedro@correo.cl", "pendiente")
 
 
+def test_la_bandeja_trae_las_de_todos_sus_loteos_en_un_pedido(consola):
+    solicitar(consola)
+
+    (solicitud,) = consola["ana"].get("/api/reservas").json()
+
+    assert (solicitud["parcela"], solicitud["slug"], solicitud["loteo"]) == ("1-7", consola["slug"], "Praderas")
+    assert solicitud["estado"] == "pendiente"
+    # La otra loteadora no ve nada; el equipo de CTP ve las de todas.
+    assert consola["luis"].get("/api/reservas").json() == []
+    assert [s["slug"] for s in entrar_como_ctp(consola).get("/api/reservas").json()] == [consola["slug"]]
+
+
 def test_otra_loteadora_no_ve_ni_resuelve_las_solicitudes_ajenas(consola):
     solicitar(consola)
     (solicitud,) = consola["ana"].get(f"/api/proyectos/{consola['slug']}/reservas").json()

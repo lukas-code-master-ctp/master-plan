@@ -99,12 +99,10 @@ export function planilla(interesados) {
  * un loteo que se bajó sigue teniendo contactos por llamar. Uno que falla no deja
  * sin los demás.
  */
-export async function cargarInteresados(proyectos) {
-  const listas = await Promise.all(proyectos.map((p) =>
-    pedir(`/api/proyectos/${encodeURIComponent(p.slug)}/interesados`)
-      .then((lista) => lista.map((i) => ({ ...i, slug: p.slug, loteo: p.nombre })))
-      .catch(() => [])));
-  return listas.flat();
+export async function cargarInteresados() {
+  // Un solo pedido con los de todos los loteos: uno por loteo hacía que la consola
+  // tardara minutos en abrir con muchos loteos.
+  return pedir('/api/interesados').catch(() => []);
 }
 
 async function guardar(interesado, cambios, listo) {

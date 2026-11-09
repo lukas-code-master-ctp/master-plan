@@ -142,6 +142,15 @@ def test_la_loteadora_cambia_estado_responsable_y_nota(consola):
     assert consola["ana"].patch(url, json={"estado": "inventado"}).status_code == 400
 
 
+def test_la_bandeja_trae_los_de_todos_sus_loteos_en_un_pedido(consola):
+    me_interesa(consola)
+
+    (interesado,) = consola["ana"].get("/api/interesados").json()
+
+    assert (interesado["parcela"], interesado["slug"], interesado["loteo"]) == ("1-7", consola["slug"], "Praderas")
+    assert consola["luis"].get("/api/interesados").json() == []
+
+
 def test_otra_loteadora_no_ve_ni_cambia_los_interesados(consola):
     me_interesa(consola)
     (interesado,) = lista(consola).json()
