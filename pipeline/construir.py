@@ -11,6 +11,7 @@ import argparse
 import json
 import math
 import re
+import shutil
 import statistics
 import sys
 from dataclasses import dataclass, replace
@@ -124,6 +125,12 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
     panoramas = buscar_panoramas(fuentes.panoramas)
     if not panoramas:
         raise SinPanoramas(fuentes.panoramas)
+    # El despegue supuesto sale de la primera toma de todas, quitada o no: sacar un
+    # punto del sitio no tiene por qué mover el ancla de los demás.
+    despegue_supuesto = _despegue_por_defecto(panoramas)
+    quedan = _sin_puntos_quitados(panoramas, proyecto.puntos_quitados, avisos)
+    _borrar_salida_de(salida, [p for p in panoramas if p not in quedan])
+    panoramas = quedan
     print(f"  {len(panoramas)} panorámicas en {len({p.posicion for p in panoramas})} posiciones")
     _revisar_ids_de_vista(panoramas)
 
@@ -144,7 +151,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
 
     print("Cargando el modelo de terreno...")
     relieve = _cargar_terreno(geometrias, panoramas, avisos)
-    despegue = proyecto.despegue or _despegue_por_defecto(panoramas)
+    despegue = proyecto.despegue or despegue_supuesto
     if relieve:
         print(f"  despegue en ({despegue[0]:.5f}, {despegue[1]:.5f}), cota DEM "
               f"{relieve.cota(despegue):.0f} m"
@@ -621,6 +628,34 @@ def _despegues_por_vista(proyecto, vistas: list, despegue: geo.Punto, avisos: Av
         avisos.añadir(f"el despegue de {nombre} no corresponde a ninguna panorámica del "
                       f"loteo; revisa el nombre de la foto")
     return lambda vista: por_vista.get(vista.id, despegue)
+
+
+def _sin_puntos_quitados(panoramas: list[Panorama], quitados: tuple[int, ...],
+                         avisos: Avisos) -> list[Panorama]:
+    """Las panorámicas menos las de los puntos que no van al sitio. Los demás
+    conservan su número: los links compartidos (`?vista=p02-300`) siguen sirviendo."""
+    if not quitados:
+        return panoramas
+    posiciones = {p.posicion for p in panoramas}
+    sin_punto = sorted(set(quitados) - posiciones)
+    if sin_punto:
+        avisos.añadir(f"los puntos quitados {', '.join(map(str, sin_punto))} no están entre "
+                      f"los puntos de vuelo; se ignoran")
+    quedan = [p for p in panoramas if p.posicion not in quitados]
+    if not quedan:
+        raise ValueError("están quitados todos los puntos de vuelo: deja al menos uno")
+    for posicion in sorted(set(quitados) & posiciones):
+        print(f"  punto {posicion} quitado: no sale en el sitio")
+    return quedan
+
+
+def _borrar_salida_de(salida: config.Salida, quitadas: list[Panorama]) -> None:
+    """Borra lo que dejó una construcción anterior de las vistas quitadas. El visor
+    ya no las nombra, pero la publicación sube la carpeta entera: sin esto, la foto
+    seguiría en línea para quien tenga el link viejo."""
+    for panorama in quitadas:
+        (salida.vistas / f"{panorama.id}.json").unlink(missing_ok=True)
+        shutil.rmtree(salida.panoramas / panorama.id, ignore_errors=True)
 
 
 def _despegue_por_defecto(panoramas: list[Panorama]) -> geo.Punto:

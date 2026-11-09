@@ -661,6 +661,11 @@ solo la foto, las referencias y las lupas a los demás puntos. No se calibran, n
 cuentan como la vista de ninguna parcela ("Ver en 360°" lleva a un punto con líneas) y
 el sitio no abre en ellos. Se aplica al reconstruir.
 
+**Puntos quitados.** Los de `puntos_quitados` (en la consola, "Puntos quitados": `4`) no
+salen en el sitio: ni su 360, ni su botón, ni la lupa que lleva a ellos desde los demás.
+La foto queda en la carpeta, así que volver a mostrarlo es borrar el número y
+reconstruir. Los otros puntos conservan su número. Se aplica al reconstruir.
+
 ## Crea tu KMZ
 
 Muchas loteadoras no tienen el KMZ de la subdivisión, y pedirle el DWG al topógrafo no

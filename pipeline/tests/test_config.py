@@ -505,3 +505,10 @@ def test_los_puntos_solo_foto_se_leen_como_vengan(tmp_path):
     (tmp_path / "proyecto.json").write_text('{"nombre": "Lomas", "puntos_solo_foto": [3, 4, 5]}',
                                             encoding="utf-8")
     assert cargar_proyecto(tmp_path).puntos_solo_foto == (3, 4, 5)
+
+
+def test_los_puntos_quitados_se_leen_como_los_solo_foto(tmp_path):
+    assert cargar_proyecto(tmp_path).puntos_quitados == ()
+    (tmp_path / "proyecto.json").write_text('{"nombre": "Olivos", "puntos_quitados": "IV"}',
+                                            encoding="utf-8")
+    assert cargar_proyecto(tmp_path).puntos_quitados == (4,)
