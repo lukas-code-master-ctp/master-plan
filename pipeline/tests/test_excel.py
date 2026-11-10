@@ -368,3 +368,14 @@ def test_sin_la_columna_todas_las_parcelas_llevan_numero(tmp_path):
     ruta = planilla(tmp_path, [["Parcela", "Estado"], ["1", "Disponible"]])
 
     assert leer_excel(ruta)["1"].mostrar_numero is True
+
+
+def test_una_planilla_sin_ningun_numero_legible_falla_diciendo_por_que(tmp_path):
+    ruta = planilla(tmp_path, [("Parcela", "Estado"), ("1½", "Disponible"), ("s/n", "Vendida")])
+    with pytest.raises(ValueError, match="no reconocí ningún número de parcela.*1½"):
+        leer_excel(ruta)
+
+
+def test_una_fila_ilegible_entre_legibles_no_corta_la_lectura(tmp_path):
+    ruta = planilla(tmp_path, [("Parcela", "Estado"), ("s/n", "Disponible"), ("Parcela 2", "Vendida")])
+    assert list(leer_excel(ruta)) == ["2"]

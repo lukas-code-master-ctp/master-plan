@@ -133,7 +133,13 @@ def normalizar_id(texto: str | None) -> str | None:
         return None
     if isinstance(texto, float) and texto.is_integer():
         texto = int(texto)
-    limpio = re.sub(r"\bLOTES?\b", " ", str(texto).strip().upper())
+    limpio = str(texto).strip().upper()
+    # Un número que pasó por una planilla como decimal ("12.0", "12,0"): es el 12.
+    limpio = re.sub(r"^(\d+)[.,]0+$", r"\1", limpio)
+    # "LOTE", "PARCELA" y el "N°" que suele seguirlos son rótulo, no parte del número:
+    # sin esto "PARCELA 12" se leía como el lote A12 (la A de parcelA) y "N° 12" como nada.
+    limpio = re.sub(r"\b(?:LOTES?|PARCELAS?)\b", " ", limpio)
+    limpio = re.sub(r"(?:\bN\s*[°ºO]|#)\s*\.?\s*(?=\d)", " ", limpio)
 
     # El guion entre la letra y el número es solo separador: Lomas de Quillón rotula
     # su tercera etapa "A-1" … "A-32", y sin esto esos 32 lotes no se leían.

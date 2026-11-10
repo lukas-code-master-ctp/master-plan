@@ -213,10 +213,16 @@ def fichas_desde_filas(filas: list, parcelacion: str | None = None,
 
     base = _sin_tildes(parcelacion) if parcelacion else None
     crudas: list[tuple[str, int | None, str | None, tuple]] = []
+    ilegibles: list[str] = []
+    legibles = 0
     for fila in filas[1:]:
-        numero = normalizar_id(_valor(fila, indices.get("id")))
+        crudo = _valor(fila, indices.get("id"))
+        numero = normalizar_id(crudo)
         if not numero:
+            if _texto(crudo):
+                ilegibles.append(_texto(crudo))
             continue
+        legibles += 1
         nombre_parcelacion = _texto(_valor(fila, indices.get("parcelacion")))
         etapa = _etapa_de(nombre_parcelacion, base)
         if base is not None and etapa is None:
@@ -224,6 +230,15 @@ def fichas_desde_filas(filas: list, parcelacion: str | None = None,
         # Una columna Etapa, si la hay, manda sobre el sufijo del nombre.
         etapa = _etapa_de(_texto(_valor(fila, indices.get("etapa"))), None) or etapa
         crudas.append((numero, etapa, nombre_parcelacion, fila))
+
+    # Filas con parcela y ninguna legible no es una planilla vacía: es un formato de
+    # número que no conocemos. Seguir dejaría el loteo entero "no disponible" sin
+    # decir por qué (pasó con Parque Algarrobo).
+    if ilegibles and not legibles:
+        ejemplos = ", ".join(f'"{v}"' for v in ilegibles[:5])
+        raise ValueError(
+            f"no reconocí ningún número de parcela en {origen} "
+            f"({len(ilegibles)} fila(s); por ejemplo {ejemplos})")
 
     # Sin sufijo es la etapa 1, pero solo cuando alguna fila sí trae sufijo: en un
     # loteo sin etapas nadie es "etapa 1".
