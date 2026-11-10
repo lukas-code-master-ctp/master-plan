@@ -558,3 +558,49 @@ def test_lo_que_dejo_una_construccion_anterior_del_punto_quitado_se_borra(tmp_pa
     assert not (salida.panoramas / quitada.id).exists()
     assert not (salida.vistas / f"{quitada.id}.json").exists()
     assert (salida.vistas / "otra.json").exists()
+
+
+# --- calzar contra la imagen satelital cuando los caminos no alcanzan -----------
+
+def _calzar(monkeypatch, ajustes, calce, cargar=lambda *a: SimpleNamespace(escena="S2B")):
+    from datetime import datetime
+    monkeypatch.setattr(construir.satelite, "cargar_foto", lambda ruta: None)
+    monkeypatch.setattr(construir.satelite, "calibrar", lambda vista, *resto: calce[vista.id])
+    panorama = SimpleNamespace(ruta="foto.JPG", momento=datetime(2026, 10, 28, 14, 0))
+    entrada = [(panorama, rumbo, vista) for _, rumbo, vista in _tres_vistas(0.0)]
+    avisos = construir.Avisos([])
+    vistas = construir._calzar_con_satelite(entrada, ajustes, SimpleNamespace(cotas_en=None), lambda v: 180.0,
+                                            [[(-71.66, -33.73), (-71.65, -33.72)]], avisos, cargar=cargar)
+    return {v.id: v for _, _, v in vistas}, avisos
+
+
+def test_si_los_caminos_se_van_al_tope_las_vistas_se_calzan_contra_el_satelite(monkeypatch):
+    """Parque Algarrobo: las tres al tope con los caminos. La que calza contra el
+    satélite queda calibrada, y la que no sigue pendiente para el cruce."""
+    ajustes = {v: Ajuste(tope="giro -1.5°") for v in ("p01", "p02", "p03")}
+    del_satelite = Ajuste(giro=-2.0, inclinacion_norte=-0.2, desnivel=18.0, puntaje_antes=0.3, puntaje_despues=0.62)
+    vistas, avisos = _calzar(monkeypatch, ajustes, {"p01": del_satelite, "p02": del_satelite,
+                                                     "p03": Ajuste(tope="desnivel +80 m")})
+
+    assert (vistas["p01"].giro, vistas["p01"].desnivel) == pytest.approx((-2.0, 18.0))
+    assert vistas["p01"].inclinacion_norte == pytest.approx(0.1 - 0.2)
+    assert ajustes["p01"].aplicado and not ajustes["p01"].tope
+    assert vistas["p03"].desnivel == pytest.approx(0.0) and ajustes["p03"].tope
+    assert not avisos.lineas
+
+
+def test_si_todas_calibraron_con_los_caminos_no_se_mira_el_satelite(monkeypatch):
+    ajustes = {v: Ajuste(desnivel=12.0, puntaje_antes=1.0, puntaje_despues=1.3) for v in ("p01", "p02", "p03")}
+    vistas, _ = _calzar(monkeypatch, ajustes, {}, cargar=lambda *a: 1 / 0)
+
+    assert all(v.giro == pytest.approx(0.0) for v in vistas.values() if v.id != "p03")
+
+
+def test_sin_imagen_satelital_avisa_y_sigue(monkeypatch):
+    def sin_red(*a):
+        raise OSError("sin red")
+    ajustes = {v: Ajuste(tope="giro -1.5°") for v in ("p01", "p02", "p03")}
+    vistas, avisos = _calzar(monkeypatch, ajustes, {}, cargar=sin_red)
+
+    assert vistas["p01"].desnivel == pytest.approx(0.0)
+    assert any("imagen satelital" in a for a in avisos.lineas)

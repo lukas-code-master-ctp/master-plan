@@ -18,7 +18,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
-from . import config, cruce, geo, horizonte, referencias, terreno, visor
+from . import config, cruce, geo, horizonte, referencias, satelite, terreno, visor
 from .crm import leer_crm
 from .excel import FichaComercial, alinear_con, leer_planilla
 from .etapas import contornos as contornos_de_etapas
@@ -230,6 +230,8 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
                 avisos.añadir(f"{vista.id}: el ajuste fino se fue al tope ({ajuste.tope}) y se "
                               f"descartó; la vista queda con la pose de antes. Revisa su calce.")
             calibradas.append((panorama, rumbo, aplicar(vista, ajuste)))
+        if relieve:
+            calibradas = _calzar_con_satelite(calibradas, ajustes, relieve, cota_de, lineas, avisos)
         vistas = _cruzar_vistas(calibradas, ajustes, inclinaciones, relieve, despegue_de, lineas, avisos)
         # Lo que queda en la vista es la suma de los dos pasos.
         for _, _, vista in vistas:
@@ -868,6 +870,48 @@ def _puntaje_encuadre(proyectadas: list) -> float:
 # III +69 m: el II heredaba +40 m y todo el sector sur le quedaba corrido un lote,
 # cuando con la altura del GPS caía sobre los caminos.
 DESNIVELES_EN_ACUERDO_M = 25.0
+
+
+def _calzar_con_satelite(vistas: list, ajustes: dict[str, Ajuste], relieve, cota_de, lineas,
+                         avisos: Avisos, cargar=satelite.cargar) -> list:
+    """Si la búsqueda con los caminos quedó en el tope en alguna vista, todas se calzan
+    contra la imagen satelital (ver satelite.py). Todas, y no solo las del tope: cuando
+    los caminos no sirven en una foto, lo que eligieron en las otras tampoco es seguro
+    (en Fundo Atalaya la única que "calibró" había elegido un desnivel de +73 m). La
+    que calza queda como calibrada; las que no, siguen el camino de siempre (ver
+    `_cruzar_vistas`). Sin red o sin una imagen despejada se avisa y no cambia nada."""
+    if not any(ajustes.get(v.id, Ajuste()).tope for _, _, v in vistas):
+        return vistas
+    puntos = [p for linea in lineas for p in linea] + [v.origen for _, _, v in vistas]
+    dia = min(p.momento for p, _, _ in vistas).date()
+    try:
+        verdor = cargar(geo.caja(puntos), dia, config.CACHE_SATELITE)
+    except (OSError, ValueError, KeyError) as error:
+        avisos.añadir(f"no pude usar la imagen satelital para calzar las vistas ({error})")
+        return vistas
+    print(f"  los caminos no alcanzaron: las vistas se calzan contra la imagen satelital ({verdor.escena})")
+    salida = []
+    for panorama, rumbo, vista in vistas:
+        previo = ajustes.get(vista.id)
+        if previo is not None:      # las vistas solo foto no se calibran
+            altura = cota_de(vista) + vista.altura_relativa
+            ajuste = satelite.calibrar(vista, satelite.cargar_foto(panorama.ruta), altura,
+                                       relieve.cotas_en, verdor)
+            if ajuste.aplicado:
+                print(f"    {vista.id}: giro {ajuste.giro:+.2f}°, inclinación E {ajuste.inclinacion_este:+.2f}° "
+                      f"/ N {ajuste.inclinacion_norte:+.2f}°, desnivel {ajuste.desnivel:+.1f} m "
+                      f"(parecido de {ajuste.puntaje_antes:.2f} a {ajuste.puntaje_despues:.2f})")
+                # Lo que queda anotado es todo lo que se le sumó a la vista nivelada.
+                ajustes[vista.id] = replace(ajuste, giro=round(previo.giro + ajuste.giro, 3),
+                                            inclinacion_este=round(previo.inclinacion_este + ajuste.inclinacion_este, 3),
+                                            inclinacion_norte=round(previo.inclinacion_norte + ajuste.inclinacion_norte, 3),
+                                            desnivel=round(previo.desnivel + ajuste.desnivel, 1))
+                vista = aplicar(vista, ajuste)
+            else:
+                print(f"    {vista.id}: no calzó ({ajuste.tope or 'se parece muy poco'}, parecido "
+                      f"{ajuste.puntaje_despues:.2f})")
+        salida.append((panorama, rumbo, vista))
+    return salida
 
 
 def _cruzar_vistas(vistas: list, ajustes: dict[str, Ajuste],

@@ -40,6 +40,7 @@ SUBIDAS = DATOS / "proyectos"
 # entre proyectos y corridas.
 _CACHE = DATOS / ".cache" if DATOS == RAIZ else DATOS / "cache"
 CACHE_TERRENO = _CACHE / "terreno"
+CACHE_SATELITE = _CACHE / "satelite"
 CACHE_REFERENCIAS = _CACHE / "referencias.json"
 
 # Export del CRM del que sale la planilla cuando el proyecto no trae xlsx.
