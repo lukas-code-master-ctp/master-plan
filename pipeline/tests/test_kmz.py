@@ -518,6 +518,58 @@ def test_el_borde_de_una_zona_no_es_camino(tmp_path):
     assert leer_caminos(ruta) == []
 
 
+def lotes_como_poligonos():
+    """Dos lotes de 70 × 70 m como polígonos con nombre, separados 10 m de norte a sur."""
+    return (poligono(cuadrado(0, 0), nombre="LOTE 1") + poligono(cuadrado(0, 80), nombre="LOTE 2"))
+
+
+def test_una_servidumbre_como_ruta_en_un_kmz_de_poligonos_se_pinta_como_camino(tmp_path):
+    """Parque Algarrobo: los lotes vienen como polígonos y la servidumbre no venía. Una
+    ruta "Servidumbre" agregada en Google Earth pasaba el KMZ al modo CAD."""
+    from pipeline.kmz import leer_caminos
+    eje = [desplazar(-20, 75), desplazar(90, 75)]
+    ruta = guardar_kmz(tmp_path, kml(lotes_como_poligonos() + estero("x", eje).replace("x", "Servidumbre")))
+
+    assert sorted(p.id for p in leer_kmz(ruta)) == ["1", "2"]
+    [[contorno]] = leer_caminos(ruta)
+    assert geo.contiene(contorno, desplazar(35, 75))
+    assert not geo.contiene(contorno, desplazar(35, 35))
+    assert geo.area_m2(contorno) == pytest.approx(110 * 10, rel=0.05)
+
+
+def test_una_servidumbre_como_poligono_no_es_lote_sin_numero(tmp_path):
+    from pipeline.kmz import leer_caminos
+    franja = [desplazar(0, 70), desplazar(70, 70), desplazar(70, 80), desplazar(0, 80)]
+    ruta = guardar_kmz(tmp_path, kml(lotes_como_poligonos() + poligono(franja, nombre="SERVIDUMBRE")))
+
+    assert sorted(p.id for p in leer_kmz(ruta)) == ["1", "2"]
+    [[contorno]] = leer_caminos(ruta)
+    assert geo.area_m2(contorno) == pytest.approx(700, rel=0.05)
+
+
+def test_en_un_kmz_cad_una_linea_camino_sigue_siendo_deslinde(tmp_path):
+    """En el CAD la línea con nombre puede ser el borde de un lote: sacarla de la red
+    fusionaría los lotes."""
+    a, c = desplazar(0, 0), desplazar(140, 0)
+    d, f = desplazar(0, 70), desplazar(140, 70)
+    dibujo = (linea([a, c]) + linea([c, f]) + linea([f, d]) + linea([d, a])
+              + estero("x", [desplazar(70, 0), desplazar(70, 70)]).replace("x", "Camino interior"))
+    ruta = guardar_kmz(tmp_path, kml(dibujo + punto("LOTE 1", desplazar(35, 35))
+                                     + punto("LOTE 2", desplazar(105, 35))))
+
+    assert sorted(p.id for p in leer_kmz(ruta)) == ["1", "2"]
+
+
+@pytest.mark.parametrize("nombre, es_camino", [
+    ("Servidumbre", True), ("SERVIDUMBRE DE TRÁNSITO", True), ("servidumbres", True),
+    ("Camino", True), ("Camino interior", True), ("Acceso", True), ("LOTE 7", False),
+    ("Caminata", False), ("Estero", False),
+])
+def test_que_nombres_cuentan_como_camino(nombre, es_camino):
+    from pipeline.kmz import NOMBRE_DE_CAMINO
+    assert bool(NOMBRE_DE_CAMINO.match(nombre)) is es_camino
+
+
 @pytest.mark.parametrize("nombre, es_zona", [
     ("Zona de conservación", True), ("ZONA DE CONSERVACION", True), ("Área verde", True),
     ("Areas verdes", True), ("Reserva", True), ("Conservación", True), ("Bosque nativo", True),

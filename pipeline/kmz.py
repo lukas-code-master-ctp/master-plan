@@ -82,6 +82,16 @@ NOMBRE_DE_ZONA = re.compile(
     r"^\s*(zona\s+(de|protegida)\b|[aá]reas?\s+(verdes?|de)\b|reserva\b|conservaci[oó]n\b|bosque\s+nativo\b)",
     re.IGNORECASE)
 
+# Servidumbres y caminos que la loteadora agrega con nombre a un KMZ de polígonos
+# (Parque Algarrobo: los lotes se trazaron pegados y la servidumbre no venía). Una
+# ruta suelta en un KMZ así lo pasaba al modo CAD y rearmaba los lotes con la red; con
+# este nombre se aparta y se pinta como camino. En un KMZ CAD no se aparta: ahí la
+# línea puede ser el deslinde de un lote, y lo que no es deslinde ya sale como camino.
+NOMBRE_DE_CAMINO = re.compile(r"^\s*(servidumbres?|caminos?|accesos?)\b", re.IGNORECASE)
+# Una servidumbre dibujada como ruta es su eje: la franja se arma con este medio
+# ancho (10 m en total, lo usual en una servidumbre de tránsito de una parcelación).
+CAMINO_EJE_RADIO_M = 5.0
+
 
 @dataclass
 class ParcelaGeometrica:
@@ -105,6 +115,10 @@ class _Dibujo:
     rotulos_etapa: list[tuple[int, geo.Punto]]
     poligonos: list[ParcelaGeometrica]
     lineas: list[tuple[list[geo.Punto], str | None]]
+    # Los caminos con nombre de un KMZ de polígonos (ver NOMBRE_DE_CAMINO): cada
+    # uno como sus anillos ([contorno, *huecos]) o, si es una ruta, su eje.
+    franjas: list[list[geo.Anillo]] = field(default_factory=list)
+    ejes: list[list[geo.Punto]] = field(default_factory=list)
 
 
 def normalizar_id(texto: str | None) -> str | None:
@@ -190,12 +204,31 @@ def leer_caminos(ruta: Path) -> list[list[geo.Anillo]]:
     raiz = ET.fromstring(kml)
     dibujo = _leer_dibujo(raiz, _colores_de_estilo(raiz))
     lotes = [p for p in _parsear(kml) if p.id]
-    if not dibujo.lineas or not lotes:
+    if not lotes or not (dibujo.lineas or dibujo.franjas or dibujo.ejes):
         return []
     origen = _origen(dibujo)
 
     def en_metros(puntos):
         return [geo.a_metros(p, origen) for p in puntos]
+
+    def en_grados(anillo):
+        return [geo.desde_metros(xy, origen) for xy in list(anillo.coords)[:-1]]
+
+    def anillos_de(pieza):
+        return ([en_grados(pieza.exterior)]
+                + [en_grados(h) for h in pieza.interiors if Polygon(h).area >= CAMINO_AREA_MINIMA_M2])
+
+    caminos = []
+    # Los que la loteadora nombró van tal cual, sin el mínimo de área: no son restos.
+    nombrados = [Polygon(en_metros(a[0]), [en_metros(h) for h in a[1:]]).buffer(0) for a in dibujo.franjas]
+    nombrados += [LineString(en_metros(e)).buffer(CAMINO_EJE_RADIO_M, cap_style="flat") for e in dibujo.ejes]
+    if nombrados:
+        zona = unary_union(nombrados)
+        for pieza in getattr(zona, "geoms", [zona]):
+            if not pieza.is_empty:
+                caminos.append(anillos_de(pieza.simplify(CAMINO_SIMPLIFICAR_M)))
+    if not dibujo.lineas:
+        return caminos
 
     # El borde de una zona con nombre (la de conservación) también es deslinde: el
     # cerco del predio que la rodea no es un camino.
@@ -206,20 +239,13 @@ def leer_caminos(ruta: Path) -> list[list[geo.Anillo]]:
     sueltos = [t for t in trazos
                if t.length > 0 and t.intersection(deslindes).length < CAMINO_FRACCION_EN_DESLINDE * t.length]
     if not sueltos:
-        return []
+        return caminos
     zona = unary_union([t.buffer(CAMINO_RADIO_M, cap_style="flat") for t in sueltos])
     zona = zona.buffer(CAMINO_CIERRE_M).buffer(-CAMINO_CIERRE_M)
-
-    def en_grados(anillo):
-        return [geo.desde_metros(xy, origen) for xy in list(anillo.coords)[:-1]]
-
-    caminos = []
     for pieza in getattr(zona, "geoms", [zona]):
         if pieza.area < CAMINO_AREA_MINIMA_M2:
             continue
-        pieza = pieza.simplify(CAMINO_SIMPLIFICAR_M)
-        caminos.append([en_grados(pieza.exterior)]
-                       + [en_grados(h) for h in pieza.interiors if Polygon(h).area >= CAMINO_AREA_MINIMA_M2])
+        caminos.append(anillos_de(pieza.simplify(CAMINO_SIMPLIFICAR_M)))
     return caminos
 
 
@@ -294,6 +320,7 @@ def _parsear(kml: str) -> list[ParcelaGeometrica]:
 
 def _leer_dibujo(raiz: ET.Element, colores: dict[str, str]) -> _Dibujo:
     dibujo = _Dibujo([], [], [], [])
+    apartar_caminos = not _es_cad(raiz)
     for marca in raiz.iter(NS + "Placemark"):
         nombre = _texto(marca.find(NS + "name"))
         if NOMBRE_DE_AGUA.match(nombre):
@@ -302,6 +329,9 @@ def _leer_dibujo(raiz: ET.Element, colores: dict[str, str]) -> _Dibujo:
             continue   # una zona de conservación tampoco (leer_zonas)
         descripcion = _texto(marca.find(NS + "description"))
         color = _color_de(marca, colores)
+        if apartar_caminos and NOMBRE_DE_CAMINO.match(nombre):
+            _apartar_camino(marca, dibujo)
+            continue
         etapa = numero_de_etapa(nombre)
 
         punto = marca.find(f".//{NS}Point/{NS}coordinates")
@@ -329,6 +359,37 @@ def _leer_dibujo(raiz: ET.Element, colores: dict[str, str]) -> _Dibujo:
     if not dibujo.lineas:
         return dibujo
     return replace(dibujo, lineas=_sin_achurado(dibujo.lineas, _origen(dibujo)))
+
+
+def _es_cad(raiz: ET.Element) -> bool:
+    """Si el dibujo trae líneas además de los caminos con nombre y los esteros."""
+    for marca in raiz.iter(NS + "Placemark"):
+        nombre = _texto(marca.find(NS + "name"))
+        if NOMBRE_DE_AGUA.match(nombre) or NOMBRE_DE_CAMINO.match(nombre):
+            continue
+        if marca.find(f".//{NS}LineString") is not None:
+            return True
+    return False
+
+
+def _apartar_camino(marca: ET.Element, dibujo: _Dibujo) -> None:
+    for poligono in marca.iter(NS + "Polygon"):
+        anillos = []
+        for borde in (f"{NS}outerBoundaryIs", f"{NS}innerBoundaryIs"):
+            for elemento in poligono.iter(borde):
+                coordenadas = elemento.find(f".//{NS}coordinates")
+                if coordenadas is not None and coordenadas.text:
+                    puntos = _coordenadas(coordenadas.text, cerrado=True)
+                    if len(puntos) >= 3:
+                        anillos.append(puntos)
+        if anillos:
+            dibujo.franjas.append(anillos)
+    for linea in marca.iter(NS + "LineString"):
+        coordenadas = linea.find(NS + "coordinates")
+        if coordenadas is not None and coordenadas.text:
+            puntos = _coordenadas(coordenadas.text)
+            if len(puntos) >= 2:
+                dibujo.ejes.append(puntos)
 
 
 def _sin_achurado(lineas: list[tuple[list[geo.Punto], str | None]],

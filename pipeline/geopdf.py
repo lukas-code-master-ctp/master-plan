@@ -108,7 +108,7 @@ def a_kmz(origen: Path | bytes, destino: Path, nombre: str | None = None) -> Lec
     """Escribe el KMZ de los lotes del geo y devuelve lo leído (con sus avisos).
 
     Las servidumbres van como polígonos "SERVIDUMBRE" (sin número de lote): el lector
-    de KMZ las deja como polígonos sin identificar, y el geo y el mapa las dibujan.
+    de KMZ las aparta como caminos (NOMBRE_DE_CAMINO) y el 360 y el plano las pintan.
     No van como líneas porque una sola LineString pasa el KMZ al modo CAD, donde los
     lotes se arman de nuevo con la red (`pipeline/kmz.py`).
     """

@@ -629,7 +629,15 @@ líneas del dibujo que no son deslindes de un lote, las engorda 2 m y las une; e
 achurado cierra la franja y un eje suelto queda como una franja angosta. Lo que suma
 menos de 200 m² (cotas, restos) se descarta. Cada vista los trae en
 `datos/vistas/<id>.json` (`caminos`) y el visor los pinta en amarillo bajo las
-parcelas. Un sitio construido antes no los tiene hasta que se vuelve a construir.
+parcelas, y también en el plano. Un sitio construido antes no los tiene hasta que se
+vuelve a construir.
+
+Cuando el KMZ trae los lotes como polígonos (trazados pegados, sin la franja), la
+servidumbre se agrega en Google Earth como una ruta o un polígono cuyo nombre empieza
+por Servidumbre, Camino o Acceso. Así no pasa el KMZ al modo de red de líneas: se
+aparta y se pinta como camino. Una ruta es el eje y se dibuja como una franja de 10 m.
+Las servidumbres que salen de un geo (`pipeline/geopdf.py`) van del mismo modo. En un
+KMZ de red de líneas el nombre no cambia nada, porque ahí la línea puede ser deslinde.
 
 **Esteros.** El topógrafo no los dibuja, así que la loteadora los agrega en Google
 Earth como una ruta (o un polígono) cuyo nombre empieza por Estero, Río, Quebrada,

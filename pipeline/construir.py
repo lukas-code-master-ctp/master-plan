@@ -118,7 +118,7 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         print("Sin panorámicas: solo las parcelas y el geo, sin vistas 360.")
         visor.copiar(salida.web)
         parcelas = _armar_parcelas(fichas, con_id, {})
-        _escribir_datos(salida, proyecto, etapas, [], parcelas, aguas, zonas, geometrias, [], solo_geo=True)
+        _escribir_datos(salida, proyecto, etapas, [], parcelas, aguas, zonas, caminos, geometrias, [], solo_geo=True)
         return _terminar(parcelas, 0, avisos, salida)
 
     print("Leyendo las panorámicas...")
@@ -305,12 +305,13 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
             print(f"  {vista.id} listo")
 
     parcelas = _armar_parcelas(fichas, con_id, apariciones)
-    _escribir_datos(salida, proyecto, etapas, hitos, parcelas, aguas, zonas, geometrias, resumen_vistas)
+    _escribir_datos(salida, proyecto, etapas, hitos, parcelas, aguas, zonas, caminos, geometrias, resumen_vistas)
     return _terminar(parcelas, len(resumen_vistas), avisos, salida)
 
 
 def _escribir_datos(salida: config.Salida, proyecto: config.Proyecto, etapas: list[int],
-                    hitos: list, parcelas: list[dict], aguas, zonas, geometrias: list[ParcelaGeometrica],
+                    hitos: list, parcelas: list[dict], aguas, zonas, caminos,
+                    geometrias: list[ParcelaGeometrica],
                     resumen_vistas: list[dict], solo_geo: bool = False) -> None:
     print("Escribiendo los datos...")
     publicacion = _datos_de_la_publicacion(salida.datos / "parcelas.json")
@@ -335,6 +336,8 @@ def _escribir_datos(salida: config.Salida, proyecto: config.Proyecto, etapas: li
         "aguas": [{"nombre": nombre, "linea": [_redondear_punto(p) for p in puntos]}
                   for nombre, puntos in aguas],
         "zonas": [{"nombre": nombre, "poligono": _redondear_anillo(anillo)} for nombre, anillo in zonas],
+        # Para el plano: cada camino o servidumbre como [contorno, *huecos].
+        "caminos": [[_redondear_anillo(anillo) for anillo in anillos] for anillos in caminos],
         "otros_poligonos": [
             {"poligono": _redondear_anillo(g.anillo),
              "motivo": "no_en_venta" if not g.en_venta else "sin_identificar"}

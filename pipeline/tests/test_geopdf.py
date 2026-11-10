@@ -3,8 +3,8 @@ import pymupdf
 import pytest
 from pyproj import Transformer
 
-from pipeline import geopdf
-from pipeline.kmz import leer_kmz
+from pipeline import geo, geopdf
+from pipeline.kmz import leer_caminos, leer_kmz
 
 # 1 punto de página = 1 metro, con la esquina de arriba a la izquierda en este UTM 19S.
 ESTE, NORTE = 300_000.0, 6_220_000.0
@@ -108,11 +108,11 @@ def test_las_servidumbres_van_al_kmz_como_franjas_sin_numero(tmp_path):
 
     assert [l["numero"] for l in lectura.lotes] == ["1", "2"]
     poligonos = leer_kmz(tmp_path / "loteo.kmz")
-    sin_numero = [g for g in poligonos if g.id is None]
-    # Las dos orillas a trazos quedan en una sola franja de ~400 × 7 m.
-    assert len(sin_numero) == 1
-    assert sin_numero[0].area_m2 == pytest.approx(400 * 7, rel=0.15)
-    assert {g.id for g in poligonos if g.id} == {"1", "2"}
+    # Las dos orillas a trazos quedan en una sola franja de ~400 × 7 m, que se pinta
+    # como camino y no como un lote sin número.
+    [[franja, *_]] = leer_caminos(tmp_path / "loteo.kmz")
+    assert geo.area_m2(franja) == pytest.approx(400 * 7, rel=0.15)
+    assert sorted(g.id for g in poligonos) == ["1", "2"]
 
 
 def test_sin_servidumbres_el_kmz_solo_trae_los_lotes(tmp_path):
