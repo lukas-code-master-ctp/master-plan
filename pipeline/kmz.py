@@ -91,6 +91,8 @@ NOMBRE_DE_CAMINO = re.compile(r"^\s*(servidumbres?|caminos?|accesos?)\b", re.IGN
 # Una servidumbre dibujada como ruta es su eje: la franja se arma con este medio
 # ancho (10 m en total, lo usual en una servidumbre de tránsito de una parcelación).
 CAMINO_EJE_RADIO_M = 5.0
+# Cuánto se le come a cada esquina del eje al redondearla (ver _suavizar).
+CAMINO_EJE_CORTE_M = 8.0
 
 
 @dataclass
@@ -227,7 +229,9 @@ def leer_caminos(ruta: Path) -> list[list[geo.Anillo]]:
     caminos = []
     # Los que la loteadora nombró van tal cual, sin el mínimo de área: no son restos.
     nombrados = [Polygon(en_metros(a[0]), [en_metros(h) for h in a[1:]]).buffer(0) for a in dibujo.franjas]
-    nombrados += [LineString(en_metros(e)).buffer(CAMINO_EJE_RADIO_M, cap_style="flat") for e in dibujo.ejes]
+    # Punta redonda: donde un eje llega a otro, la punta recta dejaba una muesca.
+    nombrados += [LineString(_suavizar(en_metros(e))).buffer(CAMINO_EJE_RADIO_M, cap_style="round")
+                  for e in dibujo.ejes]
     if nombrados:
         zona = unary_union(nombrados)
         for pieza in getattr(zona, "geoms", [zona]):
@@ -253,6 +257,27 @@ def leer_caminos(ruta: Path) -> list[list[geo.Anillo]]:
             continue
         caminos.append(anillos_de(pieza.simplify(CAMINO_SIMPLIFICAR_M)))
     return caminos
+
+
+def _suavizar(puntos: list[tuple[float, float]], pasadas: int = 2) -> list[tuple[float, float]]:
+    """El eje con las esquinas redondeadas: cada vértice se cambia por dos puntos a
+    un cuarto de sus tramos (a lo más CAMINO_EJE_CORTE_M del vértice, para que un
+    tramo largo siga recto). Un eje se dibuja con pocos clics y el camino no tiene
+    esquinas: en Parque Algarrobo las servidumbres salían quebradas. Las puntas no
+    se mueven."""
+    for _ in range(pasadas):
+        if len(puntos) < 3:
+            break
+        suaves = [puntos[0]]
+        for anterior, vertice, siguiente in zip(puntos, puntos[1:], puntos[2:]):
+            for otro in (anterior, siguiente):
+                largo = math.dist(vertice, otro)
+                corte = min(0.25, CAMINO_EJE_CORTE_M / largo) if largo else 0.0
+                suaves.append((vertice[0] + (otro[0] - vertice[0]) * corte,
+                               vertice[1] + (otro[1] - vertice[1]) * corte))
+        suaves.append(puntos[-1])
+        puntos = suaves
+    return puntos
 
 
 def leer_aguas(ruta: Path) -> list[tuple[str, list[geo.Punto]]]:

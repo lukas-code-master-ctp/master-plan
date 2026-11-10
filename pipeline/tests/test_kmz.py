@@ -1,3 +1,4 @@
+import math
 import zipfile
 
 import pytest
@@ -542,7 +543,8 @@ def test_una_servidumbre_como_ruta_en_un_kmz_de_poligonos_se_pinta_como_camino(t
     [[contorno]] = leer_caminos(ruta)
     assert geo.contiene(contorno, desplazar(35, 75))
     assert not geo.contiene(contorno, desplazar(35, 35))
-    assert geo.area_m2(contorno) == pytest.approx(110 * 10, rel=0.05)
+    # La franja de 10 m de ancho, con las dos puntas redondas.
+    assert geo.area_m2(contorno) == pytest.approx(110 * 10 + math.pi * 5 ** 2, rel=0.03)
 
 
 def test_una_servidumbre_como_poligono_no_es_lote_sin_numero(tmp_path):
@@ -605,3 +607,19 @@ def test_una_divisoria_que_llega_a_un_borde_inclinado_separa_los_lotes(pendiente
                     + punto("LOTE 1", desplazar(30, 60)) + punto("LOTE 2", desplazar(110, 75)))
 
     assert {p.id for p in _parsear(contenido)} == {"1", "2"}
+
+
+def test_el_eje_de_una_servidumbre_se_redondea_sin_mover_las_puntas():
+    """Parque Algarrobo: las servidumbres se trazaron con pocos clics y salían quebradas."""
+    from pipeline.kmz import CAMINO_EJE_CORTE_M, _suavizar
+    eje = [(0.0, 0.0), (100.0, 0.0), (100.0, 20.0), (300.0, 20.0)]
+
+    suave = _suavizar(eje)
+
+    assert suave[0] == eje[0] and suave[-1] == eje[-1]
+    assert len(suave) > len(eje)
+    # La esquina ya no está, pero el eje no se aleja de ella más que el corte.
+    assert (100.0, 0.0) not in suave
+    assert min(math.dist(p, (100.0, 0.0)) for p in suave) < CAMINO_EJE_CORTE_M
+    # Un tramo largo sigue recto: lejos de las esquinas no se mueve.
+    assert all(abs(y - 20.0) < 1e-9 for x, y in suave if x > 120.0)

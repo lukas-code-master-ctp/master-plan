@@ -574,8 +574,19 @@ chico. El ajuste queda en `vistas.json` (`diagnostico.calibracion`, y la pose fi
 en `diagnostico.pose`); si no mejora el calce al menos un 3 %, o queda en el borde
 de lo probado, se descarta, y `--sin-calibrar` apaga los dos pasos.
 
-Cuando en una vista los caminos no alcanzan (la búsqueda queda en el borde: pasa con
-fotos donde los techos o los invernaderos brillan más que los caminos), esa vista se
+Cuando en alguna vista los caminos no alcanzan (la búsqueda queda en el borde), lo
+primero que se prueba es la imagen satelital (`pipeline/satelite.py`): se baja la
+imagen despejada de Sentinel-2 más cercana al día del vuelo (10 m por píxel, del
+bucket público en AWS; solo el trozo que cubre el loteo), se proyecta cada foto sobre
+el suelo y se busca la altura, el giro y las dos inclinaciones con que el verdor de la
+foto más se parece al del satélite. Ahí la inclinación queda suelta: en Parque
+Algarrobo, con cerros, bruma de costa y sol bajo, el horizonte daba 1 a 3° que las
+fotos no tenían, los caminos se iban al tope en las tres vistas y el dibujo quedaba
+20 a 40 m corrido, distinto en cada foto; contra el satélite las servidumbres caen
+sobre los caminos en las tres. Si el parecido es bajo (menos de 0,40) o casi no
+mejora, la vista queda como estaba y sigue el camino de abajo. Sin red se avisa.
+
+La vista que tampoco calza contra el satélite se
 calibra contra la que mejor calibró (`pipeline/cruce.py`): las dos fotos se proyectan
 sobre el suelo, se buscan en una los trozos de la otra y de ahí salen la altura, el
 giro y el error del GPS del dron (la posición se corrige, hasta 40 m). En el punto II
