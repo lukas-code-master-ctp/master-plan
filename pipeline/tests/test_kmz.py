@@ -69,12 +69,20 @@ def cuadrado(este, norte, lado=70):
     ("LOTE-12", "12"),
     ("LOTE #12", "12"),
     ("LOTE - 12", "12"),
+    # Como pueden llegar desde un CRM: rotulados como parcela, con N°, o como decimal.
+    ("Parcela 12", "12"),
+    ("PARCELA N° 12", "12"),
+    ("N°12", "12"),
+    ("Nº 12", "12"),
+    ("#12", "12"),
+    ("12.0", "12"),
+    ("12,00", "12"),
 ])
 def test_normaliza_los_formatos_de_nombre(entrada, esperado):
     assert normalizar_id(entrada) == esperado
 
 
-@pytest.mark.parametrize("entrada", [None, "", "sin numero", "12/03/2024", "A", "-12", "LOTE--12", "12-"])
+@pytest.mark.parametrize("entrada", [None, "", "sin numero", "12/03/2024", "A", "-12", "LOTE--12", "12-", "12.5"])
 def test_devuelve_none_cuando_no_hay_lote(entrada):
     assert normalizar_id(entrada) is None
 
