@@ -222,7 +222,9 @@ plataforma. La CSP de la landing permite el envío con `form-action 'self' <cons
 
 Bajo el hero va Praderas publicado, en vivo dentro de un iframe: su origen está en el
 `frame-src` de `landing/vercel.json` (`pipeline/tests/test_landing.py` lo vigila) y el
-visor deja que lo inserte tumasterplan.cl (`frame-ancestors` en `web/vercel.json`).
+visor deja que lo inserte cualquier página (`frame-ancestors *` en `web/vercel.json`):
+las loteadoras pegan el mismo iframe en sus webs, con el código que copia la consola
+desde el detalle de un loteo publicado ("Copiar código para tu web").
 Dentro de un iframe el visor no se adueña del scroll: la rueda sola y el dedo que baja
 siguen bajando por la página, y se acerca con Ctrl/⌘ + rueda (`web/js/insertado.js`).
 

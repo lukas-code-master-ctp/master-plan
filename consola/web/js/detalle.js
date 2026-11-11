@@ -55,6 +55,17 @@ export function urlDeVistaPrevia(proyecto) {
   return `/vista-previa/${encodeURIComponent(proyecto.slug)}/`;
 }
 
+/** El iframe que la loteadora pega en su web (como "bloque HTML" en Wix o WordPress).
+ * Ocupa el ancho de donde lo pongan y guarda la forma del visor; el mínimo es para
+ * que en un teléfono no quede una franja donde no cabe la ficha. */
+export function codigoParaInsertar(proyecto) {
+  const atributo = (texto) => String(texto).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<iframe src="${atributo(proyecto.url)}" title="${atributo(proyecto.nombre)}" `
+    + 'style="width:100%;aspect-ratio:16/10;min-height:480px;border:0;border-radius:12px" '
+    + 'loading="lazy" allowfullscreen></iframe>';
+}
+
 /** Arriba a la derecha: en qué está el loteo y, si está en línea, el atajo al sitio. */
 export function pintarEstado(proyecto) {
   const partes = [];
