@@ -996,6 +996,34 @@ body[data-plano="completo"] .whatsapp-flotante { display: none; }
 }
 .pista--oculta { opacity: 0; }
 
+/* --- Firma de Tu Masterplan ------------------------------------------------- */
+
+/* Pegada al borde de abajo, bajo Compartir y los puntos: no compite con ningún
+   control y se lee sobre cualquier foto por la sombra, igual que la pista. */
+.credito {
+  position: fixed;
+  z-index: 19;
+  left: 1.25rem;
+  bottom: 0.3rem;
+  padding: 0.1rem 0.15rem;
+  font: 500 0.625rem/1 var(--sans);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: rgb(255 255 255 / 0.78);
+  text-decoration: none;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 0.9), 0 0 10px rgb(0 0 0 / 0.55);
+  transition: color 150ms;
+}
+.credito strong { font-weight: 700; }
+.credito:hover { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
+.credito:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 3px; }
+/* Sobre el plano la firma va en la atribución del mapa (mapa.js). */
+body[data-plano="completo"] .credito,
+body[data-panel="mapa"] .credito { display: none; }
+/* En el minimapa la firma flotante sigue a la vista: repetirla en un pie tan angosto
+   solo cortaba la atribución. */
+body[data-plano="mini"] .atribucion-firma { display: none; }
+
 /* --- Carga y error ---------------------------------------------------------- */
 
 .cargando {
@@ -1754,7 +1782,7 @@ body[data-plano="completo"] .whatsapp-flotante { display: none; }
     --fila-1: calc(8px + env(safe-area-inset-top));
     --tope-hud: calc(var(--fila-1) + var(--alto-hud));
     --alto-leyenda: 30px;
-    --fondo-hud: calc(0.85rem + var(--alto-leyenda) + 0.5rem + env(safe-area-inset-bottom));
+    --fondo-hud: calc(1.15rem + var(--alto-leyenda) + 0.5rem + env(safe-area-inset-bottom));
     /* La franja de perspectivas: cabecera, una fila de 56 px y el área segura. */
     --alto-perspectivas: calc(112px + env(safe-area-inset-bottom));
   }
@@ -1846,7 +1874,7 @@ body[data-plano="completo"] .whatsapp-flotante { display: none; }
   .leyenda {
     z-index: 23;
     left: 0.85rem;
-    bottom: calc(0.85rem + env(safe-area-inset-bottom));
+    bottom: calc(1.15rem + env(safe-area-inset-bottom));
     height: var(--alto-leyenda);
     transform: none;
     gap: 0.5rem;
@@ -1857,6 +1885,8 @@ body[data-plano="completo"] .whatsapp-flotante { display: none; }
   .leyenda span + span { padding-left: 0.5rem; }
   .leyenda__resumen { font-size: 0.75rem; }
   .whatsapp-flotante { right: 0.85rem; bottom: calc(0.85rem + env(safe-area-inset-bottom)); }
+  /* La leyenda sube un poco para dejarle el borde de abajo a la firma. */
+  .credito { left: 0.85rem; bottom: calc(0.2rem + env(safe-area-inset-bottom)); }
   .zoom { display: none; }
 
   .ver-plano { display: flex; left: 0.85rem; bottom: var(--fondo-hud); gap: 0.5rem; padding: 0.25rem 0.85rem 0.25rem 0.25rem; }
@@ -2011,7 +2041,8 @@ body:has(.ficha:not([hidden])) .pista,
 body:has(.ficha:not([hidden])) .barra-inferior,
 body:has(.ficha:not([hidden])) .instrumentos,
 body:has(.ficha:not([hidden])) .plano-flotante,
-body:has(.ficha:not([hidden])) .whatsapp-flotante { display: none; }
+body:has(.ficha:not([hidden])) .whatsapp-flotante,
+body:has(.ficha:not([hidden])) .credito { display: none; }
 
 /* --- Escritorio: islas flotantes, como en la consola -------------------------- */
 

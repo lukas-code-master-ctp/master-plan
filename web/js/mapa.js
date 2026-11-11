@@ -35,6 +35,13 @@ export class Mapa {
     L.control.zoom({ position: 'bottomright', zoomInTitle: 'Acercar', zoomOutTitle: 'Alejar' })
       .addTo(this.mapa);
     L.tileLayer(TESELAS, { maxZoom: 19, attribution: ATRIBUCION }).addTo(this.mapa);
+    // Sobre el plano el pie ya lo ocupa la atribución: la firma va ahí y no flotando
+    // encima (ver .credito en estilos.css).
+    this.mapa.attributionControl.setPrefix(
+      '<span class="atribucion-firma"><a href="https://www.tumasterplan.cl/" target="_blank"'
+      + ' rel="noopener">Hecho por tumasterplan</a> | </span>'
+      + '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>',
+    );
 
     this._dibujarOtrosPoligonos();
     this._dibujarCaminos();
