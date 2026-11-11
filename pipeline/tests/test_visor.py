@@ -198,13 +198,15 @@ def _encabezados_del_visor() -> dict[str, str]:
     return {e["key"]: e["value"] for e in regla["headers"]}
 
 
-def test_el_master_se_puede_insertar_en_tumasterplan_cl_y_en_ningun_otro_sitio():
-    """La landing de tumasterplan.cl muestra masters de ejemplo dentro de un iframe.
-    Ninguna otra página puede: el visor trae el formulario de reserva."""
+def test_el_master_se_puede_insertar_en_cualquier_pagina():
+    """La loteadora pega el código de la consola en su propia web, hecha con lo que sea
+    (Wix mete el iframe dentro de otro iframe suyo, de otro dominio): una lista de
+    dominios permitidos dejaría el marco en blanco sin avisar. El visor no pide claves
+    ni cobra; lo más que se manda desde ahí es una solicitud de reserva."""
     encabezados = _encabezados_del_visor()
     ancestros = next(d for d in encabezados["Content-Security-Policy"].split(";")
                      if d.strip().startswith("frame-ancestors")).split()[1:]
 
-    assert sorted(ancestros) == ["'self'", "https://*.tumasterplan.cl", "https://tumasterplan.cl"]
-    # X-Frame-Options no sabe de listas: con SAMEORIGIN algún navegador bloquearía el iframe.
+    assert ancestros == ["*"]
+    # X-Frame-Options no sabe de "cualquiera": con SAMEORIGIN el navegador bloquearía el iframe.
     assert "X-Frame-Options" not in encabezados

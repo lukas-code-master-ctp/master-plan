@@ -11,7 +11,7 @@ import { opcionesDeDiseno } from './disenos.js';
 import { abrirElegirKmz } from './kmzs.js';
 import { abrirPlanes, botonDePlan } from './planes.js';
 import {
-  avisoAlQuitar, hayVistaPrevia, leerReferencias, meta, notaDePublicar, pintarCalce, pintarCifras,
+  avisoAlQuitar, codigoParaInsertar, hayVistaPrevia, leerReferencias, meta, notaDePublicar, pintarCalce, pintarCifras,
   leerDespegues, pintarEstado, textoDeDespegues, textoDeReferencias, urlDeVistaPrevia,
 } from './detalle.js';
 import { pintarVuelo } from './vuelo.js';
@@ -178,6 +178,7 @@ function pintarPublicar(proyecto) {
   ver.hidden = !proyecto.publicado;
   url.hidden = !proyecto.publicado;
   $('[data-accion="copiar-url"]').hidden = !proyecto.publicado;
+  $('[data-accion="copiar-codigo"]').hidden = !proyecto.publicado;
   if (proyecto.publicado) {
     ver.href = proyecto.url;
     url.href = proyecto.url;
@@ -296,6 +297,17 @@ async function copiarEnlace(proyecto) {
   }
 }
 
+async function copiarCodigo(proyecto) {
+  const codigo = codigoParaInsertar(proyecto);
+  try {
+    await navigator.clipboard.writeText(codigo);
+    avisarGuardado('Código copiado. Pégalo en tu web como bloque HTML.');
+  } catch {
+    // Sin permiso para el portapapeles, que al menos pueda copiarlo a mano.
+    prompt('Copia este código y pégalo en tu web como bloque HTML:', codigo);
+  }
+}
+
 async function olvidar(proyecto) {
   if (!confirm(avisoAlQuitar(proyecto))) return;
   await pedir(`/api/proyectos/${proyecto.slug}`, { method: 'DELETE' });
@@ -315,6 +327,7 @@ async function manejar(accion, proyecto) {
     if (accion === 'usar-kmz') return abrirElegirKmz(proyecto);
     if (accion === 'guardar') return await guardar(proyecto);
     if (accion === 'copiar-url') return await copiarEnlace(proyecto);
+    if (accion === 'copiar-codigo') return await copiarCodigo(proyecto);
     if (accion === 'olvidar') return await olvidar(proyecto);
     if (accion === 'pago') return abrirPago(proyecto);
     if (accion === 'pedir-habilitacion') return abrirPlanes(proyecto, refrescar);

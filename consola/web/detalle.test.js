@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  avisoAlQuitar, hayVistaPrevia, leerReferencias, medicionDelSol, nombreDeVista, notaDePublicar,
+  avisoAlQuitar, codigoParaInsertar, hayVistaPrevia, leerReferencias, medicionDelSol, nombreDeVista, notaDePublicar,
   leerDespegues, textoDeDespegues, textoDeReferencias, urlDeVistaPrevia,
 } from './js/detalle.js';
 
@@ -126,4 +126,18 @@ test('los despegues por foto van y vuelven del campo', () => {
   assert.deepEqual(leerDespegues(''), {});
   assert.equal(textoDeDespegues(undefined), '');
   assert.throws(() => leerDespegues('DJI_0494_D -71.6'), /DJI_0494_D -71.6/);
+});
+
+test('el código para la web de la loteadora es un iframe al sitio publicado, a todo el ancho', () => {
+  const codigo = codigoParaInsertar({ url: 'https://praderas.tumasterplan.cl', nombre: 'Praderas de Cauquenes' });
+
+  assert.match(codigo, /^<iframe src="https:\/\/praderas\.tumasterplan\.cl" title="Praderas de Cauquenes" /);
+  assert.match(codigo, /width:100%/);
+  assert.match(codigo, /<\/iframe>$/);
+});
+
+test('un nombre con comillas no rompe el código que se pega', () => {
+  const codigo = codigoParaInsertar({ url: 'https://x.tumasterplan.cl', nombre: 'Loteo "El Roble" & <Co>' });
+
+  assert.match(codigo, /title="Loteo &quot;El Roble&quot; &amp; &lt;Co&gt;"/);
 });
