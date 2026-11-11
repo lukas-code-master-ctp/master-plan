@@ -260,10 +260,13 @@ export function notaDePublicar(proyecto, plan = null) {
 }
 
 /**
- * Las referencias del horizonte como se escriben en el campo: separadas por coma,
- * salvo las comas de unas coordenadas entre paréntesis ("Ruta 5 (-36.74, -72.33)
- * 20 min"), que son de Google Maps y van juntas. El tiempo y las coordenadas los
- * interpreta el pipeline (referencias.py): acá cada una viaja como texto.
+ * Las referencias del horizonte como se escriben en el campo: una por línea o
+ * separadas por coma, salvo las comas de unas coordenadas entre paréntesis ("Ruta 5
+ * (-36.74, -72.33) 20 min"), que son de Google Maps y van juntas. La línea cuenta
+ * porque es como se pegan de una lista; cuando el campo era de una sola línea, el
+ * navegador borraba los saltos y seis referencias llegaban como un solo rótulo.
+ * El tiempo y las coordenadas los interpreta el pipeline (referencias.py): acá cada
+ * una viaja como texto.
  */
 export function leerReferencias(texto) {
   const partes = [];
@@ -272,7 +275,8 @@ export function leerReferencias(texto) {
   for (const letra of String(texto ?? '')) {
     if (letra === '(') profundidad += 1;
     if (letra === ')') profundidad = Math.max(0, profundidad - 1);
-    if (letra === ',' && profundidad === 0) {
+    if (letra === '\n' || (letra === ',' && profundidad === 0)) {
+      profundidad = 0;
       partes.push(actual);
       actual = '';
     } else {
@@ -293,7 +297,7 @@ export function textoDeReferencias(referencias) {
     if (typeof r === 'string') return r;
     const coordenadas = r.lat != null && r.lon != null ? ` (${r.lat}, ${r.lon})` : '';
     return `${r.nombre}${coordenadas}${r.tiempo ? ` ${r.tiempo}` : ''}`;
-  }).join(', ');
+  }).join('\n');
 }
 
 /**

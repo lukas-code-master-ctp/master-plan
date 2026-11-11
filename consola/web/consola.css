@@ -1169,6 +1169,12 @@ button.enlace { padding: 0; background: none; border: 0; font: inherit; }
   background: var(--zinc-50); font-size: 0.9375rem; font-weight: 500;
 }
 .ajustes .campo input:focus, .ajustes .campo select:focus { border-color: var(--zinc-900); background: #fff; box-shadow: 0 0 0 4px rgb(24 24 27 / 0.08); }
+.ajustes .campo textarea {
+  width: 100%; min-height: 6.5rem; padding: 0.7rem 0.875rem; resize: vertical; outline: none;
+  border: 1px solid var(--zinc-200); border-radius: 0.75rem; background: var(--zinc-50);
+  font: 500 0.9375rem/1.5 var(--sans); transition: border-color 150ms, box-shadow 150ms;
+}
+.ajustes .campo textarea:focus { border-color: var(--zinc-900); background: #fff; box-shadow: 0 0 0 4px rgb(24 24 27 / 0.08); }
 .ajustes__quitar { justify-self: start; }
 
 /* Guardar aparece flotando abajo apenas se cambia algo; el aviso, en verde, un rato. */

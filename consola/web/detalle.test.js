@@ -110,10 +110,22 @@ test('las referencias se separan por coma, salvo la coma de unas coordenadas', (
   assert.deepEqual(leerReferencias(''), []);
 });
 
+test('las referencias pegadas una por línea quedan separadas', () => {
+  // Así llegan de una lista copiada; cada línea es una referencia aunque no lleve coma.
+  assert.deepEqual(
+    leerReferencias('Acceso (-33.355001, -71.620021)\r\nSantiago (-33.4378, -70.6504)\n\nClub de Yates (-33.36203, -71.68792) 10 minutos\n'),
+    ['Acceso (-33.355001, -71.620021)', 'Santiago (-33.4378, -70.6504)', 'Club de Yates (-33.36203, -71.68792) 10 minutos']);
+  // Un paréntesis sin cerrar no se come las líneas siguientes.
+  assert.deepEqual(leerReferencias('Ruta 5 (-36.74, -72.33\nQuillón 10 min'), ['Ruta 5 (-36.74, -72.33', 'Quillón 10 min']);
+  // Lo que se guarda vuelve al campo y se lee igual.
+  const guardadas = ['Quillón 10 min', 'Ruta 5 (-36.74, -72.33) 20 min'];
+  assert.deepEqual(leerReferencias(textoDeReferencias(guardadas)), guardadas);
+});
+
 test('una referencia guardada con coordenadas vuelve al campo con ellas', () => {
   assert.equal(
     textoDeReferencias(['Quillón 10 min', { nombre: 'Fundo El Peumo', lon: -72.3, lat: -35.9 }]),
-    'Quillón 10 min, Fundo El Peumo (-35.9, -72.3)');
+    'Quillón 10 min\nFundo El Peumo (-35.9, -72.3)');
   assert.equal(textoDeReferencias(undefined), '');
 });
 
