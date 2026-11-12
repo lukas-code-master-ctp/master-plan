@@ -79,6 +79,14 @@ export function atributosDe(parcela) {
 }
 
 /**
+ * Una parcela vendida no muestra precio: ya no se ofrece, y dejarlo a la vista
+ * revela en cuánto se cerró el negocio con su comprador.
+ */
+export function muestraPrecio(parcela) {
+  return parcela.estado !== 'vendido';
+}
+
+/**
  * Las filas bajo el precio: [rótulo, valor]. El pie y la cuota van en la moneda
  * del precio. No se calcula ninguna cuota: se muestra lo que la planilla dice,
  * porque sin la tasa cualquier cálculo sería inventar.
@@ -255,14 +263,14 @@ export function renderizarFicha(contenedor, parcela, catalogo, acciones) {
         </span>
       </li>`).join('')}</ul>` : ''}
 
-    <div class="precio">
+    ${muestraPrecio(parcela) ? `<div class="precio">
       <span class="precio__rotulo">Precio</span>
       ${precio
         ? `<p class="precio__monto"><strong>${precio}</strong>${parcela.moneda === 'UF' ? '' : ' <small>CLP</small>'}</p>`
         : '<p class="precio__monto precio__monto--consultar">A consultar</p>'}
       ${financiamiento.length ? `<dl class="precio__financiamiento">${financiamiento.map(([rotulo, valor]) => `
         <div><dt>${escapar(rotulo)}</dt><dd>${escapar(valor)}</dd></div>`).join('')}</dl>` : ''}
-    </div>
+    </div>` : ''}
 
     <div class="acciones"></div>
     <div class="enlaces"></div>
