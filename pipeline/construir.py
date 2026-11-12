@@ -18,6 +18,8 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
+from PIL import Image, ImageOps
+
 from . import config, cruce, geo, horizonte, referencias, satelite, terreno, visor
 from .crm import leer_crm
 from .excel import FichaComercial, alinear_con, leer_planilla
@@ -167,7 +169,8 @@ def construir(fuentes: config.Fuentes, proyecto: config.Proyecto, salida: config
         print(f"  {len(vuelos)} vuelos (despegues a " + ", ".join(f"{v:.1f}" for v in vuelos)
               + " m según el GPS del dron): se supone que todos salieron del mismo punto")
 
-    hitos = _resolver_referencias(proyecto, geometrias, avisos)
+    hitos = _con_fotos(_resolver_referencias(proyecto, geometrias, avisos),
+                       fuentes.fotos_referencias, salida)
     despegue_de = _despegues_por_vista(proyecto, vistas, despegue, avisos)
     if relieve:
         for _, _, vista in vistas:
@@ -330,7 +333,8 @@ def _escribir_datos(salida: config.Salida, proyecto: config.Proyecto, etapas: li
         # Sin vistas 360 el sitio abre el geo (web/js/app.js).
         **({"solo_geo": True} if solo_geo else {}),
         "referencias": [{"nombre": h.nombre, "lon": h.lon, "lat": h.lat,
-                         **({"tiempo": h.tiempo} if h.tiempo else {})} for h in hitos],
+                         **({"tiempo": h.tiempo} if h.tiempo else {}),
+                         **({"fotos": list(h.fotos)} if h.fotos else {})} for h in hitos],
         "estados": config.ESTADOS,
         "resumen": _resumen(parcelas),
         "parcelas": parcelas,
@@ -562,6 +566,45 @@ def _resolver_referencias(proyecto: config.Proyecto, geometrias: list[ParcelaGeo
         print(f"  {hito.nombre}: {geo.distancia(centro, (hito.lon, hito.lat)) / 1000:.1f} km"
               f"{f', cota {hito.cota:.0f} m' if hito.cota is not None else ''}")
     return completos
+
+
+# Las fotos de las referencias se ven en una galería a pantalla completa: con 2048 px
+# de lado se ven nítidas en un monitor grande y una de celular pesa unos 400 KB.
+LADO_FOTO_REFERENCIA = 2048
+
+
+def _con_fotos(hitos: list[referencias.Referencia], carpeta: Path | None,
+               salida: config.Salida) -> list[referencias.Referencia]:
+    """Cada hito con las rutas en el sitio de sus fotos comunes, copiadas achicadas
+    a `datos/fotos/<referencia>/`. Se reescriben en cada construcción: una foto
+    quitada en la consola no puede seguir saliendo en el sitio."""
+    destino_base = salida.datos / "fotos"
+    shutil.rmtree(destino_base, ignore_errors=True)
+    con_fotos = []
+    for hito in hitos:
+        fotos = config.fotos_de_referencia(carpeta, hito.nombre)
+        if not fotos:
+            con_fotos.append(hito)
+            continue
+        carpeta_hito = config.carpeta_de_fotos(hito.nombre)
+        destino = destino_base / carpeta_hito
+        destino.mkdir(parents=True, exist_ok=True)
+        rutas = []
+        for numero, foto in enumerate(fotos, start=1):
+            nombre = f"{numero:02d}.jpg"
+            _achicar_foto(foto, destino / nombre)
+            rutas.append(f"datos/fotos/{carpeta_hito}/{nombre}")
+        print(f"  {hito.nombre}: {len(rutas)} fotos")
+        con_fotos.append(replace(hito, fotos=tuple(rutas)))
+    return con_fotos
+
+
+def _achicar_foto(origen: Path, destino: Path) -> None:
+    with Image.open(origen) as imagen:
+        # Las del celular vienen acostadas con la orientación en el EXIF.
+        imagen = ImageOps.exif_transpose(imagen).convert("RGB")
+        imagen.thumbnail((LADO_FOTO_REFERENCIA, LADO_FOTO_REFERENCIA), Image.Resampling.LANCZOS)
+        imagen.save(destino, "JPEG", quality=config.CALIDAD_JPEG, optimize=True, progressive=True)
 
 
 def _proyectar_referencias(vista: Vista, hitos: list[referencias.Referencia],

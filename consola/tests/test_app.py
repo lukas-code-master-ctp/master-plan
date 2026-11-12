@@ -511,6 +511,10 @@ RUTAS = {
     ("PATCH", "/api/proyectos/{slug}"): AJENO_404,
     ("DELETE", "/api/proyectos/{slug}"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/archivos"): AJENO_404,
+    # test_el_loteo_de_otra_contesta_404_en_todas_las_rutas.
+    ("POST", "/api/proyectos/{slug}/referencias/fotos"): AJENO_404,
+    ("GET", "/api/proyectos/{slug}/referencias/fotos/{carpeta}/{archivo}"): AJENO_404,
+    ("DELETE", "/api/proyectos/{slug}/referencias/fotos/{carpeta}/{archivo}"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/construir"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/publicar"): AJENO_404,
     ("POST", "/api/proyectos/{slug}/habilitacion"): AJENO_404,
@@ -639,6 +643,72 @@ def test_toda_ruta_de_plataforma_esta_declarada_como_tal(tmp_path):
             assert quien == SOLO_CTP, f"{ruta} cuelga del back-office pero no lo dice"
 
 
+def foto_jpeg(ancho=40, alto=30, orientacion=None):
+    from PIL import Image
+    salida = io.BytesIO()
+    imagen = Image.new("RGB", (ancho, alto), (200, 120, 60))
+    if orientacion:
+        exif = Image.Exif()
+        exif[0x0112] = orientacion
+        imagen.save(salida, "JPEG", exif=exif)
+    else:
+        imagen.save(salida, "JPEG")
+    return salida.getvalue()
+
+
+def test_las_fotos_de_una_referencia_se_suben_se_ven_y_se_quitan(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+    slug = de_ana(ctp, ana, registro)
+    ana.patch(f"/api/proyectos/{slug}", json={"referencias": ["Acceso (-33.35, -71.62)", "Santiago"]})
+
+    # Una del celular, parada con la orientación en el EXIF (6 = girar 90°).
+    respuesta = ana.post(f"/api/proyectos/{slug}/referencias/fotos", data={"referencia": "Acceso"},
+                         files=[("fotos", ("a.jpg", foto_jpeg(), "image/jpeg")),
+                                ("fotos", ("b.jpg", foto_jpeg(orientacion=6), "image/jpeg"))])
+    assert respuesta.status_code == 201, respuesta.text
+    assert respuesta.json()["fotos_referencias"] == [
+        {"referencia": "Acceso", "carpeta": "acceso", "fotos": ["01.jpg", "02.jpg"]},
+        {"referencia": "Santiago", "carpeta": "santiago", "fotos": []}]
+
+    from PIL import Image
+    foto = ana.get(f"/api/proyectos/{slug}/referencias/fotos/acceso/02.jpg")
+    assert foto.status_code == 200
+    assert Image.open(io.BytesIO(foto.content)).size == (30, 40)
+
+    assert ana.delete(f"/api/proyectos/{slug}/referencias/fotos/acceso/01.jpg").status_code == 200
+    # La que sigue no se renumera, y la siguiente subida va después de la última.
+    respuesta = ana.post(f"/api/proyectos/{slug}/referencias/fotos", data={"referencia": "Acceso"},
+                         files=[("fotos", ("c.jpg", foto_jpeg(), "image/jpeg"))])
+    assert respuesta.json()["fotos_referencias"][0]["fotos"] == ["02.jpg", "03.jpg"]
+
+    # No son panorámicas: el loteo sigue sin vuelo.
+    assert ana.get("/api/proyectos").json()[0]["fuentes_encontradas"]["panoramicas"] == 0
+
+
+@pytest.mark.parametrize("referencia, archivo, motivo", [
+    ("Club de Yates", foto_jpeg(), "no hay una referencia"),
+    ("Acceso", b"no soy una foto", "no es una imagen"),
+])
+def test_una_foto_de_referencia_que_no_sirve_se_rechaza(ana_y_luis, referencia, archivo, motivo):
+    ctp, ana, _, registro, _ = ana_y_luis
+    slug = de_ana(ctp, ana, registro)
+    ana.patch(f"/api/proyectos/{slug}", json={"referencias": ["Acceso (-33.35, -71.62)"]})
+
+    respuesta = ana.post(f"/api/proyectos/{slug}/referencias/fotos", data={"referencia": referencia},
+                         files=[("fotos", ("a.jpg", archivo, "image/jpeg"))])
+
+    assert respuesta.status_code == 400
+    assert motivo in respuesta.json()["detail"]
+
+
+def test_una_foto_de_referencia_con_nombre_raro_no_sale_de_su_carpeta(ana_y_luis):
+    ctp, ana, _, registro, _ = ana_y_luis
+    slug = de_ana(ctp, ana, registro)
+
+    assert ana.get(f"/api/proyectos/{slug}/referencias/fotos/..%2F..%2Fproyecto/01.jpg").status_code == 404
+    assert ana.get(f"/api/proyectos/{slug}/referencias/fotos/acceso/proyecto.json").status_code == 404
+
+
 def de_ana(ctp, ana, registro, nombre="De Ana"):
     """Un loteo habilitado a nombre de Ana, con su KMZ adentro."""
     slug = habilitar(ctp, id_de(registro, "ana@losrobles.cl"), nombre)
@@ -661,11 +731,19 @@ def de_ana(ctp, ana, registro, nombre="De Ana"):
     lambda web, slug: web.post(f"/api/proyectos/{slug}/archivos",
                                files=[("archivos", ("x.kmz", b"kmz", "application/octet-stream"))]),
     lambda web, slug: web.post(f"/api/proyectos/{slug}/kmz", json={"kmz": "x", "confirmar_reemplazo": True}),
+    lambda web, slug: web.post(f"/api/proyectos/{slug}/referencias/fotos", data={"referencia": "Acceso"},
+                               files=[("fotos", ("a.jpg", foto_jpeg(), "image/jpeg"))]),
+    lambda web, slug: web.get(f"/api/proyectos/{slug}/referencias/fotos/acceso/01.jpg"),
+    lambda web, slug: web.delete(f"/api/proyectos/{slug}/referencias/fotos/acceso/01.jpg"),
 ], ids=["ajustar", "olvidar", "construir", "publicar", "pedir-habilitacion", "calce", "portada", "plantilla", "geo", "subir",
-        "usar-kmz"])
+        "usar-kmz", "subir-foto-referencia", "ver-foto-referencia", "quitar-foto-referencia"])
 def test_el_loteo_de_otra_contesta_404_en_todas_las_rutas(ana_y_luis, pedir):
     ctp, ana, luis, registro, comandos = ana_y_luis
     slug = de_ana(ctp, ana, registro)
+    # Con una foto de verdad en el acceso: el 404 no puede venir de que no exista.
+    ana.patch(f"/api/proyectos/{slug}", json={"referencias": ["Acceso (-33.35, -71.62)"]})
+    assert ana.post(f"/api/proyectos/{slug}/referencias/fotos", data={"referencia": "Acceso"},
+                    files=[("fotos", ("a.jpg", foto_jpeg(), "image/jpeg"))]).status_code == 201
 
     assert pedir(luis, slug).status_code == 404
 

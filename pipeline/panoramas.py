@@ -93,7 +93,7 @@ def buscar_panoramas(carpeta: Path) -> list[Panorama]:
     for ruta in sorted(carpeta.rglob("*")):
         if ruta.suffix.lower() not in (".jpg", ".jpeg"):
             continue
-        if "REFERENCIA" in ruta.stem.upper() or config.del_plano(ruta, carpeta):
+        if "REFERENCIA" in ruta.stem.upper() or config.fuera_del_vuelo(ruta, carpeta):
             continue
         panorama = leer_panorama(ruta)
         if not panorama:
@@ -120,7 +120,7 @@ def por_que_no_sirven(carpeta: Path) -> list[str]:
     for ruta in sorted(Path(carpeta).rglob("*")):
         if ruta.suffix.lower() not in (".jpg", ".jpeg"):
             continue
-        if "REFERENCIA" in ruta.stem.upper() or config.del_plano(ruta, carpeta):
+        if "REFERENCIA" in ruta.stem.upper() or config.fuera_del_vuelo(ruta, carpeta):
             continue
         with Image.open(ruta) as imagen:
             xmp = imagen.info.get("xmp", b"")

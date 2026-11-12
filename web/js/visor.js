@@ -88,7 +88,7 @@ const SIN_MOVIMIENTO = typeof window !== 'undefined'
 export class Visor {
   constructor(elemento, {
     alElegirParcela, alPasarSobreParcela, alMoverCamara, alElegirPunto, rotuloDe, rotuloSeleccionadoDe,
-    numerosFijos = false, etapaDe = null, alElegirEtapa,
+    numerosFijos = false, etapaDe = null, alElegirEtapa, alElegirReferencia,
   } = {}) {
     this.elemento = elemento;
     this.lienzo = elemento.querySelector('canvas');
@@ -103,6 +103,8 @@ export class Visor {
     // nombre de la etapa va una vez sobre su sector y las pastillas, solo el número.
     this.etapaDe = etapaDe;
     this.alElegirEtapa = alElegirEtapa ?? (() => {});
+    // Tocar el rótulo de una referencia que trae fotos (el portón del acceso) las abre.
+    this.alElegirReferencia = alElegirReferencia ?? (() => {});
     // La etapa que se eligió (tocando su rótulo o en los filtros): su borde se
     // engruesa y las demás se apagan.
     this.etapaResaltada = null;
@@ -1156,7 +1158,8 @@ export class Visor {
       x + ancho / 2 > zona.x0 && x - ancho / 2 < zona.x1 && y + alto / 2 > zona.y0 && y - alto / 2 < zona.y1);
   }
 
-  // Hitos del horizonte ("CAUQUENES · 12 KM"): un tick y un rótulo, sin interacción.
+  // Hitos del horizonte ("CAUQUENES · 12 KM"): un tick y un rótulo. Solo los que
+  // traen fotos se pueden tocar.
   _dibujarReferencias(ancho, alto) {
     const visibles = [];
     this.referencias.forEach((referencia, indice) => {
@@ -1251,6 +1254,21 @@ export class Visor {
     lejania.className = 'referencia__lejania';
     lejania.textContent = lejaniaReferencia(referencia);
     pildora.append(nombre, lejania);
+    if (referencia.fotos?.length) {
+      nodo.classList.add('referencia--fotos');
+      nodo.dataset.indice = String(indice);
+      nodo.setAttribute('role', 'button');
+      nodo.tabIndex = 0;
+      nodo.setAttribute('aria-label', `Ver fotos de ${referencia.nombre}`);
+      pildora.insertAdjacentHTML('beforeend', '<svg class="referencia__camara" viewBox="0 0 20 20" aria-hidden="true">'
+        + '<path d="M3 6.5h3l1.5-2h5L14 6.5h3v9H3Z"/><circle cx="10" cy="11" r="2.8"/></svg>');
+      // El teclado del visor solo atiende lo que cae en el visor mismo (ver keydown).
+      nodo.addEventListener('keydown', (evento) => {
+        if (evento.key !== 'Enter' && evento.key !== ' ') return;
+        evento.preventDefault();
+        this.alElegirReferencia(referencia);
+      });
+    }
     nodo.append(pildora);
     this.capaReferencias.append(nodo);
     this.nodosReferencia[indice] = nodo;
@@ -1357,6 +1375,11 @@ export class Visor {
 
   _clic(evento) {
     const objetivo = document.elementFromPoint(evento.clientX, evento.clientY);
+    const conFotos = objetivo?.closest?.('.referencia--fotos');
+    if (conFotos) {
+      this.alElegirReferencia(this.referencias[Number(conFotos.dataset.indice)]);
+      return;
+    }
     const punto = objetivo?.closest?.('.punto-360');
     if (punto) {
       this.alElegirPunto(Number(punto.dataset.posicion));
