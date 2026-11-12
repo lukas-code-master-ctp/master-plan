@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { Catalogo } from './datos.js';
 import {
   accionesDe, atributosDe, escapar, financiamientoDe, formatearPrecio,
-  kmlDeParcela, mensajeWhatsapp,
+  kmlDeParcela, mensajeWhatsapp, muestraPrecio,
 } from './ficha.js';
 
 const ESTADOS = {
@@ -282,3 +282,11 @@ test('una parcela sin polígono no tiene KML', () => {
   assert.equal(kmlDeParcela(parcela({ poligono: null }), 'Parcela 7', 'Loteo'), null);
 });
 
+
+// --- Precio --------------------------------------------------------------------
+
+test('una parcela vendida no muestra su precio; las demás sí', () => {
+  assert.equal(muestraPrecio(parcela({ estado: 'vendido' })), false);
+  assert.equal(muestraPrecio(parcela()), true);
+  assert.equal(muestraPrecio(parcela({ estado: 'reservado' })), true);
+});
