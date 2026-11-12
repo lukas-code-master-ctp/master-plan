@@ -2481,3 +2481,46 @@ body.pantalla-ancha .aviso--fijo { max-width: 107rem; }
 .planes .planes__cupo { grid-column: 2; color: var(--zinc-500); font-size: 0.8125rem; }
 .planes .planes__precio { grid-row: 1 / span 2; grid-column: 3; font-weight: 600; font-variant-numeric: tabular-nums; }
 .planes input { grid-row: 1 / span 2; margin: 0; }
+
+/* --- Fotos de las referencias (fotos_referencias.js) ------------------------- */
+.fotos-referencias__lista { display: grid; gap: 0.6rem; }
+.foto-referencia {
+  display: grid;
+  grid-template-columns: minmax(6rem, 9rem) 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--zinc-200);
+  border-radius: 12px;
+  background: var(--zinc-50);
+}
+.foto-referencia__nombre { font: 600 0.8125rem var(--sans); color: var(--zinc-900); overflow-wrap: anywhere; }
+.foto-referencia__tira { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.foto-referencia__miniatura { position: relative; margin: 0; width: 72px; height: 54px; }
+.foto-referencia__miniatura img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; display: block; background: var(--zinc-200); }
+.foto-referencia__quitar {
+  position: absolute; top: -6px; right: -6px;
+  width: 22px; height: 22px; padding: 0;
+  border: 0; border-radius: 50%;
+  background: var(--zinc-900); color: #fff;
+  font: 600 14px/22px var(--sans); cursor: pointer;
+  opacity: 0; transition: opacity 0.15s;
+}
+.foto-referencia__miniatura:hover .foto-referencia__quitar,
+.foto-referencia__quitar:focus-visible { opacity: 1; }
+@media (hover: none) { .foto-referencia__quitar { opacity: 1; } }
+.foto-referencia__agregar {
+  display: grid; place-items: center;
+  height: 54px; padding: 0 0.9rem;
+  border: 1px dashed var(--zinc-300); border-radius: 8px;
+  font: 600 0.75rem var(--sans); color: var(--zinc-600);
+  cursor: pointer; white-space: nowrap;
+}
+.foto-referencia__agregar:hover { border-color: var(--zinc-500); color: var(--zinc-900); }
+.foto-referencia__agregar:focus-within { outline: 2px solid var(--zinc-900); outline-offset: 2px; }
+.foto-referencia--subiendo { opacity: 0.6; pointer-events: none; }
+.foto-referencia--subiendo .foto-referencia__agregar { font-size: 0; }
+.foto-referencia--subiendo .foto-referencia__agregar::after { content: 'Subiendo…'; font-size: 0.75rem; }
+@media (max-width: 40rem) {
+  .foto-referencia { grid-template-columns: 1fr; }
+}

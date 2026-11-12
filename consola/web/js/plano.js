@@ -18,6 +18,7 @@ import { pintarVuelo } from './vuelo.js';
 import { tituloEsqueleto } from './esqueleto.js';
 import { comoInventario, pintarInventario, prepararInventario } from './inventario.js';
 import { pintarEstadisticas, prepararEstadisticas } from './estadisticas.js';
+import { pintarFotosReferencias, prepararFotosReferencias } from './fotos_referencias.js';
 import { desdeEntrada, esFoto, esKmz, megas, soltadero, subir, UTILES } from './subida.js';
 import { relevo, retomarRegistro, textoInterrumpido, trasFalloDeSondeo } from './sondeo.js';
 
@@ -41,6 +42,12 @@ export function prepararPlano(opciones) {
   prepararPago();
   prepararInventario({ alSubir: inventarioSubido });
   prepararCierra({ traido: traidoDeCierra });
+  prepararFotosReferencias({
+    alCambiar: async (aviso) => {
+      await refrescar();
+      avisarGuardado(aviso);
+    },
+  });
 }
 
 /**
@@ -115,6 +122,7 @@ export function pintarPlano(slug, { nuevo = false, buscando = false } = {}) {
   pintarInventario(proyecto);
   pintarCierra(proyecto);
   pintarCalce(proyecto);
+  pintarFotosReferencias(proyecto);
   pintarPublicar(proyecto);
   // Los datos se rellenan al llegar, no en cada refresco: pisarían lo que la
   // persona está escribiendo mientras corre una construcción.

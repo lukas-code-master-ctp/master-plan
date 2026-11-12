@@ -57,6 +57,8 @@ class Referencia:
     lat: float
     cota: float | None = None   # metros sobre el nivel del mar, si se sabe
     tiempo: str | None = None   # "10 min", "1 h 20 min": se rotula en vez de los km
+    # Rutas en el sitio de sus fotos comunes, que el visor abre al tocar el rótulo.
+    fotos: tuple[str, ...] = ()
 
 
 # "10 minutos", "1 hora 20 minutos", "1 h y 20 min", "45 min" al final del texto.
@@ -172,6 +174,8 @@ def proyectar(vista: Vista, referencia: Referencia, cota_datum_dron: float) -> d
     }
     if referencia.tiempo:
         proyectada["tiempo"] = referencia.tiempo
+    if referencia.fotos:
+        proyectada["fotos"] = list(referencia.fotos)
     return proyectada
 
 

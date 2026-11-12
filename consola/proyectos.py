@@ -228,7 +228,7 @@ class Proyecto:
         """Sin panorámicas: se construye solo el geo (ver `pipeline.construir`)."""
         if not self.fuentes.is_dir():
             return True
-        return not any(ruta.suffix.lower() in EXTENSIONES_FOTO and not config.del_plano(ruta, self.fuentes)
+        return not any(ruta.suffix.lower() in EXTENSIONES_FOTO and not config.fuera_del_vuelo(ruta, self.fuentes)
                        for ruta in self.fuentes.rglob("*"))
 
     def parcelas(self) -> list[dict]:
@@ -283,7 +283,7 @@ class Proyecto:
         planilla = config.planilla_en(self.fuentes)
         fotos: dict[tuple[str, int], int] = {}
         for ruta in self.fuentes.rglob("*"):
-            if ruta.suffix.lower() in EXTENSIONES_FOTO and not config.del_plano(ruta, self.fuentes):
+            if ruta.suffix.lower() in EXTENSIONES_FOTO and not config.fuera_del_vuelo(ruta, self.fuentes):
                 tamano = ruta.stat().st_size
                 fotos[(ruta.name, tamano)] = tamano
         return {

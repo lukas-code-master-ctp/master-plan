@@ -298,6 +298,27 @@
     </form>
   </dialog>
 
+  <!-- Las fotos comunes de una referencia (el portón del acceso), al tocar su rótulo (js/galeria.js). -->
+  <dialog id="galeria" class="galeria" aria-labelledby="galeria-titulo">
+    <header class="galeria__cabecera">
+      <h2 id="galeria-titulo" class="galeria__titulo"></h2>
+      <span class="galeria__cuenta"></span>
+      <button class="galeria__cerrar galeria__boton" type="button" aria-label="Cerrar las fotos">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+    <div class="galeria__escenario">
+      <img class="galeria__foto" alt="" draggable="false">
+      <button class="galeria__anterior galeria__boton" type="button" aria-label="Foto anterior">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4 6.5 10l6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="galeria__siguiente galeria__boton" type="button" aria-label="Foto siguiente">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 4l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="galeria__miniaturas" role="group" aria-label="Todas las fotos"></div>
+  </dialog>
+
 </main>
 
 <script src="vendor/leaflet.js"></script>

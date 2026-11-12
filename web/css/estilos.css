@@ -762,6 +762,27 @@ button { cursor: pointer; }
   .referencia__pildora { padding: 4px 9px; font-size: 0.6875rem; }
   .referencia__lejania { font-size: 0.6875rem; }
 }
+/* Con fotos (galeria.js): la píldora se puede tocar, y una cámara dice que hay algo
+   que ver. Es lo único de la capa de referencias que recibe el puntero. */
+.referencia--fotos .referencia__pildora {
+  pointer-events: auto;
+  cursor: pointer;
+  align-items: center;
+  transition: background-color 0.15s, transform 0.15s;
+}
+.referencia--fotos .referencia__pildora:hover { background: rgb(15 15 15 / 0.88); transform: scale(1.04); }
+.referencia--fotos:focus-visible { outline: none; }
+.referencia--fotos:focus-visible .referencia__pildora { outline: 2px solid #fff; outline-offset: 2px; }
+.referencia__camara {
+  width: 15px;
+  height: 15px;
+  margin-left: 1px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: #ffd166;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
 
 /* --- Columna de instrumentos ------------------------------------------------ */
 
@@ -2289,3 +2310,108 @@ body[data-plano="completo"] .volver-masterplan { display: none; }
   body[data-panel="mapa"] .volver-masterplan { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .volver-masterplan { animation: none; } }
+
+/* --- Galería de fotos de una referencia (galeria.js) ------------------------ */
+
+/* A pantalla completa sobre negro: son fotos para mirar, no un formulario. */
+.galeria {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: rgb(9 9 11 / 0.94);
+  color: #fff;
+  overflow: hidden;
+}
+.galeria[open] { display: grid; grid-template-rows: auto 1fr auto; }
+.galeria::backdrop { background: rgb(9 9 11 / 0.6); }
+.galeria__cabecera {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: max(14px, env(safe-area-inset-top)) 16px 10px 20px;
+}
+.galeria__titulo {
+  margin: 0;
+  font: 700 0.9375rem var(--sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.galeria__cuenta { font: 600 0.8125rem var(--sans); color: rgb(255 255 255 / 0.65); font-variant-numeric: tabular-nums; }
+.galeria__boton {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.12);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  cursor: pointer;
+}
+.galeria__boton:hover { background: rgb(255 255 255 / 0.22); }
+.galeria__boton:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.galeria__boton svg { width: 20px; height: 20px; }
+.galeria__boton[hidden] { display: none; }
+.galeria__cerrar { margin-left: auto; }
+.galeria__escenario {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: pan-y;
+  user-select: none;
+}
+/* Absoluta y contenida: en una fila 1fr del grid, una foto vertical con max-height
+   no se achicaba y tapaba las miniaturas. */
+.galeria__foto {
+  position: absolute;
+  inset: 0 72px;
+  width: calc(100% - 144px);
+  height: 100%;
+  object-fit: contain;
+}
+.galeria__anterior, .galeria__siguiente { position: absolute; top: 50%; translate: 0 -50%; }
+.galeria__anterior { left: 16px; }
+.galeria__siguiente { right: 16px; }
+.galeria__miniaturas {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px max(16px, env(safe-area-inset-bottom));
+  overflow-x: auto;
+}
+.galeria__miniaturas[hidden] { display: none; }
+.galeria__miniatura {
+  flex-shrink: 0;
+  width: 64px;
+  height: 48px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: none;
+  opacity: 0.55;
+  overflow: hidden;
+  cursor: pointer;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+.galeria__miniatura img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.galeria__miniatura:hover { opacity: 0.85; }
+.galeria__miniatura[aria-current="true"] { opacity: 1; border-color: #fff; }
+/* En el teléfono la foto usa todo el ancho y se pasa arrastrando: las flechas
+   quedan encima, más chicas. */
+@media (max-width: 40rem) {
+  .galeria__foto { inset: 0; width: 100%; }
+  .galeria__boton { width: 38px; height: 38px; }
+  .galeria__anterior { left: 8px; }
+  .galeria__siguiente { right: 8px; }
+  .galeria__miniaturas { justify-content: flex-start; }
+  .galeria__miniatura { width: 52px; height: 40px; }
+}

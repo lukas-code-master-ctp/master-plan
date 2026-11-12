@@ -71,6 +71,8 @@ class Fuentes:
     panoramas: Path
     excel: Path | None = None
     crm: Path | None = None
+    # Las fotos comunes (no 360) de las referencias: una carpeta por referencia.
+    fotos_referencias: Path | None = None
 
 
 def descubrir_fuentes(carpeta: Path, crm: Path | None = None,
@@ -97,6 +99,8 @@ def descubrir_fuentes(carpeta: Path, crm: Path | None = None,
         panoramas=_carpeta_de_panoramas(carpeta, opcional=sin_panoramas),
         excel=planilla_en(carpeta),
         crm=csv_crm if csv_crm and Path(csv_crm).is_file() else None,
+        fotos_referencias=(carpeta / CARPETA_FOTOS_REFERENCIAS
+                           if (carpeta / CARPETA_FOTOS_REFERENCIAS).is_dir() else None),
     )
 
 
@@ -133,6 +137,34 @@ def del_plano(ruta: Path, carpeta: Path) -> bool:
     return _dentro(Path(ruta), plano) and ((plano / "plano.pdf").is_file() or (plano / "paginas").is_dir())
 
 
+# Las fotos comunes que se abren al tocar una referencia (el portón del acceso en
+# Parque Algarrobo), una carpeta por referencia con su nombre en slug. Son JPEG
+# como las panorámicas y no pueden confundirse con ellas.
+CARPETA_FOTOS_REFERENCIAS = "fotos-de-referencias"
+
+
+def fuera_del_vuelo(ruta: Path, carpeta: Path) -> bool:
+    """¿La ruta está en `carpeta` pero no es del vuelo? Lo de Crea tu KMZ y las fotos
+    de las referencias son JPEG que no hay que tomar por panorámicas."""
+    return del_plano(ruta, carpeta) or _dentro(Path(ruta), Path(carpeta) / CARPETA_FOTOS_REFERENCIAS)
+
+
+def carpeta_de_fotos(nombre_referencia: str) -> str:
+    """El nombre de la carpeta con las fotos de una referencia: "Acceso" → "acceso"."""
+    return sugerir_slug(nombre_referencia)
+
+
+def fotos_de_referencia(carpeta: Path | None, nombre_referencia: str) -> list[Path]:
+    """Las fotos de una referencia, en el orden en que se subieron (el nombre)."""
+    if carpeta is None:
+        return []
+    propia = Path(carpeta) / carpeta_de_fotos(nombre_referencia)
+    if not propia.is_dir():
+        return []
+    return sorted(p for p in propia.iterdir()
+                  if p.suffix.lower() in (".jpg", ".jpeg") and not p.name.startswith("."))
+
+
 def kmz_en(carpeta: Path) -> list[Path]:
     """Los KMZ que el pipeline consideraría, en el orden en que los elige."""
     return _candidatos(Path(carpeta), "*.kmz")
@@ -157,7 +189,7 @@ def _dentro(ruta: Path, carpeta: Path) -> bool:
 def _candidatos(carpeta: Path, patron: str) -> list[Path]:
     # Se ignoran los temporales que Excel deja abiertos (~$archivo.xlsx).
     return sorted(p for p in carpeta.rglob(patron)
-                  if not p.name.startswith("~$") and not _es_nuestro(p) and not del_plano(p, carpeta))
+                  if not p.name.startswith("~$") and not _es_nuestro(p) and not fuera_del_vuelo(p, carpeta))
 
 
 def _unico(carpeta: Path, patron: str, que: str) -> Path:
@@ -177,7 +209,7 @@ def _carpeta_de_panoramas(carpeta: Path, opcional: bool = False) -> Path:
     por posición de vuelo, así que se toma el ancestro común de todas."""
     fotos = [p for p in carpeta.rglob("*")
              if p.suffix.lower() in (".jpg", ".jpeg") and not _es_nuestro(p)
-             and not del_plano(p, carpeta)]
+             and not fuera_del_vuelo(p, carpeta)]
     if not fotos:
         if opcional:
             return carpeta

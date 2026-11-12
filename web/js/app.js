@@ -6,6 +6,7 @@ import { agruparParcelas, resumenDeGrupo } from './grupos.js';
 import { abrirFormulario } from './reserva.js';
 import { Cifras } from './cifras.js';
 import { abrirInteres } from './interes.js';
+import { abrirGaleria } from './galeria.js';
 import { estaInsertado, pistaDelVisor } from './insertado.js';
 import { Mapa } from './mapa.js';
 import {
@@ -76,6 +77,7 @@ async function arrancar() {
     numerosFijos: Boolean(catalogo.meta.numeros_fijos),
     alElegirEtapa: (etapa) => elegirEtapa(etapa),
     alElegirPunto: (posicion) => irAPosicion(posicion),
+    alElegirReferencia: (referencia) => abrirGaleria($('#galeria'), referencia),
     alElegirParcela: (id) => seleccionar(id),
     alPasarSobreParcela: (id) => destacar(id),
     alMoverCamara: (camara) => {

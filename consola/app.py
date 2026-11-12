@@ -44,6 +44,7 @@ from pipeline.kmz import leer_kmz
 from pipeline.plano.digitalizar import SALIDA as DIGITALIZADO, escribir_json
 
 from .acceso import GALLETA, Acceso, Sesion, desde_el_entorno
+from . import fotos_referencias
 from .avisos import Avisos
 from .cierra import Cierra, Cifrador, Conexiones, cierra_del_entorno
 from .comandos import Comandos, dominio_propio, encadenar
@@ -103,7 +104,7 @@ MODULOS = ("app.js", "barra.js", "comun.js", "detalle.js", "planos.js", "planes.
            "cuenta.js", "backoffice.js", "disenos.js", "inventario.js", "cierra.js",
            "vuelo.js", "configuracion.js", "equipo.js", "preferencias.js", "actividad.js", "esqueleto.js", "primeros.js", "kmz.js", "kmzs.js", "kmz_geometria.js", "kmz_union.js", "lienzo_plano.js",
            "mapa_kmz.js", "sondeo.js", "reservas.js", "contactos.js", "interesados.js",
-           "estadisticas.js")
+           "estadisticas.js", "fotos_referencias.js")
 # Los que la página toma prestados del visor publicado: la vista previa de un
 # diseño se pinta con el mismo código que después lo aplica en el sitio.
 MODULOS_DEL_VISOR = ("marca.js",)
@@ -522,6 +523,43 @@ def crear_app(registro: Registro | None = None, trabajos: Trabajos | None = None
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         return _como_json(proyecto, trabajos)
+
+    @app.post("/api/proyectos/{slug}/referencias/fotos", status_code=201)
+    async def subir_fotos_referencia(slug: str, referencia: str = Form(...),
+                                     fotos: list[UploadFile] = File(...),
+                                     mios: Vista = Depends(vista)) -> dict:
+        """Agrega fotos a la galería de una referencia (el portón del acceso)."""
+        proyecto = mios.ver(slug)
+        if any((f.size or 0) > fotos_referencias.MEGAS_POR_FOTO * 1024 * 1024 for f in fotos):
+            raise HTTPException(413, f"cada foto puede pesar hasta {fotos_referencias.MEGAS_POR_FOTO} MB")
+        try:
+            # Achicar fotos de celular toma un par de segundos: fuera del bucle de eventos.
+            await run_in_threadpool(fotos_referencias.agregar, proyecto.fuentes,
+                                    proyecto.referencias, referencia, [f.file for f in fotos])
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        return _como_json(mios.ver(slug), trabajos)
+
+    @app.get("/api/proyectos/{slug}/referencias/fotos/{carpeta}/{archivo}")
+    def foto_referencia(slug: str, carpeta: str, archivo: str,
+                        mios: Vista = Depends(vista)) -> FileResponse:
+        proyecto = mios.ver(slug)
+        try:
+            camino = fotos_referencias.ruta(proyecto.fuentes, carpeta, archivo)
+        except FileNotFoundError as error:
+            raise HTTPException(404, "esa foto no existe") from error
+        return FileResponse(camino, media_type="image/jpeg",
+                            headers={"Cache-Control": "private, no-cache"})
+
+    @app.delete("/api/proyectos/{slug}/referencias/fotos/{carpeta}/{archivo}")
+    def quitar_foto_referencia(slug: str, carpeta: str, archivo: str,
+                               mios: Vista = Depends(vista)) -> dict:
+        proyecto = mios.ver(slug)
+        try:
+            fotos_referencias.quitar(proyecto.fuentes, carpeta, archivo)
+        except FileNotFoundError as error:
+            raise HTTPException(404, "esa foto no existe") from error
+        return _como_json(mios.ver(slug), trabajos)
 
     @app.post("/api/proyectos/vincular", status_code=201)
     def vincular(ruta: str = Body(..., embed=True),
@@ -1501,6 +1539,7 @@ def _como_json(proyecto: Proyecto, trabajos: Trabajos) -> dict:
         "despegue": list(proyecto.despegue) if proyecto.despegue else None,
         "despegues": {foto: list(punto) for foto, punto in proyecto.despegues},
         "referencias": list(proyecto.referencias),
+        "fotos_referencias": fotos_referencias.listar(proyecto.fuentes, proyecto.referencias),
         "fuentes": str(proyecto.fuentes),
         "fuentes_encontradas": proyecto.fuentes_encontradas(),
         # Sin planilla, los estados y precios pueden salir del export del CRM.
