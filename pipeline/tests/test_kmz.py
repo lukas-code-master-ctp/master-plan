@@ -623,3 +623,21 @@ def test_el_eje_de_una_servidumbre_se_redondea_sin_mover_las_puntas():
     assert min(math.dist(p, (100.0, 0.0)) for p in suave) < CAMINO_EJE_CORTE_M
     # Un tramo largo sigue recto: lejos de las esquinas no se mueve.
     assert all(abs(y - 20.0) < 1e-9 for x, y in suave if x > 120.0)
+
+
+def test_lotes_dibujados_como_u_que_comparten_la_punta_junto_al_deslinde():
+    """Vive Matanzas: cada lote viene como una U (norte, este, sur) que termina en el
+    deslinde poniente, y la U del lote siguiente parte justo de esa punta. La punta
+    queda a una millonésima del deslinde: tocaba a la otra U y por eso no se pegaba,
+    y los lotes salían fusionados en un polígono sin número."""
+    deslinde = linea([desplazar(0, 0), desplazar(-23.7, 140)])
+    # Sobre el deslinde a la altura 70 (x = -11.85), corrida unas micras hacia adentro.
+    junta = desplazar(-11.85 + 0.00001, 70)
+    lote_1 = linea([desplazar(-23.7, 140), desplazar(80, 140), desplazar(80, 70), junta])
+    lote_2 = linea([junta, desplazar(80, 70), desplazar(80, 0), desplazar(0, 0)])
+    contenido = kml(deslinde + lote_1 + lote_2
+                    + punto("1", desplazar(40, 105)) + punto("2", desplazar(40, 35)))
+
+    parcelas = _parsear(contenido)
+
+    assert {p.id for p in parcelas} == {"1", "2"}

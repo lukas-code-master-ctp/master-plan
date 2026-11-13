@@ -607,15 +607,28 @@ def _pegar_extremos(lineas: list[LineString]) -> list[LineString]:
         for extremo in (0, -1):
             punta = Point(puntos[extremo])
             vecinas = [j for j in arbol.query(punta.buffer(TOLERANCIA_RED_M)) if j != indice]
-            if not vecinas:
+            # Una línea que solo comparte esta punta (el lote siguiente dibujado como
+            # otra línea que sigue desde aquí) no la ancla: si la punta queda a una
+            # millonésima del deslinde, sigue colgando. En Vive Matanzas los lotes 9 a
+            # 12 venían así, cada uno como una U que termina en el deslinde poniente,
+            # y salían fusionados en un solo polígono sin número.
+            if any(lineas[j].distance(punta) == 0 and not _es_extremo(lineas[j], punta)
+                   for j in vecinas):
                 continue
-            cercana = min(vecinas, key=lambda j: lineas[j].distance(punta))
+            sueltas = [j for j in vecinas if lineas[j].distance(punta) > 0]
+            if not sueltas:
+                continue
+            cercana = min(sueltas, key=lambda j: lineas[j].distance(punta))
             distancia = lineas[cercana].distance(punta)
-            if 0 < distancia <= TOLERANCIA_RED_M:
+            if distancia <= TOLERANCIA_RED_M:
                 puntos[extremo] = _pasado(puntos[extremo - 1 if extremo else 1],
                                           nearest_points(lineas[cercana], punta)[0].coords[0])
         pegadas.append(LineString(puntos))
     return pegadas
+
+
+def _es_extremo(linea: LineString, punto: Point) -> bool:
+    return punto.equals(Point(linea.coords[0])) or punto.equals(Point(linea.coords[-1]))
 
 
 def _pasado(desde: tuple[float, float], hasta: tuple[float, float]) -> tuple[float, float]:
